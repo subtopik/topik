@@ -1,0 +1,6 @@
+version = 1
+
+[[annotations]]
+path = "**"
+SPDX-FileCopyrightText = "2024 The Topik Authors"
+SPDX-License-Identifier = "MIT"

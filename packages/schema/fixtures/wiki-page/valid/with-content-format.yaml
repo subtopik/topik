@@ -1,0 +1,10 @@
+apiVersion: v1
+type: WikiPage
+name: html-page
+spec:
+  wiki: vulpo-docs
+  title: HTML Page
+
+  content:
+    format: other
+    value: "<h1>HTML Page</h1><p>This page uses HTML format.</p>"

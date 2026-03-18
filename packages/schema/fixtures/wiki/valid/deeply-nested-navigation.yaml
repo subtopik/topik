@@ -1,0 +1,21 @@
+apiVersion: v1
+type: Wiki
+name: vulpo-docs
+spec:
+  title: Vulpo Documentation
+  slug: vulpo-docs
+  navigation:
+    - type: group
+      title: API
+      slug: api
+      children:
+        - type: group
+          title: Authentication
+          slug: authentication
+          children:
+            - type: page
+              page: auth-overview
+              slug: auth-overview
+            - type: page
+              page: auth-tokens
+              slug: auth-tokens

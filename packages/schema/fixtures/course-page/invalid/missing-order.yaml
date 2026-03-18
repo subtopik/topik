@@ -1,0 +1,10 @@
+apiVersion: v1
+type: CoursePage
+name: variables-and-types
+spec:
+  module: module-basics
+  title: Variables and Types
+  slug: variables-and-types
+  content:
+    format: topik
+    value: "# Variables and Types"

@@ -1,0 +1,7 @@
+apiVersion: v1
+type: CourseModule
+name: module-basics
+spec:
+  title: TypeScript Basics
+  slug: basics
+  order: 0

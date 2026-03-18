@@ -1,0 +1,28 @@
+apiVersion: v1
+type: CoursePage
+name: variables-and-types
+spec:
+  module: module-basics
+  title: Variables and Types
+  slug: variables-and-types
+  order: 0
+  content:
+    format: topik
+    value: "# Variables and Types"
+---
+apiVersion: v1
+type: CoursePage
+name: functions
+spec:
+  module: module-basics
+  title: Functions
+  slug: functions
+  order: 1
+  authors:
+    - john-doe
+  content:
+    format: topik
+    value: |
+      # Functions
+
+      Learn about functions in TypeScript.

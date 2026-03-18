@@ -1,0 +1,11 @@
+{
+  apiVersion: v1,
+  type: Person,
+  name: alex-johnson,
+  spec:
+    {
+      name: Alex Johnson,
+      email: alex@example.com,
+      bio: Senior software engineer with 10+ years of experience in distributed systems.,
+    },
+}

@@ -1,0 +1,23 @@
+apiVersion: v1
+type: WikiPage
+name: introduction
+spec:
+  wiki: vulpo-docs
+  title: Introduction
+
+  content:
+    format: topik
+    value: "# Introduction"
+---
+apiVersion: v1
+type: WikiPage
+name: installation
+spec:
+  wiki: vulpo-docs
+  title: Installation
+  content:
+    format: topik
+    value: |
+      # Installation
+
+      Run `bun install` to get started.

@@ -1,0 +1,11 @@
+apiVersion: v1
+type: Wiki
+name: vulpo-docs
+spec:
+  title: Vulpo Documentation
+  slug: vulpo-docs
+  tabs:
+    - title: Documentation
+      slug: docs
+    - title: API Reference
+      slug: api-reference

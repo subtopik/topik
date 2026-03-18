@@ -1,0 +1,15 @@
+{
+  apiVersion: v1,
+  type: Guide,
+  name: other-format-guide,
+  spec:
+    {
+      title: Other Format Guide,
+      slug: other-format-guide,
+      content:
+        {
+          format: other,
+          value: "<h1>HTML Guide</h1><p>This guide uses <strong>HTML</strong> format.</p>",
+        },
+    },
+}

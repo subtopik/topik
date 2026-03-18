@@ -1,0 +1,20 @@
+apiVersion: v1
+type: Wiki
+name: vulpo-docs
+spec:
+  title: Vulpo Documentation
+  slug: vulpo-docs
+  navigation:
+    - type: group
+      title: Internal
+      slug: internal
+      hidden: true
+      children:
+        - type: page
+          page: draft-page
+          slug: draft-page
+          hidden: true
+    - type: link
+      title: Staging
+      href: https://staging.vulpo.dev
+      hidden: true

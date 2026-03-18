@@ -1,0 +1,9 @@
+apiVersion: v1
+type: Course
+name: intro-to-typescript
+labels:
+  team: engineering
+  level: beginner
+spec:
+  title: Introduction to TypeScript
+  slug: intro-to-typescript

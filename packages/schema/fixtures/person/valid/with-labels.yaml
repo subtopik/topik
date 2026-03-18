@@ -1,0 +1,12 @@
+{
+  apiVersion: v1,
+  type: Person,
+  name: sarah-chen,
+  labels: { department: engineering, role: instructor, team: platform },
+  spec:
+    {
+      name: Sarah Chen,
+      email: sarah.chen@company.com,
+      bio: Platform team lead and course instructor.,
+    },
+}

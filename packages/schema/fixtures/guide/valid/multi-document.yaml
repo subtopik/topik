@@ -1,0 +1,32 @@
+apiVersion: v1
+type: Guide
+name: intro-to-typescript
+spec:
+  title: Introduction to TypeScript
+  slug: intro-to-typescript
+  content:
+    format: topik
+    value: |
+      # Introduction to TypeScript
+
+      TypeScript is a typed superset of JavaScript.
+---
+apiVersion: v1
+type: Guide
+name: advanced-types
+labels:
+  series: typescript-course
+  difficulty: advanced
+spec:
+  title: Advanced TypeScript Types
+  slug: advanced-types
+  content:
+    format: topik
+    value: |
+      # Advanced Types
+
+      ## Conditional Types
+
+      ```typescript
+      type IsString<T> = T extends string ? true : false;
+      ```

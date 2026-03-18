@@ -1,0 +1,12 @@
+{
+  apiVersion: v1,
+  type: Guide,
+  name: typescript-guide,
+  labels: { category: programming, language: typescript },
+  spec:
+    {
+      title: TypeScript Guide,
+      slug: typescript-guide,
+      content: { format: topik, value: "# TypeScript Guide\n\nLearn TypeScript." },
+    },
+}

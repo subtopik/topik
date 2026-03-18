@@ -1,0 +1,23 @@
+apiVersion: v1
+type: Person
+name: john-doe
+spec:
+  name: John Doe
+  email: john@example.com
+---
+apiVersion: v1
+type: Person
+name: jane-smith
+spec:
+  name: Jane Smith
+  email: jane@example.com
+  bio: Software engineer and technical writer.
+---
+apiVersion: v1
+type: Person
+name: bob-wilson
+labels:
+  department: engineering
+  role: lead
+spec:
+  name: Bob Wilson

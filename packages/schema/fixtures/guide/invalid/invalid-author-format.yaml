@@ -1,0 +1,11 @@
+apiVersion: v1
+type: Guide
+name: test-guide
+spec:
+  title: Test Guide
+  slug: test-guide
+  authors:
+    - Invalid_Author
+  content:
+    format: topik
+    value: "# Test"

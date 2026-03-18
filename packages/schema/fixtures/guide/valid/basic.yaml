@@ -1,0 +1,11 @@
+{
+  apiVersion: v1,
+  type: Guide,
+  name: getting-started,
+  spec:
+    {
+      title: Getting Started,
+      slug: getting-started,
+      content: { format: topik, value: "# Getting Started\n\nWelcome to our platform!" },
+    },
+}

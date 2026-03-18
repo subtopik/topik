@@ -1,0 +1,1 @@
+{ apiVersion: v2, type: Person, name: john-doe, spec: { name: John Doe } }

@@ -1,0 +1,21 @@
+apiVersion: v1
+type: Wiki
+name: vulpo-docs
+spec:
+  title: Vulpo Documentation
+  slug: vulpo-docs
+  navigation:
+    - type: group
+      title: Getting Started
+      slug: getting-started
+      children:
+        - type: page
+          page: introduction
+          slug: introduction
+    - type: link
+      title: GitHub
+      href: https://github.com/vulpo/vulpo
+    - type: link
+      title: Discord
+      icon: message-circle
+      href: https://discord.gg/vulpo

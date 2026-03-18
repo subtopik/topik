@@ -1,0 +1,12 @@
+apiVersion: v1
+type: WikiPage
+name: introduction
+labels:
+  status: published
+spec:
+  wiki: vulpo-docs
+  title: Introduction
+
+  content:
+    format: topik
+    value: "# Introduction"

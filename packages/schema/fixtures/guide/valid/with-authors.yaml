@@ -1,0 +1,15 @@
+apiVersion: v1
+type: Guide
+name: typescript-handbook
+spec:
+  title: TypeScript Handbook
+  slug: typescript-handbook
+  authors:
+    - john-doe
+    - jane-smith
+  content:
+    format: topik
+    value: |
+      # TypeScript Handbook
+
+      A comprehensive guide to TypeScript.

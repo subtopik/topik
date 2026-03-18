@@ -4,6 +4,7 @@ packages:
 
 catalog:
   "@types/node": ^24
+  "@typescript/native-preview": 7.0.0-dev.20260316.1
   typescript: ^5
   vite: npm:@voidzero-dev/vite-plus-core@latest
   vite-plus: ^0.1.12

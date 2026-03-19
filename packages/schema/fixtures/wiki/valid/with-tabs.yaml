@@ -1,0 +1,22 @@
+apiVersion: v1
+type: Wiki
+name: bun-docs
+spec:
+  title: Bun Documentation
+  navigation:
+    - type: tab
+      title: Runtime
+      icon: cog
+      children:
+        - type: group
+          title: Get Started
+          children:
+            - type: page
+              page: introduction
+              slug: docs/introduction
+    - type: tab
+      title: Package Manager
+      children:
+        - type: page
+          page: pm-install
+          slug: pm/install

@@ -1,0 +1,8 @@
+apiVersion: v1
+type: Wiki
+name: bad-theme
+spec:
+  title: Bad Theme
+  theme:
+    colors:
+      primary: "not-a-color"

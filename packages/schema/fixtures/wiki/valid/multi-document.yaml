@@ -3,12 +3,10 @@ type: Wiki
 name: vulpo-docs
 spec:
   title: Vulpo Documentation
-  slug: vulpo-docs
 ---
 apiVersion: v1
 type: Wiki
 name: api-docs
 spec:
   title: API Documentation
-  slug: api-docs
   description: Internal API reference

@@ -1,0 +1,8 @@
+apiVersion: v1
+type: Wiki
+name: minimal-theme
+spec:
+  title: Minimal Theme
+  theme:
+    colors:
+      primary: "#0066ff"

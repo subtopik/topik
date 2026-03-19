@@ -25,9 +25,12 @@
     "prepublishOnly": "vp run build"
   },
   "dependencies": {
-    "@topik/core": "workspace:*"
+    "@drizzle-team/brocli": "catalog:",
+    "@topik/core": "workspace:*",
+    "yaml": "^2.7.0"
   },
   "devDependencies": {
+    "@types/bun": "catalog:",
     "@types/node": "catalog:",
     "@typescript/native-preview": "catalog:",
     "typescript": "catalog:",

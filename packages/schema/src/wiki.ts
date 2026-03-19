@@ -34,12 +34,6 @@ export const wikiSchema = {
           maxLength: 256,
           description: "Title of the wiki",
         },
-        slug: {
-          type: "string",
-          maxLength: 256,
-          pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$",
-          description: "URL-friendly slug",
-        },
         description: {
           type: ["string", "null"],
           maxLength: 1024,
@@ -50,8 +44,9 @@ export const wikiSchema = {
           items: { $ref: "#/$defs/navNode" },
           description: "Navigation tree for the wiki",
         },
+        theme: { $ref: "#/$defs/theme" },
       },
-      required: ["title", "slug"],
+      required: ["title"],
       additionalProperties: false,
     },
   },
@@ -67,13 +62,25 @@ export const wikiSchema = {
           properties: {
             type: { type: "string", const: "group" },
             title: { type: "string", maxLength: 256 },
-            slug: { type: "string", maxLength: 256, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+            slug: { type: "string", maxLength: 256, pattern: "^[a-z0-9]+(?:[-/][a-z0-9]+)*$" },
             icon: { type: "string", maxLength: 256, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
             expanded: { type: "boolean" },
             hidden: { type: "boolean" },
             children: { type: "array", items: { $ref: "#/$defs/navNode" } },
           },
-          required: ["type", "title", "slug", "children"],
+          required: ["type", "title", "children"],
+          additionalProperties: false,
+        },
+        {
+          type: "object",
+          properties: {
+            type: { type: "string", const: "tab" },
+            title: { type: "string", maxLength: 256 },
+            slug: { type: "string", maxLength: 256, pattern: "^[a-z0-9]+(?:[-/][a-z0-9]+)*$" },
+            icon: { type: "string", maxLength: 256, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+            children: { type: "array", items: { $ref: "#/$defs/navNode" } },
+          },
+          required: ["type", "title", "children"],
           additionalProperties: false,
         },
         {
@@ -86,7 +93,12 @@ export const wikiSchema = {
               maxLength: 63,
               description: "Reference to a WikiPage by name",
             },
-            slug: { type: "string", maxLength: 256, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+            slug: {
+              type: "string",
+              maxLength: 512,
+              pattern: "^([a-z0-9]+(?:[-/][a-z0-9]+)*)?$",
+              description: "URL path for the page",
+            },
             icon: { type: "string", maxLength: 256, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
             hidden: { type: "boolean" },
           },
@@ -107,22 +119,79 @@ export const wikiSchema = {
         },
       ],
     },
+    theme: {
+      type: "object",
+      properties: {
+        colors: {
+          type: "object",
+          properties: {
+            primary: {
+              type: "string",
+              pattern: "^#[0-9a-fA-F]{6}$",
+              description: "Primary theme color",
+            },
+            light: {
+              type: "string",
+              pattern: "^#[0-9a-fA-F]{6}$",
+              description: "Light mode color override",
+            },
+            dark: {
+              type: "string",
+              pattern: "^#[0-9a-fA-F]{6}$",
+              description: "Dark mode color override",
+            },
+          },
+          required: ["primary"],
+          additionalProperties: false,
+        },
+        appearance: {
+          type: "object",
+          properties: {
+            default: {
+              type: "string",
+              enum: ["light", "dark", "system"],
+              description: "Default color scheme",
+            },
+          },
+          additionalProperties: false,
+        },
+      },
+      additionalProperties: false,
+      description: "Theme configuration",
+    },
   },
 } as const;
 
 export type WikiNavNode =
   | {
       type: "group";
-      id?: string;
       title: string;
-      slug: string;
+      slug?: string;
       icon?: string;
       expanded?: boolean;
       hidden?: boolean;
       children: WikiNavNode[];
     }
+  | {
+      type: "tab";
+      title: string;
+      slug?: string;
+      icon?: string;
+      children: WikiNavNode[];
+    }
   | { type: "page"; page: string; slug: string; icon?: string; hidden?: boolean }
   | { type: "link"; title: string; icon?: string; hidden?: boolean; href: string };
+
+export type WikiTheme = {
+  colors?: {
+    primary: string;
+    light?: string;
+    dark?: string;
+  };
+  appearance?: {
+    default?: "light" | "dark" | "system";
+  };
+};
 
 export type Wiki = {
   apiVersion: "v1";
@@ -131,8 +200,8 @@ export type Wiki = {
   labels?: Record<string, string>;
   spec: {
     title: string;
-    slug: string;
     description?: string | null;
     navigation?: WikiNavNode[];
+    theme?: WikiTheme;
   };
 };

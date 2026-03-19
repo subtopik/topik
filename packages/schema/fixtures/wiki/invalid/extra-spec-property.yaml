@@ -3,5 +3,4 @@ type: Wiki
 name: test-wiki
 spec:
   title: Test Wiki
-  slug: test-wiki
   theme: dark

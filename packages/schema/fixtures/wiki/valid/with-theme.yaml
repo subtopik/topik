@@ -1,0 +1,12 @@
+apiVersion: v1
+type: Wiki
+name: themed-docs
+spec:
+  title: Themed Documentation
+  theme:
+    colors:
+      primary: "#ff73a8"
+      light: "#ff73a8"
+      dark: "#ff73a8"
+    appearance:
+      default: system

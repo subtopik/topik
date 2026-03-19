@@ -3,7 +3,6 @@ type: Wiki
 name: vulpo-docs
 spec:
   title: Vulpo Documentation
-  slug: vulpo-docs
   tabs:
     - title: Documentation
       slug: docs

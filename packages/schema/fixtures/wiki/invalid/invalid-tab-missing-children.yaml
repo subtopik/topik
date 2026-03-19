@@ -1,0 +1,9 @@
+apiVersion: v1
+type: Wiki
+name: bad-tab
+spec:
+  title: Bad Tab
+  navigation:
+    - type: tab
+      title: Runtime
+      slug: runtime

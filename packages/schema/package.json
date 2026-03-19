@@ -23,15 +23,19 @@
   },
   "dependencies": {
     "ajv": "^8.18.0",
-    "ajv-formats": "^3.0.1",
-    "json-schema-to-ts": "^3.1.1"
+    "ajv-formats": "^3.0.1"
   },
   "devDependencies": {
     "@types/node": "catalog:",
     "@typescript/native-preview": "catalog:",
+    "json-schema-to-ts": "^3.1.1",
     "typescript": "catalog:",
     "vite-plus": "catalog:",
     "vitest": "catalog:",
     "yaml": "^2.7.0"
+  },
+  "inlinedDependencies": {
+    "json-schema-to-ts": "3.1.1",
+    "ts-algebra": "2.0.0"
   }
 }

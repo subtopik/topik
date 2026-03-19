@@ -1,18 +1,12 @@
 import { access, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import type { Wiki, WikiNavNode as CompiledWikiNavNode, WikiPage } from "@topik/schema";
+import type { Resource } from "../resource";
 import { parseWikiConfig, type WikiNavNode } from "../config/wiki";
 import { parse as parseYaml } from "yaml";
 import { readConfigFile } from "./config";
 
-export interface Resource {
-  apiVersion: "v1";
-  type: string;
-  name: string;
-  spec: Record<string, unknown>;
-}
-
 export interface CompileWikiOptions {
-  /** Absolute path to the directory containing wiki.yaml */
   dir: string;
 }
 
@@ -25,11 +19,7 @@ export async function compileWiki(options: CompileWikiOptions): Promise<CompileR
 
   const raw = await readConfigFile(dir, ["wiki.yaml", "wiki.yml", "wiki.json"]);
   const config = parseWikiConfig(raw);
-
-  // Extract unique page paths referenced in navigation
   const pagePaths = config.navigation ? [...new Set(collectPagePaths(config.navigation))] : [];
-
-  // Read all referenced files in parallel
   const fileContents = await Promise.all(
     pagePaths.map(async (pagePath) => {
       const filePath = await resolveFilePath(dir, pagePath);
@@ -37,16 +27,16 @@ export async function compileWiki(options: CompileWikiOptions): Promise<CompileR
     }),
   );
 
-  // Build WikiPage resources
   const resources: Resource[] = [];
 
   for (let i = 0; i < pagePaths.length; i++) {
     const pagePath = pagePaths[i];
-    const { frontmatter, content } = parseFrontmatter(fileContents[i]);
+    const { frontmatter, content } = parseFrontmatter(fileContents[i], pagePath);
     const name = pagePathToName(pagePath);
-    const title = frontmatter.title ?? extractTitle(content, name);
+    const title =
+      typeof frontmatter.title === "string" ? frontmatter.title : extractTitle(content, name);
 
-    resources.push({
+    const pageResource: WikiPage = {
       apiVersion: "v1",
       type: "WikiPage",
       name: `${config.id}-${name}`,
@@ -58,11 +48,12 @@ export async function compileWiki(options: CompileWikiOptions): Promise<CompileR
           value: content,
         },
       },
-    });
+    };
+
+    resources.push(pageResource);
   }
 
-  // Create Wiki resource
-  resources.push({
+  const wikiResource: Wiki = {
     apiVersion: "v1",
     type: "Wiki",
     name: config.id,
@@ -71,12 +62,13 @@ export async function compileWiki(options: CompileWikiOptions): Promise<CompileR
       ...(config.navigation ? { navigation: resolveNavigation(config.navigation, config.id) } : {}),
       ...(config.theme ? { theme: config.theme } : {}),
     },
-  });
+  };
+
+  resources.push(wikiResource);
 
   return { resources };
 }
 
-/** Collect all page paths from the navigation tree. */
 function collectPagePaths(nodes: WikiNavNode[]): string[] {
   const paths: string[] = [];
   for (const node of nodes) {
@@ -89,7 +81,6 @@ function collectPagePaths(nodes: WikiNavNode[]): string[] {
   return paths;
 }
 
-/** Resolve a page path to a file, trying .mdx and .md extensions. */
 async function resolveFilePath(dir: string, pagePath: string): Promise<string> {
   for (const ext of [".mdx", ".md"]) {
     const filePath = join(dir, pagePath + ext);
@@ -103,37 +94,46 @@ async function resolveFilePath(dir: string, pagePath: string): Promise<string> {
   throw new Error(`Page not found: ${pagePath} (tried .md and .mdx in ${dir})`);
 }
 
-/** Parse YAML frontmatter from markdown content. */
-function parseFrontmatter(raw: string): { frontmatter: Record<string, string>; content: string } {
+function parseFrontmatter(
+  raw: string,
+  pagePath: string,
+): { frontmatter: Record<string, unknown>; content: string } {
   const match = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
   if (match) {
     try {
-      const frontmatter = parseYaml(match[1]) as Record<string, string>;
+      const frontmatter = parseYaml(match[1]);
+      if (frontmatter == null) {
+        return { frontmatter: {}, content: match[2] };
+      }
+      if (typeof frontmatter !== "object" || Array.isArray(frontmatter)) {
+        throw new Error("Frontmatter must parse to an object");
+      }
+      if (
+        "title" in frontmatter &&
+        frontmatter.title != null &&
+        typeof frontmatter.title !== "string"
+      ) {
+        throw new Error("Frontmatter title must be a string");
+      }
       return { frontmatter, content: match[2] };
-    } catch {
-      return { frontmatter: {}, content: raw };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Invalid frontmatter in ${pagePath}: ${message}`, { cause: error });
     }
   }
   return { frontmatter: {}, content: raw };
 }
 
-/** Convert a page path to a URL slug, collapsing index files (e.g. "runtime/index" → "runtime"). */
 function pagePathToSlug(pagePath: string): string {
   if (pagePath === "index") return "";
   return pagePath.replace(/\/index$/, "");
 }
 
-/** Convert a page path (e.g. "runtime/http/server") to a resource name (e.g. "runtime-http-server"). */
 export function pagePathToName(pagePath: string): string {
   return pagePath.replace(/^\//, "").replaceAll("/", "-");
 }
 
-/**
- * Resolve config nav nodes into compiled schema nav nodes.
- * Config format (Mintlify-style): strings, { group, children }, { href, title }
- * Output format (schema): { type: "page", page, slug }, { type: "group", ... }, { type: "link", ... }
- */
-function resolveNavigation(nodes: WikiNavNode[], wikiId: string): Record<string, unknown>[] {
+function resolveNavigation(nodes: WikiNavNode[], wikiId: string): CompiledWikiNavNode[] {
   return nodes.map((node) => {
     if (typeof node === "string") {
       const pageName = `${wikiId}-${pagePathToName(node)}`;
@@ -161,7 +161,6 @@ function resolveNavigation(nodes: WikiNavNode[], wikiId: string): Record<string,
   });
 }
 
-/** Extract the title from the first `# heading` in the markdown, or fall back to the name. */
 function extractTitle(content: string, fallback: string): string {
   const match = content.match(/^#\s+(.+)$/m);
   if (match) {

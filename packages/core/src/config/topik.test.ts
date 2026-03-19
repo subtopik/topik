@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "vite-plus/test";
 import { parse as parseYaml } from "yaml";
 import { parseTopikConfig } from "./topik";
 

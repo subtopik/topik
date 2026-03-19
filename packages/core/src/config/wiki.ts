@@ -58,7 +58,6 @@ const wikiConfigSchema = z.object({
   theme: themeSchema.optional(),
 });
 
-export type WikiTheme = z.infer<typeof themeSchema>;
 export type WikiConfig = z.infer<typeof wikiConfigSchema>;
 
 export function parseWikiConfig(raw: unknown): WikiConfig {

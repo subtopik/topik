@@ -2,6 +2,8 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { boolean, command, positional, string } from "@drizzle-team/brocli";
 import { compile as compileContent, validateResources, type Resource } from "@topik/core";
+import { CliError } from "../errors";
+import { formatValidationFailure } from "../validation-output";
 
 type Format = "json" | "jsonl" | "yaml";
 
@@ -19,12 +21,12 @@ async function toYaml(value: unknown): Promise<string> {
   return stringify(value);
 }
 
-async function serialize(resource: Resource, format: Format): Promise<string> {
+function serialize(resource: Resource, format: Format): Promise<string> {
   switch (format) {
     case "json":
-      return JSON.stringify(resource, null, 2) + "\n";
+      return Promise.resolve(JSON.stringify(resource, null, 2) + "\n");
     case "jsonl":
-      return JSON.stringify(resource) + "\n";
+      return Promise.resolve(JSON.stringify(resource) + "\n");
     case "yaml":
       return toYaml(resource);
   }
@@ -32,7 +34,7 @@ async function serialize(resource: Resource, format: Format): Promise<string> {
 
 export const compile = command({
   name: "compile",
-  desc: "Compile content into topik resource files",
+  desc: "Compile wiki content into Topik resource files",
   options: {
     dir: positional("dir").desc("Path to the content directory").default("."),
     outDir: string("out-dir").alias("o").desc("Output directory for compiled resources"),
@@ -57,11 +59,9 @@ export const compile = command({
     if (options.validate) {
       const { valid, errors } = validateResources(resources);
       if (!valid) {
-        for (const err of errors) {
-          console.error(`${err.resource}: ${err.path} ${err.message}`);
-        }
-        console.error(`\n${errors.length} validation error(s)`);
-        process.exit(1);
+        throw new CliError(
+          formatValidationFailure(errors, resources.length, "validating compiled output"),
+        );
       }
     }
 
@@ -81,11 +81,9 @@ export const compile = command({
       await rm(outDir, { recursive: true, force: true });
     }
 
-    // Ensure all type directories exist
     const types = new Set(resources.map((r) => r.type));
     await Promise.all([...types].map((type) => mkdir(join(outDir, type), { recursive: true })));
 
-    // Write all resources in parallel
     await Promise.all(
       resources.map(async (resource) =>
         writeFile(

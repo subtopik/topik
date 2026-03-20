@@ -1,0 +1,16 @@
+apiVersion: v1
+type: Guide
+name: react-hooks-guide
+spec:
+  title: React Hooks Guide
+  slug: react-hooks-guide
+  tags:
+    - react
+    - hooks
+    - beginner
+  content:
+    format: topik
+    value: |
+      # React Hooks Guide
+
+      Learn about React Hooks.

@@ -1,17 +1,18 @@
-/** High-level parsers target the wiki-focused Topik input format. */
+/** High-level parsers target the Topik input format. */
 export {
-  parseTopikConfig,
+  parseCollectionConfig,
   parseWikiConfig,
-  type TopikConfig,
-  type Collection,
+  type CollectionConfig,
   type WikiConfig,
 } from "./config";
 
 export {
   compile,
   compileWiki,
+  compileGuides,
   type CompileOptions,
   type CompileWikiOptions,
+  type CompileGuidesOptions,
   type CompileResult,
 } from "./compile";
 export type { Resource, ResourceType } from "./resource";

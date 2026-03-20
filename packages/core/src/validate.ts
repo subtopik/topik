@@ -1,12 +1,13 @@
 import Ajv2020 from "ajv/dist/2020";
 import addFormats from "ajv-formats";
-import { wikiSchema, wikiPageSchema } from "@topik/schema";
+import { guideSchema, wikiSchema, wikiPageSchema } from "@topik/schema";
 import type { ResourceType } from "./resource";
 
 const ajv = new Ajv2020({ strict: true, discriminator: true });
 addFormats(ajv);
 
 const validators: Record<ResourceType, ReturnType<typeof ajv.compile>> = {
+  Guide: ajv.compile(guideSchema),
   Wiki: ajv.compile(wikiSchema),
   WikiPage: ajv.compile(wikiPageSchema),
 };
@@ -32,7 +33,7 @@ function getResourceLabel(resource: Record<string, unknown>): string {
   return `${type}/${name}`;
 }
 
-/** Validate the wiki resources produced by `compile` and the CLI export. */
+/** Validate the resources produced by `compile` and the CLI export. */
 export function validateResources(resources: readonly unknown[]): ValidationResult {
   const errors: ValidationError[] = [];
 

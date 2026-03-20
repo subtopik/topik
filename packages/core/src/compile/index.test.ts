@@ -27,4 +27,13 @@ describe("compile", () => {
 
     expect(result.resources.map((resource) => resource.type)).toEqual(["WikiPage", "Wiki"]);
   });
+
+  test("delegates collection directories to the guide compiler", async () => {
+    await writeFile(join(dir, "collection.yaml"), "id: blog\ntitle: Blog\n");
+    await writeFile(join(dir, "post.md"), "# My Post\n");
+
+    const result = await compile({ dir });
+
+    expect(result.resources.map((resource) => resource.type)).toEqual(["Guide"]);
+  });
 });

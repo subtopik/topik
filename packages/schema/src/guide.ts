@@ -57,6 +57,15 @@ export const guideSchema = {
           },
           description: "List of author references (Person names)",
         },
+        tags: {
+          type: "array",
+          items: {
+            type: "string",
+            minLength: 1,
+            maxLength: 63,
+          },
+          description: "Tags for categorizing the guide",
+        },
         content: {
           type: "object",
           properties: {

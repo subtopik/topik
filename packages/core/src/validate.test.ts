@@ -25,21 +25,38 @@ describe("validateResources", () => {
     expect(result).toEqual({ valid: true, errors: [] });
   });
 
-  test("rejects unsupported resource types explicitly", () => {
+  test("accepts valid Guide resources", () => {
     const result = validateResources([
       {
         apiVersion: "v1",
         type: "Guide",
         name: "getting-started",
-        spec: { title: "Getting Started" },
+        spec: {
+          title: "Getting Started",
+          slug: "getting-started",
+          content: { format: "topik", value: "# Getting Started" },
+        },
+      },
+    ]);
+
+    expect(result).toEqual({ valid: true, errors: [] });
+  });
+
+  test("rejects unsupported resource types explicitly", () => {
+    const result = validateResources([
+      {
+        apiVersion: "v1",
+        type: "Unknown",
+        name: "something",
+        spec: { title: "Something" },
       },
     ]);
 
     expect(result.valid).toBe(false);
     expect(result.errors).toContainEqual({
-      resource: "Guide/getting-started",
+      resource: "Unknown/something",
       path: "/type",
-      message: "Unsupported resource type: Guide",
+      message: "Unsupported resource type: Unknown",
     });
   });
 

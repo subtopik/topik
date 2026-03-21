@@ -3,21 +3,21 @@ import { join, resolve } from "node:path";
 import type { Wiki, WikiNavNode as CompiledWikiNavNode, WikiPage } from "@topik/schema";
 import type { Resource } from "../resource";
 import { parseWikiConfig, type WikiNavNode } from "../config/wiki";
-import { parse as parseYaml } from "yaml";
-import { readConfigFile } from "./config";
+import { readOptionalConfigFile } from "./config";
+import { extractMarkdownTitle, parseMarkdownFrontmatter, type CompileResult } from "./shared";
 
 export interface CompileWikiOptions {
   dir: string;
 }
 
-export interface CompileResult {
-  resources: Resource[];
-}
-
 export async function compileWiki(options: CompileWikiOptions): Promise<CompileResult> {
   const dir = resolve(options.dir);
 
-  const raw = await readConfigFile(dir, ["wiki.yaml", "wiki.yml", "wiki.json"]);
+  const raw = await readOptionalConfigFile(dir, ["wiki.yaml", "wiki.yml", "wiki.json"]);
+  if (raw == null) {
+    return { resources: [] };
+  }
+
   const config = parseWikiConfig(raw);
   const pagePaths = config.navigation ? [...new Set(collectPagePaths(config.navigation))] : [];
   const fileContents = await Promise.all(
@@ -31,10 +31,12 @@ export async function compileWiki(options: CompileWikiOptions): Promise<CompileR
 
   for (let i = 0; i < pagePaths.length; i++) {
     const pagePath = pagePaths[i];
-    const { frontmatter, content } = parseFrontmatter(fileContents[i], pagePath);
+    const { frontmatter, content } = parseMarkdownFrontmatter(fileContents[i], pagePath);
     const name = pagePathToName(pagePath);
     const title =
-      typeof frontmatter.title === "string" ? frontmatter.title : extractTitle(content, name);
+      typeof frontmatter.title === "string"
+        ? frontmatter.title
+        : extractMarkdownTitle(content, name);
 
     const pageResource: WikiPage = {
       apiVersion: "v1",
@@ -94,36 +96,6 @@ async function resolveFilePath(dir: string, pagePath: string): Promise<string> {
   throw new Error(`Page not found: ${pagePath} (tried .md and .mdx in ${dir})`);
 }
 
-function parseFrontmatter(
-  raw: string,
-  pagePath: string,
-): { frontmatter: Record<string, unknown>; content: string } {
-  const match = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
-  if (match) {
-    try {
-      const frontmatter = parseYaml(match[1]);
-      if (frontmatter == null) {
-        return { frontmatter: {}, content: match[2] };
-      }
-      if (typeof frontmatter !== "object" || Array.isArray(frontmatter)) {
-        throw new Error("Frontmatter must parse to an object");
-      }
-      if (
-        "title" in frontmatter &&
-        frontmatter.title != null &&
-        typeof frontmatter.title !== "string"
-      ) {
-        throw new Error("Frontmatter title must be a string");
-      }
-      return { frontmatter, content: match[2] };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`Invalid frontmatter in ${pagePath}: ${message}`, { cause: error });
-    }
-  }
-  return { frontmatter: {}, content: raw };
-}
-
 function pagePathToSlug(pagePath: string): string {
   if (pagePath === "index") return "";
   return pagePath.replace(/\/index$/, "");
@@ -160,14 +132,4 @@ function resolveNavigation(nodes: WikiNavNode[], wikiId: string): CompiledWikiNa
     };
   });
 }
-
-function extractTitle(content: string, fallback: string): string {
-  const match = content.match(/^#\s+(.+)$/m);
-  if (match) {
-    return match[1].trim();
-  }
-  return fallback
-    .split("-")
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ");
-}
+export { extractMarkdownTitle as extractTitle } from "./shared";

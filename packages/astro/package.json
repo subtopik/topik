@@ -1,7 +1,7 @@
 {
-  "name": "@topik/schema",
+  "name": "@topik/astro",
   "version": "0.0.0",
-  "description": "JSON Schema definitions for Topik resources",
+  "description": "Astro integration for Topik content",
   "license": "MIT",
   "files": [
     "dist"
@@ -17,23 +17,27 @@
   "scripts": {
     "build": "vp pack",
     "dev": "vp pack --watch",
-    "test": "vp test",
     "check": "vp check",
     "prepublishOnly": "vp run build"
   },
   "devDependencies": {
+    "@topik/core": "workspace:*",
+    "@topik/schema": "workspace:*",
     "@types/node": "catalog:",
-    "@typescript/native-preview": "catalog:",
-    "ajv": "^8.18.0",
-    "ajv-formats": "^3.0.1",
-    "json-schema-to-ts": "^3.1.1",
+    "astro": "^6.0.8",
     "typescript": "catalog:",
-    "vite-plus": "catalog:",
-    "vitest": "catalog:",
-    "yaml": "^2.7.0"
+    "vite-plus": "catalog:"
+  },
+  "peerDependencies": {
+    "astro": "^5.0.0 || ^6.0.0"
   },
   "inlinedDependencies": {
-    "json-schema-to-ts": "3.1.1",
-    "ts-algebra": "2.0.0"
+    "ajv": "8.18.0",
+    "ajv-formats": "3.0.1",
+    "fast-deep-equal": "3.1.3",
+    "fast-uri": "3.1.0",
+    "json-schema-traverse": "1.0.0",
+    "yaml": "2.8.2",
+    "zod": "3.25.76"
   }
 }

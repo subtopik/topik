@@ -6,8 +6,17 @@ export type WikiNavNode =
   | { tab: string; slug?: string; icon?: string; children: WikiNavNode[] }
   | { href: string; title: string; icon?: string };
 
+const wikiPagePath = z
+  .string()
+  .min(1)
+  .max(512)
+  .regex(
+    /^(?:[a-z0-9]+(?:-[a-z0-9]+)*)(?:\/(?:[a-z0-9]+(?:-[a-z0-9]+)*))*$/,
+    "Wiki page paths must use lowercase DNS-style segments separated by '/'",
+  );
+
 const navNodeSchema: z.ZodType<WikiNavNode, z.ZodTypeDef, unknown> = z.union([
-  z.string().min(1).max(512),
+  wikiPagePath,
   z.object({
     group: z.string().min(1).max(256),
     slug: z.string().min(1).max(256).optional(),

@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { describe, expect, test } from "vite-plus/test";
+import type { LoaderContext } from "astro/loaders";
 import { topikGuidesLoader } from "./guides";
 
 const fixturesDir = join(import.meta.dirname, "__fixtures__/guides");
@@ -21,7 +22,7 @@ function createMockContext() {
     logger: { info: () => {} },
     generateDigest: (data: string) => String(data.length),
     entries,
-  };
+  } as unknown as LoaderContext & { entries: typeof entries };
 }
 
 describe("topikGuidesLoader", () => {

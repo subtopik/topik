@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { compileGuides } from "@topik/core";
 import type { Guide } from "@topik/schema";
+import type { Loader, LoaderContext } from "astro/loaders";
 
 export interface TopikGuidesOptions {
   /** Path to the guide collection directory (containing collection.yaml). */
@@ -17,25 +18,13 @@ export type Entry = {
 };
 `;
 
-export function topikGuidesLoader(options: TopikGuidesOptions) {
+export function topikGuidesLoader(options: TopikGuidesOptions): Loader {
   const resolvedDir = resolve(options.dir);
 
   return {
     name: "topik-guides",
 
-    load: async (context: {
-      store: {
-        clear(): void;
-        set(entry: {
-          id: string;
-          data: Record<string, unknown>;
-          body?: string;
-          digest?: string;
-        }): void;
-      };
-      logger: { info(msg: string): void };
-      generateDigest(data: string): string;
-    }) => {
+    load: async (context: LoaderContext) => {
       context.logger.info(`Compiling guides from ${resolvedDir}`);
       const { resources } = await compileGuides({ dir: resolvedDir });
 

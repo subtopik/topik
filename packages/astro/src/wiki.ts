@@ -1,21 +1,13 @@
 import { resolve } from "node:path";
 import { compileWiki } from "@topik/core";
 import type { Wiki, WikiPage, WikiNavNode } from "@topik/schema";
+import type { Loader, LoaderContext } from "astro/loaders";
 
 export type { WikiNavNode };
 
 export interface TopikWikiOptions {
   /** Path to the wiki directory (containing wiki.yaml). */
   dir: string;
-}
-
-interface LoaderContext {
-  store: {
-    clear(): void;
-    set(entry: { id: string; data: Record<string, unknown>; body?: string; digest?: string }): void;
-  };
-  logger: { info(msg: string): void };
-  generateDigest(data: string): string;
 }
 
 const WIKI_PAGE_TYPES = `
@@ -26,7 +18,9 @@ export type Entry = {
 };
 `;
 
-export function topikWikiLoader(options: TopikWikiOptions) {
+export function topikWikiLoader(options: TopikWikiOptions): Loader & {
+  getNavigation(): Promise<WikiNavNode[]>;
+} {
   const resolvedDir = resolve(options.dir);
 
   return {

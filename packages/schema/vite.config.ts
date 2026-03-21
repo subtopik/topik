@@ -2,6 +2,9 @@ import { defineConfig } from "vite-plus";
 
 export default defineConfig({
   pack: {
+    deps: {
+      onlyBundle: ["json-schema-to-ts", "ts-algebra"],
+    },
     dts: {
       tsgo: true,
     },

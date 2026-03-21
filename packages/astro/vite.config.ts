@@ -2,7 +2,9 @@ import { defineConfig } from "vite-plus";
 
 export default defineConfig({
   pack: {
-    external: [/^node:/, /^astro/],
+    deps: {
+      neverBundle: [/^node:/, /^astro/],
+    },
     dts: {
       tsgo: true,
     },

@@ -1,7 +1,22 @@
+import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { resolve } from "node:path";
+import { extname, join, resolve } from "node:path";
 import { command, positional, string } from "@drizzle-team/brocli";
 import { watch, type Watcher } from "@topik/core";
+
+const ASSET_EXTENSIONS: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".svg": "image/svg+xml",
+  ".webp": "image/webp",
+  ".avif": "image/avif",
+  ".ico": "image/x-icon",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
+};
 
 function sendSSE(res: ServerResponse, event: string, data: unknown) {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -94,6 +109,30 @@ export const dev = command({
         return;
       }
 
+      if (req.method === "GET") {
+        const ext = extname(url.pathname);
+        const mime = ASSET_EXTENSIONS[ext];
+        if (mime) {
+          const filePath = resolve(join(dir, url.pathname));
+          if (filePath.startsWith(dir + "/") && existsSync(filePath)) {
+            readFile(filePath)
+              .then((data) => {
+                res.writeHead(200, {
+                  "Content-Type": mime,
+                  "Access-Control-Allow-Origin": "*",
+                });
+                res.end(data);
+              })
+              .catch(() => {
+                res.writeHead(500, { "Access-Control-Allow-Origin": "*" });
+                res.end();
+              });
+
+            return;
+          }
+        }
+      }
+
       res.writeHead(404, {
         "Content-Type": "text/plain",
         "Access-Control-Allow-Origin": "*",
@@ -105,7 +144,6 @@ export const dev = command({
       console.log(`Dev server listening on http://localhost:${port}`);
     });
 
-    // Graceful shutdown
     process.on("SIGINT", async () => {
       server.close();
       await watcher.close();

@@ -3,13 +3,14 @@ import type { Resource } from "../resource";
 import { findConfigFile } from "./config";
 import { compileWiki } from "./wiki";
 import { compileGuides } from "./guide";
-import type { CompileResult } from "./wiki";
+import type { CompileResult } from "./shared";
 
 export { compileWiki } from "./wiki";
-export type { CompileWikiOptions, CompileResult } from "./wiki";
+export type { CompileWikiOptions } from "./wiki";
 export { compileGuides } from "./guide";
 export type { CompileGuidesOptions } from "./guide";
 export type { Resource } from "../resource";
+export type { CompileResult } from "./shared";
 
 const WIKI_CONFIG_FILES = ["wiki.yaml", "wiki.yml", "wiki.json"];
 const COLLECTION_CONFIG_FILES = ["collection.yaml", "collection.yml", "collection.json"];

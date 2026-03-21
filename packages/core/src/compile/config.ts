@@ -3,6 +3,14 @@ import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 
 export async function readConfigFile(dir: string, candidates: string[]): Promise<unknown> {
+  const config = await readOptionalConfigFile(dir, candidates);
+  if (config != null) {
+    return config;
+  }
+  throw new Error(`Config file not found in ${dir} (tried ${candidates.join(", ")})`);
+}
+
+export async function readOptionalConfigFile(dir: string, candidates: string[]): Promise<unknown> {
   for (const name of candidates) {
     const filePath = join(dir, name);
     let raw: string;
@@ -22,7 +30,7 @@ export async function readConfigFile(dir: string, candidates: string[]): Promise
       throw new Error(`Failed to parse config file ${filePath}`, { cause: error });
     }
   }
-  throw new Error(`Config file not found in ${dir} (tried ${candidates.join(", ")})`);
+  return undefined;
 }
 
 export async function findConfigFile(dir: string, candidates: string[]): Promise<string | null> {

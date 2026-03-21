@@ -318,6 +318,20 @@ navigation:
 
     await expect(compileWiki({ dir })).rejects.toThrow("Page not found: nonexistent");
   });
+
+  test("returns no resources when the wiki config is missing", async () => {
+    await writePage("hello", "# Hello\n");
+
+    await expect(compileWiki({ dir })).resolves.toEqual({ resources: [] });
+  });
+
+  test("rejects navigation page paths that cannot become wiki page names", async () => {
+    await writeWikiConfig("id: test\ntitle: Wiki\nnavigation:\n  - Runtime/Hello_World\n");
+
+    await expect(compileWiki({ dir })).rejects.toThrow(
+      "Wiki page paths must use lowercase DNS-style segments separated by '/'",
+    );
+  });
 });
 
 describe("pagePathToName", () => {

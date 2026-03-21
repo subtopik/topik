@@ -135,6 +135,18 @@ describe("compileGuides", () => {
     expect((result.resources[0] as Guide).spec.authors).toEqual(["john-doe", "jane-smith"]);
   });
 
+  test("rejects invalid author references", async () => {
+    await writeCollectionConfig("id: blog\ntitle: Blog\n");
+    await writeFile(
+      join(dir, "post.md"),
+      "---\ntitle: Post\nauthors:\n  - John Doe\n---\n\nContent.",
+    );
+
+    await expect(compileGuides({ dir })).rejects.toThrow(
+      "authors[0] in post.md must be a DNS-1123 resource name",
+    );
+  });
+
   test("compiles multiple guides sorted by filename", async () => {
     await writeCollectionConfig("id: blog\ntitle: Blog\n");
     await writeGuide("zebra", "# Zebra\n");
@@ -169,6 +181,12 @@ describe("compileGuides", () => {
     const result = await compileGuides({ dir });
     expect(result.resources).toHaveLength(1);
     expect(result.resources[0].name).toBe("blog-post");
+  });
+
+  test("returns no resources when the collection config is missing", async () => {
+    await writeGuide("post", "# Post\n");
+
+    await expect(compileGuides({ dir })).resolves.toEqual({ resources: [] });
   });
 
   test("compiled Guide resources validate against schema", async () => {

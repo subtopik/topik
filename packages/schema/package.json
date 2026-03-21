@@ -21,13 +21,11 @@
     "check": "vp check",
     "prepublishOnly": "vp run build"
   },
-  "dependencies": {
-    "ajv": "^8.18.0",
-    "ajv-formats": "^3.0.1"
-  },
   "devDependencies": {
     "@types/node": "catalog:",
     "@typescript/native-preview": "catalog:",
+    "ajv": "^8.18.0",
+    "ajv-formats": "^3.0.1",
     "json-schema-to-ts": "^3.1.1",
     "typescript": "catalog:",
     "vite-plus": "catalog:",

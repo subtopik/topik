@@ -73,11 +73,33 @@ describe("topikWikiLoader", () => {
     const loader = topikWikiLoader({ dir: fixturesDir });
     const ctx = createMockContext();
 
-    expect(loader.getNavigation()).toEqual([]);
+    await expect(loader.getNavigation()).resolves.toEqual([
+      {
+        type: "page",
+        page: "docs-introduction",
+        slug: "introduction",
+      },
+      {
+        type: "group",
+        title: "Getting Started",
+        children: [
+          {
+            type: "page",
+            page: "docs-getting-started-installation",
+            slug: "getting-started/installation",
+          },
+          {
+            type: "page",
+            page: "docs-getting-started-configuration",
+            slug: "getting-started/configuration",
+          },
+        ],
+      },
+    ]);
 
     await loader.load(ctx);
 
-    const nav = loader.getNavigation();
+    const nav = await loader.getNavigation();
     expect(nav.length).toBe(2);
     expect(nav[0]).toEqual({
       type: "page",

@@ -9,6 +9,15 @@ export interface TopikWikiOptions {
   dir: string;
 }
 
+interface LoaderContext {
+  store: {
+    clear(): void;
+    set(entry: { id: string; data: Record<string, unknown>; body?: string; digest?: string }): void;
+  };
+  logger: { info(msg: string): void };
+  generateDigest(data: string): string;
+}
+
 const WIKI_PAGE_TYPES = `
 export type Entry = {
   wiki: string;
@@ -20,37 +29,16 @@ export type Entry = {
 export function topikWikiLoader(options: TopikWikiOptions) {
   const resolvedDir = resolve(options.dir);
 
-  let navigation: WikiNavNode[] = [];
-
   return {
     name: "topik-wiki",
 
-    load: async (context: {
-      store: {
-        clear(): void;
-        set(entry: {
-          id: string;
-          data: Record<string, unknown>;
-          body?: string;
-          digest?: string;
-        }): void;
-      };
-      logger: { info(msg: string): void };
-      generateDigest(data: string): string;
-    }) => {
+    load: async (context: LoaderContext) => {
       context.logger.info(`Compiling wiki from ${resolvedDir}`);
-      const { resources } = await compileWiki({ dir: resolvedDir });
-
-      const wiki = resources.find((r): r is Wiki => r.type === "Wiki");
-      navigation = wiki?.spec.navigation ?? [];
-
+      const { pageResources, navigation } = await loadCompiledWiki(resolvedDir);
       const slugMap = buildSlugMap(navigation);
 
       context.store.clear();
-      for (const resource of resources) {
-        if (resource.type !== "WikiPage") continue;
-        const page = resource as WikiPage;
-
+      for (const page of pageResources) {
         context.store.set({
           id: page.name,
           data: {
@@ -63,8 +51,7 @@ export function topikWikiLoader(options: TopikWikiOptions) {
         });
       }
 
-      const pageCount = resources.filter((r) => r.type === "WikiPage").length;
-      context.logger.info(`Loaded ${pageCount} wiki page(s)`);
+      context.logger.info(`Loaded ${pageResources.length} wiki page(s)`);
     },
 
     createSchema: async () => {
@@ -79,8 +66,24 @@ export function topikWikiLoader(options: TopikWikiOptions) {
       };
     },
 
-    /** Access the compiled navigation tree after loading. */
-    getNavigation: () => navigation,
+    getNavigation: async () => {
+      const { navigation } = await loadCompiledWiki(resolvedDir);
+      return navigation;
+    },
+  };
+}
+
+async function loadCompiledWiki(dir: string): Promise<{
+  navigation: WikiNavNode[];
+  pageResources: WikiPage[];
+}> {
+  const { resources } = await compileWiki({ dir });
+  const wiki = resources.find((resource): resource is Wiki => resource.type === "Wiki");
+  return {
+    navigation: wiki?.spec.navigation ?? [],
+    pageResources: resources.filter(
+      (resource): resource is WikiPage => resource.type === "WikiPage",
+    ),
   };
 }
 

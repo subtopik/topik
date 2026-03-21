@@ -18,3 +18,5 @@ export {
 export type { Resource, ResourceType } from "./resource";
 
 export { validateResources, type ValidationError, type ValidationResult } from "./validate";
+
+export { watch, type WatchOptions, type Watcher } from "./watch";

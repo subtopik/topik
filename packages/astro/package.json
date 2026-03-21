@@ -1,6 +1,7 @@
 {
   "name": "@topik/astro",
-  "version": "0.0.0",
+  "version": "0.1.0-alpha.2",
+  "private": true,
   "description": "Astro integration for Topik content",
   "license": "MIT",
   "files": [

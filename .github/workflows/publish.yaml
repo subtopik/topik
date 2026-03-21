@@ -1,0 +1,65 @@
+name: Publish
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: "22"
+          cache: true
+      - run: vp install
+      - run: vp run build -r
+      - run: vp check
+      - run: vp test
+
+  publish:
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: "22"
+          cache: true
+          registry-url: "https://registry.npmjs.org"
+
+      - run: vp install
+
+      - run: vp run build -r
+
+      - name: Publish packages
+        run: |
+          for pkg in packages/*/package.json; do
+            dir=$(dirname "$pkg")
+            private=$(node -p "require('./$pkg').private || false")
+            if [ "$private" = "true" ]; then
+              continue
+            fi
+
+            version=$(node -p "require('./$pkg').version")
+            if echo "$version" | grep -q "alpha"; then
+              tag=alpha
+            elif echo "$version" | grep -q "beta"; then
+              tag=beta
+            elif echo "$version" | grep -q "rc"; then
+              tag=rc
+            else
+              tag=latest
+            fi
+
+            echo "Publishing $dir@$version with tag $tag"
+            cd "$dir"
+            vp pm publish --no-git-checks --provenance --access public --tag "$tag"
+            cd "$GITHUB_WORKSPACE"
+          done

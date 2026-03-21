@@ -1,6 +1,6 @@
 {
   "name": "@topik/schema",
-  "version": "0.0.0",
+  "version": "0.1.0-alpha.2",
   "description": "JSON Schema definitions for Topik resources",
   "license": "MIT",
   "files": [

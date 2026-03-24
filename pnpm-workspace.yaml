@@ -9,7 +9,7 @@ catalog:
   "@typescript/native-preview": 7.0.0-dev.20260318.1
   typescript: ^5
   vite: npm:@voidzero-dev/vite-plus-core@latest
-  vite-plus: ^0.1.12
+  vite-plus: ^0.1.13
   vitest: npm:@voidzero-dev/vite-plus-test@latest
 
 catalogMode: prefer

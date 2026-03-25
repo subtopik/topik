@@ -27,7 +27,7 @@
   "dependencies": {
     "@drizzle-team/brocli": "catalog:",
     "@topik/core": "workspace:*",
-    "yaml": "^2.7.0"
+    "yaml": "^2.8.3"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

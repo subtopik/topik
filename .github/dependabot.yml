@@ -12,3 +12,12 @@ updates:
       interval: "daily"
     cooldown:
       default-days: 3
+    groups:
+      ajv:
+        patterns:
+          - "ajv"
+          - "ajv-formats"
+      typescript:
+        patterns:
+          - "typescript"
+          - "@typescript/*"

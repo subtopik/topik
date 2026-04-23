@@ -15,7 +15,7 @@ const wikiPagePath = z
     "Wiki page paths must use lowercase DNS-style segments separated by '/'",
   );
 
-const navNodeSchema: z.ZodType<WikiNavNode, z.ZodTypeDef, unknown> = z.union([
+const navNodeSchema: z.ZodType<WikiNavNode> = z.union([
   wikiPagePath,
   z.object({
     group: z.string().min(1).max(256),

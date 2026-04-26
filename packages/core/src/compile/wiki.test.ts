@@ -308,6 +308,24 @@ navigation:
     expect(page!.spec.title).toBe("Frontmatter Title");
   });
 
+  test("extracts local image references as Asset resources", async () => {
+    await writeWikiConfig("id: tw\ntitle: Wiki\nnavigation:\n  - hello\n");
+    const png = Buffer.from(
+      "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000000500010d0a2db40000000049454e44ae426082",
+      "hex",
+    );
+    await writeFile(join(dir, "hero.png"), png);
+    await writePage("hello", "# Hello\n\n![hero](./hero.png)\n");
+
+    const result = await compileWiki({ dir });
+    const assets = result.resources.filter((r) => r.type === "Asset");
+    const page = result.resources.find((r) => r.type === "WikiPage")!;
+
+    expect(assets).toHaveLength(1);
+    expect(assets[0].name).toMatch(/^[a-f0-9]{16}$/);
+    expect(page.spec.content.value).toContain(`![hero](asset:${assets[0].name})`);
+  });
+
   test("throws when referenced page file is missing", async () => {
     await writeWikiConfig(`
 id: test

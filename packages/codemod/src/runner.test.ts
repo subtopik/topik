@@ -36,6 +36,20 @@ describe("runMintlify", () => {
     expect(existing).toBe("# Existing\n");
   });
 
+  test("captures per-file errors without aborting the run", async () => {
+    await writeFile(join(dir, "good.mdx"), "<Note>ok</Note>\n");
+    await writeFile(join(dir, "blocked.mdx"), "<Note>x</Note>\n");
+    await writeFile(join(dir, "blocked.md"), "# pre-existing\n");
+
+    const summary = await runMintlify({ dir, dryRun: false, keepExtension: false });
+    expect(summary.files).toHaveLength(3); // good.mdx, blocked.mdx, blocked.md
+    const good = summary.files.find((f) => f.relativePath === "good.mdx");
+    expect(good?.error).toBeUndefined();
+    expect(good?.changed).toBe(true);
+    const blocked = summary.files.find((f) => f.relativePath === "blocked.mdx");
+    expect(blocked?.error).toMatch(/already exists/);
+  });
+
   test("does not write or rename in dry-run mode", async () => {
     await writeFile(join(dir, "post.mdx"), "<Note>hi</Note>\n");
     const summary = await runMintlify({ dir, dryRun: true, keepExtension: false });

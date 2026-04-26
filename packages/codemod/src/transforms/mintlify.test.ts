@@ -95,6 +95,13 @@ describe("transformMintlify", () => {
     expect(content).toBe('{% frame caption="x>y" %}body{% /frame %}');
   });
 
+  test("does not mistake > inside a JSX expression for the tag end", () => {
+    const { content, warnings } = transformMintlify("<Card icon={a > b} />");
+    expect(content).toBe("{% card /%}");
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].message).toContain("{a > b}");
+  });
+
   test("warning column points at the offending attribute, not the tag start", () => {
     const source = '<Card title="x" icon={Icon} />';
     const { warnings } = transformMintlify(source);

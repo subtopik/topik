@@ -29,38 +29,43 @@ export async function runMintlify(options: RunOptions): Promise<RunSummary> {
 
   for await (const absPath of walk(options.dir)) {
     if (!absPath.endsWith(".mdx") && !absPath.endsWith(".md")) continue;
-    const source = await readFile(absPath, "utf-8");
-    const result = transformMintlify(source);
     const rel = relative(options.dir, absPath);
-
     const fileResult: FileResult = {
       relativePath: rel,
-      warnings: result.warnings,
-      changed: result.changed,
+      warnings: [],
+      changed: false,
     };
-    warnings += result.warnings.length;
 
-    if (!options.dryRun && result.changed) {
-      await writeFile(absPath, result.content);
-    }
+    try {
+      const source = await readFile(absPath, "utf-8");
+      const result = transformMintlify(source);
+      fileResult.warnings = result.warnings;
+      warnings += result.warnings.length;
 
-    let renameWillRun = false;
-    if (!options.keepExtension && absPath.endsWith(".mdx")) {
-      const newPath = absPath.slice(0, -4) + ".md";
-      fileResult.newRelativePath = relative(options.dir, newPath);
-      if (await pathExists(newPath)) {
-        fileResult.error = `Skipping rename: destination ${fileResult.newRelativePath} already exists`;
-      } else {
-        renameWillRun = true;
-        if (!options.dryRun) {
-          await rename(absPath, newPath);
+      if (!options.dryRun && result.changed) {
+        await writeFile(absPath, result.content);
+      }
+
+      let renameWillRun = false;
+      if (!options.keepExtension && absPath.endsWith(".mdx")) {
+        const newPath = absPath.slice(0, -4) + ".md";
+        fileResult.newRelativePath = relative(options.dir, newPath);
+        if (await pathExists(newPath)) {
+          fileResult.error = `Skipping rename: destination ${fileResult.newRelativePath} already exists`;
+        } else {
+          renameWillRun = true;
+          if (!options.dryRun) {
+            await rename(absPath, newPath);
+          }
         }
       }
-    }
 
-    if (result.changed || renameWillRun) {
-      fileResult.changed = true;
-      filesChanged++;
+      if (result.changed || renameWillRun) {
+        fileResult.changed = true;
+        filesChanged++;
+      }
+    } catch (err) {
+      fileResult.error = err instanceof Error ? err.message : String(err);
     }
 
     files.push(fileResult);

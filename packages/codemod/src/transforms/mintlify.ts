@@ -124,6 +124,7 @@ function findNextTag(source: string, from: number): FoundTag | null {
 
 function findTagEnd(source: string, from: number): number {
   let inQuote: '"' | "'" | null = null;
+  let braceDepth = 0;
   for (let j = from; j < source.length; j++) {
     const ch = source[j];
     if (inQuote) {
@@ -134,7 +135,10 @@ function findTagEnd(source: string, from: number): number {
       if (ch === inQuote) inQuote = null;
     } else {
       if (ch === '"' || ch === "'") inQuote = ch;
-      else if (ch === ">") return j;
+      else if (ch === "{") braceDepth++;
+      else if (ch === "}") {
+        if (braceDepth > 0) braceDepth--;
+      } else if (ch === ">" && braceDepth === 0) return j;
     }
   }
   return -1;

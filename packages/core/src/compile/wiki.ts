@@ -36,7 +36,11 @@ export async function compileWiki(options: CompileWikiOptions): Promise<CompileR
     const pagePath = pagePaths[i];
     const { filePath, raw } = resolvedFiles[i];
     const { frontmatter, content } = parseMarkdownFrontmatter(raw, pagePath);
-    const { content: rewritten, assets } = await extractAssets(content, {
+    const {
+      content: rewritten,
+      assets,
+      manifest,
+    } = await extractAssets(content, {
       baseDir: dir,
       filePath,
     });
@@ -62,6 +66,7 @@ export async function compileWiki(options: CompileWikiOptions): Promise<CompileR
           format: "topik",
           value: rewritten,
         },
+        ...(manifest.length > 0 ? { assets: manifest } : {}),
       },
     };
 

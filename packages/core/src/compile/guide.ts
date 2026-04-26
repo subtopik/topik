@@ -40,7 +40,11 @@ export async function compileGuides(options: CompileGuidesOptions): Promise<Comp
     const filePath = join(dir, file);
     const rawContent = await readFile(filePath, "utf-8");
     const { frontmatter, content } = parseMarkdownFrontmatter(rawContent, file);
-    const { content: rewritten, assets } = await extractAssets(content, {
+    const {
+      content: rewritten,
+      assets,
+      manifest,
+    } = await extractAssets(content, {
       baseDir: dir,
       filePath,
     });
@@ -76,6 +80,7 @@ export async function compileGuides(options: CompileGuidesOptions): Promise<Comp
           format: "topik",
           value: rewritten,
         },
+        ...(manifest.length > 0 ? { assets: manifest } : {}),
       },
     };
 

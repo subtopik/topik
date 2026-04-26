@@ -249,6 +249,31 @@ describe("extractAssets", () => {
     expect(assets[0].name).toBe(PNG_NAME);
   });
 
+  test("returns a manifest of asset names in document order", async () => {
+    await writePng("a.png");
+    await writeFile(
+      join(dir, "b.png"),
+      Buffer.from(
+        "89504e470d0a1a0a0000000d49484452000000020000000208060000007234e9930000000c49444154789c63600200000000050001b8d2a85f0000000049454e44ae426082",
+        "hex",
+      ),
+    );
+    const filePath = join(dir, "page.md");
+    const source = "![b](./b.png)\n\n![a](./a.png)\n\n![b again](./b.png)\n";
+
+    const { assets, manifest } = await extractAssets(source, { baseDir: dir, filePath });
+
+    const aName = assets.find((x) => x.spec.uri === "a.png")!.name;
+    const bName = assets.find((x) => x.spec.uri === "b.png")!.name;
+    expect(manifest).toEqual([bName, aName]);
+  });
+
+  test("manifest is empty when no assets are referenced", async () => {
+    const filePath = join(dir, "page.md");
+    const { manifest } = await extractAssets("# No assets here\n", { baseDir: dir, filePath });
+    expect(manifest).toEqual([]);
+  });
+
   test("omits media type when extension is unknown", async () => {
     await writePng("blob.xyz");
     const filePath = join(dir, "page.md");

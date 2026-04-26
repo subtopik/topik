@@ -210,6 +210,16 @@ describe("compileGuides", () => {
     });
     expect(assets[0].name).toMatch(/^[a-f0-9]{16}$/);
     expect(guide.spec.content.value).toContain(`![hero](asset:${assets[0].name})`);
+    expect(guide.spec.assets).toEqual([assets[0].name]);
+  });
+
+  test("omits assets manifest when no assets are referenced", async () => {
+    await writeCollectionConfig("id: blog\ntitle: Blog\n");
+    await writeGuide("plain", "# Plain\n\nNo assets here.");
+
+    const result = await compileGuides({ dir });
+    const guide = result.resources[0] as Guide;
+    expect(guide.spec).not.toHaveProperty("assets");
   });
 
   test("dedupes assets referenced from multiple guides", async () => {

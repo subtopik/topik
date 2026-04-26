@@ -52,6 +52,8 @@ export interface ExtractAssetsResult {
   content: string;
   /** Asset resources referenced by this markdown file. */
   assets: Asset[];
+  /** Asset names referenced by this file, in document order, deduped. */
+  manifest: string[];
 }
 
 interface FoundRef {
@@ -87,7 +89,7 @@ export async function extractAssets(
   });
 
   if (refs.size === 0) {
-    return { content: source, assets: [] };
+    return { content: source, assets: [], manifest: [] };
   }
 
   const urlToId = new Map<string, string>();
@@ -100,8 +102,18 @@ export async function extractAssets(
     }),
   );
 
+  const manifest: string[] = [];
+  const seen = new Set<string>();
+  for (const ref of refs.values()) {
+    const name = urlToId.get(ref.original);
+    if (name && !seen.has(name)) {
+      manifest.push(name);
+      seen.add(name);
+    }
+  }
+
   const rewritten = rewriteUrls(source, urlToId);
-  return { content: rewritten, assets: Array.from(byName.values()) };
+  return { content: rewritten, assets: Array.from(byName.values()), manifest };
 }
 
 function hasKnownAssetExtension(url: string): boolean {

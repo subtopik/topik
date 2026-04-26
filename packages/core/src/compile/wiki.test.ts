@@ -324,6 +324,7 @@ navigation:
     expect(assets).toHaveLength(1);
     expect(assets[0].name).toMatch(/^[a-f0-9]{16}$/);
     expect(page.spec.content.value).toContain(`![hero](asset:${assets[0].name})`);
+    expect(page.spec.assets).toEqual([assets[0].name]);
   });
 
   test("throws when referenced page file is missing", async () => {

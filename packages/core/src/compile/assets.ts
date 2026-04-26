@@ -94,13 +94,23 @@ export async function extractAssets(
 
   const urlToId = new Map<string, string>();
   const byName = new Map<string, Asset>();
-  await Promise.all(
-    Array.from(refs.values()).map(async (ref) => {
-      const asset = await toAsset(ref);
-      urlToId.set(ref.original, asset.name);
-      byName.set(asset.name, asset);
-    }),
-  );
+  const refList = Array.from(refs.values());
+  const settled = await Promise.allSettled(refList.map((ref) => toAsset(ref)));
+  const failures: string[] = [];
+  for (let i = 0; i < settled.length; i++) {
+    const result = settled[i];
+    if (result.status === "fulfilled") {
+      urlToId.set(refList[i].original, result.value.name);
+      byName.set(result.value.name, result.value);
+    } else {
+      failures.push(result.reason instanceof Error ? result.reason.message : String(result.reason));
+    }
+  }
+  if (failures.length > 0) {
+    throw new Error(
+      `Failed to extract ${failures.length} asset(s):\n  - ${failures.join("\n  - ")}`,
+    );
+  }
 
   const manifest: string[] = [];
   const seen = new Set<string>();
@@ -183,6 +193,7 @@ async function toAsset(ref: FoundRef): Promise<Asset> {
   }
   const digest = createHash("sha256").update(bytes).digest();
   const integrity = `sha256-${digest.toString("base64")}`;
+  // 64-bit prefix: ~50% collision odds at ~2^32 assets, plenty for content catalogs.
   const name = digest.toString("hex").slice(0, 16);
   const extMatch = /\.([a-z0-9]+)(?:[?#].*)?$/i.exec(ref.relFromBase);
   const ext = extMatch ? `.${extMatch[1].toLowerCase()}` : "";

@@ -120,6 +120,14 @@ describe("extractAssets", () => {
     );
   });
 
+  test("aggregates failures across multiple missing assets", async () => {
+    const filePath = join(dir, "page.md");
+    const source = "![a](./a.png)\n\n![b](./b.png)\n";
+    await expect(extractAssets(source, { baseDir: dir, filePath })).rejects.toThrow(
+      /Failed to extract 2 asset/,
+    );
+  });
+
   test("handles reference-style definitions", async () => {
     await writePng("images/hero.png");
     const filePath = join(dir, "page.md");

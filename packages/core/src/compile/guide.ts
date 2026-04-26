@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import type { Guide } from "@topik/schema";
 import type { Resource } from "../resource";
 import { parseCollectionConfig } from "../config/collection";
+import { extractAssets } from "./assets";
 import { readOptionalConfigFile } from "./config";
 import {
   extractMarkdownTitle,
@@ -33,18 +34,32 @@ export async function compileGuides(options: CompileGuidesOptions): Promise<Comp
   const markdownFiles = files.filter((f) => f.endsWith(".md") || f.endsWith(".mdx")).sort();
 
   const resources: Resource[] = [];
+  const assetsById = new Map<string, (typeof resources)[number]>();
 
   for (const file of markdownFiles) {
     const filePath = join(dir, file);
     const rawContent = await readFile(filePath, "utf-8");
     const { frontmatter, content } = parseMarkdownFrontmatter(rawContent, file);
+    const {
+      content: rewritten,
+      assets,
+      manifest,
+    } = await extractAssets(content, {
+      baseDir: dir,
+      filePath,
+    });
+    for (const asset of assets) {
+      if (!assetsById.has(asset.name)) {
+        assetsById.set(asset.name, asset);
+      }
+    }
 
     const slug = fileToSlug(file);
     const name = `${config.id}-${slug}`;
     const title =
       typeof frontmatter.title === "string"
         ? frontmatter.title
-        : extractMarkdownTitle(content, slug);
+        : extractMarkdownTitle(rewritten, slug);
 
     const tags = mergeTags(config.tags, frontmatter.tags);
     const authors = parseReferenceList(frontmatter.authors, "authors", file);
@@ -63,12 +78,17 @@ export async function compileGuides(options: CompileGuidesOptions): Promise<Comp
         ...(tags.length > 0 ? { tags } : {}),
         content: {
           format: "topik",
-          value: content,
+          value: rewritten,
         },
+        ...(manifest.length > 0 ? { assets: manifest } : {}),
       },
     };
 
     resources.push(guide);
+  }
+
+  for (const asset of assetsById.values()) {
+    resources.push(asset);
   }
 
   return { resources };

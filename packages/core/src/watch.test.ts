@@ -32,7 +32,8 @@ describe("watch", () => {
     expect(resource).toBeDefined();
     expect(resource?.type).toBe("Guide");
     expect(resource?.name).toBe("guides-intro");
-    expect(resource?.spec.title).toBe("Intro");
+    if (resource?.type !== "Guide") throw new Error("expected Guide");
+    expect(resource.spec.title).toBe("Intro");
   });
 
   test("emits update when a file changes", async () => {

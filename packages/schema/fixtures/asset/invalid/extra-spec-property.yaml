@@ -1,0 +1,8 @@
+apiVersion: v1
+type: Asset
+name: images-hero-png
+spec:
+  uri: images/hero.png
+  mediaType: image/png
+  integrity: sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=
+  width: 800

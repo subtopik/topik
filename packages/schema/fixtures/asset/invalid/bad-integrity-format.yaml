@@ -1,0 +1,7 @@
+apiVersion: v1
+type: Asset
+name: images-hero-png
+spec:
+  uri: images/hero.png
+  mediaType: image/png
+  integrity: not-a-valid-integrity

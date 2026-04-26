@@ -1,4 +1,5 @@
 export { personSchema, type Person } from "./person";
+export { assetSchema, type Asset } from "./asset";
 export { guideSchema, type Guide } from "./guide";
 export { wikiSchema, type Wiki, type WikiNavNode, type WikiTheme } from "./wiki";
 export { wikiPageSchema, type WikiPage } from "./wiki-page";

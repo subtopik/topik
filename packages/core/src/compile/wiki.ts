@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import type { Wiki, WikiNavNode as CompiledWikiNavNode, WikiPage } from "@topik/schema";
 import type { Resource } from "../resource";
 import { parseWikiConfig, type WikiNavNode } from "../config/wiki";
+import { extractAssets } from "./assets";
 import { readOptionalConfigFile } from "./config";
 import { extractMarkdownTitle, parseMarkdownFrontmatter, type CompileResult } from "./shared";
 
@@ -20,23 +21,39 @@ export async function compileWiki(options: CompileWikiOptions): Promise<CompileR
 
   const config = parseWikiConfig(raw);
   const pagePaths = config.navigation ? [...new Set(collectPagePaths(config.navigation))] : [];
-  const fileContents = await Promise.all(
+  const resolvedFiles = await Promise.all(
     pagePaths.map(async (pagePath) => {
       const filePath = await resolveFilePath(dir, pagePath);
-      return readFile(filePath, "utf-8");
+      const raw = await readFile(filePath, "utf-8");
+      return { filePath, raw };
     }),
   );
 
   const resources: Resource[] = [];
+  const assetsById = new Map<string, (typeof resources)[number]>();
 
   for (let i = 0; i < pagePaths.length; i++) {
     const pagePath = pagePaths[i];
-    const { frontmatter, content } = parseMarkdownFrontmatter(fileContents[i], pagePath);
+    const { filePath, raw } = resolvedFiles[i];
+    const { frontmatter, content } = parseMarkdownFrontmatter(raw, pagePath);
+    const {
+      content: rewritten,
+      assets,
+      manifest,
+    } = await extractAssets(content, {
+      baseDir: dir,
+      filePath,
+    });
+    for (const asset of assets) {
+      if (!assetsById.has(asset.name)) {
+        assetsById.set(asset.name, asset);
+      }
+    }
     const name = pagePathToName(pagePath);
     const title =
       typeof frontmatter.title === "string"
         ? frontmatter.title
-        : extractMarkdownTitle(content, name);
+        : extractMarkdownTitle(rewritten, name);
 
     const pageResource: WikiPage = {
       apiVersion: "v1",
@@ -47,12 +64,17 @@ export async function compileWiki(options: CompileWikiOptions): Promise<CompileR
         title,
         content: {
           format: "topik",
-          value: content,
+          value: rewritten,
         },
+        ...(manifest.length > 0 ? { assets: manifest } : {}),
       },
     };
 
     resources.push(pageResource);
+  }
+
+  for (const asset of assetsById.values()) {
+    resources.push(asset);
   }
 
   const wikiResource: Wiki = {

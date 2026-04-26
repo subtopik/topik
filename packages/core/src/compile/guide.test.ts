@@ -55,7 +55,7 @@ describe("compileGuides", () => {
     await writeGuide("my-post", "# My Custom Title\n\nContent here.");
 
     const result = await compileGuides({ dir });
-    expect(result.resources[0].spec.title).toBe("My Custom Title");
+    expect((result.resources[0] as Guide).spec.title).toBe("My Custom Title");
   });
 
   test("uses frontmatter title over heading", async () => {
@@ -66,7 +66,7 @@ describe("compileGuides", () => {
     );
 
     const result = await compileGuides({ dir });
-    expect(result.resources[0].spec.title).toBe("Frontmatter Title");
+    expect((result.resources[0] as Guide).spec.title).toBe("Frontmatter Title");
   });
 
   test("falls back to formatted filename when no heading", async () => {
@@ -74,7 +74,7 @@ describe("compileGuides", () => {
     await writeGuide("getting-started", "No heading here, just content.");
 
     const result = await compileGuides({ dir });
-    expect(result.resources[0].spec.title).toBe("Getting Started");
+    expect((result.resources[0] as Guide).spec.title).toBe("Getting Started");
   });
 
   test("merges collection tags with frontmatter tags", async () => {
@@ -161,8 +161,9 @@ describe("compileGuides", () => {
     await writeFile(join(dir, "intro.mdx"), "---\ntitle: Introduction\n---\n\nSome MDX content.");
 
     const result = await compileGuides({ dir });
-    expect(result.resources[0].name).toBe("blog-intro");
-    expect(result.resources[0].spec.title).toBe("Introduction");
+    const guide = result.resources[0] as Guide;
+    expect(guide.name).toBe("blog-intro");
+    expect(guide.spec.title).toBe("Introduction");
   });
 
   test("ignores non-markdown files", async () => {
@@ -187,6 +188,53 @@ describe("compileGuides", () => {
     await writeGuide("post", "# Post\n");
 
     await expect(compileGuides({ dir })).resolves.toEqual({ resources: [] });
+  });
+
+  test("extracts local image references as Asset resources", async () => {
+    await writeCollectionConfig("id: blog\ntitle: Blog\n");
+    const png = Buffer.from(
+      "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000000500010d0a2db40000000049454e44ae426082",
+      "hex",
+    );
+    await writeFile(join(dir, "hero.png"), png);
+    await writeGuide("post", "# Post\n\n![hero](./hero.png)\n");
+
+    const result = await compileGuides({ dir });
+    const guide = result.resources.find((r) => r.type === "Guide") as Guide;
+    const assets = result.resources.filter((r) => r.type === "Asset");
+
+    expect(assets).toHaveLength(1);
+    expect(assets[0]).toMatchObject({
+      type: "Asset",
+      spec: { uri: "hero.png", mediaType: "image/png" },
+    });
+    expect(assets[0].name).toMatch(/^[a-f0-9]{16}$/);
+    expect(guide.spec.content.value).toContain(`![hero](asset:${assets[0].name})`);
+    expect(guide.spec.assets).toEqual([assets[0].name]);
+  });
+
+  test("omits assets manifest when no assets are referenced", async () => {
+    await writeCollectionConfig("id: blog\ntitle: Blog\n");
+    await writeGuide("plain", "# Plain\n\nNo assets here.");
+
+    const result = await compileGuides({ dir });
+    const guide = result.resources[0] as Guide;
+    expect(guide.spec).not.toHaveProperty("assets");
+  });
+
+  test("dedupes assets referenced from multiple guides", async () => {
+    await writeCollectionConfig("id: blog\ntitle: Blog\n");
+    const png = Buffer.from(
+      "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000000500010d0a2db40000000049454e44ae426082",
+      "hex",
+    );
+    await writeFile(join(dir, "shared.png"), png);
+    await writeGuide("one", "# One\n\n![s](./shared.png)\n");
+    await writeGuide("two", "# Two\n\n![s](./shared.png)\n");
+
+    const result = await compileGuides({ dir });
+    const assets = result.resources.filter((r) => r.type === "Asset");
+    expect(assets).toHaveLength(1);
   });
 
   test("compiled Guide resources validate against schema", async () => {

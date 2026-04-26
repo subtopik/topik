@@ -85,6 +85,24 @@ describe("transformMintlify", () => {
     expect(content).toBe('{% steps %}\n  {% step title="one" %}do this{% /step %}\n{% /steps %}');
   });
 
+  test("escapes inner double quotes when re-quoting single-quoted attributes", () => {
+    const { content } = transformMintlify(`<Frame caption='say "hi"'>x</Frame>`);
+    expect(content).toBe('{% frame caption="say \\"hi\\"" %}x{% /frame %}');
+  });
+
+  test("does not mistake > inside a quoted attribute for the tag end", () => {
+    const { content } = transformMintlify('<Frame caption="x>y">body</Frame>');
+    expect(content).toBe('{% frame caption="x>y" %}body{% /frame %}');
+  });
+
+  test("warning column points at the offending attribute, not the tag start", () => {
+    const source = '<Card title="x" icon={Icon} />';
+    const { warnings } = transformMintlify(source);
+    expect(warnings).toHaveLength(1);
+    // "icon={Icon}" starts at column 17 (1-indexed); the < is at column 1
+    expect(warnings[0].column).toBe(17);
+  });
+
   test("leaves files with no Mintlify components untouched", () => {
     const source = "# Hello\n\nJust regular markdown.\n";
     const { content, changed } = transformMintlify(source);

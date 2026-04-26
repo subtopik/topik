@@ -55,7 +55,7 @@ export function transformMintlify(source: string): TransformResult {
         next.name,
         next.rawAttrs,
         next.kind === "selfclose",
-        next.start,
+        next.attrsStart,
         source,
         warnings,
       );
@@ -77,6 +77,7 @@ interface FoundTag {
   kind: "open" | "close" | "selfclose";
   name: string;
   rawAttrs: string;
+  attrsStart: number;
 }
 
 function findNextTag(source: string, from: number): FoundTag | null {
@@ -105,17 +106,38 @@ function findNextTag(source: string, from: number): FoundTag | null {
     }
 
     const afterName = nameStart + name.length;
-    const tagEnd = source.indexOf(">", afterName);
+    const tagEnd = findTagEnd(source, afterName);
     if (tagEnd < 0) return null;
 
     const interior = source.slice(afterName, tagEnd);
     const isSelfClose = interior.endsWith("/");
-    const rawAttrs = (isSelfClose ? interior.slice(0, -1) : interior).trim();
+    const rawInterior = isSelfClose ? interior.slice(0, -1) : interior;
+    const leadingWs = rawInterior.length - rawInterior.trimStart().length;
+    const rawAttrs = rawInterior.trim();
+    const attrsStart = afterName + leadingWs;
 
     const kind: FoundTag["kind"] = isClose ? "close" : isSelfClose ? "selfclose" : "open";
-    return { start: i, end: tagEnd + 1, kind, name, rawAttrs };
+    return { start: i, end: tagEnd + 1, kind, name, rawAttrs, attrsStart };
   }
   return null;
+}
+
+function findTagEnd(source: string, from: number): number {
+  let inQuote: '"' | "'" | null = null;
+  for (let j = from; j < source.length; j++) {
+    const ch = source[j];
+    if (inQuote) {
+      if (ch === "\\") {
+        j++;
+        continue;
+      }
+      if (ch === inQuote) inQuote = null;
+    } else {
+      if (ch === '"' || ch === "'") inQuote = ch;
+      else if (ch === ">") return j;
+    }
+  }
+  return -1;
 }
 
 function isKnownComponent(name: string): boolean {
@@ -131,7 +153,7 @@ function renderOpenTag(
   componentName: string,
   rawAttrs: string,
   selfClose: boolean,
-  start: number,
+  attrsStart: number,
   source: string,
   warnings: TransformWarning[],
 ): string {
@@ -144,7 +166,7 @@ function renderOpenTag(
   }
 
   if (rawAttrs.length > 0) {
-    const collected = parseAttrs(rawAttrs, start, source, warnings);
+    const collected = parseAttrs(rawAttrs, attrsStart, source, warnings);
     attrParts.push(...collected);
   }
 
@@ -155,7 +177,7 @@ function renderOpenTag(
 
 function parseAttrs(
   raw: string,
-  startOffset: number,
+  attrsStart: number,
   source: string,
   warnings: TransformWarning[],
 ): string[] {
@@ -165,7 +187,7 @@ function parseAttrs(
   while ((match = ATTR_RE.exec(raw)) !== null) {
     const [, name, doubleQuoted, singleQuoted, jsExpression] = match;
     if (jsExpression !== undefined) {
-      const { line, column } = lineColumnAt(source, startOffset + match.index);
+      const { line, column } = lineColumnAt(source, attrsStart + match.index);
       warnings.push({
         line,
         column,
@@ -173,8 +195,12 @@ function parseAttrs(
       });
       continue;
     }
+    // Re-emit as double-quoted Markdoc attribute. Values from a single-quoted
+    // source may contain literal " that must be escaped.
+    const wasDoubleQuoted = doubleQuoted !== undefined;
     const value = doubleQuoted ?? singleQuoted ?? "";
-    attrs.push(`${name}="${value}"`);
+    const safeValue = wasDoubleQuoted ? value : value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    attrs.push(`${name}="${safeValue}"`);
   }
   return attrs;
 }

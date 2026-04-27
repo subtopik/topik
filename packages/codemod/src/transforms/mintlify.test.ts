@@ -56,8 +56,9 @@ describe("transformMintlify", () => {
 
   test("leaves lowercase HTML tags alone", () => {
     const source = "<img src='./x.png' />\n<a href='/foo'>link</a>";
-    const { content } = transformMintlify(source);
+    const { content, changed } = transformMintlify(source);
     expect(content).toBe(source);
+    expect(changed).toBe(false);
   });
 
   test("leaves tags inside fenced code blocks alone", () => {

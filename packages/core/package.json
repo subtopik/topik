@@ -22,18 +22,15 @@
     "prepublishOnly": "vp run build"
   },
   "dependencies": {
+    "@markdoc/markdoc": "catalog:",
     "@topik/schema": "workspace:*",
     "ajv": "^8.18.0",
     "ajv-formats": "^3.0.1",
     "chokidar": "^5.0.0",
-    "remark-parse": "catalog:",
-    "unified": "catalog:",
-    "unist-util-visit": "catalog:",
     "yaml": "^2.8.3",
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@types/mdast": "catalog:",
     "@types/node": "catalog:",
     "@typescript/native-preview": "catalog:",
     "typescript": "catalog:",

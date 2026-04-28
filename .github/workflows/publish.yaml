@@ -22,7 +22,7 @@ jobs:
 
       - run: vp install
 
-      - run: vp run build -r
+      - run: vp run -r build
 
       - run: vp check
 
@@ -46,7 +46,7 @@ jobs:
 
       - run: vp install
 
-      - run: vp run build -r
+      - run: vp run -r build
 
       - name: Publish packages
         run: |

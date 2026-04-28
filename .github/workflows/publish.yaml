@@ -70,6 +70,6 @@ jobs:
 
             echo "Publishing $dir@$version with tag $tag"
             cd "$dir"
-            vp pm publish --no-git-checks --provenance --access public --tag "$tag"
+            vp pm publish -- --no-git-checks --provenance --access public --tag "$tag"
             cd "$GITHUB_WORKSPACE"
           done

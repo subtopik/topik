@@ -24,7 +24,7 @@
   "dependencies": {
     "@markdoc/markdoc": "catalog:",
     "@topik/schema": "workspace:*",
-    "ajv": "^8.18.0",
+    "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "chokidar": "^5.0.0",
     "yaml": "^2.8.3",

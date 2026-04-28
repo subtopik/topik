@@ -1,10 +1,10 @@
 {
-  "name": "@topik/cli",
-  "version": "0.1.0-alpha.2",
-  "description": "Topik CLI",
+  "name": "@topik/codemod",
+  "version": "0.1.0-alpha.0",
+  "description": "Codemods for migrating content to Topik",
   "license": "MIT",
   "bin": {
-    "topik": "./dist/cli.mjs"
+    "topik-codemod": "./dist/cli.mjs"
   },
   "files": [
     "dist"
@@ -25,10 +25,7 @@
     "prepublishOnly": "vp run build"
   },
   "dependencies": {
-    "@drizzle-team/brocli": "catalog:",
-    "@markdoc/markdoc": "catalog:",
-    "@topik/core": "workspace:*",
-    "yaml": "^2.8.3"
+    "@drizzle-team/brocli": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

@@ -62,7 +62,7 @@ describe("extractAssets", () => {
 
     expect(assets).toHaveLength(1);
     expect(assets[0].spec.uri).toBe("images/hero.png");
-    expect(content).toBe(`![hero](asset:${PNG_NAME})`);
+    expect(content).toContain(`![hero](asset:${PNG_NAME})`);
   });
 
   test("resolves relative refs against the file's directory", async () => {
@@ -128,7 +128,7 @@ describe("extractAssets", () => {
     );
   });
 
-  test("handles reference-style definitions", async () => {
+  test("handles reference-style definitions (Markdoc inlines them)", async () => {
     await writePng("images/hero.png");
     const filePath = join(dir, "page.md");
     const source = "![hero][h]\n\n[h]: ./images/hero.png\n";
@@ -139,7 +139,7 @@ describe("extractAssets", () => {
     });
 
     expect(assets).toHaveLength(1);
-    expect(content).toContain(`[h]: asset:${PNG_NAME}`);
+    expect(content).toContain(`![hero](asset:${PNG_NAME})`);
   });
 
   test("does not rewrite image syntax inside fenced code blocks", async () => {
@@ -229,6 +229,31 @@ describe("extractAssets", () => {
 
     expect(assets).toHaveLength(0);
     expect(content).toBe(source);
+  });
+
+  test("extracts images wrapped in Markdoc tags", async () => {
+    await writePng("hero.png");
+    const filePath = join(dir, "page.md");
+    const source = "{% frame %}\n![hero](./hero.png)\n{% /frame %}\n";
+
+    const { content, assets } = await extractAssets(source, { baseDir: dir, filePath });
+
+    expect(assets).toHaveLength(1);
+    expect(assets[0].spec.uri).toBe("hero.png");
+    expect(content).toContain(`![hero](asset:${PNG_NAME})`);
+    expect(content).toContain("{% frame %}");
+  });
+
+  test("extracts asset URIs from Markdoc tag attributes", async () => {
+    await writePng("demo.mp4");
+    const filePath = join(dir, "page.md");
+    const source = '{% video src="./demo.mp4" /%}\n';
+
+    const { content, assets } = await extractAssets(source, { baseDir: dir, filePath });
+
+    expect(assets).toHaveLength(1);
+    expect(assets[0].spec.uri).toBe("demo.mp4");
+    expect(content).toContain(`src="asset:${assets[0].name}"`);
   });
 
   test("rewrites URL-encoded paths", async () => {

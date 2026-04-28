@@ -1,13 +1,8 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { dirname, isAbsolute, posix, relative, resolve, sep } from "node:path";
+import Markdoc, { type Node } from "@markdoc/markdoc";
 import type { Asset } from "@topik/schema";
-import type { Root } from "mdast";
-import remarkParse from "remark-parse";
-import { unified } from "unified";
-import { visit } from "unist-util-visit";
-
-const markdown = unified().use(remarkParse);
 
 const MIME_BY_EXT: Record<string, string> = {
   ".png": "image/png",
@@ -40,6 +35,8 @@ const MIME_BY_EXT: Record<string, string> = {
   ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 };
 
+const ASSET_TAG_ATTRS = ["src", "href"];
+
 export interface ExtractAssetsOptions {
   /** Absolute path to the compilation root (content directory). */
   baseDir: string;
@@ -48,9 +45,9 @@ export interface ExtractAssetsOptions {
 }
 
 export interface ExtractAssetsResult {
-  /** Rewritten markdown with local image URLs replaced by asset:<id> refs. */
+  /** Rewritten source with local asset URIs replaced by asset:<id> refs. */
   content: string;
-  /** Asset resources referenced by this markdown file. */
+  /** Asset resources referenced by this file. */
   assets: Asset[];
   /** Asset names referenced by this file, in document order, deduped. */
   manifest: string[];
@@ -62,29 +59,46 @@ interface FoundRef {
   relFromBase: string;
 }
 
+interface AttrSlot {
+  node: Node;
+  attr: string;
+}
+
 export async function extractAssets(
   source: string,
   options: ExtractAssetsOptions,
 ): Promise<ExtractAssetsResult> {
   const { baseDir, filePath } = options;
-  const tree = markdown.parse(source) as Root;
+  const ast = Markdoc.parse(source);
 
   const refs = new Map<string, FoundRef>();
-  const collectRef = (url: string) => {
+  const slots = new Map<string, AttrSlot[]>();
+
+  const collect = (url: string, slot: AttrSlot, requireKnownExtension: boolean) => {
     if (!isLocalRef(url)) return;
-    if (refs.has(url)) return;
-    const absPath = resolveAssetPath(url, { baseDir, filePath });
-    const relFromBase = relative(baseDir, absPath).split(sep).join(posix.sep);
-    refs.set(url, { original: url, absPath, relFromBase });
+    if (requireKnownExtension && !hasKnownAssetExtension(url)) return;
+    if (!refs.has(url)) {
+      const absPath = resolveAssetPath(url, { baseDir, filePath });
+      const relFromBase = relative(baseDir, absPath).split(sep).join(posix.sep);
+      refs.set(url, { original: url, absPath, relFromBase });
+    }
+    const list = slots.get(url) ?? [];
+    list.push(slot);
+    slots.set(url, list);
   };
 
-  visit(tree, (node) => {
+  walk(ast, (node) => {
     if (node.type === "image") {
-      collectRef(node.url);
+      const url = stringAttr(node, "src");
+      if (url) collect(url, { node, attr: "src" }, false);
     } else if (node.type === "link") {
-      if (hasKnownAssetExtension(node.url)) collectRef(node.url);
-    } else if (node.type === "definition") {
-      if (hasKnownAssetExtension(node.url)) collectRef(node.url);
+      const url = stringAttr(node, "href");
+      if (url) collect(url, { node, attr: "href" }, true);
+    } else if (node.type === "tag") {
+      for (const attr of ASSET_TAG_ATTRS) {
+        const url = stringAttr(node, attr);
+        if (url) collect(url, { node, attr }, true);
+      }
     }
   });
 
@@ -122,8 +136,26 @@ export async function extractAssets(
     }
   }
 
-  const rewritten = rewriteUrls(source, urlToId);
-  return { content: rewritten, assets: Array.from(byName.values()), manifest };
+  for (const [url, slotList] of slots.entries()) {
+    const id = urlToId.get(url);
+    if (!id) continue;
+    for (const slot of slotList) {
+      slot.node.attributes[slot.attr] = `asset:${id}`;
+    }
+  }
+
+  const content = Markdoc.format(ast);
+  return { content, assets: Array.from(byName.values()), manifest };
+}
+
+function walk(node: Node, fn: (node: Node) => void): void {
+  fn(node);
+  for (const child of node.children) walk(child, fn);
+}
+
+function stringAttr(node: Node, attr: string): string | undefined {
+  const value = node.attributes?.[attr];
+  return typeof value === "string" ? value : undefined;
 }
 
 function hasKnownAssetExtension(url: string): boolean {
@@ -204,56 +236,4 @@ async function toAsset(ref: FoundRef): Promise<Asset> {
     name,
     spec: { uri: ref.relFromBase, integrity, ...(mediaType ? { mediaType } : {}) },
   };
-}
-
-function rewriteUrls(source: string, urlToId: Map<string, string>): string {
-  const tree = markdown.parse(source) as Root;
-  const edits: Array<{ start: number; end: number; replacement: string }> = [];
-
-  visit(tree, (node) => {
-    if (node.type !== "image" && node.type !== "link" && node.type !== "definition") return;
-    const id = urlToId.get(node.url);
-    if (!id) return;
-    const pos = node.position;
-    if (!pos) return;
-    const start = pos.start.offset;
-    const end = pos.end.offset;
-    if (start == null || end == null) return;
-    const segment = source.slice(start, end);
-    const replaced = replaceUrlInSegment(segment, node.type, node.url, `asset:${id}`);
-    if (replaced == null) return;
-    edits.push({ start, end, replacement: replaced });
-  });
-
-  if (edits.length === 0) return source;
-  edits.sort((a, b) => b.start - a.start);
-  let out = source;
-  for (const edit of edits) {
-    out = out.slice(0, edit.start) + edit.replacement + out.slice(edit.end);
-  }
-  return out;
-}
-
-function replaceUrlInSegment(
-  segment: string,
-  kind: "image" | "link" | "definition",
-  url: string,
-  replacement: string,
-): string | null {
-  const anchor =
-    kind === "definition" ? findDefinitionUrlAnchor(segment) : findInlineUrlAnchor(segment);
-  if (anchor < 0) return null;
-  const urlIdx = segment.indexOf(url, anchor);
-  if (urlIdx < 0) return null;
-  return segment.slice(0, urlIdx) + replacement + segment.slice(urlIdx + url.length);
-}
-
-function findInlineUrlAnchor(segment: string): number {
-  const idx = segment.indexOf("](");
-  return idx < 0 ? -1 : idx + 2;
-}
-
-function findDefinitionUrlAnchor(segment: string): number {
-  const match = /\]\s*:\s*/.exec(segment);
-  return match ? match.index + match[0].length : -1;
 }

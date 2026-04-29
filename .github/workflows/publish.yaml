@@ -48,7 +48,7 @@ jobs:
       - run: vp run -r build
 
       - name: Upgrade npm for trusted publishing
-        run: npm install -g npm@latest
+        run: npm install -g npm@11.13.0
 
       - name: Publish packages
         run: |

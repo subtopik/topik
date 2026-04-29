@@ -47,9 +47,6 @@ jobs:
 
       - run: vp run -r build
 
-      - name: Upgrade npm for trusted publishing
-        run: npm install -g npm@11.13.0
-
       - name: Publish packages
         run: |
           for pkg in packages/*/package.json; do
@@ -74,6 +71,6 @@ jobs:
             cd "$dir"
             pnpm pack --pack-destination .
             tarball=$(ls -t *.tgz | head -n 1)
-            npm publish "$tarball" --provenance --access public --tag "$tag"
+            npx -y npm@11.13.0 publish "$tarball" --provenance --access public --tag "$tag"
             cd "$GITHUB_WORKSPACE"
           done

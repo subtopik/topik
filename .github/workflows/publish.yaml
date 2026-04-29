@@ -42,11 +42,13 @@ jobs:
         with:
           node-version: "22"
           cache: true
-          registry-url: "https://registry.npmjs.org"
 
       - run: vp install
 
       - run: vp run -r build
+
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@latest
 
       - name: Publish packages
         run: |
@@ -70,6 +72,8 @@ jobs:
 
             echo "Publishing $dir@$version with tag $tag"
             cd "$dir"
-            vp pm publish -- --no-git-checks --provenance --access public --tag "$tag"
+            pnpm pack --pack-destination .
+            tarball=$(ls -t *.tgz | head -n 1)
+            npm publish "$tarball" --provenance --access public --tag "$tag"
             cd "$GITHUB_WORKSPACE"
           done

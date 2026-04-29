@@ -69,7 +69,7 @@ jobs:
 
             echo "Publishing $dir@$version with tag $tag"
             cd "$dir"
-            pnpm pack --pack-destination .
+            vp pm pack -- --pack-destination .
             tarball=$(ls -t *.tgz | head -n 1)
             npx -y npm@11.13.0 publish "$tarball" --provenance --access public --tag "$tag"
             cd "$GITHUB_WORKSPACE"

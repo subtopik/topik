@@ -3,6 +3,11 @@
   "version": "0.1.0-alpha.3",
   "description": "Codemods for migrating content to Topik",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/subtopik/topik.git",
+    "directory": "packages/codemod"
+  },
   "bin": {
     "topik-codemod": "./dist/cli.mjs"
   },

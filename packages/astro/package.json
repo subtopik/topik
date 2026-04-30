@@ -4,6 +4,11 @@
   "private": true,
   "description": "Astro integration for Topik content",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/subtopik/topik.git",
+    "directory": "packages/astro"
+  },
   "files": [
     "dist"
   ],

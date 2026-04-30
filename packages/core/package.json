@@ -3,6 +3,11 @@
   "version": "0.1.0-alpha.3",
   "description": "Topik core library",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/subtopik/topik.git",
+    "directory": "packages/core"
+  },
   "files": [
     "dist"
   ],

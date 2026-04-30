@@ -3,6 +3,11 @@
   "version": "0.1.0-alpha.3",
   "description": "JSON Schema definitions for Topik resources",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/subtopik/topik.git",
+    "directory": "packages/schema"
+  },
   "files": [
     "dist"
   ],

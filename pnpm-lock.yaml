@@ -53,8 +53,8 @@ importers:
         specifier: 'catalog:'
         version: 24.12.0
       astro:
-        specifier: ^6.2.2
-        version: 6.2.2(@types/node@24.12.0)(jiti@2.6.1)(typescript@6.0.2)(yaml@2.8.4)
+        specifier: ^6.3.1
+        version: 6.3.1(@types/node@24.12.0)(jiti@2.6.1)(typescript@6.0.2)(yaml@2.8.4)
       typescript:
         specifier: 'catalog:'
         version: 6.0.2
@@ -200,8 +200,8 @@ packages:
     resolution: {integrity: sha512-nksZQVjlferuWzhPsBpQ1JE5XuKAf1id1/9Hj4a9KG4+ofrlzxUUwX4YGQF/SuDiuiGKEnzopGOt38F3AnVWsQ==}
     engines: {node: '>=22.12.0'}
 
-  '@astrojs/telemetry@3.3.1':
-    resolution: {integrity: sha512-7fcIxXS9J4ls5tr8b3ww9rbAIz2+HrhNJYZdkAhhB4za/I5IZ/60g+Bs8q7zwG0tOIZfNB4JWhVJ1Qkl/OrNCw==}
+  '@astrojs/telemetry@3.3.2':
+    resolution: {integrity: sha512-j8DNruA8ors99Al39RYZPJK4DC1bKkoNm93mAMuBhY9TCNC4R8n1q7ovFnJ5qhGh5Lsh7pa1gpQVpYpsJPeTHQ==}
     engines: {node: 18.20.8 || ^20.3.0 || >=22.0.0}
 
   '@babel/helper-string-parser@7.27.1':
@@ -1284,8 +1284,8 @@ packages:
     resolution: {integrity: sha512-Izi8RQcffqCeNVgFigKli1ssklIbpHnCYc6AknXGYoB6grJqyeby7jv12JUQgmTAnIDnbck1uxksT4dzN3PWBA==}
     engines: {node: '>=12'}
 
-  astro@6.2.2:
-    resolution: {integrity: sha512-zkne2lZU+iTZPBK8F4gbMfrw5f11bT4VXiBxcdFHcPvYyH+Hox7V1sZu97RDpvwmHi+wQ0efKv89KY5744a0jQ==}
+  astro@6.3.1:
+    resolution: {integrity: sha512-atz6dmkE3Gu24bDgb7g2RE/BYnKqPYIHd6hTUM1UXvu/i7qNZOKLAqEHvgYpv9PQVcgWsXpk4/OOXZ0E/FzvSQ==}
     engines: {node: '>=22.12.0', npm: '>=9.6.5', pnpm: '>=7.1.0'}
     hasBin: true
 
@@ -1401,9 +1401,6 @@ packages:
   diff@8.0.4:
     resolution: {integrity: sha512-DPi0FmjiSU5EvQV0++GFDOJ9ASQUVFh5kD+OzOnYdi7n3Wpm9hWWGfB/O2blfHcMVTL5WkQXSnRiK9makhrcnw==}
     engines: {node: '>=0.3.1'}
-
-  dlv@1.1.3:
-    resolution: {integrity: sha512-+HlytyjlPKnIG8XuRG8WvmBP8xs8P71y+SKKS6ZXWoEgLuePxtDoUEiH7WkdePWrQ5JBpE6aoVqfZfJUQkjXwA==}
 
   dom-serializer@2.0.0:
     resolution: {integrity: sha512-wIkAryiqt/nV5EQKqQpo3SToSOV9J0DnbJqwK7Wv/Trc92zIAYZ4FlMu+JPFW1DfGFt81ZTCGgDEabffXeLyJg==}
@@ -1998,8 +1995,8 @@ packages:
     resolution: {integrity: sha512-6R3J5M4AcbtLUdZmRv2SygeVaM7IhrLXu9BmnOGmmACak8fiUtOsYNWUS4uK7upbmHIBbLBeFeI//477BKLBzA==}
     engines: {node: '>=11.0.0'}
 
-  semver@7.7.4:
-    resolution: {integrity: sha512-vFKC2IEtQnVhpT78h1Yp8wzwrf8CM+MzKMHGJZfBtzhZNycRFnXsHk6E5TxIkkMsgNS7mdX3AGB7x2QM2di4lA==}
+  semver@7.8.0:
+    resolution: {integrity: sha512-AcM7dV/5ul4EekoQ29Agm5vri8JNqRyj39o0qpX6vDF2GZrtutZl5RwgD1XnZjiTAfncsJhMI48QQH3sN87YNA==}
     engines: {node: '>=10'}
     hasBin: true
 
@@ -2345,10 +2342,9 @@ snapshots:
     dependencies:
       prismjs: 1.30.0
 
-  '@astrojs/telemetry@3.3.1':
+  '@astrojs/telemetry@3.3.2':
     dependencies:
       ci-info: 4.4.0
-      dlv: 1.1.3
       dset: 3.1.4
       is-docker: 4.0.0
       is-wsl: 3.1.1
@@ -3081,12 +3077,12 @@ snapshots:
 
   assertion-error@2.0.1: {}
 
-  astro@6.2.2(@types/node@24.12.0)(jiti@2.6.1)(typescript@6.0.2)(yaml@2.8.4):
+  astro@6.3.1(@types/node@24.12.0)(jiti@2.6.1)(typescript@6.0.2)(yaml@2.8.4):
     dependencies:
       '@astrojs/compiler': 4.0.0
       '@astrojs/internal-helpers': 0.9.0
       '@astrojs/markdown-remark': 7.1.1
-      '@astrojs/telemetry': 3.3.1
+      '@astrojs/telemetry': 3.3.2
       '@capsizecss/unpack': 4.0.0
       '@clack/prompts': 1.3.0
       '@oslojs/encoding': 1.1.0
@@ -3121,7 +3117,7 @@ snapshots:
       piccolore: 0.1.3
       picomatch: 4.0.4
       rehype: 13.0.2
-      semver: 7.7.4
+      semver: 7.8.0
       shiki: 4.0.2
       smol-toml: 1.6.1
       svgo: 4.0.1
@@ -3267,8 +3263,6 @@ snapshots:
       dequal: 2.0.3
 
   diff@8.0.4: {}
-
-  dlv@1.1.3: {}
 
   dom-serializer@2.0.0:
     dependencies:
@@ -4170,13 +4164,13 @@ snapshots:
 
   sax@1.6.0: {}
 
-  semver@7.7.4: {}
+  semver@7.8.0: {}
 
   sharp@0.34.5:
     dependencies:
       '@img/colour': 1.1.0
       detect-libc: 2.1.2
-      semver: 7.7.4
+      semver: 7.8.0
     optionalDependencies:
       '@img/sharp-darwin-arm64': 0.34.5
       '@img/sharp-darwin-x64': 0.34.5

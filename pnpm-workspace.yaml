@@ -3,8 +3,8 @@ packages:
   - tools/*
 
 allowBuilds:
-  esbuild: set this to true or false
-  sharp: set this to true or false
+  esbuild: true
+  sharp: true
 
 catalog:
   "@drizzle-team/brocli": ^0.12.0

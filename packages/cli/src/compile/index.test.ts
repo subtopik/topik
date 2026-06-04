@@ -42,7 +42,7 @@ describe("compile command", () => {
       }),
     ).resolves.toBeUndefined();
 
-    expect(log).toHaveBeenCalledWith("WikiPage/docs-intro.json");
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/^WikiPage\/docs-[a-f0-9]{16}\.json$/));
     expect(log).toHaveBeenCalledWith("Wiki/docs.json");
   });
 });

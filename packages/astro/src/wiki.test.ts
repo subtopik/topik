@@ -4,6 +4,7 @@ import type { LoaderContext } from "astro/loaders";
 import { topikWikiLoader } from "./wiki";
 
 const fixturesDir = join(import.meta.dirname, "__fixtures__/docs");
+const wikiPageNamePattern = /^docs-[a-f0-9]{16}$/;
 
 function createMockContext() {
   const entries = new Map<string, { id: string; data: Record<string, unknown>; body?: string }>();
@@ -44,8 +45,9 @@ describe("topikWikiLoader", () => {
     const ctx = createMockContext();
     await loader.load(ctx);
 
-    const entry = ctx.entries.get("docs-introduction");
+    const entry = [...ctx.entries.values()].find((entry) => entry.data.slug === "introduction");
     expect(entry).toBeDefined();
+    expect(entry!.id).toMatch(wikiPageNamePattern);
     expect(entry!.data.title).toBe("Introduction");
     expect(entry!.data.wiki).toBe("docs");
     expect(entry!.data.slug).toBe("introduction");
@@ -56,8 +58,11 @@ describe("topikWikiLoader", () => {
     const ctx = createMockContext();
     await loader.load(ctx);
 
-    const entry = ctx.entries.get("docs-getting-started-installation");
+    const entry = [...ctx.entries.values()].find(
+      (entry) => entry.data.slug === "getting-started/installation",
+    );
     expect(entry).toBeDefined();
+    expect(entry!.id).toMatch(wikiPageNamePattern);
     expect(entry!.data.slug).toBe("getting-started/installation");
   });
 
@@ -66,7 +71,7 @@ describe("topikWikiLoader", () => {
     const ctx = createMockContext();
     await loader.load(ctx);
 
-    const entry = ctx.entries.get("docs-introduction");
+    const entry = [...ctx.entries.values()].find((entry) => entry.data.slug === "introduction");
     expect(entry!.body).toContain("# Introduction");
   });
 
@@ -77,7 +82,7 @@ describe("topikWikiLoader", () => {
     await expect(loader.getNavigation()).resolves.toEqual([
       {
         type: "page",
-        page: "docs-introduction",
+        page: expect.stringMatching(wikiPageNamePattern),
         slug: "introduction",
       },
       {
@@ -86,12 +91,12 @@ describe("topikWikiLoader", () => {
         children: [
           {
             type: "page",
-            page: "docs-getting-started-installation",
+            page: expect.stringMatching(wikiPageNamePattern),
             slug: "getting-started/installation",
           },
           {
             type: "page",
-            page: "docs-getting-started-configuration",
+            page: expect.stringMatching(wikiPageNamePattern),
             slug: "getting-started/configuration",
           },
         ],
@@ -104,7 +109,7 @@ describe("topikWikiLoader", () => {
     expect(nav.length).toBe(2);
     expect(nav[0]).toEqual({
       type: "page",
-      page: "docs-introduction",
+      page: expect.stringMatching(wikiPageNamePattern),
       slug: "introduction",
     });
     expect(nav[1]).toMatchObject({

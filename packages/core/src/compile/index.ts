@@ -5,7 +5,7 @@ import { compileWiki } from "./wiki";
 import { compileGuides } from "./guide";
 import type { CompileResult } from "./shared";
 
-export { compileWiki } from "./wiki";
+export { compileWiki, pagePathToName } from "./wiki";
 export type { CompileWikiOptions } from "./wiki";
 export { compileGuides } from "./guide";
 export type { CompileGuidesOptions } from "./guide";

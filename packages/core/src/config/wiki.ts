@@ -59,9 +59,19 @@ const themeSchema = z.object({
 });
 
 const nameRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+export const WIKI_PAGE_NAME_HASH_LENGTH = 16;
+const RESOURCE_NAME_MAX_LENGTH = 63;
+const MAX_WIKI_ID_FOR_PAGE_NAMES = RESOURCE_NAME_MAX_LENGTH - WIKI_PAGE_NAME_HASH_LENGTH - 1;
 
 const wikiConfigSchema = z.object({
-  id: z.string().min(1).max(63).regex(nameRegex),
+  id: z
+    .string()
+    .min(1)
+    .max(
+      MAX_WIKI_ID_FOR_PAGE_NAMES,
+      `Wiki id must be ${MAX_WIKI_ID_FOR_PAGE_NAMES} characters or fewer`,
+    )
+    .regex(nameRegex),
   title: z.string().min(1).max(256),
   navigation: z.array(navNodeSchema).optional(),
   theme: themeSchema.optional(),

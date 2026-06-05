@@ -1,8 +1,9 @@
+import { createHash } from "node:crypto";
 import { access, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { Wiki, WikiNavNode as CompiledWikiNavNode, WikiPage } from "@topik/schema";
 import type { Resource } from "../resource";
-import { parseWikiConfig, type WikiNavNode } from "../config/wiki";
+import { parseWikiConfig, WIKI_PAGE_NAME_HASH_LENGTH, type WikiNavNode } from "../config/wiki";
 import { extractAssets } from "./assets";
 import { readOptionalConfigFile } from "./config";
 import { extractMarkdownTitle, parseMarkdownFrontmatter, type CompileResult } from "./shared";
@@ -49,16 +50,16 @@ export async function compileWiki(options: CompileWikiOptions): Promise<CompileR
         assetsById.set(asset.name, asset);
       }
     }
-    const name = pagePathToName(pagePath);
+    const name = pagePathToName(config.id, pagePath);
     const title =
       typeof frontmatter.title === "string"
         ? frontmatter.title
-        : extractMarkdownTitle(rewritten, name);
+        : extractMarkdownTitle(rewritten, pagePathToTitleFallback(pagePath));
 
     const pageResource: WikiPage = {
       apiVersion: "v1",
       type: "WikiPage",
-      name: `${config.id}-${name}`,
+      name,
       spec: {
         wiki: config.id,
         title,
@@ -123,14 +124,19 @@ function pagePathToSlug(pagePath: string): string {
   return pagePath.replace(/\/index$/, "");
 }
 
-export function pagePathToName(pagePath: string): string {
-  return pagePath.replace(/^\//, "").replaceAll("/", "-");
+export function pagePathToName(wikiId: string, pagePath: string): string {
+  const normalizedPath = normalizePagePath(pagePath);
+  const pathHash = createHash("sha256")
+    .update(normalizedPath)
+    .digest("hex")
+    .slice(0, WIKI_PAGE_NAME_HASH_LENGTH);
+  return `${wikiId}-${pathHash}`;
 }
 
 function resolveNavigation(nodes: WikiNavNode[], wikiId: string): CompiledWikiNavNode[] {
   return nodes.map((node) => {
     if (typeof node === "string") {
-      const pageName = `${wikiId}-${pagePathToName(node)}`;
+      const pageName = pagePathToName(wikiId, node);
       return { type: "page", page: pageName, slug: pagePathToSlug(node) };
     }
 
@@ -153,5 +159,13 @@ function resolveNavigation(nodes: WikiNavNode[], wikiId: string): CompiledWikiNa
       ...(node.icon ? { icon: node.icon } : {}),
     };
   });
+}
+
+function normalizePagePath(pagePath: string): string {
+  return pagePath.replace(/^\//, "").replace(/\.(?:mdx?|markdown)$/i, "");
+}
+
+function pagePathToTitleFallback(pagePath: string): string {
+  return normalizePagePath(pagePath).replaceAll("/", "-");
 }
 export { extractMarkdownTitle as extractTitle } from "./shared";

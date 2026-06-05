@@ -10,6 +10,7 @@ export {
   compile,
   compileWiki,
   compileGuides,
+  pagePathToName,
   type CompileOptions,
   type CompileWikiOptions,
   type CompileGuidesOptions,

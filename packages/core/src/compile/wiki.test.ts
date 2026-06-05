@@ -12,6 +12,8 @@ addFormats(ajv);
 const validateWiki = ajv.compile(wikiSchema);
 const validateWikiPage = ajv.compile(wikiPageSchema);
 
+const pageName = (wikiId: string, pagePath: string) => pagePathToName(wikiId, pagePath);
+
 describe("compileWiki", () => {
   let dir: string;
 
@@ -48,7 +50,7 @@ navigation:
     expect(page).toMatchObject({
       apiVersion: "v1",
       type: "WikiPage",
-      name: "tw-hello",
+      name: pageName("tw", "hello"),
       spec: {
         wiki: "tw",
         title: "Hello World",
@@ -63,7 +65,7 @@ navigation:
       name: "tw",
       spec: {
         title: "Test Wiki",
-        navigation: [{ type: "page", page: "tw-hello", slug: "hello" }],
+        navigation: [{ type: "page", page: pageName("tw", "hello"), slug: "hello" }],
       },
     });
   });
@@ -81,7 +83,7 @@ navigation:
     const result = await compileWiki({ dir });
     const pages = result.resources.filter((r) => r.type === "WikiPage");
     expect(pages).toHaveLength(1);
-    expect(pages[0].name).toBe("tw-included");
+    expect(pages[0].name).toBe(pageName("tw", "included"));
   });
 
   test("collapses index pages in slug", async () => {
@@ -99,8 +101,8 @@ navigation:
     const result = await compileWiki({ dir });
     const wiki = result.resources.find((r) => r.type === "Wiki");
     const nav = wiki!.spec.navigation as Array<Record<string, unknown>>;
-    expect(nav[0]).toMatchObject({ page: "tw-index", slug: "" });
-    expect(nav[1]).toMatchObject({ page: "tw-runtime-index", slug: "runtime" });
+    expect(nav[0]).toMatchObject({ page: pageName("tw", "index"), slug: "" });
+    expect(nav[1]).toMatchObject({ page: pageName("tw", "runtime/index"), slug: "runtime" });
   });
 
   test("uses id from config as resource name", async () => {
@@ -118,7 +120,7 @@ navigation:
     expect(wiki!.name).toBe("my-wiki");
 
     const page = result.resources.find((r) => r.type === "WikiPage");
-    expect(page!.name).toBe("my-wiki-page-one");
+    expect(page!.name).toBe(pageName("my-wiki", "page-one"));
     expect(page!.spec.wiki).toBe("my-wiki");
   });
 
@@ -169,7 +171,10 @@ navigation:
 
     const result = await compileWiki({ dir });
     const pages = result.resources.filter((r) => r.type === "WikiPage");
-    expect(pages.map((p) => p.name)).toEqual(["test-zebra", "test-alpha"]);
+    expect(pages.map((p) => p.name)).toEqual([
+      pageName("test", "zebra"),
+      pageName("test", "alpha"),
+    ]);
   });
 
   test("compiles nested directory pages referenced in nav", async () => {
@@ -188,7 +193,10 @@ navigation:
 
     const result = await compileWiki({ dir });
     const pages = result.resources.filter((r) => r.type === "WikiPage");
-    expect(pages.map((p) => p.name)).toEqual(["test-runtime-http-server", "test-runtime-index"]);
+    expect(pages.map((p) => p.name)).toEqual([
+      pageName("test", "runtime/http/server"),
+      pageName("test", "runtime/index"),
+    ]);
   });
 
   test("resolves page paths in navigation to resource names", async () => {
@@ -209,7 +217,7 @@ navigation:
     const group = nav[0] as { children: Array<Record<string, unknown>> };
     expect(group.children[0]).toMatchObject({
       type: "page",
-      page: "test-runtime-http-server",
+      page: pageName("test", "runtime/http/server"),
       slug: "runtime/http/server",
     });
   });
@@ -228,7 +236,7 @@ navigation:
     const nav = wiki!.spec.navigation as Array<Record<string, unknown>>;
     expect(nav[0]).toMatchObject({
       type: "page",
-      page: "test-getting-started",
+      page: pageName("test", "getting-started"),
       slug: "getting-started",
     });
   });
@@ -292,7 +300,7 @@ navigation:
 
     const result = await compileWiki({ dir });
     const page = result.resources.find((r) => r.type === "WikiPage");
-    expect(page!.name).toBe("test-intro");
+    expect(page!.name).toBe(pageName("test", "intro"));
     expect(page!.spec.title).toBe("Introduction");
   });
 
@@ -351,19 +359,51 @@ navigation:
       "Wiki page paths must use lowercase DNS-style segments separated by '/'",
     );
   });
+
+  test("throws when the wiki id is too long for hashed page names", async () => {
+    await writeWikiConfig(
+      ["id: " + "a".repeat(47), "title: Wiki", "navigation:", "  - intro", ""].join("\n"),
+    );
+    await writePage("intro", "# Intro\n");
+
+    await expect(compileWiki({ dir })).rejects.toThrow("Wiki id must be 46 characters or fewer");
+  });
 });
 
 describe("pagePathToName", () => {
-  test("converts path to DNS-compatible name", () => {
-    expect(pagePathToName("runtime/http/server")).toBe("runtime-http-server");
+  test("generates a hash-based DNS-compatible name scoped to the wiki", () => {
+    expect(pagePathToName("docs", "runtime/http/server")).toMatch(/^docs-[a-f0-9]{16}$/);
   });
 
-  test("strips leading slash", () => {
-    expect(pagePathToName("/runtime/index")).toBe("runtime-index");
+  test("normalizes leading slashes and markdown extensions", () => {
+    expect(pagePathToName("docs", "/runtime/index.md")).toBe(
+      pagePathToName("docs", "runtime/index"),
+    );
   });
 
-  test("passes through simple names", () => {
-    expect(pagePathToName("introduction")).toBe("introduction");
+  test("scopes the full resource name with the wiki id prefix", () => {
+    const docsName = pagePathToName("docs", "introduction");
+    const otherName = pagePathToName("other", "introduction");
+
+    expect(docsName).toMatch(/^docs-/);
+    expect(otherName).toMatch(/^other-/);
+    expect(docsName.split("-").at(-1)).toBe(otherName.split("-").at(-1));
+  });
+
+  test("fits the schema name limit", () => {
+    const name = pagePathToName(
+      "scatool-docs",
+      "administration-collaboration-account/members-and-role-management",
+    );
+    expect(name.length).toBeLessThanOrEqual(63);
+  });
+
+  test("uses the full wiki id prefix at the exact prefix boundary", () => {
+    const wikiId = "a".repeat(46);
+    const name = pagePathToName(wikiId, "introduction");
+
+    expect(name).toMatch(new RegExp(`^${wikiId}-[a-f0-9]{16}$`));
+    expect(name.length).toBe(63);
   });
 });
 

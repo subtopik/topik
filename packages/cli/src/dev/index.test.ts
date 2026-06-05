@@ -98,7 +98,7 @@ describe("dev command", () => {
     expect(types).toContain("Wiki");
     expect(types).toContain("WikiPage");
     expect(data.resources.find((r) => r.type === "Wiki")?.name).toBe("docs");
-    expect(data.resources.find((r) => r.type === "WikiPage")?.name).toBe("docs-intro");
+    expect(data.resources.find((r) => r.type === "WikiPage")?.name).toMatch(/^docs-[a-f0-9]{16}$/);
   });
 
   test("returns 404 for unknown routes", async () => {

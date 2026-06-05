@@ -75,6 +75,18 @@ describe("parseWikiConfig", () => {
     expect(() => parseWikiConfig({ id: "Not Valid", title: "Docs" })).toThrow();
   });
 
+  test("rejects ids that are too long for hashed wiki page names", () => {
+    expect(() => parseWikiConfig({ id: "a".repeat(47), title: "Docs" })).toThrow(
+      "Wiki id must be 46 characters or fewer",
+    );
+  });
+
+  test("accepts ids at the hashed wiki page name prefix boundary", () => {
+    const config = parseWikiConfig({ id: "a".repeat(46), title: "Docs" });
+
+    expect(config.id).toBe("a".repeat(46));
+  });
+
   test("rejects missing title", () => {
     expect(() => parseWikiConfig({ id: "docs" })).toThrow();
   });

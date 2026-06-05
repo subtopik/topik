@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
+import { pagePathToName } from "./compile/wiki";
 import { watch } from "./watch";
 import type { Watcher } from "./watch";
 
@@ -12,6 +13,7 @@ function delay(ms: number) {
 describe("watch", () => {
   let dir: string;
   let watcher: Watcher;
+  const introPageKey = `WikiPage/${pagePathToName("docs", "intro")}`;
 
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), "topik-watch-"));
@@ -87,8 +89,8 @@ describe("watch", () => {
       expect(watcher.resources.size).toBe(2);
       expect(watcher.resources.get("Wiki/docs")).toBeDefined();
       expect(watcher.resources.get("Wiki/docs")?.type).toBe("Wiki");
-      expect(watcher.resources.get("WikiPage/docs-intro")).toBeDefined();
-      expect(watcher.resources.get("WikiPage/docs-intro")?.type).toBe("WikiPage");
+      expect(watcher.resources.get(introPageKey)).toBeDefined();
+      expect(watcher.resources.get(introPageKey)?.type).toBe("WikiPage");
     });
 
     test("emits update when a wiki page changes", async () => {
@@ -98,7 +100,7 @@ describe("watch", () => {
       const done = new Promise<void>((resolve) => {
         watcher.on("update", (key) => {
           updates.push(key);
-          if (updates.includes("WikiPage/docs-intro")) resolve();
+          if (updates.includes(introPageKey)) resolve();
         });
       });
 
@@ -106,7 +108,7 @@ describe("watch", () => {
       await writeFile(join(dir, "intro.md"), "# Intro\n\nUpdated wiki content.\n");
 
       await done;
-      expect(updates).toContain("WikiPage/docs-intro");
+      expect(updates).toContain(introPageKey);
     }, 10_000);
   });
 

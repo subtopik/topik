@@ -27,7 +27,7 @@
     "prepublishOnly": "vp run build"
   },
   "dependencies": {
-    "@markdoc/markdoc": "catalog:",
+    "@topik/content-schema": "workspace:*",
     "@topik/schema": "workspace:*",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",

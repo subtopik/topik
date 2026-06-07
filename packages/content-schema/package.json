@@ -1,22 +1,19 @@
 {
-  "name": "@topik/cli",
+  "name": "@topik/content-schema",
   "version": "0.1.0-alpha.3",
-  "description": "Topik CLI",
+  "description": "Topik Markdoc content schema and validation",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/subtopik/topik.git",
-    "directory": "packages/cli"
-  },
-  "bin": {
-    "topik": "./dist/cli.mjs"
+    "directory": "packages/content-schema"
   },
   "files": [
     "dist"
   ],
   "type": "module",
   "exports": {
-    ".": "./dist/cli.mjs",
+    ".": "./dist/index.mjs",
     "./package.json": "./package.json"
   },
   "publishConfig": {
@@ -30,15 +27,13 @@
     "prepublishOnly": "vp run build"
   },
   "dependencies": {
-    "@drizzle-team/brocli": "catalog:",
-    "@topik/core": "workspace:*",
-    "yaml": "^2.9.0"
+    "@markdoc/markdoc": "catalog:"
   },
   "devDependencies": {
-    "@types/bun": "catalog:",
     "@types/node": "catalog:",
     "@typescript/native-preview": "catalog:",
     "typescript": "catalog:",
-    "vite-plus": "catalog:"
+    "vite-plus": "catalog:",
+    "vitest": "npm:@voidzero-dev/vite-plus-test@0.1.24"
   }
 }

@@ -364,6 +364,33 @@ navigation:
     expect(page.spec.assets).toEqual([assets[0].name]);
   });
 
+  test("extracts local asset references from valid Topik tags", async () => {
+    await writeWikiConfig("id: tw\ntitle: Wiki\nnavigation:\n  - hello\n");
+    const png = Buffer.from(
+      "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000000500010d0a2db40000000049454e44ae426082",
+      "hex",
+    );
+    await writeFile(join(dir, "hero.png"), png);
+    await writePage("hello", '# Hello\n\n{% figure src="./hero.png" alt="Hero" /%}\n');
+
+    const result = await compileWiki({ dir });
+    const assets = result.resources.filter((r) => r.type === "Asset");
+    const page = result.resources.find((r) => r.type === "WikiPage")!;
+
+    expect(assets).toHaveLength(1);
+    expect(page.spec.content.value).toContain(`src="asset:${assets[0].name}"`);
+    expect(page.spec.assets).toEqual([assets[0].name]);
+  });
+
+  test("rejects invalid Topik content in wiki pages", async () => {
+    await writeWikiConfig("id: tw\ntitle: Wiki\nnavigation:\n  - hello\n");
+    await writePage("hello", '# Hello\n\n{% card href="/docs" /%}\n');
+
+    await expect(compileWiki({ dir })).rejects.toThrow(
+      /Invalid Topik content in .*hello\.md:[\s\S]*attribute-missing-required/,
+    );
+  });
+
   test("throws when referenced page file is missing", async () => {
     await writeWikiConfig(`
 id: test

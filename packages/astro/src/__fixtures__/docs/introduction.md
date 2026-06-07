@@ -1,5 +1,6 @@
 ---
 title: Introduction
+description: Start here to learn the docs.
 ---
 
 # Introduction

@@ -15,6 +15,7 @@ export type Entry = {
   wiki: string;
   title: string;
   slug: string;
+  description?: string;
 };
 `;
 
@@ -39,6 +40,7 @@ export function topikWikiLoader(options: TopikWikiOptions): Loader & {
             wiki: page.spec.wiki,
             title: page.spec.title,
             slug: slugMap.get(page.name) ?? page.name,
+            description: page.spec.description ?? undefined,
           },
           body: page.spec.content.value,
           digest: context.generateDigest(page.spec.content.value),
@@ -55,6 +57,7 @@ export function topikWikiLoader(options: TopikWikiOptions): Loader & {
           wiki: z.string(),
           title: z.string(),
           slug: z.string(),
+          description: z.string().optional(),
         }),
         types: WIKI_PAGE_TYPES,
       };

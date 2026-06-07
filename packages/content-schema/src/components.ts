@@ -7,6 +7,8 @@ export interface TopikComponentAttributeDefinition {
   type: TopikAttributeType;
   required?: boolean;
   values?: readonly string[];
+  min?: number;
+  max?: number;
   description?: string;
 }
 
@@ -45,7 +47,12 @@ export const topikComponents = {
     kind: "block",
     description: "Responsive grid of card links or summary cards.",
     attributes: {
-      columns: { type: "number", description: "Preferred number of columns, from 1 to 4." },
+      columns: {
+        type: "number",
+        min: 1,
+        max: 4,
+        description: "Preferred number of columns, from 1 to 4.",
+      },
     },
     allowedChildren: ["card"],
   },

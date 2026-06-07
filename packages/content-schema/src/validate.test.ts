@@ -27,6 +27,7 @@ describe("topik content schema", () => {
       "tabs",
     ]);
     expect(topikComponents.callout.attributes?.variant.values).toContain("warning");
+    expect(topikComponents.cardGrid.attributes?.columns).toMatchObject({ min: 1, max: 4 });
     expect(topikComponents.figure.attributes?.darkSrc).toMatchObject({ type: "string" });
     expect(topikComponents.quiz.allowedChildren).toEqual(["question"]);
   });

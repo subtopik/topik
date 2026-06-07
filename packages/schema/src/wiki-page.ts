@@ -42,6 +42,11 @@ export const wikiPageSchema = {
           maxLength: 256,
           description: "Page title",
         },
+        description: {
+          type: ["string", "null"],
+          maxLength: 1024,
+          description: "Description of the wiki page",
+        },
         content: {
           type: "object",
           properties: {

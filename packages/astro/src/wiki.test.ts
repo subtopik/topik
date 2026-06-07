@@ -51,6 +51,7 @@ describe("topikWikiLoader", () => {
     expect(entry!.data.title).toBe("Introduction");
     expect(entry!.data.wiki).toBe("docs");
     expect(entry!.data.slug).toBe("introduction");
+    expect(entry!.data.description).toBe("Start here to learn the docs.");
   });
 
   test("resolves slugs from navigation for nested pages", async () => {

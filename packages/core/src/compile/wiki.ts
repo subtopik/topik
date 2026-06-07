@@ -55,6 +55,8 @@ export async function compileWiki(options: CompileWikiOptions): Promise<CompileR
       typeof frontmatter.title === "string"
         ? frontmatter.title
         : extractMarkdownTitle(rewritten, pagePathToTitleFallback(pagePath));
+    const description =
+      typeof frontmatter.description === "string" ? frontmatter.description : undefined;
 
     const pageResource: WikiPage = {
       apiVersion: "v1",
@@ -63,6 +65,7 @@ export async function compileWiki(options: CompileWikiOptions): Promise<CompileR
       spec: {
         wiki: config.id,
         title,
+        ...(description != null ? { description } : {}),
         content: {
           format: "topik",
           value: rewritten,
@@ -84,6 +87,7 @@ export async function compileWiki(options: CompileWikiOptions): Promise<CompileR
     name: config.id,
     spec: {
       title: config.title,
+      ...(config.description != null ? { description: config.description } : {}),
       ...(config.navigation ? { navigation: resolveNavigation(config.navigation, config.id) } : {}),
       ...(config.theme ? { theme: config.theme } : {}),
     },

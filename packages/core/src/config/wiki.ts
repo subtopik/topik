@@ -73,6 +73,7 @@ const wikiConfigSchema = z.object({
     )
     .regex(nameRegex),
   title: z.string().min(1).max(256),
+  description: z.string().max(1024).optional(),
   navigation: z.array(navNodeSchema).optional(),
   theme: themeSchema.optional(),
 });

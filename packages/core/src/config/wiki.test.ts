@@ -9,6 +9,22 @@ describe("parseWikiConfig", () => {
     expect(config.navigation).toBeUndefined();
   });
 
+  test("parses optional description", () => {
+    const config = parseWikiConfig({
+      id: "docs",
+      title: "Docs",
+      description: "Documentation for the platform.",
+    });
+
+    expect(config.description).toBe("Documentation for the platform.");
+  });
+
+  test("rejects descriptions that are too long", () => {
+    expect(() =>
+      parseWikiConfig({ id: "docs", title: "Docs", description: "a".repeat(1025) }),
+    ).toThrow();
+  });
+
   test("parses config with string page references", () => {
     const config = parseWikiConfig({
       id: "docs",

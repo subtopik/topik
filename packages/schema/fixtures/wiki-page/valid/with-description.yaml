@@ -1,0 +1,10 @@
+apiVersion: v1
+type: WikiPage
+name: introduction
+spec:
+  wiki: vulpo-docs
+  title: Introduction
+  description: Start here to learn the basics of Vulpo.
+  content:
+    format: topik
+    value: "# Introduction"

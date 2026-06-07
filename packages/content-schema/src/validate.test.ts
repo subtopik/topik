@@ -27,6 +27,7 @@ describe("topik content schema", () => {
       "tabs",
     ]);
     expect(topikComponents.callout.attributes?.variant.values).toContain("warning");
+    expect(topikComponents.figure.attributes?.darkSrc).toMatchObject({ type: "string" });
     expect(topikComponents.quiz.allowedChildren).toEqual(["question"]);
   });
 
@@ -69,7 +70,7 @@ Run the validator.
 {% /step %}
 {% /steps %}
 
-{% figure src="./hero.png" alt="Course dashboard" caption="Dashboard overview" /%}
+{% figure src="./hero.png" darkSrc="./hero-dark.png" alt="Course dashboard" caption="Dashboard overview" /%}
 
 {% quiz %}
 {% question %}
@@ -88,6 +89,9 @@ Run the validator.
     expect(idsFor('{% callout variant="surprise" /%}')).toContain("attribute-value-invalid");
     expect(idsFor('{% card href="/docs" /%}')).toContain("attribute-missing-required");
     expect(idsFor('{% figure src="./image.png" /%}')).toContain("attribute-missing-required");
+    expect(
+      idsFor('{% figure src="./image.png" darkSrc="./image-dark.png" alt="Image" /%}'),
+    ).toEqual([]);
     expect(idsFor("{% cardGrid columns=5 /%}")).toContain("topik-columns-range");
   });
 

@@ -256,6 +256,29 @@ describe("extractAssets", () => {
     expect(content).toContain(`src="asset:${assets[0].name}"`);
   });
 
+  test("extracts and rewrites theme-aware figure image attributes", async () => {
+    await writePng("images/app/projects-list-light.png");
+    await writeFile(
+      join(dir, "images/app/projects-list-dark.png"),
+      Buffer.from(
+        "89504e470d0a1a0a0000000d49484452000000020000000208060000007234e9930000000c49444154789c63600200000000050001b8d2a85f0000000049454e44ae426082",
+        "hex",
+      ),
+    );
+    const filePath = join(dir, "page.md");
+    const source =
+      '{% figure src="/images/app/projects-list-light.png" darkSrc="/images/app/projects-list-dark.png" alt="Projects list" /%}\n';
+
+    const { content, assets, manifest } = await extractAssets(source, { baseDir: dir, filePath });
+
+    expect(assets).toHaveLength(2);
+    const light = assets.find((asset) => asset.spec.uri === "images/app/projects-list-light.png")!;
+    const dark = assets.find((asset) => asset.spec.uri === "images/app/projects-list-dark.png")!;
+    expect(content).toContain(`src="asset:${light.name}"`);
+    expect(content).toContain(`darkSrc="asset:${dark.name}"`);
+    expect(manifest).toEqual([light.name, dark.name]);
+  });
+
   test("rewrites URL-encoded paths", async () => {
     await writePng("my image.png");
     const filePath = join(dir, "page.md");

@@ -5,6 +5,7 @@ export const figureTag: Schema = {
   selfClosing: true,
   attributes: {
     src: { type: String, required: true },
+    darkSrc: { type: String },
     alt: { type: String, required: true },
     caption: { type: String },
   },

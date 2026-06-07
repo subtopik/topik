@@ -35,7 +35,7 @@ const MIME_BY_EXT: Record<string, string> = {
   ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 };
 
-const ASSET_TAG_ATTRS = ["src", "href"];
+const ASSET_TAG_ATTRS = ["src", "darkSrc", "href"];
 
 export interface ExtractAssetsOptions {
   /** Absolute path to the compilation root (content directory). */

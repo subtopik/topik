@@ -110,7 +110,8 @@ export const topikComponents = {
     kind: "block",
     description: "Media with an optional caption.",
     attributes: {
-      src: { type: "string", required: true, description: "Image or media source URL." },
+      src: { type: "string", required: true, description: "Default/light image source URL." },
+      darkSrc: { type: "string", description: "Optional dark-mode image source URL." },
       alt: { type: "string", required: true, description: "Accessible alternative text." },
       caption: { type: "string", description: "Optional figure caption." },
     },

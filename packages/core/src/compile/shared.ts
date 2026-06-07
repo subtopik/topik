@@ -1,3 +1,4 @@
+import { validateTopikContent, type TopikContentDiagnostic } from "@topik/content-schema";
 import { parse as parseYaml } from "yaml";
 import type { Resource } from "../resource";
 
@@ -47,6 +48,25 @@ export function extractMarkdownTitle(content: string, fallback: string): string 
     .split("-")
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
+}
+
+export function assertValidTopikContent(content: string, filePath: string): void {
+  const result = validateTopikContent(content, { file: filePath });
+  if (result.valid) return;
+
+  throw new Error(
+    `Invalid Topik content in ${filePath}:\n${formatContentDiagnostics(result.errors)}`,
+  );
+}
+
+function formatContentDiagnostics(diagnostics: TopikContentDiagnostic[]): string {
+  return diagnostics
+    .filter((diagnostic) => diagnostic.level === "error" || diagnostic.level === "critical")
+    .map((diagnostic) => {
+      const location = diagnostic.lines.length > 0 ? ` lines ${diagnostic.lines.join(",")}` : "";
+      return `  - ${diagnostic.id}${location}: ${diagnostic.message}`;
+    })
+    .join("\n");
 }
 
 export function parseReferenceList(

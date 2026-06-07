@@ -6,7 +6,12 @@ import type { Resource } from "../resource";
 import { parseWikiConfig, WIKI_PAGE_NAME_HASH_LENGTH, type WikiNavNode } from "../config/wiki";
 import { extractAssets } from "./assets";
 import { readOptionalConfigFile } from "./config";
-import { extractMarkdownTitle, parseMarkdownFrontmatter, type CompileResult } from "./shared";
+import {
+  assertValidTopikContent,
+  extractMarkdownTitle,
+  parseMarkdownFrontmatter,
+  type CompileResult,
+} from "./shared";
 
 export interface CompileWikiOptions {
   dir: string;
@@ -37,6 +42,7 @@ export async function compileWiki(options: CompileWikiOptions): Promise<CompileR
     const pagePath = pagePaths[i];
     const { filePath, raw } = resolvedFiles[i];
     const { frontmatter, content } = parseMarkdownFrontmatter(raw, pagePath);
+    assertValidTopikContent(content, filePath);
     const {
       content: rewritten,
       assets,

@@ -67,9 +67,6 @@ importers:
       '@drizzle-team/brocli':
         specifier: 'catalog:'
         version: 0.12.0
-      '@markdoc/markdoc':
-        specifier: 'catalog:'
-        version: 0.5.7
       '@topik/core':
         specifier: workspace:*
         version: link:../core
@@ -139,9 +136,9 @@ importers:
 
   packages/core:
     dependencies:
-      '@markdoc/markdoc':
-        specifier: 'catalog:'
-        version: 0.5.7
+      '@topik/content-schema':
+        specifier: workspace:*
+        version: link:../content-schema
       '@topik/schema':
         specifier: workspace:*
         version: link:../schema

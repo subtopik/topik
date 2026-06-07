@@ -237,6 +237,15 @@ describe("compileGuides", () => {
     expect(assets).toHaveLength(1);
   });
 
+  test("rejects invalid Topik content in guides", async () => {
+    await writeCollectionConfig("id: blog\ntitle: Blog\n");
+    await writeGuide("post", "# Post\n\n{% tabs %}\nPlain paragraph\n{% /tabs %}\n");
+
+    await expect(compileGuides({ dir })).rejects.toThrow(
+      /Invalid Topik content in .*post\.md:[\s\S]*topik-tabs-children/,
+    );
+  });
+
   test("compiled Guide resources validate against schema", async () => {
     await writeCollectionConfig("id: blog\ntitle: Blog\ntags:\n  - official\n");
     await writeFile(

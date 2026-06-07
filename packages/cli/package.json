@@ -31,7 +31,6 @@
   },
   "dependencies": {
     "@drizzle-team/brocli": "catalog:",
-    "@markdoc/markdoc": "catalog:",
     "@topik/core": "workspace:*",
     "yaml": "^2.9.0"
   },

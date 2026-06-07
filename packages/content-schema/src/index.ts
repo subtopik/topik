@@ -1,5 +1,11 @@
 export { topikMarkdocConfig } from "./config";
 export {
+  formatTopikContent,
+  parseTopikContent,
+  type ParseTopikContentOptions,
+  type TopikContentNode,
+} from "./content";
+export {
   BADGE_VARIANTS,
   CALLOUT_VARIANTS,
   QUIZ_QUESTION_TYPES,

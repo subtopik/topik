@@ -6,6 +6,7 @@ import { parseCollectionConfig } from "../config/collection";
 import { extractAssets } from "./assets";
 import { readOptionalConfigFile } from "./config";
 import {
+  assertValidTopikContent,
   extractMarkdownTitle,
   parseMarkdownFrontmatter,
   parseReferenceList,
@@ -40,6 +41,7 @@ export async function compileGuides(options: CompileGuidesOptions): Promise<Comp
     const filePath = join(dir, file);
     const rawContent = await readFile(filePath, "utf-8");
     const { frontmatter, content } = parseMarkdownFrontmatter(rawContent, file);
+    assertValidTopikContent(content, filePath);
     const {
       content: rewritten,
       assets,

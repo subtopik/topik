@@ -1,5 +1,6 @@
 import Markdoc, { type Config, type ValidateError } from "@markdoc/markdoc";
 import { topikMarkdocConfig } from "./config";
+import { parseTopikContent } from "./content";
 import { toTopikContentDiagnostic, type TopikContentDiagnostic } from "./diagnostics";
 
 export interface ValidateTopikContentOptions {
@@ -19,7 +20,7 @@ export function validateTopikContent(
   source: string,
   options: ValidateTopikContentOptions = {},
 ): ValidateTopikContentResult {
-  const ast = Markdoc.parse(source, { file: options.file, location: true });
+  const ast = parseTopikContent(source, { file: options.file, location: true });
   const markdocErrors = Markdoc.validate(ast, mergeConfigs(topikMarkdocConfig, options.config));
   const errors = markdocErrors.map(toTopikContentDiagnostic);
   return {

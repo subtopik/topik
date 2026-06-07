@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { dirname, isAbsolute, posix, relative, resolve, sep } from "node:path";
-import Markdoc, { type Node } from "@markdoc/markdoc";
+import {
+  formatTopikContent,
+  parseTopikContent,
+  type TopikContentNode,
+} from "@topik/content-schema";
 import type { Asset } from "@topik/schema";
 
 const MIME_BY_EXT: Record<string, string> = {
@@ -60,7 +64,7 @@ interface FoundRef {
 }
 
 interface AttrSlot {
-  node: Node;
+  node: TopikContentNode;
   attr: string;
 }
 
@@ -69,7 +73,7 @@ export async function extractAssets(
   options: ExtractAssetsOptions,
 ): Promise<ExtractAssetsResult> {
   const { baseDir, filePath } = options;
-  const ast = Markdoc.parse(source);
+  const ast = parseTopikContent(source);
 
   const refs = new Map<string, FoundRef>();
   const slots = new Map<string, AttrSlot[]>();
@@ -144,16 +148,16 @@ export async function extractAssets(
     }
   }
 
-  const content = Markdoc.format(ast);
+  const content = formatTopikContent(ast);
   return { content, assets: Array.from(byName.values()), manifest };
 }
 
-function walk(node: Node, fn: (node: Node) => void): void {
+function walk(node: TopikContentNode, fn: (node: TopikContentNode) => void): void {
   fn(node);
   for (const child of node.children) walk(child, fn);
 }
 
-function stringAttr(node: Node, attr: string): string | undefined {
+function stringAttr(node: TopikContentNode, attr: string): string | undefined {
   const value = node.attributes?.[attr];
   return typeof value === "string" ? value : undefined;
 }

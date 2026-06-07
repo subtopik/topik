@@ -55,8 +55,7 @@ export async function compileWiki(options: CompileWikiOptions): Promise<CompileR
       typeof frontmatter.title === "string"
         ? frontmatter.title
         : extractMarkdownTitle(rewritten, pagePathToTitleFallback(pagePath));
-    const description =
-      typeof frontmatter.description === "string" ? frontmatter.description : undefined;
+    const description = normalizeWikiPageDescription(frontmatter.description);
 
     const pageResource: WikiPage = {
       apiVersion: "v1",
@@ -96,6 +95,11 @@ export async function compileWiki(options: CompileWikiOptions): Promise<CompileR
   resources.push(wikiResource);
 
   return { resources };
+}
+
+// Keep compiled WikiPage spec.description within wikiPageSchema's 1024-character limit.
+function normalizeWikiPageDescription(description: unknown): string | undefined {
+  return typeof description === "string" ? description.slice(0, 1024) : undefined;
 }
 
 function collectPagePaths(nodes: WikiNavNode[]): string[] {

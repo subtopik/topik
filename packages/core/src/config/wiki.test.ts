@@ -19,6 +19,12 @@ describe("parseWikiConfig", () => {
     expect(config.description).toBe("Documentation for the platform.");
   });
 
+  test("parses null description", () => {
+    const config = parseWikiConfig({ id: "docs", title: "Docs", description: null });
+
+    expect(config.description).toBeNull();
+  });
+
   test("rejects descriptions that are too long", () => {
     expect(() =>
       parseWikiConfig({ id: "docs", title: "Docs", description: "a".repeat(1025) }),

@@ -328,6 +328,15 @@ navigation:
     expect(page!.spec.description).toBe("A concise overview of the page.");
   });
 
+  test("truncates overlong page frontmatter descriptions", async () => {
+    await writeWikiConfig("id: test\ntitle: Wiki\nnavigation:\n  - page\n");
+    await writeFile(join(dir, "page.md"), `---\ndescription: ${"a".repeat(1025)}\n---\n\n# Page\n`);
+
+    const result = await compileWiki({ dir });
+    const page = result.resources.find((r) => r.type === "WikiPage");
+    expect(page!.spec.description).toBe("a".repeat(1024));
+  });
+
   test("includes description from wiki config", async () => {
     await writeWikiConfig("id: test\ntitle: Wiki\ndescription: Documentation for Topik.\n");
 

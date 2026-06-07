@@ -6,7 +6,11 @@ export default defineConfig({
     dts: {
       tsgo: true,
     },
-    exports: true,
+    exports: {
+      bin: {
+        topik: "src/cli.ts",
+      },
+    },
   },
   lint: {
     options: {

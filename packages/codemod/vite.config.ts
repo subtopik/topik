@@ -6,7 +6,11 @@ export default defineConfig({
     dts: {
       tsgo: true,
     },
-    exports: true,
+    exports: {
+      bin: {
+        "topik-codemod": "src/cli.ts",
+      },
+    },
   },
   lint: {
     options: {

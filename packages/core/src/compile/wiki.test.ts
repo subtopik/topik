@@ -316,6 +316,35 @@ navigation:
     expect(page!.spec.title).toBe("Frontmatter Title");
   });
 
+  test("extracts description from page frontmatter", async () => {
+    await writeWikiConfig("id: test\ntitle: Wiki\nnavigation:\n  - page\n");
+    await writeFile(
+      join(dir, "page.md"),
+      "---\ndescription: A concise overview of the page.\n---\n\n# Page\n",
+    );
+
+    const result = await compileWiki({ dir });
+    const page = result.resources.find((r) => r.type === "WikiPage");
+    expect(page!.spec.description).toBe("A concise overview of the page.");
+  });
+
+  test("truncates overlong page frontmatter descriptions", async () => {
+    await writeWikiConfig("id: test\ntitle: Wiki\nnavigation:\n  - page\n");
+    await writeFile(join(dir, "page.md"), `---\ndescription: ${"a".repeat(1025)}\n---\n\n# Page\n`);
+
+    const result = await compileWiki({ dir });
+    const page = result.resources.find((r) => r.type === "WikiPage");
+    expect(page!.spec.description).toBe("a".repeat(1024));
+  });
+
+  test("includes description from wiki config", async () => {
+    await writeWikiConfig("id: test\ntitle: Wiki\ndescription: Documentation for Topik.\n");
+
+    const result = await compileWiki({ dir });
+    const wiki = result.resources.find((r) => r.type === "Wiki");
+    expect(wiki!.spec.description).toBe("Documentation for Topik.");
+  });
+
   test("extracts local image references as Asset resources", async () => {
     await writeWikiConfig("id: tw\ntitle: Wiki\nnavigation:\n  - hello\n");
     const png = Buffer.from(
@@ -424,6 +453,7 @@ describe("schema validation", () => {
       `
 id: test-wiki
 title: Test Wiki
+description: Test wiki description.
 theme:
   colors:
     primary: "#ff73a8"
@@ -464,7 +494,7 @@ navigation:
     await writeFile(join(dir, "hello.md"), "# Hello\n\nContent here.");
     await writeFile(
       join(dir, "with-frontmatter.mdx"),
-      "---\ntitle: Custom Title\n---\n\nMDX content.",
+      "---\ntitle: Custom Title\ndescription: Custom description\n---\n\nMDX content.",
     );
 
     const { resources } = await compileWiki({ dir });

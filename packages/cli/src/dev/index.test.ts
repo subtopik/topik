@@ -124,6 +124,10 @@ describe("dev command", () => {
     expect(assetRes.headers.get("content-type")).toBe("image/png");
     expect(await assetRes.text()).toBe("not really a png");
 
+    const malformedAssetRes = await fetch(`http://localhost:${port}/assets/%E0%A4%A`);
+    expect(malformedAssetRes.status).not.toBe(500);
+    expect(malformedAssetRes.status).toBe(404);
+
     const sourcePathRes = await fetch(`http://localhost:${port}/images/hero.png`);
     expect(sourcePathRes.status).toBe(404);
   });

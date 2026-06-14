@@ -1,7 +1,7 @@
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { extname, join, resolve } from "node:path";
+import { extname, isAbsolute, join, relative, resolve } from "node:path";
 import { command, positional, string } from "@drizzle-team/brocli";
 import { watch, type Resource, type Watcher } from "@topik/core";
 
@@ -64,7 +64,14 @@ function handleAsset(watcher: Watcher, dir: string, url: URL, res: ServerRespons
     return false;
   }
 
-  const name = decodeURIComponent(url.pathname.slice("/assets/".length));
+  let name: string;
+  try {
+    name = decodeURIComponent(url.pathname.slice("/assets/".length));
+  } catch {
+    res.writeHead(404, { "Access-Control-Allow-Origin": "*" });
+    res.end();
+    return true;
+  }
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) {
     res.writeHead(404, { "Access-Control-Allow-Origin": "*" });
     res.end();
@@ -78,8 +85,25 @@ function handleAsset(watcher: Watcher, dir: string, url: URL, res: ServerRespons
     return true;
   }
 
-  const filePath = resolve(join(dir, asset.spec.uri));
-  if (!filePath.startsWith(dir + "/") || !existsSync(filePath)) {
+  let filePath: string;
+  let realDir: string;
+  let realFilePath: string;
+  try {
+    filePath = resolve(join(dir, asset.spec.uri));
+    realDir = realpathSync(dir);
+    realFilePath = realpathSync(filePath);
+  } catch {
+    res.writeHead(404, { "Access-Control-Allow-Origin": "*" });
+    res.end();
+    return true;
+  }
+
+  const relativeAssetPath = relative(realDir, realFilePath);
+  if (
+    (relativeAssetPath !== "" &&
+      (relativeAssetPath.startsWith("..") || isAbsolute(relativeAssetPath))) ||
+    !existsSync(realFilePath)
+  ) {
     res.writeHead(404, { "Access-Control-Allow-Origin": "*" });
     res.end();
     return true;

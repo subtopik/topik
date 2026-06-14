@@ -15,6 +15,7 @@
   "exports": {
     ".": "./dist/index.mjs",
     "./theme": "./dist/theme.mjs",
+    "./theme/styles.css": "./dist/theme/styles.css",
     "./package.json": "./package.json"
   },
   "publishConfig": {

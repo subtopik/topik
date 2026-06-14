@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup, renderToString } from "react-dom/server";
 import { TopikContentProvider, useTopikAssetResolver, useTopikComponents } from "./context";
 import { getTopikComponents } from "./components";
-import { compileTopikContent, renderTopikMarkdown } from "./render";
+import { compileTopikContent, renderTopikContent, renderTopikMarkdown } from "./render";
 
 const allComponentsContent = `
 # Lesson
@@ -149,9 +149,7 @@ describe("content-react core", () => {
 
   it("server-renders compiled content without crashing", () => {
     const tree = compileTopikContent('{% callout title="SSR" %}Works.{% /callout %}');
-    const html = renderToString(
-      <>{renderTopikMarkdown('{% callout title="SSR" %}Works.{% /callout %}')}</>,
-    );
+    const html = renderToString(<>{renderTopikContent(tree)}</>);
 
     expect(tree).toBeTruthy();
     expect(html).toContain("Works.");

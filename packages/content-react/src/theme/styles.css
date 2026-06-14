@@ -8,6 +8,7 @@
   --topik-color-accent-soft: #ccfbf1;
   --topik-radius: 8px;
   --topik-space: 1rem;
+
   color: var(--topik-color-text);
   line-height: 1.65;
 }

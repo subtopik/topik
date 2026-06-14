@@ -6,6 +6,8 @@ import {
   type TopikComponentOverrides,
 } from "./components";
 
+const defaultTopikComponents = getTopikComponents();
+
 export interface TopikContentContextValue {
   components: TopikComponentMap;
   componentOverrides?: TopikComponentOverrides;
@@ -38,7 +40,7 @@ export function TopikContentProvider({
 }
 
 export function useTopikComponents(): TopikComponentMap {
-  return useContext(TopikContentContext)?.components ?? getTopikComponents();
+  return useContext(TopikContentContext)?.components ?? defaultTopikComponents;
 }
 
 export function useTopikAssetResolver(): TopikAssetResolver | undefined {

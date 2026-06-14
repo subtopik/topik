@@ -94,7 +94,7 @@ export function TopikTabs({ children }: TopikComponentProps) {
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
-    let nextIndex = index;
+    let nextIndex: number;
 
     if (event.key === "ArrowLeft") nextIndex = index > 0 ? index - 1 : tabs.length - 1;
     else if (event.key === "ArrowRight") nextIndex = index < tabs.length - 1 ? index + 1 : 0;

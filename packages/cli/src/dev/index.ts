@@ -1,9 +1,9 @@
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { extname, join, resolve } from "node:path";
+import { extname, isAbsolute, join, relative, resolve } from "node:path";
 import { command, positional, string } from "@drizzle-team/brocli";
-import { watch, type Watcher } from "@topik/core";
+import { watch, type Resource, type Watcher } from "@topik/core";
 
 const ASSET_EXTENSIONS: Record<string, string> = {
   ".png": "image/png",
@@ -52,6 +52,79 @@ function handleEvents(watcher: Watcher, _req: IncomingMessage, res: ServerRespon
   res.on("close", () => {
     watcher.off("update", onUpdate);
   });
+}
+
+function getAsset(watcher: Watcher, name: string): Extract<Resource, { type: "Asset" }> | null {
+  const resource = watcher.resources.get(`Asset/${name}`);
+  return resource?.type === "Asset" ? resource : null;
+}
+
+function handleAsset(watcher: Watcher, dir: string, url: URL, res: ServerResponse): boolean {
+  if (!url.pathname.startsWith("/assets/")) {
+    return false;
+  }
+
+  let name: string;
+  try {
+    name = decodeURIComponent(url.pathname.slice("/assets/".length));
+  } catch {
+    res.writeHead(404, { "Access-Control-Allow-Origin": "*" });
+    res.end();
+    return true;
+  }
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) {
+    res.writeHead(404, { "Access-Control-Allow-Origin": "*" });
+    res.end();
+    return true;
+  }
+
+  const asset = getAsset(watcher, name);
+  if (!asset) {
+    res.writeHead(404, { "Access-Control-Allow-Origin": "*" });
+    res.end();
+    return true;
+  }
+
+  let filePath: string;
+  let realDir: string;
+  let realFilePath: string;
+  try {
+    filePath = resolve(join(dir, asset.spec.uri));
+    realDir = realpathSync(dir);
+    realFilePath = realpathSync(filePath);
+  } catch {
+    res.writeHead(404, { "Access-Control-Allow-Origin": "*" });
+    res.end();
+    return true;
+  }
+
+  const relativeAssetPath = relative(realDir, realFilePath);
+  if (
+    (relativeAssetPath !== "" &&
+      (relativeAssetPath.startsWith("..") || isAbsolute(relativeAssetPath))) ||
+    !existsSync(realFilePath)
+  ) {
+    res.writeHead(404, { "Access-Control-Allow-Origin": "*" });
+    res.end();
+    return true;
+  }
+
+  readFile(filePath)
+    .then((data) => {
+      res.writeHead(200, {
+        "Content-Type":
+          asset.spec.mediaType ?? ASSET_EXTENSIONS[extname(filePath)] ?? "application/octet-stream",
+        "Access-Control-Allow-Origin": "*",
+        "Cache-Control": "no-cache",
+      });
+      res.end(data);
+    })
+    .catch(() => {
+      res.writeHead(500, { "Access-Control-Allow-Origin": "*" });
+      res.end();
+    });
+
+  return true;
 }
 
 export const dev = command({
@@ -109,28 +182,8 @@ export const dev = command({
         return;
       }
 
-      if (req.method === "GET") {
-        const ext = extname(url.pathname);
-        const mime = ASSET_EXTENSIONS[ext];
-        if (mime) {
-          const filePath = resolve(join(dir, url.pathname));
-          if (filePath.startsWith(dir + "/") && existsSync(filePath)) {
-            readFile(filePath)
-              .then((data) => {
-                res.writeHead(200, {
-                  "Content-Type": mime,
-                  "Access-Control-Allow-Origin": "*",
-                });
-                res.end(data);
-              })
-              .catch(() => {
-                res.writeHead(500, { "Access-Control-Allow-Origin": "*" });
-                res.end();
-              });
-
-            return;
-          }
-        }
+      if (req.method === "GET" && handleAsset(watcher, dir, url, res)) {
+        return;
       }
 
       res.writeHead(404, {

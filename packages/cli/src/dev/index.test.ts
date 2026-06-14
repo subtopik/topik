@@ -1,4 +1,5 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
@@ -99,6 +100,36 @@ describe("dev command", () => {
     expect(types).toContain("WikiPage");
     expect(data.resources.find((r) => r.type === "Wiki")?.name).toBe("docs");
     expect(data.resources.find((r) => r.type === "WikiPage")?.name).toMatch(/^docs-[a-f0-9]{16}$/);
+  });
+
+  test("GET /assets/:name serves compiled assets without exposing source routes", async () => {
+    await rm(join(dir, "collection.yaml"));
+    await rm(join(dir, "intro.md"));
+    await writeFile(join(dir, "wiki.yaml"), "id: docs\ntitle: Docs\nnavigation:\n  - intro\n");
+    await mkdir(join(dir, "images"), { recursive: true });
+    await writeFile(join(dir, "images", "hero.png"), "not really a png");
+    await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](./images/hero.png)\n");
+
+    void (dev as DevCommand).handler?.({ dir, port: String(port) });
+    await waitForServer(port);
+
+    const resources = (await (await fetch(`http://localhost:${port}/resources`)).json()) as {
+      resources: { type: string; name: string }[];
+    };
+    const asset = resources.resources.find((r) => r.type === "Asset");
+    expect(asset).toBeDefined();
+
+    const assetRes = await fetch(`http://localhost:${port}/assets/${asset!.name}`);
+    expect(assetRes.status).toBe(200);
+    expect(assetRes.headers.get("content-type")).toBe("image/png");
+    expect(await assetRes.text()).toBe("not really a png");
+
+    const malformedAssetRes = await fetch(`http://localhost:${port}/assets/%E0%A4%A`);
+    expect(malformedAssetRes.status).not.toBe(500);
+    expect(malformedAssetRes.status).toBe(404);
+
+    const sourcePathRes = await fetch(`http://localhost:${port}/images/hero.png`);
+    expect(sourcePathRes.status).toBe(404);
   });
 
   test("returns 404 for unknown routes", async () => {

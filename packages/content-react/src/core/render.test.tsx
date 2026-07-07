@@ -40,6 +40,31 @@ Run it.
 
 Inline {% badge variant="success" %}stable{% /badge %}.
 
+![Logo](asset:logo)
+
+{% codeGroup %}
+{% codeTab title="pnpm" %}
+\`\`\`sh
+pnpm install
+\`\`\`
+{% /codeTab %}
+{% /codeGroup %}
+
+{% math content="E = mc^2" /%}
+
+Inline math: {% mathInline content="x^2" /%}
+
+Use {% underline %}important text{% /underline %}.
+
+\`\`\`mermaid
+graph TD;
+  A-->B;
+\`\`\`
+
+| A | B |
+| - | - |
+| 1 | 2 |
+
 {% quiz %}
 {% question type="single-choice" %}
 {% choice correct=true %}
@@ -72,15 +97,37 @@ describe("content-react core", () => {
       TopikCallout: ({ children, title }) => <aside data-callout={String(title)}>{children}</aside>,
       TopikCard: ({ children, title }) => <article data-card={String(title)}>{children}</article>,
       TopikCardGrid: ({ children }) => <div data-card-grid>{children}</div>,
+      TopikCodeBlock: ({ content, language }) => (
+        <pre data-code-block={String(language)}>{String(content)}</pre>
+      ),
+      TopikCodeGroup: ({ children }) => <div data-code-group>{children}</div>,
+      TopikCodeTab: ({ children, title }) => (
+        <section data-code-tab={String(title)}>{children}</section>
+      ),
       TopikChoice: ({ children }) => <div data-choice>{children}</div>,
       TopikExplanation: ({ children }) => <div data-explanation>{children}</div>,
       TopikFigure: ({ src }) => <img alt="" src={String(src)} />,
+      TopikImage: ({ src }) => <img alt="" data-image src={String(src)} />,
+      TopikInlineCode: ({ children }) => <code data-inline-code>{children}</code>,
+      TopikLink: ({ children, href }) => (
+        <a data-link href={String(href)}>
+          {children}
+        </a>
+      ),
+      TopikMath: ({ content }) => <div data-math>{String(content)}</div>,
+      TopikMathInline: ({ content }) => <span data-math-inline>{String(content)}</span>,
+      TopikMermaid: ({ content }) => <div data-mermaid>{String(content)}</div>,
       TopikQuestion: ({ children }) => <div data-question>{children}</div>,
       TopikQuiz: ({ children }) => <div data-quiz>{children}</div>,
       TopikStep: ({ children, title }) => <li data-step={String(title)}>{children}</li>,
       TopikSteps: ({ children }) => <ol data-steps>{children}</ol>,
       TopikTab: ({ children, title }) => <section data-tab={String(title)}>{children}</section>,
       TopikTabs: ({ children }) => <div data-tabs>{children}</div>,
+      TopikTable: ({ children }) => <table data-table>{children}</table>,
+      TopikTableCell: ({ children }) => <td data-table-cell>{children}</td>,
+      TopikTableHeader: ({ children }) => <th data-table-header>{children}</th>,
+      TopikTableRow: ({ children }) => <tr data-table-row>{children}</tr>,
+      TopikUnderline: ({ children }) => <u data-underline>{children}</u>,
     });
     const html = renderToStaticMarkup(
       <>
@@ -97,10 +144,22 @@ describe("content-react core", () => {
     expect(html).toContain('data-accordion="Details"');
     expect(html).toContain("data-tabs");
     expect(html).toContain('data-tab="A"');
+    expect(html).toContain("data-code-group");
+    expect(html).toContain('data-code-tab="pnpm"');
+    expect(html).toContain('data-code-block="sh"');
     expect(html).toContain("data-steps");
     expect(html).toContain('data-step="Install"');
     expect(html).toContain('src="/assets/hero.png"');
+    expect(html).toContain('src="/assets/logo.png"');
     expect(html).toContain("<mark>stable</mark>");
+    expect(html).toContain("data-math");
+    expect(html).toContain("data-math-inline");
+    expect(html).toContain("data-mermaid");
+    expect(html).toContain("data-underline");
+    expect(html).toContain("data-table");
+    expect(html).toContain("data-table-row");
+    expect(html).toContain("data-table-cell");
+    expect(html).toContain("data-table-header");
     expect(html).toContain("data-quiz");
     expect(html).toContain("data-question");
     expect(html).toContain("data-choice");

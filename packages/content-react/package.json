@@ -14,15 +14,17 @@
   "type": "module",
   "exports": {
     ".": "./dist/index.mjs",
+    "./rich": "./dist/rich.mjs",
     "./theme": "./dist/theme.mjs",
-    "./theme/styles.css": "./dist/theme/styles.css",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./rich/styles.css": "./dist/rich/styles.css",
+    "./theme/styles.css": "./dist/theme/styles.css"
   },
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "build": "vp pack && mkdir -p dist/theme && cp src/theme/styles.css dist/theme/styles.css",
+    "build": "vp pack && mkdir -p dist/theme dist/rich && cp src/theme/styles.css dist/theme/styles.css && cp src/rich/styles.css dist/rich/styles.css",
     "dev": "vp pack --watch",
     "test": "vp test",
     "check": "vp check",
@@ -50,7 +52,21 @@
     "vitest": "catalog:"
   },
   "peerDependencies": {
+    "katex": "^0.16.0",
+    "mermaid": "^11.0.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "shiki": "^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "katex": {
+      "optional": true
+    },
+    "mermaid": {
+      "optional": true
+    },
+    "shiki": {
+      "optional": true
+    }
   }
 }

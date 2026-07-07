@@ -5,11 +5,14 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent,
+  type MouseEvent,
   type ReactElement,
   type ReactNode,
 } from "react";
-import type { TopikComponentMap, TopikComponentProps } from "../core/components";
+import type { TopikComponentMap, TopikComponentProps, TopikLinkHandler } from "../core/components";
+import { useTopikLinkHandler } from "../core/context";
 
 interface TopikRoleProps {
   __topikRole?: "choice" | "explanation";
@@ -25,6 +28,46 @@ function booleanAttribute(value: unknown): boolean {
 
 function numberAttribute(value: unknown): number | undefined {
   return typeof value === "number" ? value : undefined;
+}
+
+function tableAlignAttribute(
+  value: unknown,
+): "center" | "char" | "justify" | "left" | "right" | undefined {
+  if (
+    value === "center" ||
+    value === "char" ||
+    value === "justify" ||
+    value === "left" ||
+    value === "right"
+  ) {
+    return value;
+  }
+  return undefined;
+}
+
+function tableTextAlignStyle(value: unknown): CSSProperties["textAlign"] | undefined {
+  if (value === "center" || value === "justify" || value === "left" || value === "right") {
+    return value;
+  }
+  return undefined;
+}
+
+function tableCellStyle(align: unknown, width?: unknown): CSSProperties | undefined {
+  const textAlign = tableTextAlignStyle(align);
+  const widthValue = stringAttribute(width);
+  if (!textAlign && !widthValue) return undefined;
+  return { textAlign, width: widthValue };
+}
+
+function stringChildren(children: ReactNode): string {
+  return Children.toArray(children)
+    .map((child) => {
+      if (typeof child === "string" || typeof child === "number") return String(child);
+      if (isValidElement<{ children?: ReactNode }>(child))
+        return stringChildren(child.props.children);
+      return "";
+    })
+    .join("");
 }
 
 function childElements(children: ReactNode): ReactElement<TopikComponentProps>[] {
@@ -71,6 +114,101 @@ export function TopikCard({ children, href, icon, title }: TopikComponentProps) 
   }
 
   return <div className="topik-card">{content}</div>;
+}
+
+export function TopikCodeBlock({ children, content, language }: TopikComponentProps) {
+  const code = stringAttribute(content) ?? stringChildren(children);
+  const languageName = stringAttribute(language);
+  return (
+    <div className="topik-code-block" data-language={languageName}>
+      {languageName ? <div className="topik-code-block__language">{languageName}</div> : null}
+      <pre>
+        <code>{code}</code>
+      </pre>
+    </div>
+  );
+}
+
+export function TopikInlineCode({ children, content }: TopikComponentProps) {
+  return <code>{stringAttribute(content) ?? children}</code>;
+}
+
+export function TopikUnderline({ children }: TopikComponentProps) {
+  return <u>{children}</u>;
+}
+
+export function TopikCodeGroup({ children }: TopikComponentProps) {
+  const id = useId();
+  const tabs = childElements(children);
+  const [selected, setSelected] = useState(0);
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  function selectTab(index: number, focus = false) {
+    setSelected(index);
+    if (focus) tabRefs.current[index]?.focus();
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    let nextIndex: number;
+
+    if (event.key === "ArrowLeft") nextIndex = index > 0 ? index - 1 : tabs.length - 1;
+    else if (event.key === "ArrowRight") nextIndex = index < tabs.length - 1 ? index + 1 : 0;
+    else if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = tabs.length - 1;
+    else return;
+
+    event.preventDefault();
+    selectTab(nextIndex, true);
+  }
+
+  return (
+    <div className="topik-code-group">
+      <div className="topik-code-group__tabs" role="tablist">
+        {tabs.map((tab, index) => {
+          const active = index === selected;
+          const label = stringAttribute(tab.props.title) ?? `Code ${index + 1}`;
+          return (
+            <button
+              aria-controls={`${id}-code-panel-${index}`}
+              aria-selected={active}
+              className="topik-code-group__tab"
+              id={`${id}-code-tab-${index}`}
+              key={`${label}-${index}`}
+              onClick={() => selectTab(index)}
+              onKeyDown={(event) => handleKeyDown(event, index)}
+              ref={(element) => {
+                tabRefs.current[index] = element;
+              }}
+              role="tab"
+              tabIndex={active ? 0 : -1}
+              type="button"
+            >
+              {stringAttribute(tab.props.icon) ? (
+                <span className="topik-code-group__icon">{stringAttribute(tab.props.icon)}</span>
+              ) : null}
+              {label}
+            </button>
+          );
+        })}
+      </div>
+      {tabs.map((tab, index) => (
+        <div
+          aria-labelledby={`${id}-code-tab-${index}`}
+          className="topik-code-group__panel"
+          hidden={index !== selected}
+          id={`${id}-code-panel-${index}`}
+          key={`${stringAttribute(tab.props.title) ?? "code"}-${index}`}
+          role="tabpanel"
+        >
+          {tab.props.children}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function TopikCodeTab({ children }: TopikComponentProps) {
+  return <>{children}</>;
 }
 
 export function TopikAccordion({ children, open, title }: TopikComponentProps) {
@@ -179,6 +317,55 @@ export function TopikFigure({ alt, caption, darkSrc, src }: TopikComponentProps)
   );
 }
 
+export function TopikImage({ alt, src, title }: TopikComponentProps) {
+  return (
+    <img
+      alt={stringAttribute(alt) ?? ""}
+      className="topik-image"
+      src={stringAttribute(src) ?? ""}
+      title={stringAttribute(title)}
+    />
+  );
+}
+
+export function TopikLink({ children, href, onNavigateLink, title }: TopikComponentProps) {
+  const contextHandler = useTopikLinkHandler();
+  const target = stringAttribute(href) ?? "";
+  const handleNavigate = typeof onNavigateLink === "function" ? onNavigateLink : contextHandler;
+
+  function handleClick(event: MouseEvent<HTMLAnchorElement>) {
+    if (!target || event.defaultPrevented || event.button !== 0) return;
+    if (event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) return;
+    if (handleNavigate?.(target, event) === true) event.preventDefault();
+  }
+
+  return (
+    <a href={target} onClick={handleClick} title={stringAttribute(title)}>
+      {children}
+    </a>
+  );
+}
+
+export function TopikMath({ content }: TopikComponentProps) {
+  return (
+    <pre className="topik-math" data-language="math">
+      <code>{stringAttribute(content) ?? ""}</code>
+    </pre>
+  );
+}
+
+export function TopikMathInline({ content }: TopikComponentProps) {
+  return <code className="topik-math-inline">{stringAttribute(content) ?? ""}</code>;
+}
+
+export function TopikMermaid({ content }: TopikComponentProps) {
+  return (
+    <pre className="topik-mermaid" data-language="mermaid">
+      <code>{stringAttribute(content) ?? ""}</code>
+    </pre>
+  );
+}
+
 export function TopikBadge({ children, variant = "neutral" }: TopikComponentProps) {
   return (
     <span className="topik-badge" data-variant={stringAttribute(variant) ?? "neutral"}>
@@ -250,6 +437,50 @@ export function TopikExplanation({ children }: TopikComponentProps) {
   return <div className="topik-explanation">{children}</div>;
 }
 
+export function TopikTable({ children }: TopikComponentProps) {
+  return (
+    <div className="topik-table">
+      <table>{children}</table>
+    </div>
+  );
+}
+
+export function TopikTableRow({ children }: TopikComponentProps) {
+  return <tr>{children}</tr>;
+}
+
+export function TopikTableCell({ align, children, colSpan, rowSpan }: TopikComponentProps) {
+  return (
+    <td
+      align={tableAlignAttribute(align)}
+      colSpan={numberAttribute(colSpan)}
+      rowSpan={numberAttribute(rowSpan)}
+      style={tableCellStyle(align)}
+    >
+      {children}
+    </td>
+  );
+}
+
+export function TopikTableHeader({
+  align,
+  children,
+  colSpan,
+  rowSpan,
+  width,
+}: TopikComponentProps) {
+  return (
+    <th
+      align={tableAlignAttribute(align)}
+      colSpan={numberAttribute(colSpan)}
+      rowSpan={numberAttribute(rowSpan)}
+      style={tableCellStyle(align, width)}
+    >
+      {children}
+    </th>
+  );
+}
+
 function isChoiceElement(child: ReactNode): child is ReactElement<TopikComponentProps> {
   if (!isValidElement<TopikComponentProps & TopikRoleProps>(child)) return false;
   return (
@@ -268,22 +499,38 @@ export const defaultTopikComponents = {
   TopikCallout,
   TopikCard,
   TopikCardGrid,
+  TopikCodeBlock,
+  TopikCodeGroup,
+  TopikCodeTab,
   TopikChoice,
   TopikExplanation,
   TopikFigure,
+  TopikImage,
+  TopikInlineCode,
+  TopikLink,
+  TopikMath,
+  TopikMathInline,
+  TopikMermaid,
   TopikQuestion,
   TopikQuiz,
   TopikStep,
   TopikSteps,
   TopikTab,
   TopikTabs,
+  TopikTable,
+  TopikTableCell,
+  TopikTableHeader,
+  TopikTableRow,
+  TopikUnderline,
 } satisfies TopikComponentMap;
 
 export function getDefaultTopikComponents(
   overrides: Partial<TopikComponentMap> = {},
+  options: { onNavigateLink?: TopikLinkHandler } = {},
 ): TopikComponentMap {
   const TopikChoiceComponent = overrides.TopikChoice ?? TopikChoice;
   const TopikExplanationComponent = overrides.TopikExplanation ?? TopikExplanation;
+  const TopikLinkComponent = overrides.TopikLink ?? TopikLink;
 
   return {
     ...defaultTopikComponents,
@@ -293,6 +540,9 @@ export function getDefaultTopikComponents(
     },
     TopikExplanation: function TopikExplanationSlot(props: TopikComponentProps) {
       return <TopikExplanationComponent {...props} __topikRole="explanation" />;
+    },
+    TopikLink: function TopikLinkSlot(props: TopikComponentProps) {
+      return <TopikLinkComponent {...props} onNavigateLink={options.onNavigateLink} />;
     },
   };
 }

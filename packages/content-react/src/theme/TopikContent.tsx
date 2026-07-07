@@ -2,27 +2,36 @@ import { useMemo } from "react";
 import { renderTopikMarkdown, type RenderTopikMarkdownOptions } from "../core/render";
 import { useTopikContentContextValue } from "../core/context";
 import { getDefaultTopikComponents } from "./components";
+import type { TopikLinkHandler } from "../core/components";
 
 export interface TopikContentProps extends RenderTopikMarkdownOptions {
   content: string;
   className?: string;
+  onNavigateLink?: TopikLinkHandler;
 }
 
 export function TopikContent({
   className,
   components,
   content,
+  onNavigateLink,
   resolveAsset,
   ...compileOptions
 }: TopikContentProps) {
   const context = useTopikContentContextValue();
+  const effectiveOnNavigateLink = onNavigateLink ?? context?.onNavigateLink;
   const mergedComponents = useMemo(
     () =>
-      getDefaultTopikComponents({
-        ...context?.componentOverrides,
-        ...components,
-      }),
-    [context?.componentOverrides, components],
+      getDefaultTopikComponents(
+        {
+          ...context?.componentOverrides,
+          ...components,
+        },
+        {
+          onNavigateLink: effectiveOnNavigateLink,
+        },
+      ),
+    [context?.componentOverrides, components, effectiveOnNavigateLink],
   );
   const effectiveResolveAsset = resolveAsset ?? context?.resolveAsset;
   const rendered = useMemo(

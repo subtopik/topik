@@ -4,21 +4,36 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
+import { TopikContentProvider } from "../core/context";
 import {
   TopikAccordion,
   TopikBadge,
   TopikCallout,
   TopikCard,
   TopikCardGrid,
+  TopikCodeBlock,
+  TopikCodeGroup,
+  TopikCodeTab,
   TopikChoice,
   TopikExplanation,
   TopikFigure,
+  TopikImage,
+  TopikInlineCode,
+  TopikLink,
+  TopikMath,
+  TopikMathInline,
+  TopikMermaid,
   TopikQuestion,
   TopikQuiz,
   TopikStep,
   TopikSteps,
   TopikTab,
   TopikTabs,
+  TopikTable,
+  TopikTableCell,
+  TopikTableHeader,
+  TopikTableRow,
+  TopikUnderline,
 } from "./components";
 
 let root: Root | undefined;
@@ -86,6 +101,57 @@ describe("default Topik theme components", () => {
     expect(html).toContain("topik-accordion__summary");
     expect(html).toContain("Details");
     expect(html).toContain("More information.");
+  });
+
+  it("renders code blocks, inline code, and code groups", () => {
+    const block = renderToStaticMarkup(
+      <TopikCodeBlock content="const answer = 42;" language="ts" />,
+    );
+    const inline = renderToStaticMarkup(<TopikInlineCode>value</TopikInlineCode>);
+    const group = renderToStaticMarkup(
+      <TopikCodeGroup>
+        <TopikCodeTab icon="P" title="pnpm">
+          <TopikCodeBlock content="pnpm install" language="sh" />
+        </TopikCodeTab>
+      </TopikCodeGroup>,
+    );
+
+    expect(block).toContain('class="topik-code-block"');
+    expect(block).toContain('data-language="ts"');
+    expect(block).toContain("const answer = 42;");
+    expect(inline).toContain("<code>value</code>");
+    expect(group).toContain("topik-code-group");
+    expect(group).toContain('role="tablist"');
+    expect(group).toContain("pnpm");
+  });
+
+  it("supports keyboard navigation across code group tabs", () => {
+    const dom = mount(
+      <TopikCodeGroup>
+        <TopikCodeTab title="pnpm">
+          <TopikCodeBlock content="pnpm install" language="sh" />
+        </TopikCodeTab>
+        <TopikCodeTab title="npm">
+          <TopikCodeBlock content="npm install" language="sh" />
+        </TopikCodeTab>
+      </TopikCodeGroup>,
+    );
+
+    const tabs = dom.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+    const panels = dom.querySelectorAll<HTMLElement>('[role="tabpanel"]');
+    expect(tabs).toHaveLength(2);
+    expect(tabs[0].getAttribute("aria-selected")).toBe("true");
+    expect(panels[0].hidden).toBe(false);
+    expect(panels[1].hidden).toBe(true);
+
+    act(() => {
+      tabs[0].dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowRight" }));
+    });
+
+    expect(tabs[1].getAttribute("aria-selected")).toBe("true");
+    expect(panels[0].hidden).toBe(true);
+    expect(panels[1].hidden).toBe(false);
+    expect(document.activeElement).toBe(tabs[1]);
   });
 
   it("renders tabs with accessible tablist markup and switches panels", () => {
@@ -182,13 +248,75 @@ describe("default Topik theme components", () => {
     expect(html).toContain("<figcaption>System diagram</figcaption>");
   });
 
+  it("renders images, math, mermaid, and tables", () => {
+    const image = renderToStaticMarkup(
+      <TopikImage alt="Logo" src="/logo.svg" title="Logo title" />,
+    );
+    const math = renderToStaticMarkup(<TopikMath content="E = mc^2" />);
+    const inlineMath = renderToStaticMarkup(<TopikMathInline content="x^2" />);
+    const mermaid = renderToStaticMarkup(<TopikMermaid content="graph TD; A-->B;" />);
+    const table = renderToStaticMarkup(
+      <TopikTable>
+        <tbody>
+          <TopikTableRow>
+            <TopikTableHeader align="center" width="40%">
+              Head
+            </TopikTableHeader>
+            <TopikTableCell align="right">Cell</TopikTableCell>
+          </TopikTableRow>
+        </tbody>
+      </TopikTable>,
+    );
+
+    expect(image).toContain('class="topik-image"');
+    expect(image).toContain('src="/logo.svg"');
+    expect(math).toContain('class="topik-math"');
+    expect(inlineMath).toContain('class="topik-math-inline"');
+    expect(mermaid).toContain('class="topik-mermaid"');
+    expect(table).toContain('class="topik-table"');
+    expect(table).toContain('style="text-align:center;width:40%"');
+    expect(table).toContain('style="text-align:right"');
+  });
+
+  it("intercepts link navigation through explicit props and provider context", () => {
+    const handled: string[] = [];
+    const explicitDom = mount(
+      <TopikLink href="/explicit" onNavigateLink={(href: string) => handled.push(href) === 1}>
+        Explicit
+      </TopikLink>,
+    );
+    const explicitLink = explicitDom.querySelector<HTMLAnchorElement>("a");
+
+    act(() => explicitLink?.click());
+
+    expect(handled).toContain("/explicit");
+
+    act(() => root?.unmount());
+    root = undefined;
+    container?.remove();
+    container = undefined;
+
+    const providerDom = mount(
+      <TopikContentProvider onNavigateLink={(href) => handled.push(href) === 2}>
+        <TopikLink href="/provider">Provider</TopikLink>
+      </TopikContentProvider>,
+    );
+    const providerLink = providerDom.querySelector<HTMLAnchorElement>("a");
+
+    act(() => providerLink?.click());
+
+    expect(handled).toContain("/provider");
+  });
+
   it("renders badge variants and defaults", () => {
     const success = renderToStaticMarkup(<TopikBadge variant="success">Stable</TopikBadge>);
     const neutral = renderToStaticMarkup(<TopikBadge>Draft</TopikBadge>);
+    const underline = renderToStaticMarkup(<TopikUnderline>Important</TopikUnderline>);
 
     expect(success).toContain('class="topik-badge"');
     expect(success).toContain('data-variant="success"');
     expect(neutral).toContain('data-variant="neutral"');
+    expect(underline).toContain("<u>Important</u>");
   });
 
   it("renders quiz containers", () => {

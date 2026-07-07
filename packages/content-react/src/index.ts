@@ -11,6 +11,7 @@ export {
   TopikContentProvider,
   useTopikAssetResolver,
   useTopikComponents,
+  useTopikLinkHandler,
   type TopikContentProviderProps,
 } from "./core/context";
 export {
@@ -21,4 +22,5 @@ export {
   type TopikComponentName,
   type TopikComponentOverrides,
   type TopikComponentProps,
+  type TopikLinkHandler,
 } from "./core/components";

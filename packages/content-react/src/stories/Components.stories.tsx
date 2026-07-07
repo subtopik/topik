@@ -36,6 +36,68 @@ export const Tabs: Story = {
   },
 };
 
+export const Code: Story = {
+  args: {
+    content: [
+      "{% codeGroup %}",
+      '{% codeTab title="pnpm" icon="P" %}',
+      "```sh",
+      "pnpm add @topik/content-react",
+      "```",
+      "{% /codeTab %}",
+      '{% codeTab title="npm" icon="N" %}',
+      "```sh",
+      "npm install @topik/content-react",
+      "```",
+      "{% /codeTab %}",
+      "{% /codeGroup %}",
+      "",
+      "Use {% underline %}`TopikContent`{% /underline %} to render the compiled content.",
+    ].join("\n"),
+  },
+};
+
+export const MathAndMermaid: Story = {
+  args: {
+    content: [
+      '{% math content="E = mc^2" /%}',
+      "",
+      'Inline math: {% mathInline content="x^2 + y^2 = z^2" /%}',
+      "",
+      "```mermaid",
+      "graph TD;",
+      "  Draft-->Validate;",
+      "  Validate-->Render;",
+      "```",
+    ].join("\n"),
+  },
+};
+
+export const TableAndImage: Story = {
+  args: {
+    content: [
+      "![Resolved image](asset:diagram)",
+      "",
+      "| Feature | Default support | Rich support |",
+      "| - | - | - |",
+      "| Code | Semantic fallback | Shiki highlighting |",
+      "| Math | Source fallback | KaTeX rendering |",
+      "| Mermaid | Source fallback | SVG diagram |",
+    ].join("\n"),
+    resolveAsset: (id: string) => `https://placehold.co/920x360?text=${encodeURIComponent(id)}`,
+  },
+};
+
+export const LinkNavigation: Story = {
+  args: {
+    content: "[Open internal route](/docs/getting-started)",
+    onNavigateLink: (href) => {
+      console.log("intercepted navigation", href);
+      return true;
+    },
+  },
+};
+
 export const Steps: Story = {
   args: {
     content:

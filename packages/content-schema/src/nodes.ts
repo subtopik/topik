@@ -11,7 +11,8 @@ function renderFence(node: Node, config: Parameters<NonNullable<Schema["transfor
 
 function renderCode(node: Node, config: Parameters<NonNullable<Schema["transform"]>>[1]) {
   const attributes = node.transformAttributes(config);
-  return new Markdoc.Tag("TopikInlineCode", attributes, [node.attributes.content]);
+  const content = String(node.attributes.content ?? "");
+  return new Markdoc.Tag("TopikInlineCode", attributes, [content]);
 }
 
 export const topikNodeSchemas = {

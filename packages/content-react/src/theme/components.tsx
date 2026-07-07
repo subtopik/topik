@@ -74,6 +74,31 @@ function childElements(children: ReactNode): ReactElement<TopikComponentProps>[]
   return Children.toArray(children).filter(isValidElement) as ReactElement<TopikComponentProps>[];
 }
 
+function useRovingTabs(tabCount: number) {
+  const [selected, setSelected] = useState(0);
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  function selectTab(index: number, focus = false) {
+    setSelected(index);
+    if (focus) tabRefs.current[index]?.focus();
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    let nextIndex: number;
+
+    if (event.key === "ArrowLeft") nextIndex = index > 0 ? index - 1 : tabCount - 1;
+    else if (event.key === "ArrowRight") nextIndex = index < tabCount - 1 ? index + 1 : 0;
+    else if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = tabCount - 1;
+    else return;
+
+    event.preventDefault();
+    selectTab(nextIndex, true);
+  }
+
+  return { handleKeyDown, selectTab, selected, tabRefs };
+}
+
 export function TopikCallout({ children, title, variant = "note" }: TopikComponentProps) {
   return (
     <aside className="topik-callout" data-variant={stringAttribute(variant) ?? "note"}>
@@ -140,26 +165,7 @@ export function TopikUnderline({ children }: TopikComponentProps) {
 export function TopikCodeGroup({ children }: TopikComponentProps) {
   const id = useId();
   const tabs = childElements(children);
-  const [selected, setSelected] = useState(0);
-  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
-
-  function selectTab(index: number, focus = false) {
-    setSelected(index);
-    if (focus) tabRefs.current[index]?.focus();
-  }
-
-  function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
-    let nextIndex: number;
-
-    if (event.key === "ArrowLeft") nextIndex = index > 0 ? index - 1 : tabs.length - 1;
-    else if (event.key === "ArrowRight") nextIndex = index < tabs.length - 1 ? index + 1 : 0;
-    else if (event.key === "Home") nextIndex = 0;
-    else if (event.key === "End") nextIndex = tabs.length - 1;
-    else return;
-
-    event.preventDefault();
-    selectTab(nextIndex, true);
-  }
+  const { handleKeyDown, selectTab, selected, tabRefs } = useRovingTabs(tabs.length);
 
   return (
     <div className="topik-code-group">
@@ -223,26 +229,7 @@ export function TopikAccordion({ children, open, title }: TopikComponentProps) {
 export function TopikTabs({ children }: TopikComponentProps) {
   const id = useId();
   const tabs = childElements(children);
-  const [selected, setSelected] = useState(0);
-  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
-
-  function selectTab(index: number, focus = false) {
-    setSelected(index);
-    if (focus) tabRefs.current[index]?.focus();
-  }
-
-  function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
-    let nextIndex: number;
-
-    if (event.key === "ArrowLeft") nextIndex = index > 0 ? index - 1 : tabs.length - 1;
-    else if (event.key === "ArrowRight") nextIndex = index < tabs.length - 1 ? index + 1 : 0;
-    else if (event.key === "Home") nextIndex = 0;
-    else if (event.key === "End") nextIndex = tabs.length - 1;
-    else return;
-
-    event.preventDefault();
-    selectTab(nextIndex, true);
-  }
+  const { handleKeyDown, selectTab, selected, tabRefs } = useRovingTabs(tabs.length);
 
   return (
     <div className="topik-tabs">

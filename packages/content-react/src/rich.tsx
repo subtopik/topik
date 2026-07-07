@@ -7,6 +7,8 @@ import {
   RichTopikMath,
   RichTopikMathInline,
   RichTopikMermaid,
+  RichTopikThemeProvider,
+  type RichTopikTheme,
   useRichTopikComponents,
 } from "./rich/components";
 import { getDefaultTopikComponents } from "./theme/components";
@@ -17,6 +19,7 @@ export interface RichTopikContentProviderProps extends Omit<
 > {
   children: ReactNode;
   components?: Partial<TopikComponentMap>;
+  theme?: RichTopikTheme;
 }
 
 export function getRichTopikComponents(
@@ -28,13 +31,16 @@ export function getRichTopikComponents(
 export function RichTopikContentProvider({
   children,
   components,
+  theme,
   ...props
 }: RichTopikContentProviderProps) {
   const mergedComponents = useRichTopikComponents(components);
   return (
-    <TopikContentProvider {...props} components={mergedComponents}>
-      {children}
-    </TopikContentProvider>
+    <RichTopikThemeProvider theme={theme}>
+      <TopikContentProvider {...props} components={mergedComponents}>
+        {children}
+      </TopikContentProvider>
+    </RichTopikThemeProvider>
   );
 }
 
@@ -44,5 +50,7 @@ export {
   RichTopikMath,
   RichTopikMathInline,
   RichTopikMermaid,
+  RichTopikThemeProvider,
   useRichTopikComponents,
+  type RichTopikTheme,
 };

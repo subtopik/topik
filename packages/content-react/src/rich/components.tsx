@@ -1,12 +1,48 @@
-import { useEffect, useId, useMemo, useRef, useState, type DependencyList } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+  type DependencyList,
+  type ReactNode,
+} from "react";
 import { TopikCodeBlock, TopikMath, TopikMathInline, TopikMermaid } from "../theme/components";
 import type { TopikComponentMap, TopikComponentProps } from "../core/components";
+
+export type RichTopikTheme = "light" | "dark";
 
 interface HtmlState {
   html: string;
 }
 
 const emptyTopikComponents: Partial<TopikComponentMap> = {};
+const defaultRichTopikTheme: RichTopikTheme = "light";
+const RichTopikThemeContext = createContext<RichTopikTheme>(defaultRichTopikTheme);
+const shikiThemes = {
+  light: "github-light",
+  dark: "github-dark",
+} satisfies Record<RichTopikTheme, string>;
+const mermaidThemes = {
+  light: "default",
+  dark: "dark",
+} satisfies Record<RichTopikTheme, string>;
+let mermaidInitialized = false;
+
+export function RichTopikThemeProvider({
+  children,
+  theme = defaultRichTopikTheme,
+}: {
+  children: ReactNode;
+  theme?: RichTopikTheme;
+}) {
+  return <RichTopikThemeContext.Provider value={theme}>{children}</RichTopikThemeContext.Provider>;
+}
+
+function useRichTopikTheme(): RichTopikTheme {
+  return useContext(RichTopikThemeContext);
+}
 
 function stringAttribute(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
@@ -38,11 +74,12 @@ function useRenderedHtml(load: () => Promise<string>, deps: DependencyList): Htm
 export function RichTopikCodeBlock(props: TopikComponentProps) {
   const code = stringAttribute(props.content) ?? "";
   const language = stringAttribute(props.language) ?? "text";
+  const theme = useRichTopikTheme();
   const [copied, setCopied] = useState(false);
   const rendered = useRenderedHtml(async () => {
     const shiki = await import(/* @vite-ignore */ "shiki");
-    return shiki.codeToHtml(code, { lang: language, theme: "github-dark" });
-  }, [code, language]);
+    return shiki.codeToHtml(code, { lang: language, theme: shikiThemes[theme] });
+  }, [code, language, theme]);
 
   async function copyCode() {
     if (typeof navigator === "undefined" || !navigator.clipboard) return;
@@ -101,17 +138,21 @@ export function RichTopikMathInline(props: TopikComponentProps) {
 
 export function RichTopikMermaid(props: TopikComponentProps) {
   const content = stringAttribute(props.content) ?? "";
+  const theme = useRichTopikTheme();
   const id = useId().replace(/:/g, "-");
-  const initialized = useRef(false);
   const rendered = useRenderedHtml(async () => {
     const { default: mermaid } = await import(/* @vite-ignore */ "mermaid");
-    if (!initialized.current) {
-      mermaid.initialize({ securityLevel: "strict", startOnLoad: false, theme: "default" });
-      initialized.current = true;
+    if (!mermaidInitialized) {
+      mermaid.initialize({
+        securityLevel: "strict",
+        startOnLoad: false,
+        theme: mermaidThemes[theme],
+      });
+      mermaidInitialized = true;
     }
     const result = await mermaid.render(`topik-mermaid-${id}`, content);
     return result.svg;
-  }, [content, id]);
+  }, [content, id, theme]);
 
   if (!rendered.html) return <TopikMermaid {...props} />;
   return <div className="topik-rich-mermaid" dangerouslySetInnerHTML={{ __html: rendered.html }} />;

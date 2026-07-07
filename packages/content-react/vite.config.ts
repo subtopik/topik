@@ -1,6 +1,9 @@
 import { defineConfig } from "vite-plus";
+import { fileURLToPath } from "node:url";
 
-const contentSchemaSource = new URL("../content-schema/src/index.ts", import.meta.url).pathname;
+const contentSchemaSource = fileURLToPath(
+  new URL("../content-schema/src/index.ts", import.meta.url),
+);
 
 export default defineConfig({
   pack: {
@@ -15,7 +18,15 @@ export default defineConfig({
       },
     },
     deps: {
-      neverBundle: ["katex", "mermaid", "react", "react-dom", "react/jsx-runtime", "shiki"],
+      neverBundle: [
+        "katex",
+        "mermaid",
+        "react",
+        "react-dom",
+        "react/jsx-dev-runtime",
+        "react/jsx-runtime",
+        "shiki",
+      ],
     },
   },
   lint: {

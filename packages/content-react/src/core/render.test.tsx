@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { renderToStaticMarkup, renderToString } from "react-dom/server";
 import { TopikContentProvider, useTopikAssetResolver, useTopikComponents } from "./context";
 import { getTopikComponents } from "./components";

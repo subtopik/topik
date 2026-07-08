@@ -151,4 +151,35 @@ describe("rich content-react entry", () => {
       expect.stringContaining("graph TD"),
     );
   });
+
+  it("reinitializes mermaid when the rich theme changes", async () => {
+    const render = (theme: "light" | "dark") => (
+      <RichTopikContentProvider theme={theme}>
+        <TopikContent content={richContent} />
+      </RichTopikContentProvider>
+    );
+
+    mount(render("light"));
+
+    await waitFor(() => {
+      expect(mermaidRenderMock).toHaveBeenCalled();
+    });
+
+    mermaidInitializeMock.mockClear();
+    mermaidRenderMock.mockClear();
+
+    act(() => root?.render(render("dark")));
+
+    await waitFor(() => {
+      expect(mermaidInitializeMock).toHaveBeenCalledWith({
+        securityLevel: "strict",
+        startOnLoad: false,
+        theme: "dark",
+      });
+      expect(mermaidRenderMock).toHaveBeenCalledWith(
+        expect.stringMatching(/^topik-mermaid-/),
+        expect.stringContaining("graph TD"),
+      );
+    });
+  });
 });

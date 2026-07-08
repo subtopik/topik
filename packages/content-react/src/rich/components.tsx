@@ -28,7 +28,7 @@ const mermaidThemes = {
   light: "default",
   dark: "dark",
 } satisfies Record<RichTopikTheme, string>;
-let mermaidInitialized = false;
+let initializedMermaidTheme: string | undefined;
 
 export function RichTopikThemeProvider({
   children,
@@ -142,13 +142,14 @@ export function RichTopikMermaid(props: TopikComponentProps) {
   const id = useId().replace(/:/g, "-");
   const rendered = useRenderedHtml(async () => {
     const { default: mermaid } = await import(/* @vite-ignore */ "mermaid");
-    if (!mermaidInitialized) {
+    const mermaidTheme = mermaidThemes[theme];
+    if (initializedMermaidTheme !== mermaidTheme) {
       mermaid.initialize({
         securityLevel: "strict",
         startOnLoad: false,
-        theme: mermaidThemes[theme],
+        theme: mermaidTheme,
       });
-      mermaidInitialized = true;
+      initializedMermaidTheme = mermaidTheme;
     }
     const result = await mermaid.render(`topik-mermaid-${id}`, content);
     return result.svg;

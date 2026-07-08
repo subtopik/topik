@@ -27,6 +27,27 @@ export const BADGE_VARIANTS = ["neutral", "info", "success", "warning", "danger"
 export const QUIZ_QUESTION_TYPES = ["single-choice", "multiple-choice"] as const;
 
 export const topikComponents = {
+  codeBlock: {
+    name: "codeBlock",
+    render: "TopikCodeBlock",
+    kind: "block",
+    description: "A fenced code block with an optional language.",
+    attributes: {
+      language: { type: "string", description: "Code language identifier." },
+    },
+  },
+  inlineCode: {
+    name: "inlineCode",
+    render: "TopikInlineCode",
+    kind: "inline",
+    description: "Inline code text.",
+  },
+  underline: {
+    name: "underline",
+    render: "TopikUnderline",
+    kind: "inline",
+    description: "Inline underlined text.",
+  },
   callout: {
     name: "callout",
     render: "TopikCallout",
@@ -66,6 +87,26 @@ export const topikComponents = {
       href: { type: "string", description: "Optional target URL." },
       icon: { type: "string", description: "Optional icon identifier." },
     },
+  },
+  codeGroup: {
+    name: "codeGroup",
+    render: "TopikCodeGroup",
+    kind: "block",
+    description: "A set of labeled code tabs.",
+    allowedChildren: ["codeTab"],
+    requiredChildren: ["codeTab"],
+  },
+  codeTab: {
+    name: "codeTab",
+    render: "TopikCodeTab",
+    kind: "block",
+    description: "A labeled code example inside a code group.",
+    attributes: {
+      title: { type: "string", required: true, description: "Visible code tab label." },
+      icon: { type: "string", description: "Optional icon identifier." },
+    },
+    allowedChildren: ["fence"],
+    requiredChildren: ["fence"],
   },
   accordion: {
     name: "accordion",
@@ -123,6 +164,54 @@ export const topikComponents = {
       caption: { type: "string", description: "Optional figure caption." },
     },
   },
+  image: {
+    name: "image",
+    render: "TopikImage",
+    kind: "block",
+    description: "Markdown image rendered through Topik asset resolution.",
+    attributes: {
+      src: { type: "string", required: true, description: "Image source URL." },
+      alt: { type: "string", description: "Accessible alternative text." },
+      title: { type: "string", description: "Optional image title." },
+    },
+  },
+  link: {
+    name: "link",
+    render: "TopikLink",
+    kind: "inline",
+    description: "Markdown link with optional application-level navigation interception.",
+    attributes: {
+      href: { type: "string", required: true, description: "Link target URL." },
+      title: { type: "string", description: "Optional link title." },
+    },
+  },
+  math: {
+    name: "math",
+    render: "TopikMath",
+    kind: "block",
+    description: "Block math expression.",
+    attributes: {
+      content: { type: "string", required: true, description: "Math source." },
+    },
+  },
+  mathInline: {
+    name: "mathInline",
+    render: "TopikMathInline",
+    kind: "inline",
+    description: "Inline math expression.",
+    attributes: {
+      content: { type: "string", required: true, description: "Math source." },
+    },
+  },
+  mermaid: {
+    name: "mermaid",
+    render: "TopikMermaid",
+    kind: "block",
+    description: "Mermaid diagram rendered from a fenced mermaid code block.",
+    attributes: {
+      content: { type: "string", required: true, description: "Mermaid diagram source." },
+    },
+  },
   badge: {
     name: "badge",
     render: "TopikBadge",
@@ -173,6 +262,30 @@ export const topikComponents = {
     render: "TopikExplanation",
     kind: "block",
     description: "Explanation shown after answering a quiz question.",
+  },
+  table: {
+    name: "table",
+    render: "TopikTable",
+    kind: "block",
+    description: "Markdown table.",
+  },
+  tableRow: {
+    name: "tableRow",
+    render: "TopikTableRow",
+    kind: "block",
+    description: "A row inside a Markdown table.",
+  },
+  tableCell: {
+    name: "tableCell",
+    render: "TopikTableCell",
+    kind: "block",
+    description: "A cell inside a Markdown table.",
+  },
+  tableHeader: {
+    name: "tableHeader",
+    render: "TopikTableHeader",
+    kind: "block",
+    description: "A header cell inside a Markdown table.",
   },
 } as const satisfies Record<string, TopikComponentDefinition>;
 

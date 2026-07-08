@@ -10,3 +10,9 @@ export const badgeTag: Schema = {
     variant: { type: String, matches: [...BADGE_VARIANTS], default: "neutral" },
   },
 };
+
+export const underlineTag: Schema = {
+  render: "TopikUnderline",
+  inline: true,
+  children: [...INLINE_CHILDREN],
+};

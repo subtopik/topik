@@ -51,6 +51,10 @@ export function directTagChildren(node: Node, tag: string): Node[] {
   return structuralChildren(node).filter((child) => child.type === "tag" && child.tag === tag);
 }
 
+export function directChildrenOfType(node: Node, type: string): Node[] {
+  return structuralChildren(node).filter((child) => child.type === type);
+}
+
 export function validateOnlyDirectTagChildren(parent: string, allowed: readonly string[]) {
   return (node: Node): ValidationError[] => {
     const errors: ValidationError[] = [];
@@ -60,6 +64,18 @@ export function validateOnlyDirectTagChildren(parent: string, allowed: readonly 
       errors.push(invalidChildError(parent, child, allowed));
     }
     return errors;
+  };
+}
+
+export function validateRequiredDirectChild(parent: string, required: string) {
+  return (node: Node): ValidationError[] => {
+    if (directChildrenOfType(node, required).length > 0) return [];
+    return [
+      error(
+        `topik-${kebab(parent)}-requires-${kebab(required)}`,
+        `'${parent}' requires at least one '${required}' child.`,
+      ),
+    ];
   };
 }
 

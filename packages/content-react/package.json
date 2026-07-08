@@ -1,0 +1,72 @@
+{
+  "name": "@topik/content-react",
+  "version": "0.1.0-alpha.3",
+  "description": "React renderer for Topik Markdoc content",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/subtopik/topik.git",
+    "directory": "packages/content-react"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.mjs",
+    "./rich": "./dist/rich.mjs",
+    "./theme": "./dist/theme.mjs",
+    "./package.json": "./package.json",
+    "./rich/styles.css": "./dist/rich/styles.css",
+    "./theme/styles.css": "./dist/theme/styles.css"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "vp pack && mkdir -p dist/theme dist/rich && cp src/theme/styles.css dist/theme/styles.css && cp src/rich/styles.css dist/rich/styles.css",
+    "dev": "vp pack --watch",
+    "test": "vp test",
+    "check": "vp check",
+    "storybook": "storybook dev -p 6006",
+    "storybook:build": "storybook build",
+    "prepublishOnly": "vp run build"
+  },
+  "dependencies": {
+    "@markdoc/markdoc": "catalog:",
+    "@topik/content-schema": "workspace:*"
+  },
+  "devDependencies": {
+    "@storybook/addon-docs": "^10.0.8",
+    "@storybook/react-vite": "^10.0.8",
+    "@types/node": "catalog:",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "@typescript/native-preview": "catalog:",
+    "jsdom": "^27.3.0",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "storybook": "^10.0.8",
+    "typescript": "catalog:",
+    "vite-plus": "catalog:",
+    "vitest": "catalog:"
+  },
+  "peerDependencies": {
+    "katex": "^0.16.0",
+    "mermaid": "^11.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "shiki": "^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "katex": {
+      "optional": true
+    },
+    "mermaid": {
+      "optional": true
+    },
+    "shiki": {
+      "optional": true
+    }
+  }
+}

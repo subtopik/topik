@@ -13,6 +13,12 @@ updates:
     cooldown:
       default-days: 3
     groups:
+      vite-plus:
+        patterns:
+          - "vite-plus"
+          - "vite"
+          - "@voidzero-dev/vite-plus-core"
+          - "vitest"
       ajv:
         patterns:
           - "ajv"

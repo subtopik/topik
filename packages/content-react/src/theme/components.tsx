@@ -81,6 +81,33 @@ function childElements(children: ReactNode): ReactElement<TopikComponentProps>[]
   return Children.toArray(children).filter(isValidElement) as ReactElement<TopikComponentProps>[];
 }
 
+function useTopikLinkBehavior({
+  onNavigateLink,
+  renderLink,
+  resolveLink,
+}: Pick<TopikComponentProps, "onNavigateLink" | "renderLink" | "resolveLink">) {
+  const contextHandler = useTopikLinkHandler();
+  const contextRenderer = useTopikLinkRenderer();
+  const contextResolver = useTopikLinkResolver();
+
+  return {
+    handleNavigate:
+      typeof onNavigateLink === "function" ? (onNavigateLink as TopikLinkHandler) : contextHandler,
+    linkRenderer:
+      typeof renderLink === "function" ? (renderLink as TopikLinkRenderer) : contextRenderer,
+    linkResolver:
+      typeof resolveLink === "function" ? (resolveLink as TopikLinkResolver) : contextResolver,
+  };
+}
+
+function createLinkClickHandler(target: string, handleNavigate?: TopikLinkHandler) {
+  return function handleClick(event: MouseEvent<HTMLAnchorElement>) {
+    if (!target || event.defaultPrevented || event.button !== 0) return;
+    if (event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) return;
+    if (handleNavigate?.(target, event) === true) event.preventDefault();
+  };
+}
+
 function useRovingTabs(tabCount: number) {
   const [selected, setSelected] = useState(0);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -136,12 +163,11 @@ export function TopikCard({
   resolveLink,
   title,
 }: TopikComponentProps) {
-  const contextHandler = useTopikLinkHandler();
-  const contextRenderer = useTopikLinkRenderer();
-  const contextResolver = useTopikLinkResolver();
-  const handleNavigate = typeof onNavigateLink === "function" ? onNavigateLink : contextHandler;
-  const linkRenderer = typeof renderLink === "function" ? renderLink : contextRenderer;
-  const linkResolver = typeof resolveLink === "function" ? resolveLink : contextResolver;
+  const { handleNavigate, linkRenderer, linkResolver } = useTopikLinkBehavior({
+    onNavigateLink,
+    renderLink,
+    resolveLink,
+  });
   const content = (
     <>
       {icon ? <span className="topik-card__icon">{stringAttribute(icon)}</span> : null}
@@ -153,17 +179,12 @@ export function TopikCard({
   const target = stringAttribute(href);
   if (target) {
     const resolvedTarget = linkResolver?.(target) ?? target;
-    function handleClick(event: MouseEvent<HTMLAnchorElement>) {
-      if (event.defaultPrevented || event.button !== 0) return;
-      if (event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) return;
-      if (handleNavigate?.(target, event) === true) event.preventDefault();
-    }
 
     const linkProps = {
       children: content,
       className: "topik-card",
       href: resolvedTarget,
-      onClick: handleClick,
+      onClick: createLinkClickHandler(target, handleNavigate),
     };
     return <>{linkRenderer ? linkRenderer(linkProps) : <a {...linkProps} />}</>;
   }
@@ -357,25 +378,18 @@ export function TopikLink({
   resolveLink,
   title,
 }: TopikComponentProps) {
-  const contextHandler = useTopikLinkHandler();
-  const contextRenderer = useTopikLinkRenderer();
-  const contextResolver = useTopikLinkResolver();
+  const { handleNavigate, linkRenderer, linkResolver } = useTopikLinkBehavior({
+    onNavigateLink,
+    renderLink,
+    resolveLink,
+  });
   const target = stringAttribute(href) ?? "";
-  const handleNavigate = typeof onNavigateLink === "function" ? onNavigateLink : contextHandler;
-  const linkRenderer = typeof renderLink === "function" ? renderLink : contextRenderer;
-  const linkResolver = typeof resolveLink === "function" ? resolveLink : contextResolver;
   const resolvedTarget = linkResolver?.(target) ?? target;
-
-  function handleClick(event: MouseEvent<HTMLAnchorElement>) {
-    if (!target || event.defaultPrevented || event.button !== 0) return;
-    if (event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) return;
-    if (handleNavigate?.(target, event) === true) event.preventDefault();
-  }
 
   const linkProps = {
     children,
     href: resolvedTarget,
-    onClick: handleClick,
+    onClick: createLinkClickHandler(target, handleNavigate),
     title: stringAttribute(title),
   };
   return <>{linkRenderer ? linkRenderer(linkProps) : <a {...linkProps} />}</>;

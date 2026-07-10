@@ -1,3 +1,5 @@
+"use client";
+
 import type { ReactNode } from "react";
 import { TopikContentProvider, type TopikContentProviderProps } from "./core/context";
 import type { TopikComponentMap } from "./core/components";

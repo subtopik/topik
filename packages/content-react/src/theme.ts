@@ -1,4 +1,7 @@
+"use client";
+
 export { TopikContent, type TopikContentProps } from "./theme/TopikContent";
+export type { TopikColorScheme } from "./core/components";
 export {
   defaultTopikComponents,
   TopikAccordion,

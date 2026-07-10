@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 import { TopikContentProvider } from "../core/context";
+import type { TopikLinkRenderProps } from "../core/components";
 import {
   TopikAccordion,
   TopikBadge,
@@ -74,7 +75,12 @@ describe("default Topik theme components", () => {
   it("renders card grids and cards with link, icon, title, and body slots", () => {
     const linked = renderToStaticMarkup(
       <TopikCardGrid columns={2}>
-        <TopikCard href="/start" icon="S" title="Start">
+        <TopikCard
+          href="/start"
+          icon="S"
+          resolveLink={(href: string) => `/preview${href}`}
+          title="Start"
+        >
           Open the guide.
         </TopikCard>
       </TopikCardGrid>,
@@ -83,7 +89,7 @@ describe("default Topik theme components", () => {
 
     expect(linked).toContain("topik-card-grid");
     expect(linked).toContain("--topik-card-grid-columns:2");
-    expect(linked).toContain('<a class="topik-card" href="/start">');
+    expect(linked).toContain('<a class="topik-card" href="/preview/start">');
     expect(linked).toContain("topik-card__icon");
     expect(linked).toContain("Open the guide.");
     expect(plain).toContain('<div class="topik-card">');
@@ -248,6 +254,20 @@ describe("default Topik theme components", () => {
     expect(html).toContain("<figcaption>System diagram</figcaption>");
   });
 
+  it("uses an explicit color scheme instead of the browser preference", () => {
+    const lightHtml = renderToStaticMarkup(
+      <TopikFigure colorScheme="light" darkSrc="/dark.png" src="/light.png" />,
+    );
+    const darkHtml = renderToStaticMarkup(
+      <TopikFigure colorScheme="dark" darkSrc="/dark.png" src="/light.png" />,
+    );
+
+    expect(lightHtml).toContain('src="/light.png"');
+    expect(lightHtml).not.toContain("prefers-color-scheme");
+    expect(darkHtml).toContain('src="/dark.png"');
+    expect(darkHtml).not.toContain("prefers-color-scheme");
+  });
+
   it("renders images, math, mermaid, and tables", () => {
     const image = renderToStaticMarkup(
       <TopikImage alt="Logo" src="/logo.svg" title="Logo title" />,
@@ -281,7 +301,11 @@ describe("default Topik theme components", () => {
   it("intercepts link navigation through explicit props and provider context", () => {
     const handled: string[] = [];
     const explicitDom = mount(
-      <TopikLink href="/explicit" onNavigateLink={(href: string) => handled.push(href) === 1}>
+      <TopikLink
+        href="/explicit"
+        onNavigateLink={(href: string) => handled.push(href) === 1}
+        resolveLink={(href: string) => `/preview${href}`}
+      >
         Explicit
       </TopikLink>,
     );
@@ -290,6 +314,7 @@ describe("default Topik theme components", () => {
     act(() => explicitLink?.click());
 
     expect(handled).toContain("/explicit");
+    expect(explicitLink?.getAttribute("href")).toBe("/preview/explicit");
 
     act(() => root?.unmount());
     root = undefined;
@@ -297,7 +322,11 @@ describe("default Topik theme components", () => {
     container = undefined;
 
     const providerDom = mount(
-      <TopikContentProvider onNavigateLink={(href) => handled.push(href) === 2}>
+      <TopikContentProvider
+        onNavigateLink={(href) => handled.push(href) === 2}
+        renderLink={(props: TopikLinkRenderProps) => <a {...props} data-provider-link />}
+        resolveLink={(href) => `/provider-preview${href}`}
+      >
         <TopikLink href="/provider">Provider</TopikLink>
       </TopikContentProvider>,
     );
@@ -306,6 +335,46 @@ describe("default Topik theme components", () => {
     act(() => providerLink?.click());
 
     expect(handled).toContain("/provider");
+    expect(providerLink?.getAttribute("href")).toBe("/provider-preview/provider");
+    expect(providerLink?.hasAttribute("data-provider-link")).toBe(true);
+  });
+
+  it("intercepts card navigation through explicit props and provider context", () => {
+    const handled: string[] = [];
+    const explicitDom = mount(
+      <TopikCard
+        href="/explicit-card"
+        onNavigateLink={(href: string) => handled.push(href) === 1}
+        resolveLink={(href: string) => `/preview${href}`}
+        title="Explicit card"
+      />,
+    );
+
+    act(() => explicitDom.querySelector<HTMLAnchorElement>("a")?.click());
+    expect(handled).toContain("/explicit-card");
+    expect(explicitDom.querySelector("a")?.getAttribute("href")).toBe("/preview/explicit-card");
+
+    act(() => root?.unmount());
+    root = undefined;
+    container?.remove();
+    container = undefined;
+
+    const providerDom = mount(
+      <TopikContentProvider
+        onNavigateLink={(href) => handled.push(href) === 2}
+        renderLink={(props: TopikLinkRenderProps) => <a {...props} data-provider-link />}
+        resolveLink={(href) => `/provider-preview${href}`}
+      >
+        <TopikCard href="/provider-card" title="Provider card" />
+      </TopikContentProvider>,
+    );
+
+    act(() => providerDom.querySelector<HTMLAnchorElement>("a")?.click());
+    expect(handled).toContain("/provider-card");
+    expect(providerDom.querySelector("a")?.getAttribute("href")).toBe(
+      "/provider-preview/provider-card",
+    );
+    expect(providerDom.querySelector("a")?.hasAttribute("data-provider-link")).toBe(true);
   });
 
   it("renders badge variants and defaults", () => {

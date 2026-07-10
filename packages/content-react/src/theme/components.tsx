@@ -11,8 +11,15 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import type { TopikComponentMap, TopikComponentProps, TopikLinkHandler } from "../core/components";
-import { useTopikLinkHandler } from "../core/context";
+import type {
+  TopikColorScheme,
+  TopikComponentMap,
+  TopikComponentProps,
+  TopikLinkHandler,
+  TopikLinkRenderer,
+  TopikLinkResolver,
+} from "../core/components";
+import { useTopikLinkHandler, useTopikLinkRenderer, useTopikLinkResolver } from "../core/context";
 
 interface TopikRoleProps {
   __topikRole?: "choice" | "explanation";
@@ -120,7 +127,21 @@ export function TopikCardGrid({ children, columns }: TopikComponentProps) {
   );
 }
 
-export function TopikCard({ children, href, icon, title }: TopikComponentProps) {
+export function TopikCard({
+  children,
+  href,
+  icon,
+  onNavigateLink,
+  renderLink,
+  resolveLink,
+  title,
+}: TopikComponentProps) {
+  const contextHandler = useTopikLinkHandler();
+  const contextRenderer = useTopikLinkRenderer();
+  const contextResolver = useTopikLinkResolver();
+  const handleNavigate = typeof onNavigateLink === "function" ? onNavigateLink : contextHandler;
+  const linkRenderer = typeof renderLink === "function" ? renderLink : contextRenderer;
+  const linkResolver = typeof resolveLink === "function" ? resolveLink : contextResolver;
   const content = (
     <>
       {icon ? <span className="topik-card__icon">{stringAttribute(icon)}</span> : null}
@@ -131,11 +152,20 @@ export function TopikCard({ children, href, icon, title }: TopikComponentProps) 
 
   const target = stringAttribute(href);
   if (target) {
-    return (
-      <a className="topik-card" href={target}>
-        {content}
-      </a>
-    );
+    const resolvedTarget = linkResolver?.(target) ?? target;
+    function handleClick(event: MouseEvent<HTMLAnchorElement>) {
+      if (event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) return;
+      if (handleNavigate?.(target, event) === true) event.preventDefault();
+    }
+
+    const linkProps = {
+      children: content,
+      className: "topik-card",
+      href: resolvedTarget,
+      onClick: handleClick,
+    };
+    return <>{linkRenderer ? linkRenderer(linkProps) : <a {...linkProps} />}</>;
   }
 
   return <div className="topik-card">{content}</div>;
@@ -290,14 +320,18 @@ export function TopikStep({ children, title }: TopikComponentProps) {
   );
 }
 
-export function TopikFigure({ alt, caption, darkSrc, src }: TopikComponentProps) {
+export function TopikFigure({ alt, caption, colorScheme, darkSrc, src }: TopikComponentProps) {
   const lightSource = stringAttribute(src) ?? "";
   const darkSource = stringAttribute(darkSrc);
+  const explicitColorScheme = colorScheme as TopikColorScheme | undefined;
+  const imageSource = explicitColorScheme === "dark" ? (darkSource ?? lightSource) : lightSource;
   return (
     <figure className="topik-figure">
       <picture>
-        {darkSource ? <source media="(prefers-color-scheme: dark)" srcSet={darkSource} /> : null}
-        <img alt={stringAttribute(alt) ?? ""} src={lightSource} />
+        {explicitColorScheme === undefined && darkSource ? (
+          <source media="(prefers-color-scheme: dark)" srcSet={darkSource} />
+        ) : null}
+        <img alt={stringAttribute(alt) ?? ""} src={imageSource} />
       </picture>
       {caption ? <figcaption>{stringAttribute(caption)}</figcaption> : null}
     </figure>
@@ -315,10 +349,22 @@ export function TopikImage({ alt, src, title }: TopikComponentProps) {
   );
 }
 
-export function TopikLink({ children, href, onNavigateLink, title }: TopikComponentProps) {
+export function TopikLink({
+  children,
+  href,
+  onNavigateLink,
+  renderLink,
+  resolveLink,
+  title,
+}: TopikComponentProps) {
   const contextHandler = useTopikLinkHandler();
+  const contextRenderer = useTopikLinkRenderer();
+  const contextResolver = useTopikLinkResolver();
   const target = stringAttribute(href) ?? "";
   const handleNavigate = typeof onNavigateLink === "function" ? onNavigateLink : contextHandler;
+  const linkRenderer = typeof renderLink === "function" ? renderLink : contextRenderer;
+  const linkResolver = typeof resolveLink === "function" ? resolveLink : contextResolver;
+  const resolvedTarget = linkResolver?.(target) ?? target;
 
   function handleClick(event: MouseEvent<HTMLAnchorElement>) {
     if (!target || event.defaultPrevented || event.button !== 0) return;
@@ -326,11 +372,13 @@ export function TopikLink({ children, href, onNavigateLink, title }: TopikCompon
     if (handleNavigate?.(target, event) === true) event.preventDefault();
   }
 
-  return (
-    <a href={target} onClick={handleClick} title={stringAttribute(title)}>
-      {children}
-    </a>
-  );
+  const linkProps = {
+    children,
+    href: resolvedTarget,
+    onClick: handleClick,
+    title: stringAttribute(title),
+  };
+  return <>{linkRenderer ? linkRenderer(linkProps) : <a {...linkProps} />}</>;
 }
 
 export function TopikMath({ content }: TopikComponentProps) {
@@ -513,23 +561,50 @@ export const defaultTopikComponents = {
 
 export function getDefaultTopikComponents(
   overrides: Partial<TopikComponentMap> = {},
-  options: { onNavigateLink?: TopikLinkHandler } = {},
+  options: {
+    colorScheme?: TopikColorScheme;
+    onNavigateLink?: TopikLinkHandler;
+    renderLink?: TopikLinkRenderer;
+    resolveLink?: TopikLinkResolver;
+  } = {},
 ): TopikComponentMap {
+  const TopikCardComponent = overrides.TopikCard ?? TopikCard;
   const TopikChoiceComponent = overrides.TopikChoice ?? TopikChoice;
   const TopikExplanationComponent = overrides.TopikExplanation ?? TopikExplanation;
+  const TopikFigureComponent = overrides.TopikFigure ?? TopikFigure;
   const TopikLinkComponent = overrides.TopikLink ?? TopikLink;
 
   return {
     ...defaultTopikComponents,
     ...overrides,
+    TopikCard: function TopikCardSlot(props: TopikComponentProps) {
+      return (
+        <TopikCardComponent
+          {...props}
+          onNavigateLink={options.onNavigateLink}
+          renderLink={options.renderLink}
+          resolveLink={options.resolveLink}
+        />
+      );
+    },
     TopikChoice: function TopikChoiceSlot(props: TopikComponentProps) {
       return <TopikChoiceComponent {...props} __topikRole="choice" />;
     },
     TopikExplanation: function TopikExplanationSlot(props: TopikComponentProps) {
       return <TopikExplanationComponent {...props} __topikRole="explanation" />;
     },
+    TopikFigure: function TopikFigureSlot(props: TopikComponentProps) {
+      return <TopikFigureComponent {...props} colorScheme={options.colorScheme} />;
+    },
     TopikLink: function TopikLinkSlot(props: TopikComponentProps) {
-      return <TopikLinkComponent {...props} onNavigateLink={options.onNavigateLink} />;
+      return (
+        <TopikLinkComponent
+          {...props}
+          onNavigateLink={options.onNavigateLink}
+          renderLink={options.renderLink}
+          resolveLink={options.resolveLink}
+        />
+      );
     },
   };
 }

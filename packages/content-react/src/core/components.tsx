@@ -1,4 +1,4 @@
-import type { ComponentType, MouseEvent, ReactNode } from "react";
+import type { ComponentPropsWithoutRef, ComponentType, MouseEvent, ReactNode } from "react";
 
 export const topikComponentNames = [
   "TopikAccordion",
@@ -42,6 +42,12 @@ export type TopikComponent = ComponentType<TopikComponentProps>;
 export type TopikComponentMap = Record<TopikComponentName, TopikComponent>;
 export type TopikComponentOverrides = Partial<TopikComponentMap>;
 export type TopikAssetResolver = (id: string) => string;
+export type TopikColorScheme = "light" | "dark";
+export type TopikLinkResolver = (href: string) => string;
+export type TopikLinkRenderProps = Omit<ComponentPropsWithoutRef<"a">, "href"> & {
+  href: string;
+};
+export type TopikLinkRenderer = (props: TopikLinkRenderProps) => ReactNode;
 export type TopikLinkHandler = (
   href: string,
   event: MouseEvent<HTMLAnchorElement>,

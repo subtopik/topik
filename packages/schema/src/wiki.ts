@@ -1,3 +1,6 @@
+export const WIKI_NAV_ICON_PATTERN = "^[a-z0-9]+(?:-[a-z0-9]+)*$";
+export const WIKI_EXTERNAL_HREF_PATTERN = "^https?://[^\\s/?#]+";
+
 export const wikiSchema = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $id: "https://topik.dev/schemas/wiki.json",
@@ -64,13 +67,33 @@ export const wikiSchema = {
         { $ref: "#/$defs/linkNode" },
       ],
     },
+    internalOrExternal: {
+      type: "object",
+      oneOf: [
+        {
+          properties: { children: {} },
+          required: ["children"],
+          not: { properties: { href: {} }, required: ["href"] },
+        },
+        {
+          properties: { href: {} },
+          required: ["href"],
+          not: {
+            anyOf: [
+              { properties: { slug: {} }, required: ["slug"] },
+              { properties: { children: {} }, required: ["children"] },
+            ],
+          },
+        },
+      ],
+    },
     groupNode: {
       type: "object",
       properties: {
         type: { type: "string", const: "group" },
         title: { type: "string", maxLength: 256 },
         slug: { type: "string", maxLength: 256, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
-        icon: { type: "string", maxLength: 256, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        icon: { type: "string", maxLength: 256, pattern: WIKI_NAV_ICON_PATTERN },
         expanded: { type: "boolean" },
         hidden: { type: "boolean" },
         children: { type: "array", items: { $ref: "#/$defs/sidebarNode" } },
@@ -84,7 +107,7 @@ export const wikiSchema = {
         type: { type: "string", const: "tab" },
         title: { type: "string", maxLength: 256 },
         slug: { type: "string", maxLength: 256, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
-        icon: { type: "string", maxLength: 256, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        icon: { type: "string", maxLength: 256, pattern: WIKI_NAV_ICON_PATTERN },
         hidden: { type: "boolean" },
         children: {
           anyOf: [
@@ -92,26 +115,15 @@ export const wikiSchema = {
             { type: "array", items: { $ref: "#/$defs/sidebarNode" } },
           ],
         },
-        href: { type: "string", maxLength: 2048 },
+        href: {
+          type: "string",
+          maxLength: 2048,
+          format: "uri",
+          pattern: WIKI_EXTERNAL_HREF_PATTERN,
+        },
       },
       required: ["type", "title"],
-      oneOf: [
-        {
-          properties: { children: {} },
-          required: ["children"],
-          not: { properties: { href: {} }, required: ["href"] },
-        },
-        {
-          properties: { href: {} },
-          required: ["href"],
-          not: {
-            anyOf: [
-              { properties: { slug: {} }, required: ["slug"] },
-              { properties: { children: {} }, required: ["children"] },
-            ],
-          },
-        },
-      ],
+      allOf: [{ $ref: "#/$defs/internalOrExternal" }],
       additionalProperties: false,
     },
     dropdownNode: {
@@ -120,29 +132,18 @@ export const wikiSchema = {
         type: { type: "string", const: "dropdown" },
         title: { type: "string", maxLength: 256 },
         slug: { type: "string", maxLength: 256, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
-        icon: { type: "string", maxLength: 256, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        icon: { type: "string", maxLength: 256, pattern: WIKI_NAV_ICON_PATTERN },
         hidden: { type: "boolean" },
         children: { type: "array", items: { $ref: "#/$defs/sidebarNode" } },
-        href: { type: "string", maxLength: 2048 },
+        href: {
+          type: "string",
+          maxLength: 2048,
+          format: "uri",
+          pattern: WIKI_EXTERNAL_HREF_PATTERN,
+        },
       },
       required: ["type", "title"],
-      oneOf: [
-        {
-          properties: { children: {} },
-          required: ["children"],
-          not: { properties: { href: {} }, required: ["href"] },
-        },
-        {
-          properties: { href: {} },
-          required: ["href"],
-          not: {
-            anyOf: [
-              { properties: { slug: {} }, required: ["slug"] },
-              { properties: { children: {} }, required: ["children"] },
-            ],
-          },
-        },
-      ],
+      allOf: [{ $ref: "#/$defs/internalOrExternal" }],
       additionalProperties: false,
     },
     pageNode: {
@@ -161,7 +162,13 @@ export const wikiSchema = {
           pattern: "^([a-z0-9]+(?:[-/][a-z0-9]+)*)?$",
           description: "URL path relative to the containing navigation node",
         },
-        icon: { type: "string", maxLength: 256, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        sourcePath: {
+          type: "string",
+          maxLength: 512,
+          pattern: "^[a-z0-9]+(?:[-/][a-z0-9]+)*$",
+          description: "Full extensionless Markdown source path",
+        },
+        icon: { type: "string", maxLength: 256, pattern: WIKI_NAV_ICON_PATTERN },
         hidden: { type: "boolean" },
       },
       required: ["type", "page", "slug"],
@@ -172,9 +179,14 @@ export const wikiSchema = {
       properties: {
         type: { type: "string", const: "link" },
         title: { type: "string", maxLength: 256 },
-        icon: { type: "string", maxLength: 256, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        icon: { type: "string", maxLength: 256, pattern: WIKI_NAV_ICON_PATTERN },
         hidden: { type: "boolean" },
-        href: { type: "string", maxLength: 2048 },
+        href: {
+          type: "string",
+          maxLength: 2048,
+          format: "uri",
+          pattern: WIKI_EXTERNAL_HREF_PATTERN,
+        },
       },
       required: ["type", "title", "href"],
       additionalProperties: false,
@@ -226,6 +238,7 @@ export type WikiPageNavNode = {
   type: "page";
   page: string;
   slug: string;
+  sourcePath?: string;
   icon?: string;
   hidden?: boolean;
 };

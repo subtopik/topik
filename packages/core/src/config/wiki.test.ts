@@ -54,6 +54,28 @@ describe("parseWikiConfig", () => {
       ],
     });
     expect(config.navigation).toHaveLength(1);
+    expect(config.navigation).toEqual([
+      {
+        type: "tab",
+        title: "Documentation",
+        slug: "docs",
+        children: [
+          {
+            type: "dropdown",
+            title: "Guides",
+            slug: "guides",
+            children: [
+              {
+                type: "group",
+                title: "Runtime",
+                slug: "runtime",
+                children: ["overview"],
+              },
+            ],
+          },
+        ],
+      },
+    ]);
   });
 
   test("parses external switcher entries and sidebar links", () => {
@@ -86,7 +108,9 @@ describe("parseWikiConfig", () => {
           { type: "group", title: "Guides", slug: "guides", children: [] },
         ],
       }),
-    ).toThrow("Navigation surfaces cannot be mixed at the same level");
+    ).toThrow(
+      "Navigation surfaces cannot be mixed at the same level: expected tab, found sidebar at navigation[1]",
+    );
   });
 
   test("rejects tabs below the root", () => {
@@ -103,7 +127,7 @@ describe("parseWikiConfig", () => {
           },
         ],
       }),
-    ).toThrow("Navigation tab nodes are not allowed at this level");
+    ).toThrow("Navigation tab nodes are not allowed at navigation[0].children[0]");
   });
 
   test("rejects tabs inside dropdowns", () => {
@@ -120,7 +144,7 @@ describe("parseWikiConfig", () => {
           },
         ],
       }),
-    ).toThrow("Navigation tab nodes are not allowed at this level");
+    ).toThrow("Navigation tab nodes are not allowed at navigation[0].children[0]");
   });
 
   test("accepts pathless tabs, dropdowns, and groups", () => {
@@ -170,7 +194,9 @@ describe("parseWikiConfig", () => {
           },
         ],
       }),
-    ).toThrow("Navigation contains duplicate page route /guides");
+    ).toThrow(
+      "Navigation contains duplicate page route /guides: first defined at navigation[0], duplicated at navigation[1].children[0]",
+    );
   });
 
   test("detects collisions through pathless switchers", () => {
@@ -194,6 +220,31 @@ describe("parseWikiConfig", () => {
         navigation: [{ type: "link", title: "XSS", href: "javascript:alert(1)" }],
       }),
     ).toThrow();
+  });
+
+  test.each(["https://", "http://", "https://[invalid"])(
+    "rejects malformed external URL %s",
+    (href) => {
+      expect(() =>
+        parseWikiConfig({
+          id: "docs",
+          title: "Docs",
+          navigation: [{ type: "link", title: "Malformed", href }],
+        }),
+      ).toThrow("href must be a valid http or https URL");
+    },
+  );
+
+  test.each([
+    ["page", [{ type: "page", slug: "intro", icon: "foo/bar" }]],
+    ["group", [{ type: "group", title: "Guides", icon: "foo/bar", children: [] }]],
+    ["tab", [{ type: "tab", title: "Docs", icon: "foo/bar", children: [] }]],
+    ["dropdown", [{ type: "dropdown", title: "Docs", icon: "foo/bar", children: [] }]],
+    ["link", [{ type: "link", title: "GitHub", icon: "foo/bar", href: "https://github.com" }]],
+  ])("rejects schema-invalid icons on %s nodes", (_type, navigation) => {
+    expect(() => parseWikiConfig({ id: "docs", title: "Docs", navigation })).toThrow(
+      "Icons must be lowercase DNS-style names",
+    );
   });
 
   test("rejects switchers that define both an internal slug and external href", () => {

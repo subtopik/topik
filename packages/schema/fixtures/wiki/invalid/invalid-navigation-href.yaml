@@ -1,0 +1,9 @@
+apiVersion: v1
+type: Wiki
+name: docs
+spec:
+  title: Docs
+  navigation:
+    - type: link
+      title: Invalid URL
+      href: https://

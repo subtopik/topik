@@ -92,6 +92,55 @@ describe("resolveWikiNavigation", () => {
     expect(resolveWikiContentHref("https://example.com", "guides-index", resolved)).toBeNull();
   });
 
+  test("uses the compiled source path for shorthand nested index pages", () => {
+    const shorthand = resolveWikiNavigation([
+      {
+        type: "page",
+        page: "runtime-index",
+        slug: "runtime",
+        sourcePath: "runtime/index",
+      },
+      { type: "page", page: "runtime-next", slug: "runtime/next" },
+    ]);
+
+    expect(shorthand.pageByName.get("runtime-index")?.sourcePath).toBe("runtime/index");
+    expect(resolveWikiContentHref("./next.md", "runtime-index", shorthand)).toMatchObject({
+      route: "runtime/next",
+    });
+  });
+
+  test.each(["/", "/index", "/index.md", "./index.mdx#heading", "index.markdown"])(
+    "resolves root index alias %s",
+    (href) => {
+      const root = resolveWikiNavigation([{ type: "page", page: "home", slug: "" }]);
+      expect(resolveWikiContentHref(href, "home", root)).toMatchObject({
+        page: { page: "home" },
+        route: "",
+        hash: href.includes("#") ? "heading" : "",
+      });
+    },
+  );
+
+  test("normalizes queries, trailing slashes, and encoded internal paths", () => {
+    expect(
+      resolveWikiContentHref(
+        "/docs/guides/installation/?view=full#setup",
+        "guides-index",
+        resolved,
+      ),
+    ).toMatchObject({ route: "docs/guides/installation", hash: "setup" });
+    expect(
+      resolveWikiContentHref("/docs/guides/%69nstallation", "guides-index", resolved),
+    ).toMatchObject({ route: "docs/guides/installation" });
+  });
+
+  test("rejects non-content and unresolvable links", () => {
+    expect(resolveWikiContentHref("asset:hero", "guides-index", resolved)).toBeNull();
+    expect(resolveWikiContentHref("./installation", "unknown", resolved)).toBeNull();
+    expect(resolveWikiContentHref("//example.com/docs", "guides-index", resolved)).toBeNull();
+    expect(resolveWikiContentHref("/%ZZ", "guides-index", resolved)).toBeNull();
+  });
+
   test("rejects duplicate canonical pages and routes", () => {
     expect(() =>
       resolveWikiNavigation([

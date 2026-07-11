@@ -79,7 +79,7 @@ export function resolveWikiNavigation(
           page: node.page,
           node,
           route,
-          sourcePath: joinWikiPath(prefix, node.slug || "index"),
+          sourcePath: node.sourcePath ?? joinWikiPath(prefix, node.slug || "index"),
           ancestors,
         };
         if (pageByName.has(node.page)) {
@@ -145,10 +145,14 @@ export function resolveWikiContentHref(
   }
   if (url.origin !== INTERNAL_WIKI_ORIGIN) return null;
 
-  const route = url.pathname
-    .replace(/^\/+|\/+$/g, "")
-    .replace(/\.(?:mdx?|markdown)$/i, "")
-    .replace(/\/index$/, "");
+  let decodedPath: string;
+  try {
+    decodedPath = decodeURIComponent(url.pathname);
+  } catch {
+    return null;
+  }
+  const normalizedPath = decodedPath.replace(/^\/+|\/+$/g, "").replace(/\.(?:mdx?|markdown)$/i, "");
+  const route = normalizedPath === "index" ? "" : normalizedPath.replace(/\/index$/, "");
   const page = resolved.pageByRoute.get(route);
   return page ? { page, route, hash: url.hash.replace(/^#/, "") } : null;
 }

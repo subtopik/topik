@@ -1,4 +1,8 @@
 import { z } from "zod";
+import { WIKI_EXTERNAL_HREF_PATTERN, WIKI_NAV_ICON_PATTERN } from "@topik/schema";
+
+const wikiNavIconPattern = new RegExp(WIKI_NAV_ICON_PATTERN);
+const wikiExternalHrefPattern = new RegExp(WIKI_EXTERNAL_HREF_PATTERN);
 
 type WikiPageNavNode = {
   type: "page";
@@ -66,13 +70,27 @@ const wikiPagePath = z
   );
 
 const title = z.string().min(1).max(256);
-const icon = z.string().min(1).max(256).optional();
+const icon = z
+  .string()
+  .min(1)
+  .max(256)
+  .regex(wikiNavIconPattern, "Icons must be lowercase DNS-style names")
+  .optional();
 const href = z
   .string()
   .max(2048)
-  .refine((value) => value.startsWith("https://") || value.startsWith("http://"), {
-    message: "href must be an http or https URL",
-  });
+  .refine(
+    (value) => {
+      if (!wikiExternalHrefPattern.test(value)) return false;
+      try {
+        const url = new URL(value);
+        return url.protocol === "https:" || url.protocol === "http:";
+      } catch {
+        return false;
+      }
+    },
+    { message: "href must be a valid http or https URL" },
+  );
 
 const navNodeSchema: z.ZodType<WikiNavNode> = z.lazy(() =>
   z.union([
@@ -139,23 +157,29 @@ function validateHomogeneousLevel(
   path: Array<string | number>,
   context: z.RefinementCtx,
 ): void {
-  const kinds = new Set(nodes.map(nodeKind));
-  for (const kind of kinds) {
+  const kinds = nodes.map(nodeKind);
+  nodes.forEach((_node, index) => {
+    const kind = kinds[index];
     if (!allowed.has(kind)) {
+      const nodePath = [...path, index];
       context.addIssue({
         code: "custom",
-        path,
-        message: `Navigation ${kind} nodes are not allowed at this level`,
+        path: nodePath,
+        message: `Navigation ${kind} nodes are not allowed at ${formatConfigPath(nodePath)}`,
       });
     }
-  }
-  if (kinds.size > 1) {
+  });
+
+  const expectedKind = kinds[0];
+  kinds.forEach((kind, index) => {
+    if (kind === expectedKind) return;
+    const nodePath = [...path, index];
     context.addIssue({
       code: "custom",
-      path,
-      message: "Navigation surfaces cannot be mixed at the same level",
+      path: nodePath,
+      message: `Navigation surfaces cannot be mixed at the same level: expected ${expectedKind}, found ${kind} at ${formatConfigPath(nodePath)}`,
     });
-  }
+  });
 
   nodes.forEach((node, index) => {
     if (typeof node === "string" || !("children" in node)) return;
@@ -186,7 +210,7 @@ function validateUniquePageRoutes(
         context.addIssue({
           code: "custom",
           path: nodePath,
-          message: `Navigation contains duplicate page route /${route}`,
+          message: `Navigation contains duplicate page route /${route}: first defined at ${formatConfigPath(previousPath)}, duplicated at ${formatConfigPath(nodePath)}`,
         });
       } else {
         routes.set(route, nodePath);
@@ -203,6 +227,18 @@ function validateUniquePageRoutes(
       );
     }
   });
+}
+
+function formatConfigPath(path: Array<string | number>): string {
+  return path.reduce<string>(
+    (formatted, segment) =>
+      typeof segment === "number"
+        ? `${formatted}[${segment}]`
+        : formatted
+          ? `${formatted}.${segment}`
+          : segment,
+    "",
+  );
 }
 
 function joinNavigationPath(prefix: string, path?: string): string {

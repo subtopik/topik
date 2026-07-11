@@ -1,13 +1,14 @@
 import { createHash } from "node:crypto";
 import { access, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import type {
-  Wiki,
-  WikiDropdownNavNode,
-  WikiNavigation,
-  WikiNavNode as CompiledWikiNavNode,
-  WikiPage,
-  WikiSidebarNavNode,
+import {
+  joinWikiPath,
+  type Wiki,
+  type WikiDropdownNavNode,
+  type WikiNavigation,
+  type WikiNavNode as CompiledWikiNavNode,
+  type WikiPage,
+  type WikiSidebarNavNode,
 } from "@topik/schema";
 import type { Resource } from "../resource";
 import { parseWikiConfig, WIKI_PAGE_NAME_HASH_LENGTH, type WikiNavNode } from "../config/wiki";
@@ -121,9 +122,9 @@ function collectPagePaths(nodes: WikiNavNode[], prefix = ""): string[] {
   const paths: string[] = [];
   for (const node of nodes) {
     if (typeof node === "string" || node.type === "page") {
-      paths.push(joinNavigationPath(prefix, typeof node === "string" ? node : node.slug));
+      paths.push(joinWikiPath(prefix, typeof node === "string" ? node : node.slug));
     } else if ("children" in node) {
-      paths.push(...collectPagePaths(node.children, joinNavigationPath(prefix, node.slug)));
+      paths.push(...collectPagePaths(node.children, joinWikiPath(prefix, node.slug)));
     }
   }
   return paths;
@@ -164,23 +165,20 @@ function resolveNavigation(
   return nodes.map((node) => {
     if (typeof node === "string" || node.type === "page") {
       const localPath = typeof node === "string" ? node : node.slug;
-      const pagePath = joinNavigationPath(prefix, localPath);
+      const pagePath = joinWikiPath(prefix, localPath);
       const pageName = pagePathToName(wikiId, pagePath);
       return {
         type: "page",
         page: pageName,
         slug: pagePathToSlug(localPath),
+        sourcePath: pagePath,
         ...(typeof node !== "string" && node.icon ? { icon: node.icon } : {}),
         ...(typeof node !== "string" && node.hidden ? { hidden: true } : {}),
       };
     }
 
     if ("children" in node) {
-      const children = resolveNavigation(
-        node.children,
-        wikiId,
-        joinNavigationPath(prefix, node.slug),
-      );
+      const children = resolveNavigation(node.children, wikiId, joinWikiPath(prefix, node.slug));
       if (node.type === "group") {
         return {
           type: "group",
@@ -238,11 +236,6 @@ function resolveNavigation(
       ...(node.hidden ? { hidden: true } : {}),
     };
   });
-}
-
-function joinNavigationPath(prefix: string, path?: string): string {
-  if (!path) return prefix;
-  return prefix ? `${prefix}/${path}` : path;
 }
 
 function normalizePagePath(pagePath: string): string {

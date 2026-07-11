@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import Ajv2020 from "ajv/dist/2020";
 import addFormats from "ajv-formats";
-import { wikiSchema, wikiPageSchema } from "@topik/schema";
+import {
+  resolveWikiContentHref,
+  resolveWikiNavigation,
+  wikiSchema,
+  wikiPageSchema,
+} from "@topik/schema";
 import { compileWiki, pagePathToName } from "./wiki";
 
 const ajv = new Ajv2020({ strict: true, discriminator: true });
@@ -93,16 +98,31 @@ title: Test Wiki
 navigation:
   - index
   - runtime/index
+  - runtime/next
 `);
     await writePage("index", "# Home\n");
     await mkdir(join(dir, "runtime"), { recursive: true });
     await writeFile(join(dir, "runtime", "index.md"), "# Runtime\n");
+    await writeFile(join(dir, "runtime", "next.md"), "# Next\n");
 
     const result = await compileWiki({ dir });
     const wiki = result.resources.find((r) => r.type === "Wiki");
     const nav = wiki!.spec.navigation as Array<Record<string, unknown>>;
-    expect(nav[0]).toMatchObject({ page: pageName("tw", "index"), slug: "" });
-    expect(nav[1]).toMatchObject({ page: pageName("tw", "runtime/index"), slug: "runtime" });
+    expect(nav[0]).toMatchObject({
+      page: pageName("tw", "index"),
+      slug: "",
+      sourcePath: "index",
+    });
+    expect(nav[1]).toMatchObject({
+      page: pageName("tw", "runtime/index"),
+      slug: "runtime",
+      sourcePath: "runtime/index",
+    });
+
+    const resolved = resolveWikiNavigation(wiki!.spec.navigation!);
+    expect(
+      resolveWikiContentHref("./next.md", pageName("tw", "runtime/index"), resolved),
+    ).toMatchObject({ route: "runtime/next" });
   });
 
   test("uses id from config as resource name", async () => {
@@ -275,11 +295,13 @@ navigation:
         type: "page",
         page: pageName("test", "docs/guides/getting-started/index"),
         slug: "",
+        sourcePath: "docs/guides/getting-started/index",
       },
       {
         type: "page",
         page: pageName("test", "docs/guides/getting-started/installation"),
         slug: "installation",
+        sourcePath: "docs/guides/getting-started/installation",
       },
     ]);
   });
@@ -322,6 +344,7 @@ navigation:
       type: "page",
       page: pageName("test", "overview"),
       slug: "overview",
+      sourcePath: "overview",
     });
   });
 

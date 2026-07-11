@@ -2,6 +2,8 @@ export { personSchema, type Person } from "./person";
 export { assetSchema, type Asset } from "./asset";
 export { guideSchema, type Guide } from "./guide";
 export {
+  WIKI_EXTERNAL_HREF_PATTERN,
+  WIKI_NAV_ICON_PATTERN,
   wikiSchema,
   type Wiki,
   type WikiDropdownNavNode,

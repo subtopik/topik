@@ -18,9 +18,11 @@ spec:
                 - type: page
                   page: guides-index
                   slug: ""
+                  sourcePath: docs/guides/index
                 - type: page
                   page: guides-installation
                   slug: installation
+                  sourcePath: docs/guides/installation
         - type: dropdown
           title: Blog
           href: https://example.com/blog

@@ -1,4 +1,5 @@
 import Markdoc, { type Node, type RenderableTreeNodes, type Schema } from "@markdoc/markdoc";
+import { validateTopikHref } from "./links";
 
 function renderFence(node: Node, config: Parameters<NonNullable<Schema["transform"]>>[1]) {
   const attributes = node.transformAttributes(config);
@@ -44,7 +45,7 @@ export const topikNodeSchemas = {
     render: "TopikLink",
     children: ["strong", "em", "s", "code", "text", "tag"],
     attributes: {
-      href: { type: String, required: true },
+      href: { type: String, required: true, validate: validateTopikHref },
       title: { type: String },
     },
   },

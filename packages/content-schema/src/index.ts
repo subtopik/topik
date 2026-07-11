@@ -7,6 +7,15 @@ export {
 } from "./content";
 export { assignTopikHeadingIds, type TopikHeading } from "./headings";
 export {
+  analyzeTopikContent,
+  validateTopikHref,
+  type AnalyzeTopikContentOptions,
+  type AnalyzeTopikContentResult,
+  type TopikAnalyzedHeading,
+  type TopikContentLink,
+  type TopikContentLinkKind,
+} from "./links";
+export {
   BADGE_VARIANTS,
   CALLOUT_VARIANTS,
   QUIZ_QUESTION_TYPES,

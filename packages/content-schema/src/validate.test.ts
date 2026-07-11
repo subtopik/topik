@@ -138,6 +138,10 @@ graph TD;
       "attribute-missing-required",
     );
     expect(idsFor("{% cardGrid columns=5 /%}")).toContain("topik-columns-range");
+    expect(idsFor("[Unsupported](ftp://example.com)")).toContain("link-scheme-unsupported");
+    expect(idsFor('{% card title="Unsafe" href="data:text/plain,test" /%}')).toContain(
+      "link-scheme-unsafe",
+    );
   });
 
   test("validates nested child structure", () => {

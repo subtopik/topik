@@ -12,6 +12,7 @@ type CompileCommand = {
     dryRun: boolean;
     clean: boolean;
     validate: boolean;
+    links: "error" | "warning" | "off";
   }) => Promise<void>;
 };
 
@@ -39,6 +40,7 @@ describe("compile command", () => {
         dryRun: true,
         clean: false,
         validate: false,
+        links: "error",
       }),
     ).resolves.toBeUndefined();
 

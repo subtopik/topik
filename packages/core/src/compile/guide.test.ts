@@ -187,7 +187,7 @@ describe("compileGuides", () => {
   test("returns no resources when the collection config is missing", async () => {
     await writeGuide("post", "# Post\n");
 
-    await expect(compileGuides({ dir })).resolves.toEqual({ resources: [] });
+    await expect(compileGuides({ dir })).resolves.toEqual({ diagnostics: [], resources: [] });
   });
 
   test("extracts local image references as Asset resources", async () => {
@@ -241,9 +241,22 @@ describe("compileGuides", () => {
     await writeCollectionConfig("id: blog\ntitle: Blog\n");
     await writeGuide("post", "# Post\n\n{% tabs %}\nPlain paragraph\n{% /tabs %}\n");
 
-    await expect(compileGuides({ dir })).rejects.toThrow(
-      /Invalid Topik content in .*post\.md:[\s\S]*topik-tabs-children/,
-    );
+    await expect(compileGuides({ dir })).rejects.toThrow(/post\.md:[\s\S]*topik-tabs-children/);
+  });
+
+  test("validates local heading fragments with configurable severity", async () => {
+    await writeCollectionConfig("id: docs\ntitle: Docs\n");
+    await writeGuide("post", "# Post\n\n[Missing](#missing)\n");
+
+    await expect(compileGuides({ dir })).rejects.toThrow(/link-fragment-not-found/);
+
+    const warning = await compileGuides({ dir, validation: { links: "warning" } });
+    expect(warning.diagnostics).toEqual([
+      expect.objectContaining({ id: "link-fragment-not-found", level: "warning" }),
+    ]);
+
+    const off = await compileGuides({ dir, validation: { links: "off" } });
+    expect(off.diagnostics).toEqual([]);
   });
 
   test("compiled Guide resources validate against schema", async () => {

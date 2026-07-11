@@ -1,7 +1,13 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { boolean, command, positional, string } from "@drizzle-team/brocli";
-import { compile as compileContent, validateResources, type Resource } from "@topik/core";
+import {
+  compile as compileContent,
+  validateResources,
+  type LinkValidationPolicy,
+  type Resource,
+} from "@topik/core";
+import { printDiagnostics } from "../diagnostics";
 import { CliError } from "../errors";
 import { formatValidationFailure } from "../validation-output";
 
@@ -50,11 +56,20 @@ export const compile = command({
     validate: boolean("validate")
       .desc("Validate compiled resources against schemas")
       .default(false),
+    links: string("links")
+      .desc("How unresolved internal links are handled")
+      .enum("error", "warning", "off")
+      .default("error"),
   },
   handler: async (options) => {
     const dir = resolve(options.dir);
     const format = options.format as Format;
-    const { resources } = await compileContent({ dir });
+    const links = options.links as LinkValidationPolicy;
+    const { diagnostics, resources } = await compileContent({
+      dir,
+      validation: { links },
+    });
+    printDiagnostics(diagnostics);
 
     if (options.validate) {
       const { valid, errors } = validateResources(resources);

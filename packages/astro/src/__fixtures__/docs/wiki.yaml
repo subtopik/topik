@@ -1,8 +1,0 @@
-id: docs
-title: Documentation
-navigation:
-  - introduction
-  - group: Getting Started
-    children:
-      - getting-started/installation
-      - getting-started/configuration

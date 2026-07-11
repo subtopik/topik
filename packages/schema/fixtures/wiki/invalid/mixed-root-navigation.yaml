@@ -1,0 +1,14 @@
+apiVersion: v1
+type: Wiki
+name: mixed-navigation
+spec:
+  title: Mixed Navigation
+  navigation:
+    - type: tab
+      title: Documentation
+      slug: docs
+      children: []
+    - type: group
+      title: Guides
+      slug: guides
+      children: []

@@ -1,0 +1,10 @@
+apiVersion: v1
+type: Wiki
+name: empty-slug
+spec:
+  title: Empty Slug
+  navigation:
+    - type: tab
+      title: Documentation
+      slug: ""
+      children: []

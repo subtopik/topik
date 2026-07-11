@@ -39,11 +39,7 @@ export const wikiSchema = {
           maxLength: 1024,
           description: "Description of the wiki",
         },
-        navigation: {
-          type: "array",
-          items: { $ref: "#/$defs/navNode" },
-          description: "Navigation tree for the wiki",
-        },
+        navigation: { $ref: "#/$defs/navigation" },
         theme: { $ref: "#/$defs/theme" },
       },
       required: ["title"],
@@ -53,71 +49,135 @@ export const wikiSchema = {
   required: ["apiVersion", "type", "name", "spec"],
   additionalProperties: false,
   $defs: {
-    navNode: {
+    navigation: {
+      description: "A homogeneous root of tabs, dropdowns, or sidebar nodes",
+      anyOf: [
+        { type: "array", items: { $ref: "#/$defs/tabNode" } },
+        { type: "array", items: { $ref: "#/$defs/dropdownNode" } },
+        { type: "array", items: { $ref: "#/$defs/sidebarNode" } },
+      ],
+    },
+    sidebarNode: {
+      oneOf: [
+        { $ref: "#/$defs/groupNode" },
+        { $ref: "#/$defs/pageNode" },
+        { $ref: "#/$defs/linkNode" },
+      ],
+    },
+    groupNode: {
       type: "object",
-      discriminator: { propertyName: "type" },
+      properties: {
+        type: { type: "string", const: "group" },
+        title: { type: "string", maxLength: 256 },
+        slug: { type: "string", maxLength: 256, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        icon: { type: "string", maxLength: 256, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        expanded: { type: "boolean" },
+        hidden: { type: "boolean" },
+        children: { type: "array", items: { $ref: "#/$defs/sidebarNode" } },
+      },
+      required: ["type", "title", "children"],
+      additionalProperties: false,
+    },
+    tabNode: {
+      type: "object",
+      properties: {
+        type: { type: "string", const: "tab" },
+        title: { type: "string", maxLength: 256 },
+        slug: { type: "string", maxLength: 256, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        icon: { type: "string", maxLength: 256, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        hidden: { type: "boolean" },
+        children: {
+          anyOf: [
+            { type: "array", items: { $ref: "#/$defs/dropdownNode" } },
+            { type: "array", items: { $ref: "#/$defs/sidebarNode" } },
+          ],
+        },
+        href: { type: "string", maxLength: 2048 },
+      },
+      required: ["type", "title"],
       oneOf: [
         {
-          type: "object",
-          properties: {
-            type: { type: "string", const: "group" },
-            title: { type: "string", maxLength: 256 },
-            slug: { type: "string", maxLength: 256, pattern: "^[a-z0-9]+(?:[-/][a-z0-9]+)*$" },
-            icon: { type: "string", maxLength: 256, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
-            expanded: { type: "boolean" },
-            hidden: { type: "boolean" },
-            children: { type: "array", items: { $ref: "#/$defs/navNode" } },
-          },
-          required: ["type", "title", "children"],
-          additionalProperties: false,
+          properties: { children: {} },
+          required: ["children"],
+          not: { properties: { href: {} }, required: ["href"] },
         },
         {
-          type: "object",
-          properties: {
-            type: { type: "string", const: "tab" },
-            title: { type: "string", maxLength: 256 },
-            slug: { type: "string", maxLength: 256, pattern: "^[a-z0-9]+(?:[-/][a-z0-9]+)*$" },
-            icon: { type: "string", maxLength: 256, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
-            children: { type: "array", items: { $ref: "#/$defs/navNode" } },
+          properties: { href: {} },
+          required: ["href"],
+          not: {
+            anyOf: [
+              { properties: { slug: {} }, required: ["slug"] },
+              { properties: { children: {} }, required: ["children"] },
+            ],
           },
-          required: ["type", "title", "children"],
-          additionalProperties: false,
-        },
-        {
-          type: "object",
-          properties: {
-            type: { type: "string", const: "page" },
-            page: {
-              type: "string",
-              pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$",
-              maxLength: 63,
-              description: "Reference to a WikiPage by name",
-            },
-            slug: {
-              type: "string",
-              maxLength: 512,
-              pattern: "^([a-z0-9]+(?:[-/][a-z0-9]+)*)?$",
-              description: "URL path for the page",
-            },
-            icon: { type: "string", maxLength: 256, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
-            hidden: { type: "boolean" },
-          },
-          required: ["type", "page", "slug"],
-          additionalProperties: false,
-        },
-        {
-          type: "object",
-          properties: {
-            type: { type: "string", const: "link" },
-            title: { type: "string", maxLength: 256 },
-            icon: { type: "string", maxLength: 256, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
-            hidden: { type: "boolean" },
-            href: { type: "string", maxLength: 2048 },
-          },
-          required: ["type", "title", "href"],
-          additionalProperties: false,
         },
       ],
+      additionalProperties: false,
+    },
+    dropdownNode: {
+      type: "object",
+      properties: {
+        type: { type: "string", const: "dropdown" },
+        title: { type: "string", maxLength: 256 },
+        slug: { type: "string", maxLength: 256, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        icon: { type: "string", maxLength: 256, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        hidden: { type: "boolean" },
+        children: { type: "array", items: { $ref: "#/$defs/sidebarNode" } },
+        href: { type: "string", maxLength: 2048 },
+      },
+      required: ["type", "title"],
+      oneOf: [
+        {
+          properties: { children: {} },
+          required: ["children"],
+          not: { properties: { href: {} }, required: ["href"] },
+        },
+        {
+          properties: { href: {} },
+          required: ["href"],
+          not: {
+            anyOf: [
+              { properties: { slug: {} }, required: ["slug"] },
+              { properties: { children: {} }, required: ["children"] },
+            ],
+          },
+        },
+      ],
+      additionalProperties: false,
+    },
+    pageNode: {
+      type: "object",
+      properties: {
+        type: { type: "string", const: "page" },
+        page: {
+          type: "string",
+          pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          maxLength: 63,
+          description: "Reference to a WikiPage by name",
+        },
+        slug: {
+          type: "string",
+          maxLength: 512,
+          pattern: "^([a-z0-9]+(?:[-/][a-z0-9]+)*)?$",
+          description: "URL path relative to the containing navigation node",
+        },
+        icon: { type: "string", maxLength: 256, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        hidden: { type: "boolean" },
+      },
+      required: ["type", "page", "slug"],
+      additionalProperties: false,
+    },
+    linkNode: {
+      type: "object",
+      properties: {
+        type: { type: "string", const: "link" },
+        title: { type: "string", maxLength: 256 },
+        icon: { type: "string", maxLength: 256, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        hidden: { type: "boolean" },
+        href: { type: "string", maxLength: 2048 },
+      },
+      required: ["type", "title", "href"],
+      additionalProperties: false,
     },
     theme: {
       type: "object",
@@ -162,25 +222,79 @@ export const wikiSchema = {
   },
 } as const;
 
-export type WikiNavNode =
-  | {
-      type: "group";
-      title: string;
-      slug?: string;
-      icon?: string;
-      expanded?: boolean;
-      hidden?: boolean;
-      children: WikiNavNode[];
-    }
-  | {
-      type: "tab";
-      title: string;
-      slug?: string;
-      icon?: string;
-      children: WikiNavNode[];
-    }
-  | { type: "page"; page: string; slug: string; icon?: string; hidden?: boolean }
-  | { type: "link"; title: string; icon?: string; hidden?: boolean; href: string };
+export type WikiPageNavNode = {
+  type: "page";
+  page: string;
+  slug: string;
+  icon?: string;
+  hidden?: boolean;
+};
+
+export type WikiLinkNavNode = {
+  type: "link";
+  title: string;
+  icon?: string;
+  hidden?: boolean;
+  href: string;
+};
+
+export type WikiGroupNavNode = {
+  type: "group";
+  title: string;
+  slug?: string;
+  icon?: string;
+  expanded?: boolean;
+  hidden?: boolean;
+  children: WikiSidebarNavNode[];
+};
+
+export type WikiSidebarNavNode = WikiGroupNavNode | WikiPageNavNode | WikiLinkNavNode;
+
+export type WikiInternalDropdownNavNode = {
+  type: "dropdown";
+  title: string;
+  slug?: string;
+  icon?: string;
+  hidden?: boolean;
+  children: WikiSidebarNavNode[];
+};
+
+export type WikiExternalDropdownNavNode = {
+  type: "dropdown";
+  title: string;
+  icon?: string;
+  hidden?: boolean;
+  href: string;
+};
+
+export type WikiDropdownNavNode = WikiInternalDropdownNavNode | WikiExternalDropdownNavNode;
+
+export type WikiInternalTabNavNode = {
+  type: "tab";
+  title: string;
+  slug?: string;
+  icon?: string;
+  hidden?: boolean;
+  children: WikiDropdownNavNode[] | WikiSidebarNavNode[];
+};
+
+export type WikiExternalTabNavNode = {
+  type: "tab";
+  title: string;
+  icon?: string;
+  hidden?: boolean;
+  href: string;
+};
+
+export type WikiTabNavNode = WikiInternalTabNavNode | WikiExternalTabNavNode;
+
+export type WikiNavContainerNode =
+  | WikiGroupNavNode
+  | WikiInternalDropdownNavNode
+  | WikiInternalTabNavNode;
+
+export type WikiNavNode = WikiTabNavNode | WikiDropdownNavNode | WikiSidebarNavNode;
+export type WikiNavigation = WikiTabNavNode[] | WikiDropdownNavNode[] | WikiSidebarNavNode[];
 
 export type WikiTheme = {
   colors?: {
@@ -201,7 +315,7 @@ export type Wiki = {
   spec: {
     title: string;
     description?: string | null;
-    navigation?: WikiNavNode[];
+    navigation?: WikiNavigation;
     theme?: WikiTheme;
   };
 };

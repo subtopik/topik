@@ -1,0 +1,29 @@
+apiVersion: v1
+type: Wiki
+name: navigation-conformance
+spec:
+  title: Navigation Conformance
+  navigation:
+    - type: tab
+      title: Documentation
+      slug: docs
+      children:
+        - type: dropdown
+          title: Guides
+          children:
+            - type: group
+              title: Getting Started
+              slug: guides
+              children:
+                - type: page
+                  page: guides-index
+                  slug: ""
+                - type: page
+                  page: guides-installation
+                  slug: installation
+        - type: dropdown
+          title: Blog
+          href: https://example.com/blog
+    - type: tab
+      title: GitHub
+      href: https://github.com/subtopik/topik

@@ -1,0 +1,24 @@
+apiVersion: v1
+type: Wiki
+name: platform-docs
+spec:
+  title: Platform Documentation
+  navigation:
+    - type: tab
+      title: Documentation
+      slug: docs
+      children:
+        - type: dropdown
+          title: Guides
+          slug: guides
+          children:
+            - type: group
+              title: Getting Started
+              slug: getting-started
+              children:
+                - type: page
+                  page: introduction
+                  slug: introduction
+        - type: dropdown
+          title: Blog
+          href: https://example.com/blog

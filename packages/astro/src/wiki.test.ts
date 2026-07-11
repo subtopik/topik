@@ -3,22 +3,16 @@ import { describe, expect, test } from "vite-plus/test";
 import type { LoaderContext } from "astro/loaders";
 import { topikWikiLoader } from "./wiki";
 
-const fixturesDir = join(import.meta.dirname, "__fixtures__/docs");
-const wikiPageNamePattern = /^docs-[a-f0-9]{16}$/;
+const docsDir = join(import.meta.dirname, "../../../docs");
+const wikiPageNamePattern = /^topik-docs-[a-f0-9]{16}$/;
 
 function createMockContext() {
   const entries = new Map<string, { id: string; data: Record<string, unknown>; body?: string }>();
   return {
     store: {
       clear: () => entries.clear(),
-      set: (entry: {
-        id: string;
-        data: Record<string, unknown>;
-        body?: string;
-        digest?: string;
-      }) => {
-        entries.set(entry.id, entry);
-      },
+      set: (entry: { id: string; data: Record<string, unknown>; body?: string; digest?: string }) =>
+        entries.set(entry.id, entry),
     },
     logger: { info: () => {} },
     generateDigest: (data: string) => String(data.length),
@@ -28,94 +22,65 @@ function createMockContext() {
 
 describe("topikWikiLoader", () => {
   test("returns a loader with the correct name", () => {
-    const loader = topikWikiLoader({ dir: fixturesDir });
-    expect(loader.name).toBe("topik-wiki");
+    expect(topikWikiLoader({ dir: docsDir }).name).toBe("topik-wiki");
   });
 
-  test("loads wiki pages from a directory", async () => {
-    const loader = topikWikiLoader({ dir: fixturesDir });
-    const ctx = createMockContext();
-    await loader.load(ctx);
+  test("loads the self-hosted Topik wiki", async () => {
+    const loader = topikWikiLoader({ dir: docsDir });
+    const context = createMockContext();
+    await loader.load(context);
 
-    expect(ctx.entries.size).toBe(3);
+    expect(context.entries.size).toBe(4);
+    const home = [...context.entries.values()].find((entry) => entry.data.slug === "");
+    expect(home).toMatchObject({
+      id: expect.stringMatching(wikiPageNamePattern),
+      data: { title: "Topik", wiki: "topik-docs", slug: "" },
+    });
+    expect(home?.body).toContain("# Topik");
   });
 
-  test("populates wiki page entries with correct data", async () => {
-    const loader = topikWikiLoader({ dir: fixturesDir });
-    const ctx = createMockContext();
-    await loader.load(ctx);
+  test("uses the shared resolver for pathless container routes", async () => {
+    const loader = topikWikiLoader({ dir: docsDir });
+    const context = createMockContext();
+    await loader.load(context);
 
-    const entry = [...ctx.entries.values()].find((entry) => entry.data.slug === "introduction");
-    expect(entry).toBeDefined();
-    expect(entry!.id).toMatch(wikiPageNamePattern);
-    expect(entry!.data.title).toBe("Introduction");
-    expect(entry!.data.wiki).toBe("docs");
-    expect(entry!.data.slug).toBe("introduction");
-    expect(entry!.data.description).toBe("Start here to learn the docs.");
+    expect([...context.entries.values()].map((entry) => entry.data.slug)).toEqual([
+      "",
+      "resources",
+      "navigation",
+      "rendering",
+    ]);
   });
 
-  test("resolves slugs from navigation for nested pages", async () => {
-    const loader = topikWikiLoader({ dir: fixturesDir });
-    const ctx = createMockContext();
-    await loader.load(ctx);
-
-    const entry = [...ctx.entries.values()].find(
-      (entry) => entry.data.slug === "getting-started/installation",
-    );
-    expect(entry).toBeDefined();
-    expect(entry!.id).toMatch(wikiPageNamePattern);
-    expect(entry!.data.slug).toBe("getting-started/installation");
-  });
-
-  test("includes body content", async () => {
-    const loader = topikWikiLoader({ dir: fixturesDir });
-    const ctx = createMockContext();
-    await loader.load(ctx);
-
-    const entry = [...ctx.entries.values()].find((entry) => entry.data.slug === "introduction");
-    expect(entry!.body).toContain("# Introduction");
-  });
-
-  test("exposes navigation tree after loading", async () => {
-    const loader = topikWikiLoader({ dir: fixturesDir });
-    const ctx = createMockContext();
-
-    await expect(loader.getNavigation()).resolves.toEqual([
+  test("exposes the compiled navigation tree", async () => {
+    const navigation = await topikWikiLoader({ dir: docsDir }).getNavigation();
+    expect(navigation).toEqual([
       {
         type: "page",
         page: expect.stringMatching(wikiPageNamePattern),
-        slug: "introduction",
+        slug: "",
       },
       {
         type: "group",
-        title: "Getting Started",
+        title: "Concepts",
         children: [
           {
             type: "page",
             page: expect.stringMatching(wikiPageNamePattern),
-            slug: "getting-started/installation",
+            slug: "resources",
           },
           {
             type: "page",
             page: expect.stringMatching(wikiPageNamePattern),
-            slug: "getting-started/configuration",
+            slug: "navigation",
+          },
+          {
+            type: "page",
+            page: expect.stringMatching(wikiPageNamePattern),
+            slug: "rendering",
           },
         ],
       },
     ]);
-
-    await loader.load(ctx);
-
-    const nav = await loader.getNavigation();
-    expect(nav.length).toBe(2);
-    expect(nav[0]).toEqual({
-      type: "page",
-      page: expect.stringMatching(wikiPageNamePattern),
-      slug: "introduction",
-    });
-    expect(nav[1]).toMatchObject({
-      type: "group",
-      title: "Getting Started",
-    });
   });
 });

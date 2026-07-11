@@ -27,7 +27,8 @@
     "prepublishOnly": "vp run build"
   },
   "dependencies": {
-    "@markdoc/markdoc": "catalog:"
+    "@markdoc/markdoc": "catalog:",
+    "github-slugger": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",

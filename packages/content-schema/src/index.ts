@@ -5,6 +5,7 @@ export {
   type ParseTopikContentOptions,
   type TopikContentNode,
 } from "./content";
+export { assignTopikHeadingIds, type TopikHeading } from "./headings";
 export {
   BADGE_VARIANTS,
   CALLOUT_VARIANTS,

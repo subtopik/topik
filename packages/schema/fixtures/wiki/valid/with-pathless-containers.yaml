@@ -1,0 +1,18 @@
+apiVersion: v1
+type: Wiki
+name: pathless-docs
+spec:
+  title: Pathless Documentation
+  navigation:
+    - type: tab
+      title: Documentation
+      children:
+        - type: dropdown
+          title: Guides
+          children:
+            - type: group
+              title: Getting Started
+              children:
+                - type: page
+                  page: overview
+                  slug: overview

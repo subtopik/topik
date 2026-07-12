@@ -1,7 +1,15 @@
 import { createHash } from "node:crypto";
 import { access, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import type { Wiki, WikiNavNode as CompiledWikiNavNode, WikiPage } from "@topik/schema";
+import {
+  joinWikiPath,
+  type Wiki,
+  type WikiDropdownNavNode,
+  type WikiNavigation,
+  type WikiNavNode as CompiledWikiNavNode,
+  type WikiPage,
+  type WikiSidebarNavNode,
+} from "@topik/schema";
 import type { Resource } from "../resource";
 import { parseWikiConfig, WIKI_PAGE_NAME_HASH_LENGTH, type WikiNavNode } from "../config/wiki";
 import { extractAssets } from "./assets";
@@ -93,7 +101,9 @@ export async function compileWiki(options: CompileWikiOptions): Promise<CompileR
     spec: {
       title: config.title,
       ...(config.description != null ? { description: config.description } : {}),
-      ...(config.navigation ? { navigation: resolveNavigation(config.navigation, config.id) } : {}),
+      ...(config.navigation
+        ? { navigation: resolveNavigation(config.navigation, config.id) as WikiNavigation }
+        : {}),
       ...(config.theme ? { theme: config.theme } : {}),
     },
   };
@@ -108,13 +118,13 @@ function normalizeWikiPageDescription(description: unknown): string | undefined 
   return typeof description === "string" ? description.slice(0, 1024) : undefined;
 }
 
-function collectPagePaths(nodes: WikiNavNode[]): string[] {
+function collectPagePaths(nodes: WikiNavNode[], prefix = ""): string[] {
   const paths: string[] = [];
   for (const node of nodes) {
-    if (typeof node === "string") {
-      paths.push(node);
-    } else if ("group" in node || "tab" in node) {
-      paths.push(...collectPagePaths(node.children));
+    if (typeof node === "string" || node.type === "page") {
+      paths.push(joinWikiPath(prefix, typeof node === "string" ? node : node.slug));
+    } else if ("children" in node) {
+      paths.push(...collectPagePaths(node.children, joinWikiPath(prefix, node.slug)));
     }
   }
   return paths;
@@ -147,30 +157,83 @@ export function pagePathToName(wikiId: string, pagePath: string): string {
   return `${wikiId}-${pathHash}`;
 }
 
-function resolveNavigation(nodes: WikiNavNode[], wikiId: string): CompiledWikiNavNode[] {
+function resolveNavigation(
+  nodes: WikiNavNode[],
+  wikiId: string,
+  prefix = "",
+): CompiledWikiNavNode[] {
   return nodes.map((node) => {
-    if (typeof node === "string") {
-      const pageName = pagePathToName(wikiId, node);
-      return { type: "page", page: pageName, slug: pagePathToSlug(node) };
-    }
-
-    if ("group" in node || "tab" in node) {
-      const isTab = "tab" in node;
-      const title = isTab ? node.tab : node.group;
+    if (typeof node === "string" || node.type === "page") {
+      const localPath = typeof node === "string" ? node : node.slug;
+      const pagePath = joinWikiPath(prefix, localPath);
+      const pageName = pagePathToName(wikiId, pagePath);
       return {
-        type: isTab ? "tab" : "group",
-        title,
-        ...(node.slug ? { slug: node.slug } : {}),
-        ...(node.icon ? { icon: node.icon } : {}),
-        children: resolveNavigation(node.children, wikiId),
+        type: "page",
+        page: pageName,
+        slug: pagePathToSlug(localPath),
+        sourcePath: pagePath,
+        ...(typeof node !== "string" && node.icon ? { icon: node.icon } : {}),
+        ...(typeof node !== "string" && node.hidden ? { hidden: true } : {}),
       };
     }
 
+    if ("children" in node) {
+      const children = resolveNavigation(node.children, wikiId, joinWikiPath(prefix, node.slug));
+      if (node.type === "group") {
+        return {
+          type: "group",
+          title: node.title,
+          ...(node.slug ? { slug: node.slug } : {}),
+          ...(node.icon ? { icon: node.icon } : {}),
+          ...(node.hidden ? { hidden: true } : {}),
+          ...(node.expanded ? { expanded: true } : {}),
+          children: children as WikiSidebarNavNode[],
+        };
+      }
+      if (node.type === "tab") {
+        return {
+          type: "tab",
+          title: node.title,
+          ...(node.slug ? { slug: node.slug } : {}),
+          ...(node.icon ? { icon: node.icon } : {}),
+          ...(node.hidden ? { hidden: true } : {}),
+          children: children as WikiDropdownNavNode[] | WikiSidebarNavNode[],
+        };
+      }
+      return {
+        type: "dropdown",
+        title: node.title,
+        ...(node.slug ? { slug: node.slug } : {}),
+        ...(node.icon ? { icon: node.icon } : {}),
+        ...(node.hidden ? { hidden: true } : {}),
+        children: children as WikiSidebarNavNode[],
+      };
+    }
+
+    if (node.type === "tab") {
+      return {
+        type: "tab",
+        title: node.title,
+        href: node.href,
+        ...(node.icon ? { icon: node.icon } : {}),
+        ...(node.hidden ? { hidden: true } : {}),
+      };
+    }
+    if (node.type === "dropdown") {
+      return {
+        type: "dropdown",
+        title: node.title,
+        href: node.href,
+        ...(node.icon ? { icon: node.icon } : {}),
+        ...(node.hidden ? { hidden: true } : {}),
+      };
+    }
     return {
       type: "link",
       title: node.title,
       href: node.href,
       ...(node.icon ? { icon: node.icon } : {}),
+      ...(node.hidden ? { hidden: true } : {}),
     };
   });
 }

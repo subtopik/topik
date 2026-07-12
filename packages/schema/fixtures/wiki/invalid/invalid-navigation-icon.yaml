@@ -1,0 +1,10 @@
+apiVersion: v1
+type: Wiki
+name: docs
+spec:
+  title: Docs
+  navigation:
+    - type: link
+      title: Invalid icon
+      icon: foo/bar
+      href: https://example.com

@@ -6,17 +6,20 @@ spec:
   navigation:
     - type: tab
       title: Runtime
+      slug: runtime
       icon: cog
       children:
         - type: group
           title: Get Started
+          slug: get-started
           children:
             - type: page
               page: introduction
-              slug: docs/introduction
+              slug: introduction
     - type: tab
       title: Package Manager
+      slug: package-manager
       children:
         - type: page
           page: pm-install
-          slug: pm/install
+          slug: install

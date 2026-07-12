@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { compileWiki } from "@topik/core";
-import type { Wiki, WikiPage, WikiNavNode } from "@topik/schema";
+import { resolveWikiNavigation, type Wiki, type WikiPage, type WikiNavNode } from "@topik/schema";
 import type { Loader, LoaderContext } from "astro/loaders";
 
 export type { WikiNavNode };
@@ -30,7 +30,7 @@ export function topikWikiLoader(options: TopikWikiOptions): Loader & {
     load: async (context: LoaderContext) => {
       context.logger.info(`Compiling wiki from ${resolvedDir}`);
       const { pageResources, navigation } = await loadCompiledWiki(resolvedDir);
-      const slugMap = buildSlugMap(navigation);
+      const resolvedNavigation = resolveWikiNavigation(navigation);
 
       context.store.clear();
       for (const page of pageResources) {
@@ -39,7 +39,7 @@ export function topikWikiLoader(options: TopikWikiOptions): Loader & {
           data: {
             wiki: page.spec.wiki,
             title: page.spec.title,
-            slug: slugMap.get(page.name) ?? page.name,
+            slug: resolvedNavigation.pageByName.get(page.name)?.route ?? page.name,
             description: page.spec.description ?? undefined,
           },
           body: page.spec.content.value,
@@ -82,19 +82,4 @@ async function loadCompiledWiki(dir: string): Promise<{
       (resource): resource is WikiPage => resource.type === "WikiPage",
     ),
   };
-}
-
-function buildSlugMap(nodes: WikiNavNode[]): Map<string, string> {
-  const map = new Map<string, string>();
-  function walk(nodes: WikiNavNode[]) {
-    for (const node of nodes) {
-      if (node.type === "page") {
-        map.set(node.page, node.slug);
-      } else if (node.type === "group" || node.type === "tab") {
-        walk(node.children);
-      }
-    }
-  }
-  walk(nodes);
-  return map;
 }

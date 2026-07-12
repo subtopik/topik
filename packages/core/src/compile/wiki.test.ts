@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import Ajv2020 from "ajv/dist/2020";
 import addFormats from "ajv-formats";
-import { wikiSchema, wikiPageSchema } from "@topik/schema";
+import {
+  resolveWikiContentHref,
+  resolveWikiNavigation,
+  wikiSchema,
+  wikiPageSchema,
+} from "@topik/schema";
 import { compileWiki, pagePathToName } from "./wiki";
 
 const ajv = new Ajv2020({ strict: true, discriminator: true });
@@ -93,16 +98,31 @@ title: Test Wiki
 navigation:
   - index
   - runtime/index
+  - runtime/next
 `);
     await writePage("index", "# Home\n");
     await mkdir(join(dir, "runtime"), { recursive: true });
     await writeFile(join(dir, "runtime", "index.md"), "# Runtime\n");
+    await writeFile(join(dir, "runtime", "next.md"), "# Next\n");
 
     const result = await compileWiki({ dir });
     const wiki = result.resources.find((r) => r.type === "Wiki");
     const nav = wiki!.spec.navigation as Array<Record<string, unknown>>;
-    expect(nav[0]).toMatchObject({ page: pageName("tw", "index"), slug: "" });
-    expect(nav[1]).toMatchObject({ page: pageName("tw", "runtime/index"), slug: "runtime" });
+    expect(nav[0]).toMatchObject({
+      page: pageName("tw", "index"),
+      slug: "",
+      sourcePath: "index",
+    });
+    expect(nav[1]).toMatchObject({
+      page: pageName("tw", "runtime/index"),
+      slug: "runtime",
+      sourcePath: "runtime/index",
+    });
+
+    const resolved = resolveWikiNavigation(wiki!.spec.navigation!);
+    expect(
+      resolveWikiContentHref("./next.md", pageName("tw", "runtime/index"), resolved),
+    ).toMatchObject({ route: "runtime/next" });
   });
 
   test("uses id from config as resource name", async () => {
@@ -182,10 +202,12 @@ navigation:
 id: test
 title: Wiki
 navigation:
-  - group: Runtime
+  - type: group
+    title: Runtime
+    slug: runtime
     children:
-      - runtime/http/server
-      - runtime/index
+      - http/server
+      - index
 `);
     await mkdir(join(dir, "runtime", "http"), { recursive: true });
     await writeFile(join(dir, "runtime", "http", "server.md"), "# HTTP Server\n");
@@ -204,9 +226,11 @@ navigation:
 id: test
 title: Wiki
 navigation:
-  - group: Runtime
+  - type: group
+    title: Runtime
+    slug: runtime
     children:
-      - runtime/http/server
+      - http/server
 `);
     await mkdir(join(dir, "runtime", "http"), { recursive: true });
     await writeFile(join(dir, "runtime", "http", "server.md"), "# HTTP Server\n");
@@ -218,7 +242,109 @@ navigation:
     expect(group.children[0]).toMatchObject({
       type: "page",
       page: pageName("test", "runtime/http/server"),
-      slug: "runtime/http/server",
+      slug: "http/server",
+    });
+  });
+
+  test("uses tab, dropdown, and group slugs as filesystem and URL segments", async () => {
+    await writeWikiConfig(`
+id: test
+title: Wiki
+navigation:
+  - type: tab
+    title: Documentation
+    slug: docs
+    children:
+      - type: dropdown
+        title: Guides
+        slug: guides
+        children:
+          - type: group
+            title: Getting Started
+            slug: getting-started
+            children:
+              - index
+              - type: page
+                slug: installation
+`);
+    const pageDir = join(dir, "docs", "guides", "getting-started");
+    await mkdir(pageDir, { recursive: true });
+    await writeFile(join(pageDir, "index.md"), "# Getting Started\n");
+    await writeFile(join(pageDir, "installation.md"), "# Installation\n");
+
+    const result = await compileWiki({ dir });
+    const pages = result.resources.filter((resource) => resource.type === "WikiPage");
+    expect(pages.map((page) => page.name)).toEqual([
+      pageName("test", "docs/guides/getting-started/index"),
+      pageName("test", "docs/guides/getting-started/installation"),
+    ]);
+
+    const wiki = result.resources.find((resource) => resource.type === "Wiki")!;
+    const tab = wiki.spec.navigation![0];
+    expect(tab).toMatchObject({ type: "tab", slug: "docs" });
+    if (tab.type !== "tab" || !("children" in tab)) throw new Error("Expected tab");
+    const dropdown = tab.children[0];
+    expect(dropdown).toMatchObject({ type: "dropdown", slug: "guides" });
+    if (dropdown.type !== "dropdown" || !("children" in dropdown)) {
+      throw new Error("Expected dropdown");
+    }
+    const group = dropdown.children[0];
+    if (group.type !== "group") throw new Error("Expected group");
+    expect(group.children).toEqual([
+      {
+        type: "page",
+        page: pageName("test", "docs/guides/getting-started/index"),
+        slug: "",
+        sourcePath: "docs/guides/getting-started/index",
+      },
+      {
+        type: "page",
+        page: pageName("test", "docs/guides/getting-started/installation"),
+        slug: "installation",
+        sourcePath: "docs/guides/getting-started/installation",
+      },
+    ]);
+  });
+
+  test("pathless containers do not contribute to filesystem or URL paths", async () => {
+    await writeWikiConfig(`
+id: test
+title: Wiki
+navigation:
+  - type: tab
+    title: Documentation
+    children:
+      - type: dropdown
+        title: Guides
+        children:
+          - type: group
+            title: Getting Started
+            children:
+              - overview
+`);
+    await writePage("overview", "# Overview\n");
+
+    const result = await compileWiki({ dir });
+    const page = result.resources.find((resource) => resource.type === "WikiPage")!;
+    expect(page.name).toBe(pageName("test", "overview"));
+
+    const wiki = result.resources.find((resource) => resource.type === "Wiki")!;
+    const tab = wiki.spec.navigation![0];
+    expect(tab).not.toHaveProperty("slug");
+    if (tab.type !== "tab" || !("children" in tab)) throw new Error("Expected tab");
+    const dropdown = tab.children[0];
+    expect(dropdown).not.toHaveProperty("slug");
+    if (dropdown.type !== "dropdown" || !("children" in dropdown)) {
+      throw new Error("Expected dropdown");
+    }
+    const group = dropdown.children[0];
+    expect(group).not.toHaveProperty("slug");
+    if (group.type !== "group") throw new Error("Expected group");
+    expect(group.children[0]).toEqual({
+      type: "page",
+      page: pageName("test", "overview"),
+      slug: "overview",
+      sourcePath: "overview",
     });
   });
 
@@ -241,36 +367,25 @@ navigation:
     });
   });
 
-  test("groups have no slug by default", async () => {
+  test("requires and compiles a group slug", async () => {
     await writeWikiConfig(`
 id: test
 title: Wiki
 navigation:
-  - group: Getting Started
+  - type: group
+    title: Getting Started
+    slug: getting-started
     children: []
 `);
 
     const result = await compileWiki({ dir });
     const wiki = result.resources.find((r) => r.type === "Wiki");
     const nav = wiki!.spec.navigation as Array<Record<string, unknown>>;
-    expect(nav[0]).toMatchObject({ type: "group", title: "Getting Started" });
-    expect(nav[0]).not.toHaveProperty("slug");
-  });
-
-  test("supports explicit slug on group", async () => {
-    await writeWikiConfig(`
-id: test
-title: Wiki
-navigation:
-  - group: Getting Started
-    slug: start
-    children: []
-`);
-
-    const result = await compileWiki({ dir });
-    const wiki = result.resources.find((r) => r.type === "Wiki");
-    const nav = wiki!.spec.navigation as Array<Record<string, unknown>>;
-    expect(nav[0]).toMatchObject({ slug: "start" });
+    expect(nav[0]).toMatchObject({
+      type: "group",
+      title: "Getting Started",
+      slug: "getting-started",
+    });
   });
 
   test("compiles link nav nodes", async () => {
@@ -278,8 +393,9 @@ navigation:
 id: test
 title: Wiki
 navigation:
-  - href: https://example.com
+  - type: link
     title: Example
+    href: https://example.com
     icon: globe
 `);
 
@@ -487,21 +603,30 @@ theme:
   appearance:
     default: system
 navigation:
-  - tab: Runtime
+  - type: tab
+    title: Runtime
+    slug: runtime
     icon: cog
     children:
-      - group: Get Started
+      - type: group
+        title: Get Started
+        slug: get-started
         icon: terminal
         children:
           - intro
           - getting-started
-      - href: https://github.com
-        title: GitHub
-        icon: globe
+  - type: tab
+    title: GitHub
+    href: https://github.com
+    icon: globe
 `,
     );
-    await writeFile(join(dir, "intro.md"), "# Introduction\n\nWelcome.");
-    await writeFile(join(dir, "getting-started.md"), "# Getting Started\n\nLet's go.");
+    await mkdir(join(dir, "runtime", "get-started"), { recursive: true });
+    await writeFile(join(dir, "runtime", "get-started", "intro.md"), "# Introduction\n\nWelcome.");
+    await writeFile(
+      join(dir, "runtime", "get-started", "getting-started.md"),
+      "# Getting Started\n\nLet's go.",
+    );
 
     const { resources } = await compileWiki({ dir });
     const wiki = resources.find((r) => r.type === "Wiki")!;
@@ -544,9 +669,11 @@ navigation:
 id: test-wiki
 title: Wiki
 navigation:
-  - group: Runtime
+  - type: group
+    title: Runtime
+    slug: runtime
     children:
-      - runtime/http/server
+      - http/server
 `,
     );
     await mkdir(join(dir, "runtime", "http"), { recursive: true });

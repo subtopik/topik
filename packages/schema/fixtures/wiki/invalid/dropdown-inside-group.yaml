@@ -1,0 +1,14 @@
+apiVersion: v1
+type: Wiki
+name: nested-dropdown
+spec:
+  title: Nested Dropdown
+  navigation:
+    - type: group
+      title: Documentation
+      slug: docs
+      children:
+        - type: dropdown
+          title: Guides
+          slug: guides
+          children: []

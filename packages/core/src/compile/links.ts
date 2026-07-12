@@ -117,7 +117,7 @@ function decodeFragment(value: string): string {
 }
 
 function decodePath(pathname: string): string {
-  return pathname
+  const decoded = pathname
     .replace(/^\/+|\/+$/g, "")
     .split("/")
     .filter(Boolean)
@@ -129,6 +129,10 @@ function decodePath(pathname: string): string {
       }
     })
     .join("/");
+
+  const normalized = decoded.replace(/\.(?:mdx?|markdown)$/i, "");
+  if (normalized === "index") return "";
+  return normalized.replace(/\/index$/, "");
 }
 
 function linkDiagnostic(

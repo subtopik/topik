@@ -10,7 +10,7 @@ export interface CompileResult {
 export type LinkValidationPolicy = "error" | "warning" | "off";
 
 export interface CompileValidationOptions {
-  /** How unresolved internal page and heading links are handled. */
+  /** How unresolved wiki page links and same-page guide fragments are handled. */
   links?: LinkValidationPolicy;
 }
 
@@ -25,10 +25,16 @@ export function linkValidationPolicy(options?: CompileValidationOptions): LinkVa
   return options?.links ?? "error";
 }
 
+export function isErrorDiagnostic(diagnostic: TopikContentDiagnostic): boolean {
+  return diagnostic.level === "error" || diagnostic.level === "critical";
+}
+
+export function hasCompileErrors(diagnostics: TopikContentDiagnostic[]): boolean {
+  return diagnostics.some(isErrorDiagnostic);
+}
+
 export function throwOnCompileErrors(diagnostics: TopikContentDiagnostic[]): void {
-  const errors = diagnostics.filter(
-    (diagnostic) => diagnostic.level === "error" || diagnostic.level === "critical",
-  );
+  const errors = diagnostics.filter(isErrorDiagnostic);
   if (errors.length > 0) throw new CompileError(errors);
 }
 
@@ -78,7 +84,7 @@ export function extractMarkdownTitle(content: string, fallback: string): string 
 
 export function formatContentDiagnostics(diagnostics: TopikContentDiagnostic[]): string {
   return diagnostics
-    .filter((diagnostic) => diagnostic.level === "error" || diagnostic.level === "critical")
+    .filter(isErrorDiagnostic)
     .map((diagnostic) => {
       const file = diagnostic.file ?? "content";
       const location = diagnostic.lines.length > 0 ? `:${diagnostic.lines.join(",")}` : "";

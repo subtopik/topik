@@ -10,6 +10,7 @@ const LINK_BASE = "https://topik.local";
 
 export interface WikiPageLinkAnalysis {
   analysis: AnalyzeTopikContentResult;
+  sourcePath: string;
   slug: string;
 }
 
@@ -27,7 +28,7 @@ export function validateWikiLinks(
     for (const link of page.analysis.links) {
       if (NON_PAGE_SCHEME.test(link.href)) continue;
 
-      const target = resolveInternalTarget(link.href, page.slug);
+      const target = resolveInternalTarget(link.href, page.sourcePath);
       if (!target) continue;
       const targetPage = pagesBySlug.get(target.slug);
       if (!targetPage) {
@@ -91,11 +92,11 @@ export function validateLocalFragments(
 
 function resolveInternalTarget(
   href: string,
-  sourceSlug: string,
+  sourcePath: string,
 ): { fragment: string; slug: string } | undefined {
   let url: URL;
   try {
-    url = new URL(href, `${LINK_BASE}/${sourceSlug}`);
+    url = new URL(href, `${LINK_BASE}/${sourcePath}`);
   } catch {
     return undefined;
   }

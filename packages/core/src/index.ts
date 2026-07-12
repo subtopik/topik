@@ -11,6 +11,7 @@ export {
   lint,
   compileWiki,
   compileGuides,
+  isErrorDiagnostic,
   pagePathToName,
   type CompileOptions,
   type CompileWikiOptions,

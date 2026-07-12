@@ -1,5 +1,32 @@
 import { describe, expect, test } from "vite-plus/test";
-import { extractMarkdownTitle, parseMarkdownFrontmatter, parseReferenceList } from "./shared";
+import type { TopikContentDiagnostic } from "@topik/content-schema";
+import {
+  extractMarkdownTitle,
+  hasCompileErrors,
+  isErrorDiagnostic,
+  parseMarkdownFrontmatter,
+  parseReferenceList,
+} from "./shared";
+
+const diagnostic = (level: TopikContentDiagnostic["level"]): TopikContentDiagnostic => ({
+  id: "test",
+  type: "document",
+  level,
+  message: "Test diagnostic",
+  lines: [],
+});
+
+describe("compile error diagnostics", () => {
+  test.each(["error", "critical"] as const)("treats %s as an error", (level) => {
+    expect(isErrorDiagnostic(diagnostic(level))).toBe(true);
+    expect(hasCompileErrors([diagnostic(level)])).toBe(true);
+  });
+
+  test.each(["warning", "info", "debug"] as const)("does not treat %s as an error", (level) => {
+    expect(isErrorDiagnostic(diagnostic(level))).toBe(false);
+    expect(hasCompileErrors([diagnostic(level)])).toBe(false);
+  });
+});
 
 describe("parseMarkdownFrontmatter", () => {
   test("parses frontmatter objects and returns the remaining content", () => {

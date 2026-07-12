@@ -12,6 +12,7 @@ export type { CompileGuidesOptions } from "./guide";
 export type { Resource } from "../resource";
 export {
   CompileError,
+  isErrorDiagnostic,
   type CompileResult,
   type CompileValidationOptions,
   type LinkValidationPolicy,

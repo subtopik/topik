@@ -57,7 +57,7 @@ export const compile = command({
       .desc("Validate compiled resources against schemas")
       .default(false),
     links: string("links")
-      .desc("How unresolved internal links are handled")
+      .desc("How unresolved wiki links and local guide fragments are handled")
       .enum("error", "warning", "off")
       .default("error"),
   },

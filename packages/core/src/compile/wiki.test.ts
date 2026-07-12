@@ -1,5 +1,5 @@
 import { mkdir, mkdtemp, writeFile, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import Ajv2020 from "ajv/dist/2020";
@@ -509,6 +509,53 @@ navigation:
     const result = await compileWiki({ dir });
 
     expect(result.diagnostics).toEqual([]);
+  });
+
+  test("resolves root, nested, and nested-index links from their source paths", async () => {
+    await writeWikiConfig(`
+id: tw
+title: Wiki
+navigation:
+  - index
+  - root
+  - type: group
+    title: Runtime
+    slug: runtime
+    children:
+      - index
+      - child
+      - sibling
+`);
+
+    const pages = [
+      ["index.md", "# Home\n\n[Root](./root.md#root)\n\n[Runtime](/runtime/#runtime)\n\n## Home\n"],
+      ["root.md", "# Root\n\n[Home](/index.md#home)\n\n## Root\n"],
+      [
+        "runtime/index.md",
+        [
+          "# Runtime",
+          "",
+          "[Child](./child.mdx?mode=full#child)",
+          "",
+          "[Root](../root.md#root)",
+          "",
+          '{% card title="Child card" href="./child.md#child" /%}',
+          "",
+          "## Runtime",
+          "",
+        ].join("\n"),
+      ],
+      ["runtime/child.mdx", "# Child\n\n[Sibling](./sibling.md#sibling)\n\n## Child\n"],
+      ["runtime/sibling.md", "# Sibling\n\n## Sibling\n"],
+    ] as const;
+
+    for (const [path, content] of pages) {
+      const filePath = join(dir, path);
+      await mkdir(dirname(filePath), { recursive: true });
+      await writeFile(filePath, content);
+    }
+
+    await expect(compileWiki({ dir })).resolves.toMatchObject({ diagnostics: [] });
   });
 
   test("fails compilation for missing internal pages and fragments by default", async () => {

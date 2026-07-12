@@ -17,6 +17,7 @@ import { extractAssets } from "./assets";
 import { readOptionalConfigFile } from "./config";
 import {
   extractMarkdownTitle,
+  hasCompileErrors,
   linkValidationPolicy,
   parseMarkdownFrontmatter,
   throwOnCompileErrors,
@@ -87,7 +88,7 @@ export async function inspectWiki(options: CompileWikiOptions): Promise<CompileR
     const description = normalizeWikiPageDescription(frontmatter.description);
     const analysis = analyzeTopikContent(rewritten, { file: filePath });
     diagnostics.push(...analysis.diagnostics);
-    pageAnalyses.push({ analysis, slug: pagePathToSlug(pagePath) });
+    pageAnalyses.push({ analysis, slug: pagePathToSlug(pagePath), sourcePath: pagePath });
 
     const pageResource: WikiPage = {
       apiVersion: "v1",
@@ -133,12 +134,6 @@ export async function inspectWiki(options: CompileWikiOptions): Promise<CompileR
   }
 
   return { diagnostics, resources };
-}
-
-function hasCompileErrors(diagnostics: CompileResult["diagnostics"]): boolean {
-  return diagnostics.some(
-    (diagnostic) => diagnostic.level === "error" || diagnostic.level === "critical",
-  );
 }
 
 // Keep compiled WikiPage spec.description within wikiPageSchema's 1024-character limit.

@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { command, positional, string } from "@drizzle-team/brocli";
-import { lint as lintContent, type LinkValidationPolicy } from "@topik/core";
+import { isErrorDiagnostic, lint as lintContent, type LinkValidationPolicy } from "@topik/core";
 import { printDiagnostics } from "../diagnostics";
 import { CliError } from "../errors";
 
@@ -10,7 +10,7 @@ export const lint = command({
   options: {
     dir: positional("dir").desc("Path to the content directory").default("."),
     links: string("links")
-      .desc("How unresolved internal links are handled")
+      .desc("How unresolved wiki links and local guide fragments are handled")
       .enum("error", "warning", "off")
       .default("error"),
   },
@@ -22,9 +22,7 @@ export const lint = command({
     });
     printDiagnostics(diagnostics);
 
-    const errors = diagnostics.filter(
-      (diagnostic) => diagnostic.level === "error" || diagnostic.level === "critical",
-    );
+    const errors = diagnostics.filter(isErrorDiagnostic);
     if (errors.length > 0) {
       throw new CliError(`${errors.length} lint error(s)`);
     }

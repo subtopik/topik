@@ -16,7 +16,7 @@ describe("compile", () => {
   });
 
   test("returns no resources when no supported config is present", async () => {
-    await expect(compile({ dir })).resolves.toEqual({ resources: [] });
+    await expect(compile({ dir })).resolves.toEqual({ diagnostics: [], resources: [] });
   });
 
   test("delegates wiki directories to the wiki compiler", async () => {

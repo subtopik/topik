@@ -73,6 +73,9 @@ importers:
       '@drizzle-team/brocli':
         specifier: 'catalog:'
         version: 0.12.0
+      '@topik/content-schema':
+        specifier: workspace:*
+        version: link:../content-schema
       '@topik/core':
         specifier: workspace:*
         version: link:../core

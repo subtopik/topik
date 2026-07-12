@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { access, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { analyzeTopikContent, validateTopikContent } from "@topik/content-schema";
 import {
   joinWikiPath,
   type Wiki,
@@ -15,22 +16,33 @@ import { parseWikiConfig, WIKI_PAGE_NAME_HASH_LENGTH, type WikiNavNode } from ".
 import { extractAssets } from "./assets";
 import { readOptionalConfigFile } from "./config";
 import {
-  assertValidTopikContent,
   extractMarkdownTitle,
+  hasCompileErrors,
+  linkValidationPolicy,
   parseMarkdownFrontmatter,
+  throwOnCompileErrors,
+  type CompileValidationOptions,
   type CompileResult,
 } from "./shared";
+import { validateWikiLinks, type WikiPageLinkAnalysis } from "./links";
 
 export interface CompileWikiOptions {
   dir: string;
+  validation?: CompileValidationOptions;
 }
 
 export async function compileWiki(options: CompileWikiOptions): Promise<CompileResult> {
+  const result = await inspectWiki(options);
+  throwOnCompileErrors(result.diagnostics);
+  return result;
+}
+
+export async function inspectWiki(options: CompileWikiOptions): Promise<CompileResult> {
   const dir = resolve(options.dir);
 
   const raw = await readOptionalConfigFile(dir, ["wiki.yaml", "wiki.yml", "wiki.json"]);
   if (raw == null) {
-    return { resources: [] };
+    return { diagnostics: [], resources: [] };
   }
 
   const config = parseWikiConfig(raw);
@@ -44,13 +56,17 @@ export async function compileWiki(options: CompileWikiOptions): Promise<CompileR
   );
 
   const resources: Resource[] = [];
+  const diagnostics: CompileResult["diagnostics"] = [];
+  const pageAnalyses: WikiPageLinkAnalysis[] = [];
   const assetsById = new Map<string, (typeof resources)[number]>();
 
   for (let i = 0; i < pagePaths.length; i++) {
     const pagePath = pagePaths[i];
     const { filePath, raw } = resolvedFiles[i];
     const { frontmatter, content } = parseMarkdownFrontmatter(raw, pagePath);
-    assertValidTopikContent(content, filePath);
+    const validation = validateTopikContent(content, { file: filePath });
+    diagnostics.push(...validation.errors);
+    if (!validation.valid) continue;
     const {
       content: rewritten,
       assets,
@@ -70,6 +86,9 @@ export async function compileWiki(options: CompileWikiOptions): Promise<CompileR
         ? frontmatter.title
         : extractMarkdownTitle(rewritten, pagePathToTitleFallback(pagePath));
     const description = normalizeWikiPageDescription(frontmatter.description);
+    const analysis = analyzeTopikContent(rewritten, { file: filePath });
+    diagnostics.push(...analysis.diagnostics);
+    pageAnalyses.push({ analysis, slug: pagePathToSlug(pagePath), sourcePath: pagePath });
 
     const pageResource: WikiPage = {
       apiVersion: "v1",
@@ -110,7 +129,11 @@ export async function compileWiki(options: CompileWikiOptions): Promise<CompileR
 
   resources.push(wikiResource);
 
-  return { resources };
+  if (!hasCompileErrors(diagnostics)) {
+    diagnostics.push(...validateWikiLinks(pageAnalyses, linkValidationPolicy(options.validation)));
+  }
+
+  return { diagnostics, resources };
 }
 
 // Keep compiled WikiPage spec.description within wikiPageSchema's 1024-character limit.

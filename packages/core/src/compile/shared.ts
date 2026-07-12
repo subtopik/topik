@@ -1,9 +1,41 @@
-import { validateTopikContent, type TopikContentDiagnostic } from "@topik/content-schema";
+import type { TopikContentDiagnostic } from "@topik/content-schema";
 import { parse as parseYaml } from "yaml";
 import type { Resource } from "../resource";
 
 export interface CompileResult {
+  diagnostics: TopikContentDiagnostic[];
   resources: Resource[];
+}
+
+export type LinkValidationPolicy = "error" | "warning" | "off";
+
+export interface CompileValidationOptions {
+  /** How unresolved wiki page links and same-page guide fragments are handled. */
+  links?: LinkValidationPolicy;
+}
+
+export class CompileError extends Error {
+  constructor(public readonly diagnostics: TopikContentDiagnostic[]) {
+    super(formatContentDiagnostics(diagnostics));
+    this.name = "CompileError";
+  }
+}
+
+export function linkValidationPolicy(options?: CompileValidationOptions): LinkValidationPolicy {
+  return options?.links ?? "error";
+}
+
+export function isErrorDiagnostic(diagnostic: TopikContentDiagnostic): boolean {
+  return diagnostic.level === "error" || diagnostic.level === "critical";
+}
+
+export function hasCompileErrors(diagnostics: TopikContentDiagnostic[]): boolean {
+  return diagnostics.some(isErrorDiagnostic);
+}
+
+export function throwOnCompileErrors(diagnostics: TopikContentDiagnostic[]): void {
+  const errors = diagnostics.filter(isErrorDiagnostic);
+  if (errors.length > 0) throw new CompileError(errors);
 }
 
 const DNS_LABEL_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -50,21 +82,13 @@ export function extractMarkdownTitle(content: string, fallback: string): string 
     .join(" ");
 }
 
-export function assertValidTopikContent(content: string, filePath: string): void {
-  const result = validateTopikContent(content, { file: filePath });
-  if (result.valid) return;
-
-  throw new Error(
-    `Invalid Topik content in ${filePath}:\n${formatContentDiagnostics(result.errors)}`,
-  );
-}
-
-function formatContentDiagnostics(diagnostics: TopikContentDiagnostic[]): string {
+export function formatContentDiagnostics(diagnostics: TopikContentDiagnostic[]): string {
   return diagnostics
-    .filter((diagnostic) => diagnostic.level === "error" || diagnostic.level === "critical")
+    .filter(isErrorDiagnostic)
     .map((diagnostic) => {
-      const location = diagnostic.lines.length > 0 ? ` lines ${diagnostic.lines.join(",")}` : "";
-      return `  - ${diagnostic.id}${location}: ${diagnostic.message}`;
+      const file = diagnostic.file ?? "content";
+      const location = diagnostic.lines.length > 0 ? `:${diagnostic.lines.join(",")}` : "";
+      return `${file}${location} ${diagnostic.level} ${diagnostic.id}: ${diagnostic.message}`;
     })
     .join("\n");
 }

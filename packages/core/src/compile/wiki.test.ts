@@ -1,5 +1,5 @@
 import { mkdir, mkdtemp, writeFile, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import Ajv2020 from "ajv/dist/2020";
@@ -498,12 +498,116 @@ navigation:
     expect(page.spec.assets).toEqual([assets[0].name]);
   });
 
+  test("validates same-page and cross-page heading links", async () => {
+    await writeWikiConfig("id: tw\ntitle: Wiki\nnavigation:\n  - intro\n  - setup\n");
+    await writePage(
+      "intro",
+      "# Introduction\n\n[Local](#overview)\n\n[Install](./setup.md#install)\n\n## Overview\n",
+    );
+    await writePage("setup", "# Setup\n\n## Install\n");
+
+    const result = await compileWiki({ dir });
+
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  test("resolves root, nested, and nested-index links from their source paths", async () => {
+    await writeWikiConfig(`
+id: tw
+title: Wiki
+navigation:
+  - index
+  - root
+  - type: group
+    title: Runtime
+    slug: runtime
+    children:
+      - index
+      - child
+      - sibling
+`);
+
+    const pages = [
+      ["index.md", "# Home\n\n[Root](./root.md#root)\n\n[Runtime](/runtime/#runtime)\n\n## Home\n"],
+      ["root.md", "# Root\n\n[Home](/index.md#home)\n\n## Root\n"],
+      [
+        "runtime/index.md",
+        [
+          "# Runtime",
+          "",
+          "[Child](./child.mdx?mode=full#child)",
+          "",
+          "[Root](../root.md#root)",
+          "",
+          '{% card title="Child card" href="./child.md#child" /%}',
+          "",
+          "## Runtime",
+          "",
+        ].join("\n"),
+      ],
+      ["runtime/child.mdx", "# Child\n\n[Sibling](./sibling.md#sibling)\n\n## Child\n"],
+      ["runtime/sibling.md", "# Sibling\n\n## Sibling\n"],
+    ] as const;
+
+    for (const [path, content] of pages) {
+      const filePath = join(dir, path);
+      await mkdir(dirname(filePath), { recursive: true });
+      await writeFile(filePath, content);
+    }
+
+    await expect(compileWiki({ dir })).resolves.toMatchObject({ diagnostics: [] });
+  });
+
+  test("fails compilation for missing internal pages and fragments by default", async () => {
+    await writeWikiConfig("id: tw\ntitle: Wiki\nnavigation:\n  - intro\n  - setup\n");
+    await writePage(
+      "intro",
+      "# Introduction\n\n[Missing page](/absent)\n\n[Missing heading](/setup#absent)\n",
+    );
+    await writePage("setup", "# Setup\n");
+
+    await expect(compileWiki({ dir })).rejects.toThrow(/link-page-not-found/);
+    await expect(compileWiki({ dir })).rejects.toThrow(/link-fragment-not-found/);
+  });
+
+  test("can downgrade unresolved internal links to warnings", async () => {
+    await writeWikiConfig("id: tw\ntitle: Wiki\nnavigation:\n  - intro\n");
+    await writePage("intro", "# Introduction\n\n[Missing](/absent#heading)\n");
+
+    const result = await compileWiki({ dir, validation: { links: "warning" } });
+
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({ id: "link-page-not-found", level: "warning" }),
+    ]);
+  });
+
+  test("can skip unresolved internal link validation", async () => {
+    await writeWikiConfig("id: tw\ntitle: Wiki\nnavigation:\n  - intro\n");
+    await writePage("intro", "# Introduction\n\n[Missing](/absent#heading)\n");
+
+    const result = await compileWiki({ dir, validation: { links: "off" } });
+
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  test("rejects unsafe card links even when target validation is off", async () => {
+    await writeWikiConfig("id: tw\ntitle: Wiki\nnavigation:\n  - intro\n");
+    await writePage(
+      "intro",
+      '# Introduction\n\n{% card title="Unsafe" href="javascript:alert(1)" /%}\n',
+    );
+
+    await expect(compileWiki({ dir, validation: { links: "off" } })).rejects.toThrow(
+      /link-scheme-unsafe/,
+    );
+  });
+
   test("rejects invalid Topik content in wiki pages", async () => {
     await writeWikiConfig("id: tw\ntitle: Wiki\nnavigation:\n  - hello\n");
     await writePage("hello", '# Hello\n\n{% card href="/docs" /%}\n');
 
     await expect(compileWiki({ dir })).rejects.toThrow(
-      /Invalid Topik content in .*hello\.md:[\s\S]*attribute-missing-required/,
+      /hello\.md:[\s\S]*attribute-missing-required/,
     );
   });
 
@@ -521,7 +625,7 @@ navigation:
   test("returns no resources when the wiki config is missing", async () => {
     await writePage("hello", "# Hello\n");
 
-    await expect(compileWiki({ dir })).resolves.toEqual({ resources: [] });
+    await expect(compileWiki({ dir })).resolves.toEqual({ diagnostics: [], resources: [] });
   });
 
   test("rejects navigation page paths that cannot become wiki page names", async () => {

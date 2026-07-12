@@ -8,14 +8,20 @@ export {
 
 export {
   compile,
+  lint,
   compileWiki,
   compileGuides,
+  isErrorDiagnostic,
   pagePathToName,
   type CompileOptions,
   type CompileWikiOptions,
   type CompileGuidesOptions,
   type CompileResult,
+  type CompileValidationOptions,
+  type LinkValidationPolicy,
+  type LintResult,
 } from "./compile";
+export { CompileError } from "./compile";
 export type { Resource, ResourceType } from "./resource";
 
 export { validateResources, type ValidationError, type ValidationResult } from "./validate";

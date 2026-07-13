@@ -46,7 +46,7 @@
     "jsdom": "^29.1.1",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
-    "storybook": "^10.0.8",
+    "storybook": "^10.5.0",
     "typescript": "catalog:",
     "vite-plus": "catalog:"
   },

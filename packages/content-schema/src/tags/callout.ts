@@ -6,7 +6,7 @@ export const calloutTag: Schema = {
   render: "TopikCallout",
   children: [...FLOW_CHILDREN],
   attributes: {
-    variant: { type: String, matches: [...CALLOUT_VARIANTS], default: "note" },
+    variant: { type: String, matches: [...CALLOUT_VARIANTS], default: "info" },
     title: { type: String },
   },
 };

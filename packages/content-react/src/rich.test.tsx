@@ -78,9 +78,9 @@ function mount(element: ReactNode): HTMLDivElement {
 async function waitFor(assertion: () => void) {
   let lastError: unknown;
 
-  for (let attempt = 0; attempt < 20; attempt += 1) {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 10));
     });
 
     try {
@@ -103,7 +103,7 @@ describe("rich content-react entry", () => {
     expect(components.TopikLink).toBeDefined();
   });
 
-  it("server-renders through the rich provider with fallback markup", () => {
+  it("server-renders through the rich provider without exposing Mermaid source", () => {
     const html = renderToStaticMarkup(
       <RichTopikContentProvider>
         <TopikContent content={richContent} />
@@ -113,7 +113,85 @@ describe("rich content-react entry", () => {
     expect(html).toContain("topik-rich-code-block");
     expect(html).toContain("topik-code-block");
     expect(html).toContain("topik-math");
-    expect(html).toContain("topik-mermaid");
+    expect(html).toContain("topik-rich-mermaid--loading");
+    expect(html).not.toContain("graph TD");
+  });
+
+  it("shows a placeholder instead of Mermaid source while rendering", async () => {
+    let resolveRender: ((result: { svg: string }) => void) | undefined;
+    mermaidRenderMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRender = resolve;
+        }),
+    );
+
+    const dom = mount(
+      <RichTopikContentProvider>
+        <TopikContent content={richContent} />
+      </RichTopikContentProvider>,
+    );
+
+    expect(dom.querySelector(".topik-rich-mermaid--loading")).not.toBeNull();
+    expect(dom.querySelector("pre.topik-mermaid")).toBeNull();
+
+    await waitFor(() => {
+      expect(resolveRender).toBeTypeOf("function");
+    });
+
+    await act(async () => {
+      resolveRender?.({ svg: '<svg data-mermaid-rendered="true"></svg>' });
+    });
+
+    await waitFor(() => {
+      expect(
+        dom.querySelector('.topik-rich-mermaid [data-mermaid-rendered="true"]'),
+      ).not.toBeNull();
+    });
+  });
+
+  it("keeps the Mermaid placeholder visible for at least 300ms", async () => {
+    vi.useFakeTimers();
+
+    try {
+      const dom = mount(
+        <RichTopikContentProvider>
+          <TopikContent content={richContent} />
+        </RichTopikContentProvider>,
+      );
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(299);
+      });
+
+      expect(dom.querySelector(".topik-rich-mermaid--loading")).not.toBeNull();
+      expect(dom.querySelector('.topik-rich-mermaid [data-mermaid-rendered="true"]')).toBeNull();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+
+      expect(dom.querySelector(".topik-rich-mermaid--loading")).toBeNull();
+      expect(
+        dom.querySelector('.topik-rich-mermaid [data-mermaid-rendered="true"]'),
+      ).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows Mermaid source when rendering fails", async () => {
+    mermaidRenderMock.mockRejectedValueOnce(new Error("Invalid diagram"));
+
+    const dom = mount(
+      <RichTopikContentProvider>
+        <TopikContent content={richContent} />
+      </RichTopikContentProvider>,
+    );
+
+    await waitFor(() => {
+      expect(dom.querySelector("pre.topik-mermaid")?.textContent).toContain("graph TD");
+    });
   });
 
   it("renders rich client output after dynamic imports resolve", async () => {

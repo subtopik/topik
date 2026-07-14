@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -37,6 +39,12 @@ import {
   TopikUnderline,
 } from "./components";
 
+const contentReactRoot = existsSync(resolve(process.cwd(), "src/theme/styles.css"))
+  ? process.cwd()
+  : resolve(process.cwd(), "packages/content-react");
+const themeStyles = readFileSync(resolve(contentReactRoot, "src/theme/styles.css"), "utf8");
+const richStyles = readFileSync(resolve(contentReactRoot, "src/rich/styles.css"), "utf8");
+
 let root: Root | undefined;
 let container: HTMLDivElement | undefined;
 
@@ -65,11 +73,18 @@ describe("default Topik theme components", () => {
     );
     const untitled = renderToStaticMarkup(<TopikCallout>Body</TopikCallout>);
 
-    expect(titled).toContain('class="topik-callout"');
+    expect(titled).toContain('class="topik-callout not-prose"');
     expect(titled).toContain('data-variant="warning"');
+    expect(titled).toContain('<div class="topik-callout__title"><strong>Heads up</strong></div>');
     expect(titled).toContain("Heads up");
-    expect(untitled).toContain('data-variant="note"');
+    expect(untitled).toContain('data-variant="info"');
     expect(untitled).not.toContain("topik-callout__title");
+  });
+
+  it("ships theme styles in the components cascade layer", () => {
+    expect(themeStyles.trimStart()).toMatch(/^@layer components\s*\{/);
+    expect(themeStyles).toContain(".topik-callout__body > :last-child");
+    expect(richStyles.trimStart()).toMatch(/^@layer components\s*\{/);
   });
 
   it("renders card grids and cards with link, icon, title, and body slots", () => {

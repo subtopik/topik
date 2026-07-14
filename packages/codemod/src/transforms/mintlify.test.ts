@@ -2,16 +2,23 @@ import { describe, expect, test } from "vite-plus/test";
 import { transformMintlify } from "./mintlify";
 
 describe("transformMintlify", () => {
-  test("converts <Note> to a callout with type", () => {
+  test("converts <Note> to an info callout", () => {
     const { content } = transformMintlify("<Note>Heads up</Note>\n");
-    expect(content).toBe('{% callout type="note" %}Heads up{% /callout %}\n');
+    expect(content).toBe('{% callout variant="info" %}Heads up{% /callout %}\n');
   });
 
-  test("converts each callout variant to the right type", () => {
-    const variants = ["Note", "Tip", "Info", "Warning", "Check", "Danger"];
-    for (const v of variants) {
-      const { content } = transformMintlify(`<${v}>x</${v}>`);
-      expect(content).toBe(`{% callout type="${v.toLowerCase()}" %}x{% /callout %}`);
+  test("maps Mintlify callouts to supported Topik variants", () => {
+    const variants = {
+      Note: "info",
+      Info: "info",
+      Tip: "tip",
+      Check: "tip",
+      Warning: "warning",
+      Danger: "danger",
+    };
+    for (const [component, variant] of Object.entries(variants)) {
+      const { content } = transformMintlify(`<${component}>x</${component}>`);
+      expect(content).toBe(`{% callout variant="${variant}" %}x{% /callout %}`);
     }
   });
 

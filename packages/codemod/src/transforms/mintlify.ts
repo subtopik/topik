@@ -10,7 +10,16 @@ export interface TransformResult {
   changed: boolean;
 }
 
-const CALLOUT_TAGS = new Set(["Note", "Tip", "Info", "Warning", "Check", "Danger"]);
+const CALLOUT_VARIANTS = new Map([
+  ["Note", "info"],
+  ["Info", "info"],
+  ["Tip", "tip"],
+  ["Check", "tip"],
+  ["Warning", "warning"],
+  ["Danger", "danger"],
+]);
+
+const CALLOUT_TAGS = new Set(CALLOUT_VARIANTS.keys());
 
 const PASSTHROUGH_TAGS = new Set([
   "Frame",
@@ -166,7 +175,7 @@ function renderOpenTag(
   const attrParts: string[] = [];
 
   if (isCallout) {
-    attrParts.push(`type="${componentName.toLowerCase()}"`);
+    attrParts.push(`variant="${CALLOUT_VARIANTS.get(componentName)}"`);
   }
 
   if (rawAttrs.length > 0) {

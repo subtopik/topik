@@ -22,7 +22,7 @@ export interface TopikComponentDefinition {
   requiredChildren?: readonly string[];
 }
 
-export const CALLOUT_VARIANTS = ["note", "tip", "warning", "danger", "info"] as const;
+export const CALLOUT_VARIANTS = ["info", "tip", "warning", "danger"] as const;
 export const BADGE_VARIANTS = ["neutral", "info", "success", "warning", "danger"] as const;
 export const QUIZ_QUESTION_TYPES = ["single-choice", "multiple-choice"] as const;
 

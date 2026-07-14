@@ -61,15 +61,24 @@ async function withMinimumDelay<T>(load: () => Promise<T>, delayMs: number): Pro
 
 function useRenderedHtml(load: () => Promise<string>, deps: DependencyList): HtmlState {
   const [state, setState] = useState<HtmlState>({ html: "", status: "loading" });
+  const [previousDeps, setPreviousDeps] = useState(deps);
+
+  if (
+    deps.length !== previousDeps.length ||
+    deps.some((dependency, index) => !Object.is(dependency, previousDeps[index]))
+  ) {
+    setPreviousDeps(deps);
+    setState({ html: "", status: "loading" });
+  }
 
   useEffect(() => {
     let cancelled = false;
-    setState({ html: "", status: "loading" });
     void load()
       .then((html) => {
         if (!cancelled) setState({ html, status: "rendered" });
       })
-      .catch(() => {
+      .catch((error: unknown) => {
+        console.warn("Failed to render rich content", error);
         if (!cancelled) setState({ html: "", status: "error" });
       });
 

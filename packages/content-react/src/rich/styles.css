@@ -50,7 +50,7 @@
   }
 
   .topik-rich-mermaid--loading {
-    background: color-mix(in srgb, currentColor 4%, transparent);
+    background: color-mix(in srgb, currentcolor 4%, transparent);
     border-radius: var(--topik-radius, 8px);
     min-height: 12rem;
   }

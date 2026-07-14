@@ -40,7 +40,12 @@ describe("topik content schema", () => {
       "tabs",
       "underline",
     ]);
-    expect(topikComponents.callout.attributes?.variant.values).toContain("warning");
+    expect(topikComponents.callout.attributes?.variant.values).toEqual([
+      "info",
+      "tip",
+      "warning",
+      "danger",
+    ]);
     expect(topikComponents.cardGrid.attributes?.columns).toMatchObject({ min: 1, max: 4 });
     expect(topikComponents.figure.attributes?.darkSrc).toMatchObject({ type: "string" });
     expect(topikComponents.codeGroup.requiredChildren).toEqual(["codeTab"]);
@@ -128,6 +133,7 @@ graph TD;
 
   test("validates Markdoc attributes", () => {
     expect(idsFor('{% callout variant="surprise" /%}')).toContain("attribute-value-invalid");
+    expect(idsFor('{% callout variant="note" /%}')).toContain("attribute-value-invalid");
     expect(idsFor('{% card href="/docs" /%}')).toContain("attribute-missing-required");
     expect(idsFor('{% figure src="./image.png" /%}')).toContain("attribute-missing-required");
     expect(

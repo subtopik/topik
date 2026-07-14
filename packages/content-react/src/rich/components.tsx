@@ -15,6 +15,7 @@ export type RichTopikTheme = "light" | "dark";
 
 interface HtmlState {
   html: string;
+  status: "error" | "loading" | "rendered";
 }
 
 const emptyTopikComponents: Partial<TopikComponentMap> = {};
@@ -28,6 +29,7 @@ const mermaidThemes = {
   light: "default",
   dark: "dark",
 } satisfies Record<RichTopikTheme, string>;
+const minimumMermaidLoadingDurationMs = 300;
 let initializedMermaidTheme: string | undefined;
 
 export function RichTopikThemeProvider({
@@ -48,18 +50,36 @@ function stringAttribute(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+async function withMinimumDelay<T>(load: () => Promise<T>, delayMs: number): Promise<T> {
+  const [result] = await Promise.allSettled([
+    load(),
+    new Promise<void>((resolve) => setTimeout(resolve, delayMs)),
+  ]);
+  if (result.status === "rejected") throw result.reason;
+  return result.value;
+}
+
 function useRenderedHtml(load: () => Promise<string>, deps: DependencyList): HtmlState {
-  const [state, setState] = useState<HtmlState>({ html: "" });
+  const [state, setState] = useState<HtmlState>({ html: "", status: "loading" });
+  const [previousDeps, setPreviousDeps] = useState(deps);
+
+  if (
+    deps.length !== previousDeps.length ||
+    deps.some((dependency, index) => !Object.is(dependency, previousDeps[index]))
+  ) {
+    setPreviousDeps(deps);
+    setState({ html: "", status: "loading" });
+  }
 
   useEffect(() => {
     let cancelled = false;
-    setState({ html: "" });
     void load()
       .then((html) => {
-        if (!cancelled) setState({ html });
+        if (!cancelled) setState({ html, status: "rendered" });
       })
-      .catch(() => {
-        if (!cancelled) setState({ html: "" });
+      .catch((error: unknown) => {
+        console.warn("Failed to render rich content", error);
+        if (!cancelled) setState({ html: "", status: "error" });
       });
 
     return () => {
@@ -77,7 +97,7 @@ export function RichTopikCodeBlock(props: TopikComponentProps) {
   const theme = useRichTopikTheme();
   const [copied, setCopied] = useState(false);
   const rendered = useRenderedHtml(async () => {
-    const shiki = await import(/* @vite-ignore */ "shiki");
+    const shiki = await import("shiki");
     return shiki.codeToHtml(code, { lang: language, theme: shikiThemes[theme] });
   }, [code, language, theme]);
 
@@ -115,7 +135,7 @@ export function RichTopikCodeBlock(props: TopikComponentProps) {
 export function RichTopikMath(props: TopikComponentProps) {
   const content = stringAttribute(props.content) ?? "";
   const rendered = useRenderedHtml(async () => {
-    const katex = await import(/* @vite-ignore */ "katex");
+    const katex = await import("katex");
     return katex.renderToString(content, { displayMode: true, throwOnError: false });
   }, [content]);
 
@@ -126,7 +146,7 @@ export function RichTopikMath(props: TopikComponentProps) {
 export function RichTopikMathInline(props: TopikComponentProps) {
   const content = stringAttribute(props.content) ?? "";
   const rendered = useRenderedHtml(async () => {
-    const katex = await import(/* @vite-ignore */ "katex");
+    const katex = await import("katex");
     return katex.renderToString(content, { displayMode: false, throwOnError: false });
   }, [content]);
 
@@ -140,22 +160,35 @@ export function RichTopikMermaid(props: TopikComponentProps) {
   const content = stringAttribute(props.content) ?? "";
   const theme = useRichTopikTheme();
   const id = useId().replace(/:/g, "-");
-  const rendered = useRenderedHtml(async () => {
-    const { default: mermaid } = await import(/* @vite-ignore */ "mermaid");
-    const mermaidTheme = mermaidThemes[theme];
-    if (initializedMermaidTheme !== mermaidTheme) {
-      mermaid.initialize({
-        securityLevel: "strict",
-        startOnLoad: false,
-        theme: mermaidTheme,
-      });
-      initializedMermaidTheme = mermaidTheme;
-    }
-    const result = await mermaid.render(`topik-mermaid-${id}`, content);
-    return result.svg;
-  }, [content, id, theme]);
+  const rendered = useRenderedHtml(
+    () =>
+      withMinimumDelay(async () => {
+        const { default: mermaid } = await import("mermaid");
+        const mermaidTheme = mermaidThemes[theme];
+        if (initializedMermaidTheme !== mermaidTheme) {
+          mermaid.initialize({
+            securityLevel: "strict",
+            startOnLoad: false,
+            theme: mermaidTheme,
+          });
+          initializedMermaidTheme = mermaidTheme;
+        }
+        const result = await mermaid.render(`topik-mermaid-${id}`, content);
+        return result.svg;
+      }, minimumMermaidLoadingDurationMs),
+    [content, id, theme],
+  );
 
-  if (!rendered.html) return <TopikMermaid {...props} />;
+  if (rendered.status === "loading") {
+    return (
+      <div
+        aria-label="Rendering diagram"
+        aria-live="polite"
+        className="topik-rich-mermaid topik-rich-mermaid--loading"
+      />
+    );
+  }
+  if (rendered.status === "error") return <TopikMermaid {...props} />;
   return <div className="topik-rich-mermaid" dangerouslySetInnerHTML={{ __html: rendered.html }} />;
 }
 

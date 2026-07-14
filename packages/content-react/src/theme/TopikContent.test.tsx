@@ -14,7 +14,7 @@ describe("TopikContent", () => {
     );
 
     expect(html).toContain('class="topik-content"');
-    expect(html).toContain('class="topik-callout"');
+    expect(html).toContain('class="topik-callout not-prose"');
     expect(html).toContain('src="/cdn/hero.webp"');
   });
 

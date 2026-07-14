@@ -1,49 +1,57 @@
-.topik-rich-code-block {
-  margin-block: 1rem;
-}
+@layer components {
+  .topik-rich-code-block {
+    margin-block: 1rem;
+  }
 
-.topik-rich-code-block__frame {
-  position: relative;
-}
+  .topik-rich-code-block__frame {
+    position: relative;
+  }
 
-.topik-rich-code-block__frame pre {
-  border-radius: var(--topik-radius, 8px);
-  margin: 0;
-  overflow-x: auto;
-  padding: 1rem;
-}
+  .topik-rich-code-block__frame pre {
+    border-radius: var(--topik-radius, 8px);
+    margin: 0;
+    overflow-x: auto;
+    padding: 1rem;
+  }
 
-.topik-rich-code-block__copy {
-  background: rgb(17 24 39 / 0.86);
-  border: 1px solid rgb(255 255 255 / 0.16);
-  border-radius: 0.35rem;
-  color: #ffffff;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.78rem;
-  opacity: 0;
-  padding: 0.25rem 0.5rem;
-  position: absolute;
-  right: 0.5rem;
-  top: 0.5rem;
-  transition: opacity 120ms ease;
-}
+  .topik-rich-code-block__copy {
+    background: rgb(17 24 39 / 0.86);
+    border: 1px solid rgb(255 255 255 / 0.16);
+    border-radius: 0.35rem;
+    color: #ffffff;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.78rem;
+    opacity: 0;
+    padding: 0.25rem 0.5rem;
+    position: absolute;
+    right: 0.5rem;
+    top: 0.5rem;
+    transition: opacity 120ms ease;
+  }
 
-.topik-rich-code-block__frame:hover .topik-rich-code-block__copy,
-.topik-rich-code-block__copy:focus-visible {
-  opacity: 1;
-}
+  .topik-rich-code-block__frame:hover .topik-rich-code-block__copy,
+  .topik-rich-code-block__copy:focus-visible {
+    opacity: 1;
+  }
 
-.topik-rich-math {
-  margin-block: 1rem;
-  overflow-x: auto;
-}
+  .topik-rich-math {
+    margin-block: 1rem;
+    overflow-x: auto;
+  }
 
-.topik-rich-math-inline {
-  display: inline-block;
-}
+  .topik-rich-math-inline {
+    display: inline-block;
+  }
 
-.topik-rich-mermaid {
-  margin-block: 1rem;
-  overflow-x: auto;
+  .topik-rich-mermaid {
+    margin-block: 1rem;
+    overflow-x: auto;
+  }
+
+  .topik-rich-mermaid--loading {
+    background: color-mix(in srgb, currentcolor 4%, transparent);
+    border-radius: var(--topik-radius, 8px);
+    min-height: 12rem;
+  }
 }

@@ -69,19 +69,19 @@ jobs:
 
           for dir in "${packages[@]}"; do
             pkg="$dir/package.json"
-            name=$(node -p "require('./$pkg').name")
-            version=$(node -p "require('./$pkg').version")
+            name=$(jq -r .name "$pkg")
+            version=$(jq -r .version "$pkg")
 
             if npx -y npm@11.13.0 view "$name@$version" version >/dev/null 2>&1; then
               echo "Skipping $name@$version because it is already published"
               continue
             fi
 
-            if echo "$version" | grep -q "alpha"; then
+            if [[ "$version" == *"-alpha"* ]]; then
               tag=alpha
-            elif echo "$version" | grep -q "beta"; then
+            elif [[ "$version" == *"-beta"* ]]; then
               tag=beta
-            elif echo "$version" | grep -q "rc"; then
+            elif [[ "$version" == *"-rc"* ]]; then
               tag=rc
             else
               tag=latest

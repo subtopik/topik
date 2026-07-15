@@ -1,6 +1,6 @@
 {
   "name": "@topik/content-schema",
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0-alpha.4",
   "description": "Topik Markdoc content schema and validation",
   "license": "MIT",
   "repository": {

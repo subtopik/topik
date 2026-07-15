@@ -58,14 +58,25 @@ jobs:
 
       - name: Publish packages
         run: |
-          for pkg in packages/*/package.json; do
-            dir=$(dirname "$pkg")
-            private=$(node -p "require('./$pkg').private || false")
-            if [ "$private" = "true" ]; then
+          packages=(
+            packages/content-schema
+            packages/schema
+            packages/core
+            packages/content-react
+            packages/cli
+            packages/codemod
+          )
+
+          for dir in "${packages[@]}"; do
+            pkg="$dir/package.json"
+            name=$(node -p "require('./$pkg').name")
+            version=$(node -p "require('./$pkg').version")
+
+            if npx -y npm@11.13.0 view "$name@$version" version >/dev/null 2>&1; then
+              echo "Skipping $name@$version because it is already published"
               continue
             fi
 
-            version=$(node -p "require('./$pkg').version")
             if echo "$version" | grep -q "alpha"; then
               tag=alpha
             elif echo "$version" | grep -q "beta"; then
@@ -76,7 +87,7 @@ jobs:
               tag=latest
             fi
 
-            echo "Publishing $dir@$version with tag $tag"
+            echo "Publishing $name@$version with tag $tag"
             cd "$dir"
             vp pm pack -- --pack-destination .
             tarball=$(ls -t *.tgz | head -n 1)

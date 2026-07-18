@@ -101,6 +101,19 @@ describe("TopikContent", () => {
     expect(html).toContain('href="/card"');
   });
 
+  it("renders unsafe cards as non-interactive when validation is disabled", () => {
+    const html = renderToStaticMarkup(
+      <TopikContent
+        content='{% card title="Unsafe" href="javascript:alert(1)" /%}'
+        validate={false}
+      />,
+    );
+
+    expect(html).toContain('<div class="topik-card">');
+    expect(html).not.toContain("javascript:");
+    expect(html).not.toContain("href=");
+  });
+
   it("uses provider component overrides and asset resolver", () => {
     const html = renderToStaticMarkup(
       <TopikContentProvider

@@ -392,6 +392,68 @@ describe("default Topik theme components", () => {
     expect(providerDom.querySelector("a")?.hasAttribute("data-provider-link")).toBe(true);
   });
 
+  it("renders unsafe link targets as non-interactive content", () => {
+    const calls: string[] = [];
+    const unsafeLink = renderToStaticMarkup(
+      <TopikLink
+        href="javascript:alert(document.domain)"
+        onNavigateLink={() => {
+          calls.push("navigate");
+        }}
+        renderLink={() => {
+          calls.push("render");
+          return <a href="/unexpected">Unsafe</a>;
+        }}
+        resolveLink={() => {
+          calls.push("resolve");
+          return "/safe";
+        }}
+      >
+        Unsafe link
+      </TopikLink>,
+    );
+
+    expect(unsafeLink).toBe("Unsafe link");
+    expect(calls).toEqual([]);
+
+    const unsafeCard = renderToStaticMarkup(
+      <TopikCard href="data:text/html,unsafe" title="Unsafe card">
+        Body
+      </TopikCard>,
+    );
+
+    expect(unsafeCard).toContain('<div class="topik-card">');
+    expect(unsafeCard).not.toContain("href=");
+  });
+
+  it("rejects unsafe link resolver output before rendering or navigation", () => {
+    const calls: string[] = [];
+    const html = renderToStaticMarkup(
+      <TopikLink
+        href="/safe"
+        onNavigateLink={() => {
+          calls.push("navigate");
+        }}
+        renderLink={() => {
+          calls.push("render");
+          return <a href="/unexpected">Unexpected</a>;
+        }}
+        resolveLink={() => "java\nscript:alert(1)"}
+      >
+        Safe label
+      </TopikLink>,
+    );
+
+    expect(html).toBe("Safe label");
+    expect(calls).toEqual([]);
+
+    const card = renderToStaticMarkup(
+      <TopikCard href="/safe" resolveLink={() => "javascript:alert(1)"} title="Safe card" />,
+    );
+    expect(card).toContain('<div class="topik-card">');
+    expect(card).not.toContain("href=");
+  });
+
   it("renders badge variants and defaults", () => {
     const success = renderToStaticMarkup(<TopikBadge variant="success">Stable</TopikBadge>);
     const neutral = renderToStaticMarkup(<TopikBadge>Draft</TopikBadge>);

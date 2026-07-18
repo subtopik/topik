@@ -228,7 +228,14 @@ function createRequestHandler(
     }
 
     const origin = req.headers.origin;
-    if (origin !== undefined && origin !== allowedOrigin) {
+    const fetchSite = req.headers["sec-fetch-site"];
+    if (
+      (origin !== undefined && origin !== allowedOrigin) ||
+      (origin === undefined &&
+        fetchSite !== undefined &&
+        fetchSite !== "same-origin" &&
+        fetchSite !== "none")
+    ) {
       rejectRequest(res);
       return;
     }
@@ -245,7 +252,17 @@ function createRequestHandler(
       return;
     }
 
-    const url = new URL(req.url ?? "/", `http://localhost:${getPort()}`);
+    let url: URL;
+    try {
+      url = new URL(req.url ?? "/", `http://localhost:${getPort()}`);
+    } catch {
+      res.writeHead(400, {
+        "Content-Type": "text/plain",
+        ...corsHeaders,
+      });
+      res.end("Bad Request");
+      return;
+    }
 
     if (req.method === "GET" && url.pathname === "/health") {
       res.writeHead(200, {

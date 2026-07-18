@@ -86,12 +86,12 @@ describe("dev command", () => {
     expect(addressOf(runningServer!).address).toBe("127.0.0.1");
 
     const res = await fetch(`http://127.0.0.1:${port}/resources`, {
-      headers: { Origin: WRITE_ORIGIN },
+      headers: { Origin: WRITE_ORIGIN, "Sec-Fetch-Site": "cross-site" },
     });
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("application/json");
     expect(res.headers.get("access-control-allow-origin")).toBe(WRITE_ORIGIN);
-    expect(res.headers.get("vary")).toBe("Origin");
+    expect(res.headers.get("vary")).toBe("Origin, Sec-Fetch-Site");
 
     const data = (await res.json()) as { resources: { type: string; name: string }[] };
     expect(data.resources).toHaveLength(1);
@@ -123,12 +123,22 @@ describe("dev command", () => {
     expect(events.status).toBe(403);
     expect(await events.text()).not.toContain("Welcome");
 
-    const noOriginCrossSite = await requestServer(port, {
-      host: `localhost:${port}`,
-      fetchSite: "cross-site",
-    });
-    expect(noOriginCrossSite.status).toBe(403);
-    expect(noOriginCrossSite.body).not.toContain("Welcome");
+    for (const fetchSite of ["cross-site", "same-site"]) {
+      const noOriginBrowserRequest = await requestServer(port, {
+        host: `localhost:${port}`,
+        fetchSite,
+      });
+      expect(noOriginBrowserRequest.status).toBe(403);
+      expect(noOriginBrowserRequest.body).not.toContain("Welcome");
+    }
+
+    for (const fetchSite of ["same-origin", "none"]) {
+      const localBrowserRequest = await requestServer(port, {
+        host: `localhost:${port}`,
+        fetchSite,
+      });
+      expect(localBrowserRequest.status).toBe(200);
+    }
   });
 
   test("supports an explicit browser origin override", async () => {

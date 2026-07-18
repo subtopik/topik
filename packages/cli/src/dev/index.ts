@@ -7,6 +7,7 @@ import { watch, type Resource, type Watcher } from "@topik/core";
 
 const DEV_HOST = "127.0.0.1";
 const DEFAULT_ALLOWED_ORIGIN = "https://write.subtopik.com";
+const REQUEST_VARY_HEADERS = "Origin, Sec-Fetch-Site";
 
 const SAFE_READ_FLAGS =
   constants.O_RDONLY |
@@ -206,12 +207,12 @@ function isLoopbackAddress(address: string): boolean {
 
 function getCorsHeaders(origin: string | undefined, allowedOrigin: string): Record<string, string> {
   return origin === allowedOrigin
-    ? { "Access-Control-Allow-Origin": allowedOrigin, Vary: "Origin" }
-    : { Vary: "Origin" };
+    ? { "Access-Control-Allow-Origin": allowedOrigin, Vary: REQUEST_VARY_HEADERS }
+    : { Vary: REQUEST_VARY_HEADERS };
 }
 
 function rejectRequest(res: ServerResponse) {
-  res.writeHead(403, { "Content-Type": "text/plain", Vary: "Origin" });
+  res.writeHead(403, { "Content-Type": "text/plain", Vary: REQUEST_VARY_HEADERS });
   res.end("Forbidden");
 }
 

@@ -19,7 +19,13 @@ function addressOf(runningServer: StartedDevServer): AddressInfo {
 
 function requestServer(
   port: number,
-  options: { host: string; origin?: string; method?: string; path?: string },
+  options: {
+    host: string;
+    origin?: string;
+    fetchSite?: string;
+    method?: string;
+    path?: string;
+  },
 ): Promise<{
   body: string;
   headers: Record<string, string | string[] | undefined>;
@@ -35,6 +41,7 @@ function requestServer(
         headers: {
           Host: options.host,
           ...(options.origin ? { Origin: options.origin } : {}),
+          ...(options.fetchSite ? { "Sec-Fetch-Site": options.fetchSite } : {}),
         },
       },
       (res) => {
@@ -115,6 +122,13 @@ describe("dev command", () => {
     });
     expect(events.status).toBe(403);
     expect(await events.text()).not.toContain("Welcome");
+
+    const noOriginCrossSite = await requestServer(port, {
+      host: `localhost:${port}`,
+      fetchSite: "cross-site",
+    });
+    expect(noOriginCrossSite.status).toBe(403);
+    expect(noOriginCrossSite.body).not.toContain("Welcome");
   });
 
   test("supports an explicit browser origin override", async () => {
@@ -298,5 +312,19 @@ describe("dev command", () => {
 
     const res = await fetch(`http://127.0.0.1:${port}/unknown`);
     expect(res.status).toBe(404);
+  });
+
+  test("returns 400 for malformed request targets", async () => {
+    const port = await start();
+
+    const response = await requestServer(port, {
+      host: `localhost:${port}`,
+      path: "http://[",
+    });
+    expect(response.status).toBe(400);
+    expect(response.body).toBe("Bad Request");
+
+    const health = await fetch(`http://127.0.0.1:${port}/health`);
+    expect(health.status).toBe(200);
   });
 });

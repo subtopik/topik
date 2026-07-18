@@ -1,6 +1,6 @@
-import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
+import { assertRegularFileWithinRoot, readRegularFileWithinRoot } from "./files";
 
 export async function readConfigFile(dir: string, candidates: string[]): Promise<unknown> {
   const config = await readOptionalConfigFile(dir, candidates);
@@ -16,12 +16,13 @@ export async function readOptionalConfigFile(dir: string, candidates: string[]):
     let raw: string;
 
     try {
-      raw = await readFile(filePath, "utf-8");
+      raw = await readRegularFileWithinRoot(filePath, dir, "utf-8");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         continue;
       }
-      throw new Error(`Failed to read config file ${filePath}`, { cause: error });
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to read config file ${filePath}: ${message}`, { cause: error });
     }
 
     try {
@@ -36,13 +37,16 @@ export async function readOptionalConfigFile(dir: string, candidates: string[]):
 export async function findConfigFile(dir: string, candidates: string[]): Promise<string | null> {
   for (const name of candidates) {
     try {
-      await access(join(dir, name));
+      await assertRegularFileWithinRoot(join(dir, name), dir);
       return name;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         continue;
       }
-      throw new Error(`Failed to access config file ${join(dir, name)}`, { cause: error });
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to access config file ${join(dir, name)}: ${message}`, {
+        cause: error,
+      });
     }
   }
   return null;

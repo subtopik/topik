@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import { dirname, isAbsolute, posix, relative, resolve, sep } from "node:path";
 import {
   formatTopikContent,
@@ -7,6 +6,7 @@ import {
   type TopikContentNode,
 } from "@topik/content-schema";
 import type { Asset } from "@topik/schema";
+import { readRegularFileWithinRoot } from "./files";
 
 const MIME_BY_EXT: Record<string, string> = {
   ".png": "image/png",
@@ -113,7 +113,7 @@ export async function extractAssets(
   const urlToId = new Map<string, string>();
   const byName = new Map<string, Asset>();
   const refList = Array.from(refs.values());
-  const settled = await Promise.allSettled(refList.map((ref) => toAsset(ref)));
+  const settled = await Promise.allSettled(refList.map((ref) => toAsset(ref, baseDir)));
   const failures: string[] = [];
   for (let i = 0; i < settled.length; i++) {
     const result = settled[i];
@@ -217,15 +217,17 @@ function decodeSafe(s: string): string {
   }
 }
 
-async function toAsset(ref: FoundRef): Promise<Asset> {
+async function toAsset(ref: FoundRef, baseDir: string): Promise<Asset> {
   let bytes: Buffer;
   try {
-    bytes = await readFile(ref.absPath);
+    bytes = await readRegularFileWithinRoot(ref.absPath, baseDir);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Asset "${ref.original}" not found at ${ref.absPath}: ${message}`, {
-      cause: error,
-    });
+    const context =
+      (error as NodeJS.ErrnoException).code === "ENOENT"
+        ? `Asset "${ref.original}" not found at ${ref.absPath}`
+        : `Failed to read asset "${ref.original}" at ${ref.absPath}`;
+    throw new Error(`${context}: ${message}`, { cause: error });
   }
   const digest = createHash("sha256").update(bytes).digest();
   const integrity = `sha256-${digest.toString("base64")}`;

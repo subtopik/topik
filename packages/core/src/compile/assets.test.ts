@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
@@ -111,6 +111,36 @@ describe("extractAssets", () => {
     await expect(extractAssets("![x](../outside.png)", { baseDir: dir, filePath })).rejects.toThrow(
       /outside the compilation directory/,
     );
+  });
+
+  test("rejects asset symlinks that resolve outside the base directory", async () => {
+    const external = await mkdtemp(join(tmpdir(), "topik-asset-secret-"));
+    try {
+      const filePath = join(dir, "page.md");
+      await writeFile(join(external, "secret.png"), PNG_BYTES);
+      await symlink(join(external, "secret.png"), join(dir, "leak.png"));
+
+      await expect(extractAssets("![x](./leak.png)", { baseDir: dir, filePath })).rejects.toThrow(
+        /outside the compilation directory/,
+      );
+    } finally {
+      await rm(external, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects assets reached through a directory symlink outside the base directory", async () => {
+    const external = await mkdtemp(join(tmpdir(), "topik-asset-secret-dir-"));
+    try {
+      const filePath = join(dir, "page.md");
+      await writeFile(join(external, "secret.png"), PNG_BYTES);
+      await symlink(external, join(dir, "linked"), "dir");
+
+      await expect(
+        extractAssets("![x](./linked/secret.png)", { baseDir: dir, filePath }),
+      ).rejects.toThrow(/outside the compilation directory/);
+    } finally {
+      await rm(external, { recursive: true, force: true });
+    }
   });
 
   test("errors when the referenced file does not exist", async () => {

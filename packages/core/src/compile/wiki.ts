@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { access, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { analyzeTopikContent, validateTopikContent } from "@topik/content-schema";
 import {
@@ -15,6 +14,7 @@ import type { Resource } from "../resource";
 import { parseWikiConfig, WIKI_PAGE_NAME_HASH_LENGTH, type WikiNavNode } from "../config/wiki";
 import { extractAssets } from "./assets";
 import { readOptionalConfigFile } from "./config";
+import { readRegularFileWithinRoot } from "./files";
 import {
   extractMarkdownTitle,
   hasCompileErrors,
@@ -47,13 +47,7 @@ export async function inspectWiki(options: CompileWikiOptions): Promise<CompileR
 
   const config = parseWikiConfig(raw);
   const pagePaths = config.navigation ? [...new Set(collectPagePaths(config.navigation))] : [];
-  const resolvedFiles = await Promise.all(
-    pagePaths.map(async (pagePath) => {
-      const filePath = await resolveFilePath(dir, pagePath);
-      const raw = await readFile(filePath, "utf-8");
-      return { filePath, raw };
-    }),
-  );
+  const resolvedFiles = await Promise.all(pagePaths.map((pagePath) => readPageFile(dir, pagePath)));
 
   const resources: Resource[] = [];
   const diagnostics: CompileResult["diagnostics"] = [];
@@ -153,14 +147,20 @@ function collectPagePaths(nodes: WikiNavNode[], prefix = ""): string[] {
   return paths;
 }
 
-async function resolveFilePath(dir: string, pagePath: string): Promise<string> {
+async function readPageFile(
+  dir: string,
+  pagePath: string,
+): Promise<{ filePath: string; raw: string }> {
   for (const ext of [".mdx", ".md"]) {
     const filePath = join(dir, pagePath + ext);
     try {
-      await access(filePath);
-      return filePath;
-    } catch {
-      // try next extension
+      const raw = await readRegularFileWithinRoot(filePath, dir, "utf-8");
+      return { filePath, raw };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        continue;
+      }
+      throw error;
     }
   }
   throw new Error(`Page not found: ${pagePath} (tried .md and .mdx in ${dir})`);

@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -130,6 +130,35 @@ describe("dev command", () => {
 
     const sourcePathRes = await fetch(`http://localhost:${port}/images/hero.png`);
     expect(sourcePathRes.status).toBe(404);
+  });
+
+  test("does not serve a compiled asset after it is replaced by an outside symlink", async () => {
+    const external = await mkdtemp(join(tmpdir(), "topik-dev-secret-"));
+    try {
+      await mkdir(join(dir, "images"), { recursive: true });
+      const assetPath = join(dir, "images", "hero.png");
+      await writeFile(assetPath, "public asset");
+      await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](./images/hero.png)\n");
+      await writeFile(join(external, "secret.png"), "secret bytes");
+
+      void (dev as DevCommand).handler?.({ dir, port: String(port) });
+      await waitForServer(port);
+
+      const resources = (await (await fetch(`http://localhost:${port}/resources`)).json()) as {
+        resources: { type: string; name: string }[];
+      };
+      const asset = resources.resources.find((resource) => resource.type === "Asset");
+      expect(asset).toBeDefined();
+
+      await rm(assetPath);
+      await symlink(join(external, "secret.png"), assetPath);
+
+      const response = await fetch(`http://localhost:${port}/assets/${asset!.name}`);
+      expect(response.status).toBe(404);
+      expect(await response.text()).not.toContain("secret bytes");
+    } finally {
+      await rm(external, { recursive: true, force: true });
+    }
   });
 
   test("returns 404 for unknown routes", async () => {

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
@@ -42,5 +42,22 @@ describe("compile config helpers", () => {
     await expect(findConfigFile(join(dir, "nested"), ["wiki.yaml", "wiki.json"])).resolves.toBe(
       "wiki.json",
     );
+  });
+
+  test("rejects config symlinks that resolve outside the compilation directory", async () => {
+    const external = await mkdtemp(join(tmpdir(), "topik-config-secret-"));
+    try {
+      await writeFile(join(external, "secret.yaml"), "id: secret\ntitle: Secret\n");
+      await symlink(join(external, "secret.yaml"), join(dir, "wiki.yaml"));
+
+      await expect(readConfigFile(dir, ["wiki.yaml"])).rejects.toThrow(
+        /outside the compilation directory/,
+      );
+      await expect(findConfigFile(dir, ["wiki.yaml"])).rejects.toThrow(
+        /outside the compilation directory/,
+      );
+    } finally {
+      await rm(external, { recursive: true, force: true });
+    }
   });
 });

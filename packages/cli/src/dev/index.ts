@@ -1,9 +1,14 @@
-import { existsSync, realpathSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { constants, realpathSync } from "node:fs";
+import { open } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { extname, isAbsolute, join, relative, resolve } from "node:path";
+import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { command, positional, string } from "@drizzle-team/brocli";
 import { watch, type Resource, type Watcher } from "@topik/core";
+
+const SAFE_READ_FLAGS =
+  constants.O_RDONLY |
+  (typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0) |
+  (typeof constants.O_NONBLOCK === "number" ? constants.O_NONBLOCK : 0);
 
 const ASSET_EXTENSIONS: Record<string, string> = {
   ".png": "image/png",
@@ -100,16 +105,17 @@ function handleAsset(watcher: Watcher, dir: string, url: URL, res: ServerRespons
 
   const relativeAssetPath = relative(realDir, realFilePath);
   if (
-    (relativeAssetPath !== "" &&
-      (relativeAssetPath.startsWith("..") || isAbsolute(relativeAssetPath))) ||
-    !existsSync(realFilePath)
+    relativeAssetPath !== "" &&
+    (relativeAssetPath === ".." ||
+      relativeAssetPath.startsWith(`..${sep}`) ||
+      isAbsolute(relativeAssetPath))
   ) {
     res.writeHead(404, { "Access-Control-Allow-Origin": "*" });
     res.end();
     return true;
   }
 
-  readFile(filePath)
+  readRegularFile(realFilePath)
     .then((data) => {
       res.writeHead(200, {
         "Content-Type":
@@ -125,6 +131,19 @@ function handleAsset(watcher: Watcher, dir: string, url: URL, res: ServerRespons
     });
 
   return true;
+}
+
+async function readRegularFile(filePath: string): Promise<Buffer> {
+  const file = await open(filePath, SAFE_READ_FLAGS);
+  try {
+    const stat = await file.stat();
+    if (!stat.isFile()) {
+      throw new Error(`Asset is not a regular file: ${filePath}`);
+    }
+    return await file.readFile();
+  } finally {
+    await file.close();
+  }
 }
 
 export const dev = command({

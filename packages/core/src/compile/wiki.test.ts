@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile, rm, symlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
@@ -89,6 +89,19 @@ navigation:
     const pages = result.resources.filter((r) => r.type === "WikiPage");
     expect(pages).toHaveLength(1);
     expect(pages[0].name).toBe(pageName("tw", "included"));
+  });
+
+  test("rejects pages that resolve outside the compilation directory", async () => {
+    const external = await mkdtemp(join(tmpdir(), "topik-wiki-secret-"));
+    try {
+      await writeWikiConfig("id: tw\ntitle: Test Wiki\nnavigation:\n  - leak\n");
+      await writeFile(join(external, "secret.md"), "# Secret\n\nTOPIK_SECRET=outside-root\n");
+      await symlink(join(external, "secret.md"), join(dir, "leak.md"));
+
+      await expect(compileWiki({ dir })).rejects.toThrow(/outside the compilation directory/);
+    } finally {
+      await rm(external, { recursive: true, force: true });
+    }
   });
 
   test("collapses index pages in slug", async () => {

@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile, rm, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
@@ -173,6 +173,45 @@ describe("compileGuides", () => {
 
     const result = await compileGuides({ dir });
     expect(result.resources).toHaveLength(1);
+  });
+
+  test("rejects markdown symlinks that resolve outside the compilation directory", async () => {
+    const external = await mkdtemp(join(tmpdir(), "topik-guide-secret-"));
+    try {
+      await writeCollectionConfig("id: blog\ntitle: Blog\n");
+      await writeFile(join(external, "secret.md"), "# Secret\n\nTOPIK_SECRET=outside-root\n");
+      await symlink(join(external, "secret.md"), join(dir, "leak.md"));
+
+      await expect(compileGuides({ dir })).rejects.toThrow(/guide-outside-compilation-root/);
+    } finally {
+      await rm(external, { recursive: true, force: true });
+    }
+  });
+
+  test("allows markdown symlinks that resolve within the compilation directory", async () => {
+    await writeCollectionConfig("id: blog\ntitle: Blog\n");
+    await mkdir(join(dir, "shared"));
+    await writeFile(join(dir, "shared", "post.md"), "# Shared Post\n\nReusable content.\n");
+    await symlink(join(dir, "shared", "post.md"), join(dir, "alias.md"));
+
+    const result = await compileGuides({ dir });
+
+    expect(result.resources).toHaveLength(1);
+    expect(result.resources[0]).toMatchObject({
+      type: "Guide",
+      name: "blog-alias",
+      spec: {
+        title: "Shared Post",
+        content: { value: "# Shared Post\n\nReusable content.\n" },
+      },
+    });
+  });
+
+  test("rejects markdown directories instead of reading them as guides", async () => {
+    await writeCollectionConfig("id: blog\ntitle: Blog\n");
+    await mkdir(join(dir, "directory.md"));
+
+    await expect(compileGuides({ dir })).rejects.toThrow(/guide-not-regular-file/);
   });
 
   test("does not include collection.yaml as a guide", async () => {

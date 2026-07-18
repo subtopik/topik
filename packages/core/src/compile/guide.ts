@@ -1,4 +1,4 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { analyzeTopikContent, validateTopikContent } from "@topik/content-schema";
 import type { Guide } from "@topik/schema";
@@ -6,6 +6,11 @@ import type { Resource } from "../resource";
 import { parseCollectionConfig } from "../config/collection";
 import { extractAssets } from "./assets";
 import { readOptionalConfigFile } from "./config";
+import {
+  FileNotRegularError,
+  FileOutsideCompilationRootError,
+  readRegularFileWithinRoot,
+} from "./files";
 import {
   extractMarkdownTitle,
   linkValidationPolicy,
@@ -51,7 +56,34 @@ export async function inspectGuides(options: CompileGuidesOptions): Promise<Comp
 
   for (const file of markdownFiles) {
     const filePath = join(dir, file);
-    const rawContent = await readFile(filePath, "utf-8");
+    let rawContent: string;
+    try {
+      rawContent = await readRegularFileWithinRoot(filePath, dir, "utf-8");
+    } catch (error) {
+      if (error instanceof FileOutsideCompilationRootError) {
+        diagnostics.push({
+          id: "guide-outside-compilation-root",
+          type: "Guide",
+          level: "error",
+          message: "Guide files must resolve within the compilation directory",
+          lines: [],
+          file: filePath,
+        });
+        continue;
+      }
+      if (error instanceof FileNotRegularError) {
+        diagnostics.push({
+          id: "guide-not-regular-file",
+          type: "Guide",
+          level: "error",
+          message: "Guide entries must be regular files",
+          lines: [],
+          file: filePath,
+        });
+        continue;
+      }
+      throw error;
+    }
     const { frontmatter, content } = parseMarkdownFrontmatter(rawContent, file);
     const validation = validateTopikContent(content, { file: filePath });
     diagnostics.push(...validation.errors);

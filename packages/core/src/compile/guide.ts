@@ -1,4 +1,4 @@
-import { readdir, readFile } from "node:fs/promises";
+import { lstat, readdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { analyzeTopikContent, validateTopikContent } from "@topik/content-schema";
 import type { Guide } from "@topik/schema";
@@ -51,6 +51,29 @@ export async function inspectGuides(options: CompileGuidesOptions): Promise<Comp
 
   for (const file of markdownFiles) {
     const filePath = join(dir, file);
+    const stat = await lstat(filePath);
+    if (stat.isSymbolicLink()) {
+      diagnostics.push({
+        id: "guide-symlink-not-allowed",
+        type: "Guide",
+        level: "error",
+        message: "Guide files must not be symbolic links",
+        lines: [],
+        file: filePath,
+      });
+      continue;
+    }
+    if (!stat.isFile()) {
+      diagnostics.push({
+        id: "guide-not-regular-file",
+        type: "Guide",
+        level: "error",
+        message: "Guide entries must be regular files",
+        lines: [],
+        file: filePath,
+      });
+      continue;
+    }
     const rawContent = await readFile(filePath, "utf-8");
     const { frontmatter, content } = parseMarkdownFrontmatter(rawContent, file);
     const validation = validateTopikContent(content, { file: filePath });

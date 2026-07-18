@@ -28,6 +28,22 @@ describe("Topik links", () => {
     expect(validateTopikHref("#%zz")[0]?.id).toBe("link-url-invalid");
   });
 
+  test("rejects browser-normalized unsafe schemes and protocol-relative links", () => {
+    for (const href of [
+      "java\nscript:alert(1)",
+      "data\r:text/plain,test",
+      "\u0000javascript:alert(1)",
+    ]) {
+      expect(validateTopikHref(href)[0]?.id, JSON.stringify(href)).toBe("link-url-invalid");
+    }
+
+    for (const href of ["\\\\example.com", "/\\example.com", "\\/example.com", "\\\\topik.local"]) {
+      expect(validateTopikHref(href)[0]?.id, JSON.stringify(href)).toBe(
+        "link-url-protocol-relative",
+      );
+    }
+  });
+
   test("extracts headings, Markdown links, cards, and source locations", () => {
     const result = analyzeTopikContent(
       [

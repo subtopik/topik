@@ -1,3 +1,4 @@
+import { validateTopikHref } from "@topik/content-schema";
 import {
   Children,
   isValidElement,
@@ -100,6 +101,14 @@ function useTopikLinkBehavior({
   };
 }
 
+function resolveSafeHref(target: string, resolveLink?: TopikLinkResolver): string | undefined {
+  if (validateTopikHref(target).length > 0) return undefined;
+  const resolvedTarget = resolveLink?.(target) ?? target;
+  return typeof resolvedTarget === "string" && validateTopikHref(resolvedTarget).length === 0
+    ? resolvedTarget
+    : undefined;
+}
+
 function createLinkClickHandler(target: string, handleNavigate?: TopikLinkHandler) {
   return function handleClick(event: MouseEvent<HTMLAnchorElement>) {
     if (!target || event.defaultPrevented || event.button !== 0) return;
@@ -184,15 +193,16 @@ export function TopikCard({
 
   const target = stringAttribute(href);
   if (target) {
-    const resolvedTarget = linkResolver?.(target) ?? target;
-
-    const linkProps = {
-      children: content,
-      className: "topik-card",
-      href: resolvedTarget,
-      onClick: createLinkClickHandler(target, handleNavigate),
-    };
-    return <>{linkRenderer ? linkRenderer(linkProps) : <a {...linkProps} />}</>;
+    const resolvedTarget = resolveSafeHref(target, linkResolver);
+    if (resolvedTarget) {
+      const linkProps = {
+        children: content,
+        className: "topik-card",
+        href: resolvedTarget,
+        onClick: createLinkClickHandler(target, handleNavigate),
+      };
+      return <>{linkRenderer ? linkRenderer(linkProps) : <a {...linkProps} />}</>;
+    }
   }
 
   return <div className="topik-card">{content}</div>;
@@ -390,7 +400,9 @@ export function TopikLink({
     resolveLink,
   });
   const target = stringAttribute(href) ?? "";
-  const resolvedTarget = linkResolver?.(target) ?? target;
+  const resolvedTarget = resolveSafeHref(target, linkResolver);
+
+  if (!resolvedTarget) return <>{children}</>;
 
   const linkProps = {
     children,

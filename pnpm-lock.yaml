@@ -10,8 +10,8 @@ catalogs:
       specifier: ^0.12.0
       version: 0.12.0
     '@markdoc/markdoc':
-      specifier: ^0.5.7
-      version: 0.5.7
+      specifier: ^0.5.8
+      version: 0.5.8
     '@types/bun':
       specifier: ^1.3.14
       version: 1.3.14
@@ -125,7 +125,7 @@ importers:
     dependencies:
       '@markdoc/markdoc':
         specifier: 'catalog:'
-        version: 0.5.7(@types/react@19.2.17)(react@19.2.7)
+        version: 0.5.8(@types/react@19.2.17)(react@19.2.7)
       '@topik/content-schema':
         specifier: workspace:*
         version: link:../content-schema
@@ -180,7 +180,7 @@ importers:
     dependencies:
       '@markdoc/markdoc':
         specifier: 'catalog:'
-        version: 0.5.7(@types/react@19.2.17)(react@19.2.7)
+        version: 0.5.8(@types/react@19.2.17)(react@19.2.7)
       github-slugger:
         specifier: 'catalog:'
         version: 2.0.0
@@ -933,8 +933,8 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@markdoc/markdoc@0.5.7':
-    resolution: {integrity: sha512-NxreNThm7foFgMMQD6zgk7rKkcFMmdC8J5r+Zn4FKoN75F5YjvwdihwF11VhrBfL3CXnD4+YG1VYwvBL+igzvw==}
+  '@markdoc/markdoc@0.5.8':
+    resolution: {integrity: sha512-U0II9ix5O96VWZXurdsw9uxwPFTurWcQyeNVTH5P7Q6kuIfTzjEy7IPJMTTmFefK7V6nRzIARi5+G6kTjuFeCQ==}
     engines: {node: '>=14.7.0'}
     peerDependencies:
       '@types/react': '*'
@@ -4311,7 +4311,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@markdoc/markdoc@0.5.7(@types/react@19.2.17)(react@19.2.7)':
+  '@markdoc/markdoc@0.5.8(@types/react@19.2.17)(react@19.2.7)':
     optionalDependencies:
       '@types/linkify-it': 3.0.5
       '@types/markdown-it': 12.2.3

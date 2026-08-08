@@ -60,6 +60,17 @@ describe("validateResources", () => {
     });
   });
 
+  test.each(["constructor", "toString", "__proto__"])(
+    "rejects prototype-named resource type %s without throwing",
+    (type) => {
+      expect(() => validateResources([{ type }])).not.toThrow();
+      expect(validateResources([{ type }])).toMatchObject({
+        valid: false,
+        errors: [{ path: "/type", message: `Unsupported resource type: ${type}` }],
+      });
+    },
+  );
+
   test("rejects non-object resources", () => {
     const result = validateResources([null, "broken"]);
 

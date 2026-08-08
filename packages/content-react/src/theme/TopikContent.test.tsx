@@ -30,12 +30,37 @@ describe("TopikContent", () => {
   it("inherits an explicit color scheme from the provider", () => {
     const html = renderToStaticMarkup(
       <TopikContentProvider colorScheme="dark">
-        <TopikContent content='{% figure src="/light.png" darkSrc="/dark.png" alt="Hero" /%}' />
+        <TopikContent content='{% figure src="light.png" darkSrc="dark.png" alt="Hero" /%}' />
       </TopikContentProvider>,
     );
 
-    expect(html).toContain('src="/dark.png"');
+    expect(html).toContain('src="dark.png"');
     expect(html).not.toContain("prefers-color-scheme");
+  });
+
+  it.each([
+    "http://example.com/a.png",
+    "file:///tmp/a.png",
+    "data:image/png;base64,AA==",
+    "blob:https://example.com/id",
+    "javascript:alert(1)",
+    "//example.com/a.png",
+    "/absolute.png",
+    "./relative.png",
+    "assets%2fhero.png",
+    "é.png",
+  ])("fails closed for unsafe default-renderer asset reference %s", (reference) => {
+    const diagnostics: string[] = [];
+    const html = renderToStaticMarkup(
+      <TopikContent
+        content={`{% figure src="${reference}" alt="Unsafe" /%}`}
+        onDiagnostic={(diagnostic) => diagnostics.push(diagnostic.id)}
+      />,
+    );
+    expect(diagnostics.length).toBeGreaterThan(0);
+    expect(html).not.toContain(reference);
+    expect(html).not.toMatch(/\b(?:src|srcset)="/iu);
+    expect(html).not.toContain('rel="preload"');
   });
 
   it("supports component overrides", () => {

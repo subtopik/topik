@@ -11,16 +11,21 @@ resource root. The persisted identity is `AssetManifest/v1`, whose immutable sch
 resource through its `(type, apiVersion, name, path)` tuple.
 
 Content names local assets with canonical resource-root-relative URI paths, for example
-`assets/intro/hero.png`. Non-unreserved UTF-8 bytes use uppercase percent encoding. A conforming
-checkout or extracted portable archive therefore remains renderable offline without a host service,
-remote identifiers, delivery URLs, credentials, or network access. An absolute credential-free HTTPS URL
-is a distinct external reference: its exact query and fragment are preserved, it has no sidecar
-entry, and ordinary consumers never fetch it. Other schemes, protocol-relative URLs, credentials,
-and controls are invalid in asset slots.
+`assets/intro/hero.png`. Source references must already use that root-relative spelling: the compiler
+rejects leading `/`, `./`, `../`, encoded separators or traversal, and other noncanonical forms
+instead of normalizing or rewriting them. Non-unreserved UTF-8 bytes use uppercase percent encoding.
+A conforming checkout or extracted portable archive therefore remains renderable offline without a
+host service, remote identifiers, delivery URLs, credentials, or network access. An absolute
+credential-free HTTPS URL is a distinct external reference: its exact query and fragment are
+preserved, it has no sidecar entry, and ordinary consumers never fetch it. Other schemes,
+protocol-relative URLs, credentials, and controls are invalid in asset slots.
 
 `@topik/content-schema` declares the Markdoc attributes that are asset slots and extracts every
-occurrence independently. It does not scan arbitrary strings. A valid v1 sidecar is complete: every
-local occurrence resolves exactly one entry, every entry is referenced, and its regular
+occurrence independently. It does not scan arbitrary strings. A generic link is a download only
+when explicitly declared or when compilation proves that its canonical target is a regular file
+which is not another resource or content file; ordinary navigation stays a link, and an explicitly
+declared resource link is an ambiguity error. A valid v1 sidecar is complete: every local
+occurrence resolves exactly one entry, every entry is referenced, and its regular
 non-executable file matches the recorded SHA-256, byte size, and media type verified from bytes.
 Symlinks, hard links, submodules, executables, special files, Git LFS pointers/filters,
 `working-tree-encoding`, and security-sensitive Git control files are rejected.
@@ -64,13 +69,19 @@ The compiler reads assets with the descriptor-anchored no-follow filesystem help
 SHA-256, size, and media type from the opened bytes, reuses one manifest entry for repeated
 occurrences within a resource, and never shares ownership across resources. Opaque keys come from a
 CSPRNG. Compilation returns `assetKeyState`; pass it back through the `assets.keyState` option on a
-retry to retain exact key assignments. Tests may inject `assets.randomBytes`, while production
-callers normally omit it.
+retry to retain exact key assignments. Key history is scoped by resource root, so independent roots
+may use the same opaque key text. Removing an assignment retires its key within that resource's
+history; a later re-addition cannot reuse it. Tests may inject `assets.randomBytes`, while production
+callers normally omit it. Filesystem compilation rejects a symlink supplied as its root and evaluates
+applicable root and nested `.gitattributes`; an effective `filter` or `working-tree-encoding` attribute
+blocks portable emission.
 
 The CLI continues to write ordinary resource files under `Type/name.<format>` and writes each exact
 portable root under `portable/Type/name/`. This layout allows several logical resources to coexist
-without competing for one physical sidecar. The development server exposes proven inventory bytes
-at `/portable/Type/name/<owned-path>` and never serves an unchecked source path.
+without competing for one physical sidecar. Portable output is staged and replaces the previous tree
+as a complete inventory, pruning stale files and rejecting destination symlinks. The development
+server exposes proven inventory bytes at `/portable/Type/name/<owned-path>` and never serves an
+unchecked source path.
 
 ## Release status
 

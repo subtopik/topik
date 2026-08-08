@@ -54,7 +54,7 @@ export async function inspectWiki(options: CompileWikiOptions): Promise<CompileR
       assetKeyState: options.assets?.keyState ?? {
         version: TOPIK_PORTABLE_ASSET_KEY_STATE_VERSION,
         keysByResource: {},
-        retiredKeys: [],
+        retiredKeysByResource: {},
       },
     };
   }

@@ -261,7 +261,7 @@ describe("dev command", () => {
     await writeFile(join(dir, "wiki.yaml"), "id: docs\ntitle: Docs\nnavigation:\n  - intro\n");
     await mkdir(join(dir, "images"), { recursive: true });
     await writeFile(join(dir, "images", "hero.png"), PNG_BYTES);
-    await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](./images/hero.png)\n");
+    await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](images/hero.png)\n");
 
     const port = await start();
 
@@ -294,13 +294,52 @@ describe("dev command", () => {
     expect(sourcePathRes.status).toBe(404);
   });
 
+  test("refreshes the dev snapshot when a dot-prefixed asset changes", async () => {
+    await mkdir(join(dir, ".images"));
+    await writeFile(join(dir, ".images", "hero.png"), PNG_BYTES);
+    await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](.images/hero.png)\n");
+
+    const port = await start();
+    const key = "Guide/docs-intro";
+    const initialArtifact = runningServer!.watcher.artifacts.get(key);
+    const initialEntry = Object.values(initialArtifact?.manifest.assets ?? {})[0];
+    expect(initialEntry).toBeDefined();
+
+    const changedBytes = Uint8Array.from(PNG_BYTES);
+    changedBytes[changedBytes.length - 1] ^= 1;
+    const updated = new Promise<void>((resolve) => {
+      runningServer!.watcher.on("update", (updatedKey) => {
+        if (updatedKey === key) resolve();
+      });
+    });
+
+    // Let chokidar finish establishing its recursive watches before changing the asset.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await writeFile(join(dir, ".images", "hero.png"), changedBytes);
+    await updated;
+
+    const resourcesResponse = await fetch(`http://127.0.0.1:${port}/resources`);
+    const resources = (await resourcesResponse.json()) as {
+      portableArtifacts: { resourceRoot: string; manifest: { assets: Record<string, unknown> } }[];
+    };
+    const refreshed = resources.portableArtifacts.find((artifact) => artifact.resourceRoot === key);
+    const refreshedEntry = Object.values(
+      refreshed?.manifest.assets ?? {},
+    )[0] as typeof initialEntry;
+    expect(refreshedEntry?.digest.value).not.toBe(initialEntry?.digest.value);
+
+    const assetResponse = await fetch(`http://127.0.0.1:${port}/portable/${key}/.images/hero.png`);
+    expect(assetResponse.status).toBe(200);
+    expect(Buffer.from(await assetResponse.arrayBuffer())).toEqual(Buffer.from(changedBytes));
+  }, 10_000);
+
   test("serves only the proven snapshot after a source asset becomes an outside symlink", async () => {
     const external = await mkdtemp(join(tmpdir(), "topik-dev-secret-"));
     try {
       await mkdir(join(dir, "images"), { recursive: true });
       const assetPath = join(dir, "images", "hero.png");
       await writeFile(assetPath, PNG_BYTES);
-      await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](./images/hero.png)\n");
+      await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](images/hero.png)\n");
       await writeFile(join(external, "secret.png"), "secret bytes");
 
       const port = await start();

@@ -240,7 +240,7 @@ describe("compileGuides", () => {
       "hex",
     );
     await writeFile(join(dir, "hero.png"), png);
-    await writeGuide("post", "# Post\n\n![hero](./hero.png)\n");
+    await writeGuide("post", "# Post\n\n![hero](hero.png)\n");
 
     const result = await compileGuides({ dir });
     const guide = result.resources.find((r) => r.type === "Guide") as Guide;
@@ -272,8 +272,8 @@ describe("compileGuides", () => {
       "hex",
     );
     await writeFile(join(dir, "shared.png"), png);
-    await writeGuide("one", "# One\n\n![s](./shared.png)\n");
-    await writeGuide("two", "# Two\n\n![s](./shared.png)\n");
+    await writeGuide("one", "# One\n\n![s](shared.png)\n");
+    await writeGuide("two", "# Two\n\n![s](shared.png)\n");
 
     const result = await compileGuides({ dir });
     expect(result.resources).toHaveLength(2);

@@ -2,6 +2,7 @@ import Markdoc, { type Config, type RenderableTreeNode } from "@markdoc/markdoc"
 import {
   assignTopikHeadingIds,
   parseTopikContent,
+  removeInvalidTopikAssetReferences,
   topikMarkdocConfig,
   validateTopikContent,
   type TopikContentDiagnostic,
@@ -35,6 +36,7 @@ export function compileTopikContent(
   }
 
   const ast = parseTopikContent(content, { file: options.file, location: shouldValidate });
+  removeInvalidTopikAssetReferences(ast, content);
   assignTopikHeadingIds(ast);
   return Markdoc.transform(ast, mergeConfigs(topikMarkdocConfig, options.config));
 }

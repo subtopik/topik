@@ -3,6 +3,7 @@ import {
   extractTopikAssetOccurrences,
   rewriteTopikAssetOccurrences,
   topikAssetReferenceSlots,
+  validateTopikAssetReference,
 } from "./asset-references";
 
 describe("topik-asset-reference-v1 occurrence registry", () => {
@@ -43,6 +44,116 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
     });
     expect(occurrences[1].kind).toBe("unsafe");
     expect(occurrences[2].kind).toBe("unsafe");
+  });
+
+  test.each([
+    "assets%2Fhero.png",
+    "assets%2fhero.png",
+    "%2E%2E/hero.png",
+    "é.png",
+    "./hero.png",
+    "../hero.png",
+    "/hero.png",
+    "//example.com/hero.png",
+    "file:///hero.png",
+  ])("rejects noncanonical reference bytes %s", (reference) => {
+    expect(validateTopikAssetReference(reference)).toMatchObject({ valid: false, kind: "unsafe" });
+  });
+
+  test("accepts canonical local and credential-free HTTPS references", () => {
+    expect(validateTopikAssetReference("assets/caf%C3%A9.png")).toEqual({
+      valid: true,
+      kind: "local",
+      decodedPath: "assets/café.png",
+    });
+    expect(validateTopikAssetReference("https://example.com/a.png?q=1#hero")).toEqual({
+      valid: true,
+      kind: "external-https",
+    });
+  });
+
+  test("retains original Markdown destination bytes before parser normalization", () => {
+    expect(extractTopikAssetOccurrences("![raw](é.png)\n")[0]).toMatchObject({
+      reference: "é.png",
+      kind: "unsafe",
+    });
+    expect(extractTopikAssetOccurrences("![canonical](%C3%A9.png)\n")[0]).toMatchObject({
+      reference: "%C3%A9.png",
+      kind: "local",
+    });
+    expect(extractTopikAssetOccurrences("![entity](&eacute;.png)\n")[0]).toMatchObject({
+      reference: "&eacute;.png",
+      kind: "unsafe",
+    });
+    expect(extractTopikAssetOccurrences("![escaped](hero\\.png)\n")[0]).toMatchObject({
+      reference: "hero\\.png",
+      kind: "unsafe",
+    });
+  });
+
+  test("retains exact destinations for full, collapsed, shortcut, and repeated image references", () => {
+    const source = [
+      "![Canonical][canonical]",
+      "![Raw][raw]",
+      "![Raw again][raw]",
+      "![Collapsed][]",
+      "![Shortcut]",
+      "",
+      "[raw]: é.png",
+      "[collapsed]: é.png",
+      "[shortcut]: é.png",
+      "[canonical]: %C3%A9.png",
+    ].join("\n");
+
+    expect(extractTopikAssetOccurrences(source).map((occurrence) => occurrence.reference)).toEqual([
+      "%C3%A9.png",
+      "é.png",
+      "é.png",
+      "é.png",
+      "é.png",
+    ]);
+  });
+
+  test("does not classify an unused invalid definition or confuse definitions with equal parsed URLs", () => {
+    const source = [
+      "![Good][good]",
+      "",
+      "[unused]: &eacute;.png",
+      "[same-parsed]: é.png",
+      "[good]: %C3%A9.png",
+    ].join("\n");
+
+    expect(extractTopikAssetOccurrences(source)).toMatchObject([
+      { reference: "%C3%A9.png", kind: "local" },
+    ]);
+  });
+
+  test("retains HTML entities and Markdown escapes from used reference definitions", () => {
+    expect(extractTopikAssetOccurrences("![Entity][id]\n\n[id]: &eacute;.png\n")).toMatchObject([
+      { reference: "&eacute;.png", kind: "unsafe" },
+    ]);
+    expect(extractTopikAssetOccurrences("![Escaped][id]\n\n[id]: hero\\.png\n")).toMatchObject([
+      { reference: "hero\\.png", kind: "unsafe" },
+    ]);
+  });
+
+  test.each([1, 2, 3])(
+    "retains a raw continuation-line reference destination indented %i spaces",
+    (indentation) => {
+      const source = `![Raw][id]\n\n[id]:\n${" ".repeat(indentation)}é.png\n`;
+      expect(extractTopikAssetOccurrences(source)).toMatchObject([
+        { reference: "é.png", kind: "unsafe" },
+      ]);
+    },
+  );
+
+  test("retains an entity continuation destination and ignores its separate title", () => {
+    expect(
+      extractTopikAssetOccurrences('![Entity][id]\n\n[id]:\n  &eacute;.png\n  "Entity title"\n'),
+    ).toMatchObject([{ reference: "&eacute;.png", kind: "unsafe" }]);
+    expect(
+      extractTopikAssetOccurrences('![Canonical][id]\n\n[id]:\n  good.png\n  "Canonical title"\n'),
+    ).toMatchObject([{ reference: "good.png", kind: "local" }]);
   });
 
   test("classifies generic links only through an explicit declaration or manifest path", () => {

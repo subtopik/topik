@@ -2,6 +2,7 @@ import Markdoc, { type Config, type ValidateError } from "@markdoc/markdoc";
 import { topikMarkdocConfig } from "./config";
 import { parseTopikContent } from "./content";
 import { toTopikContentDiagnostic, type TopikContentDiagnostic } from "./diagnostics";
+import { extractTopikAssetOccurrences, validateTopikAssetReference } from "./asset-references";
 
 export interface ValidateTopikContentOptions {
   /** Source file path used in Markdoc locations and diagnostics. */
@@ -22,7 +23,29 @@ export function validateTopikContent(
 ): ValidateTopikContentResult {
   const ast = parseTopikContent(source, { file: options.file, location: true });
   const markdocErrors = Markdoc.validate(ast, mergeConfigs(topikMarkdocConfig, options.config));
-  const errors = markdocErrors.map(toTopikContentDiagnostic);
+  const errors = [
+    ...markdocErrors.map(toTopikContentDiagnostic),
+    ...extractTopikAssetOccurrences(source).flatMap((occurrence): TopikContentDiagnostic[] => {
+      const validation = validateTopikAssetReference(occurrence.reference);
+      if (validation.valid) return [];
+      return [
+        {
+          id:
+            validation.failureKind === "external"
+              ? "TOPIK_EXTERNAL_REFERENCE_UNSAFE"
+              : "TOPIK_ASSET_PATH_INVALID",
+          type: occurrence.slot,
+          level: "error",
+          message:
+            validation.failureKind === "external"
+              ? "Asset reference requires credential-free HTTPS"
+              : "Local asset reference is not canonical topik-asset-reference-v1",
+          lines: [],
+          ...(options.file === undefined ? {} : { file: options.file }),
+        },
+      ];
+    }),
+  ];
   return {
     valid: errors.every(
       (diagnostic) => diagnostic.level !== "error" && diagnostic.level !== "critical",

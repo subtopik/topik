@@ -48,10 +48,10 @@ describe("direct portable artifact compilation", () => {
   test("compiles multiple guides with zero, duplicate, multiple, and shared assets", async () => {
     await writeFile(join(dir, "collection.yaml"), "id: docs\ntitle: Docs\n");
     await writeFile(join(dir, "empty.md"), "# Empty\n");
-    await writeFile(join(dir, "one.md"), "# One\n\n![Shared](./shared.png)\n");
+    await writeFile(join(dir, "one.md"), "# One\n\n![Shared](shared.png)\n");
     await writeFile(
       join(dir, "many.md"),
-      "# Many\n\n![First](./shared.png)\n\n![Again](./shared.png)\n\n![Other](./other.png)\n",
+      "# Many\n\n![First](shared.png)\n\n![Again](shared.png)\n\n![Other](other.png)\n",
     );
     await writeFile(join(dir, "shared.png"), PNG_BYTES);
     const other = Uint8Array.from(PNG_BYTES);
@@ -96,10 +96,10 @@ describe("direct portable artifact compilation", () => {
       "id: docs\ntitle: Docs\nnavigation:\n  - empty\n  - one\n  - many\n",
     );
     await writeFile(join(dir, "empty.md"), "# Empty\n");
-    await writeFile(join(dir, "one.md"), "# One\n\n![Shared](./shared.png)\n");
+    await writeFile(join(dir, "one.md"), "# One\n\n![Shared](shared.png)\n");
     await writeFile(
       join(dir, "many.md"),
-      "# Many\n\n![Shared](./shared.png)\n\n![A](./a.png)\n\n![B](./b.png)\n",
+      "# Many\n\n![Shared](shared.png)\n\n![A](a.png)\n\n![B](b.png)\n",
     );
     await writeFile(join(dir, "shared.png"), PNG_BYTES);
     await writeFile(join(dir, "a.png"), PNG_BYTES);
@@ -135,39 +135,55 @@ describe("direct portable artifact compilation", () => {
     expect(new Set(shared.map(([key]) => key)).size).toBe(2);
   });
 
-  test("compiles generic downloads only from explicit schema/application positions", async () => {
-    const content = "[Download](manual.bin)\n";
-    const [declared] = extractTopikAssetOccurrences(content, { manifestPaths: ["manual.bin"] });
+  test("proves plain downloads while preserving resource links and rejecting explicit ambiguity", async () => {
+    const content = "[Download](manual.bin)\n\n[Chapter](chapter.md)\n";
+    const candidates = extractTopikAssetOccurrences(content, {
+      includeGenericLinkCandidates: true,
+    });
+    const chapter = candidates.find((occurrence) => occurrence.reference === "chapter.md");
     await writeFile(join(dir, "guide.md"), content);
+    await writeFile(join(dir, "chapter.md"), "# Chapter\n");
     await writeFile(join(dir, "manual.bin"), "offline bytes");
     const resource = guideResource("download", content);
 
-    const undeclared = await compilePortableResourceArtifacts({
+    const compiled = await compilePortableResourceArtifacts({
       rootDir: dir,
-      resources: [resource],
-      sourcePathsByResource: { "Guide/download": "guide.md" },
-      randomBytes: entropy(),
-    });
-    expect(undeclared.artifacts[0].manifest.assets).toEqual({});
-
-    const declaredDownload = await compilePortableResourceArtifacts({
-      rootDir: dir,
-      resources: [resource],
-      sourcePathsByResource: { "Guide/download": "guide.md" },
-      downloadableLinkPositionsByResource: {
-        "Guide/download": [declared.position],
+      resources: [resource, guideResource("chapter", "# Chapter\n")],
+      sourcePathsByResource: {
+        "Guide/download": "guide.md",
+        "Guide/chapter": "chapter.md",
       },
       randomBytes: entropy(),
     });
-    expect(Object.values(declaredDownload.artifacts[0].manifest.assets)).toMatchObject([
+    expect(Object.values(compiled.artifacts[1].manifest.assets)).toMatchObject([
       { path: "manual.bin", mediaType: "application/octet-stream" },
     ]);
+    expect(compiled.artifacts[1].snapshot.occurrences).toHaveLength(1);
+    expect(compiled.artifacts[1].resource.spec.content.value).toContain("[Chapter](chapter.md)");
+
+    await expect(
+      compilePortableResourceArtifacts({
+        rootDir: dir,
+        resources: [resource, guideResource("chapter", "# Chapter\n")],
+        sourcePathsByResource: {
+          "Guide/download": "guide.md",
+          "Guide/chapter": "chapter.md",
+        },
+        downloadableLinkPositionsByResource: {
+          "Guide/download": [chapter?.position ?? "missing"],
+        },
+      }),
+    ).rejects.toMatchObject({
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_ASSET_REFERENCE_AMBIGUOUS" }),
+      ]),
+    });
   });
 
   test("compiles a mixed resource set and assigns artifacts only to content-bearing resources", async () => {
     await mkdir(join(dir, "pages"));
     await writeFile(join(dir, "guide.md"), "![Guide](shared.png)\n");
-    await writeFile(join(dir, "pages", "first.md"), "![First](../shared.png)\n");
+    await writeFile(join(dir, "pages", "first.md"), "![First](shared.png)\n");
     await writeFile(join(dir, "pages", "second.md"), "# Second\n");
     await writeFile(join(dir, "course.md"), "![Course](course.png)\n");
     await writeFile(join(dir, "shared.png"), PNG_BYTES);
@@ -175,7 +191,7 @@ describe("direct portable artifact compilation", () => {
 
     const guide = guideResource("guide", "![Guide](shared.png)\n");
     const wiki: Wiki = { apiVersion: "v1", type: "Wiki", name: "wiki", spec: { title: "Wiki" } };
-    const first = wikiPageResource("first", "![First](../shared.png)\n");
+    const first = wikiPageResource("first", "![First](shared.png)\n");
     const second = wikiPageResource("second", "# Second\n");
     const course: Course = {
       apiVersion: "v1",
@@ -253,7 +269,11 @@ describe("direct portable artifact compilation", () => {
         resources: [unsafe],
         sourcePathsByResource: { "Guide/unsafe": "unsafe.md" },
       }),
-    ).rejects.toBeInstanceOf(PortableAssetCompilationError);
+    ).rejects.toMatchObject({
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_EXTERNAL_REFERENCE_UNSAFE" }),
+      ]),
+    });
 
     await writeFile(join(dir, "executable.png"), PNG_BYTES);
     await chmod(join(dir, "executable.png"), 0o755);
@@ -281,7 +301,10 @@ describe("direct portable artifact compilation", () => {
       }),
     ).rejects.toBeInstanceOf(PortableAssetCompilationError);
 
-    const collision = guideResource("collision", "![One](Straße.png)\n\n![Two](STRASSE.png)\n");
+    const collision = guideResource(
+      "collision",
+      "![One](Stra%C3%9Fe.png)\n\n![Two](STRASSE.png)\n",
+    );
     await expect(
       compilePortableResourceArtifacts({
         rootDir: dir,
@@ -420,21 +443,181 @@ describe("direct portable artifact compilation", () => {
     expect(sidecar?.bytes).toEqual(artifact.manifestBytes);
   });
 
-  test("rejects duplicate persisted keys across resource ownership scopes", async () => {
+  test("scopes live and retired key history independently per resource", async () => {
     const key = "ast_00000000000000000000000000";
+    await writeFile(join(dir, "a.png"), PNG_BYTES);
+    await writeFile(join(dir, "b.png"), PNG_BYTES);
+    const scoped = await compilePortableResourceArtifacts({
+      rootDir: dir,
+      resources: [guideResource("a", "![A](a.png)\n"), guideResource("b", "![B](b.png)\n")],
+      sourcePathsByResource: { "Guide/a": "a.md", "Guide/b": "b.md" },
+      keyState: {
+        version: TOPIK_PORTABLE_ASSET_KEY_STATE_VERSION,
+        keysByResource: { "Guide/a": { "a.png": key }, "Guide/b": { "b.png": key } },
+        retiredKeysByResource: { "Guide/a": [], "Guide/b": [] },
+      },
+    });
+    expect(scoped.artifacts.map((artifact) => Object.keys(artifact.manifest.assets))).toEqual([
+      [key],
+      [key],
+    ]);
+
+    const deleted = await compilePortableResourceArtifacts({
+      rootDir: dir,
+      resources: [guideResource("a", "# Removed\n")],
+      sourcePathsByResource: { "Guide/a": "a.md" },
+      keyState: scoped.keyState,
+    });
+    expect(deleted.keyState.keysByResource["Guide/a"]).toEqual({});
+    expect(deleted.keyState.retiredKeysByResource["Guide/a"]).toEqual([key]);
+
+    const readded = await compilePortableResourceArtifacts({
+      rootDir: dir,
+      resources: [guideResource("a", "![A](a.png)\n")],
+      sourcePathsByResource: { "Guide/a": "a.md" },
+      keyState: deleted.keyState,
+      randomBytes: entropy(),
+    });
+    expect(Object.keys(readded.artifacts[0].manifest.assets)).not.toContain(key);
+    expect(readded.keyState.retiredKeysByResource["Guide/a"]).toContain(key);
+  });
+
+  test("accepts prototype-named canonical asset paths and retries them stably", async () => {
+    await writeFile(join(dir, "__proto__"), PNG_BYTES);
+    const first = await compilePortableResourceArtifacts({
+      rootDir: dir,
+      resources: [guideResource("prototype", "![Asset](__proto__)\n")],
+      sourcePathsByResource: { "Guide/prototype": "guide.md" },
+      randomBytes: entropy(),
+    });
+    expect(Object.values(first.artifacts[0].manifest.assets)).toMatchObject([
+      { path: "__proto__" },
+    ]);
+    const retry = await compilePortableResourceArtifacts({
+      rootDir: dir,
+      resources: [guideResource("prototype", "![Asset](__proto__)\n")],
+      sourcePathsByResource: { "Guide/prototype": "guide.md" },
+      keyState: first.keyState,
+      randomBytes: entropy(),
+    });
+    expect(retry.artifacts[0].manifestBytes).toEqual(first.artifacts[0].manifestBytes);
+  });
+
+  test.each([
+    ["assets%2Fhero.png", "TOPIK_ASSET_PATH_INVALID"],
+    ["assets%2fhero.png", "TOPIK_ASSET_PATH_INVALID"],
+    ["%2E%2E/hero.png", "TOPIK_ASSET_PATH_INVALID"],
+    ["é.png", "TOPIK_ASSET_PATH_INVALID"],
+    ["./hero.png", "TOPIK_ASSET_PATH_INVALID"],
+    ["../hero.png", "TOPIK_ASSET_PATH_INVALID"],
+    ["/hero.png", "TOPIK_ASSET_PATH_INVALID"],
+    ["file:///hero.png", "TOPIK_EXTERNAL_REFERENCE_UNSAFE"],
+  ])(
+    "rejects noncanonical local asset reference %s with typed diagnostics",
+    async (reference, id) => {
+      await mkdir(join(dir, "assets"), { recursive: true });
+      await writeFile(join(dir, "hero.png"), PNG_BYTES);
+      await writeFile(join(dir, "assets", "hero.png"), PNG_BYTES);
+      await writeFile(join(dir, "é.png"), PNG_BYTES);
+      await expect(
+        compilePortableResourceArtifacts({
+          rootDir: dir,
+          resources: [guideResource("reference", `{% figure src="${reference}" alt="Hero" /%}\n`)],
+          sourcePathsByResource: { "Guide/reference": "guide.md" },
+          randomBytes: entropy(),
+        }),
+      ).rejects.toMatchObject({
+        diagnostics: expect.arrayContaining([expect.objectContaining({ id, severity: "error" })]),
+      });
+    },
+  );
+
+  test("preserves canonical root-relative reference spelling", async () => {
+    await mkdir(join(dir, "assets"), { recursive: true });
+    await writeFile(join(dir, "assets", "café.png"), PNG_BYTES);
+    const reference = "assets/caf%C3%A9.png";
+    const result = await compilePortableResourceArtifacts({
+      rootDir: dir,
+      resources: [guideResource("canonical", `![Hero](${reference})\n`)],
+      sourcePathsByResource: { "Guide/canonical": "guide.md" },
+      randomBytes: entropy(),
+    });
+    expect(result.artifacts[0].resource.spec.content.value).toContain(reference);
+    expect(Object.values(result.artifacts[0].manifest.assets)).toMatchObject([
+      { path: "assets/café.png" },
+    ]);
+  });
+
+  test("rejects raw non-ASCII Markdown destinations before parser normalization", async () => {
+    await writeFile(join(dir, "é.png"), PNG_BYTES);
     await expect(
       compilePortableResourceArtifacts({
         rootDir: dir,
-        resources: [],
-        sourcePathsByResource: {},
-        keyState: {
-          version: TOPIK_PORTABLE_ASSET_KEY_STATE_VERSION,
-          keysByResource: { A: { "a.png": key }, B: { "b.png": key } },
-          retiredKeys: [],
-        },
+        resources: [guideResource("raw", "![Hero](é.png)\n")],
+        sourcePathsByResource: { "Guide/raw": "guide.md" },
       }),
-    ).rejects.toThrow(/invalid or ambiguous/u);
+    ).rejects.toMatchObject({
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_ASSET_PATH_INVALID" }),
+      ]),
+    });
   });
+
+  test("rejects raw non-ASCII reference-style image destinations with typed diagnostics", async () => {
+    await writeFile(join(dir, "é.png"), PNG_BYTES);
+    await expect(
+      compilePortableResourceArtifacts({
+        rootDir: dir,
+        resources: [guideResource("raw-reference", "![Hero][id]\n\n[id]: é.png\n")],
+        sourcePathsByResource: { "Guide/raw-reference": "guide.md" },
+      }),
+    ).rejects.toMatchObject({
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_ASSET_PATH_INVALID", severity: "error" }),
+      ]),
+    });
+  });
+
+  test.each([
+    "![Hero](&eacute;.png)\n",
+    "![Hero][id]\n\n[id]: &eacute;.png\n",
+    "![Hero](hero\\.png)\n",
+  ])("rejects parser-unescaped destination bytes with typed diagnostics", async (content) => {
+    await writeFile(join(dir, "é.png"), PNG_BYTES);
+    await writeFile(join(dir, "hero.png"), PNG_BYTES);
+    await expect(
+      compilePortableResourceArtifacts({
+        rootDir: dir,
+        resources: [guideResource("unescaped", content)],
+        sourcePathsByResource: { "Guide/unescaped": "guide.md" },
+      }),
+    ).rejects.toMatchObject({
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_ASSET_PATH_INVALID", severity: "error" }),
+      ]),
+    });
+  });
+
+  test.each([
+    "![Hero][id]\n\n[id]:\n  é.png\n",
+    '![Hero][id]\n\n[id]:\n  &eacute;.png\n  "Title"\n',
+  ])(
+    "rejects parser-normalized continuation destinations with typed diagnostics",
+    async (content) => {
+      await writeFile(join(dir, "é.png"), PNG_BYTES);
+      await expect(
+        compilePortableResourceArtifacts({
+          rootDir: dir,
+          resources: [guideResource("continued", content)],
+          sourcePathsByResource: { "Guide/continued": "guide.md" },
+        }),
+      ).rejects.toMatchObject({
+        diagnostics: expect.arrayContaining([
+          expect.objectContaining({ id: "TOPIK_ASSET_PATH_INVALID", severity: "error" }),
+        ]),
+      });
+    },
+  );
 });
 
 function guideResource(name: string, content: string): Guide {

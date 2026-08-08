@@ -14,15 +14,15 @@ import type { ResourceType } from "./resource";
 const ajv = new Ajv2020({ strict: true, discriminator: true, ownProperties: true });
 addFormats(ajv);
 
-const validators: Record<ResourceType, ReturnType<typeof ajv.compile>> = {
-  Course: ajv.compile(courseSchema),
-  CourseModule: ajv.compile(courseModuleSchema),
-  CoursePage: ajv.compile(coursePageSchema),
-  Guide: ajv.compile(guideSchema),
-  Person: ajv.compile(personSchema),
-  Wiki: ajv.compile(wikiSchema),
-  WikiPage: ajv.compile(wikiPageSchema),
-};
+const validators = new Map<ResourceType, ReturnType<typeof ajv.compile>>([
+  ["Course", ajv.compile(courseSchema)],
+  ["CourseModule", ajv.compile(courseModuleSchema)],
+  ["CoursePage", ajv.compile(coursePageSchema)],
+  ["Guide", ajv.compile(guideSchema)],
+  ["Person", ajv.compile(personSchema)],
+  ["Wiki", ajv.compile(wikiSchema)],
+  ["WikiPage", ajv.compile(wikiPageSchema)],
+]);
 
 export interface ValidationError {
   resource: string;
@@ -40,8 +40,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function getResourceLabel(resource: Record<string, unknown>): string {
-  const type = typeof resource.type === "string" ? resource.type : "unknown";
-  const name = typeof resource.name === "string" ? resource.name : "unknown";
+  const type =
+    Object.hasOwn(resource, "type") && typeof resource.type === "string"
+      ? resource.type
+      : "unknown";
+  const name =
+    Object.hasOwn(resource, "name") && typeof resource.name === "string"
+      ? resource.name
+      : "unknown";
   return `${type}/${name}`;
 }
 
@@ -59,7 +65,7 @@ export function validateResources(resources: readonly unknown[]): ValidationResu
       continue;
     }
 
-    if (typeof resource.type !== "string") {
+    if (!Object.hasOwn(resource, "type") || typeof resource.type !== "string") {
       errors.push({
         resource: getResourceLabel(resource),
         path: "/type",
@@ -68,7 +74,7 @@ export function validateResources(resources: readonly unknown[]): ValidationResu
       continue;
     }
 
-    const validate = validators[resource.type as ResourceType];
+    const validate = validators.get(resource.type as ResourceType);
     if (!validate) {
       errors.push({
         resource: getResourceLabel(resource),

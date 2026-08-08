@@ -54,7 +54,7 @@ export async function inspectGuides(options: CompileGuidesOptions): Promise<Comp
       assetKeyState: options.assets?.keyState ?? {
         version: TOPIK_PORTABLE_ASSET_KEY_STATE_VERSION,
         keysByResource: {},
-        retiredKeys: [],
+        retiredKeysByResource: {},
       },
     };
   }

@@ -246,6 +246,52 @@ describe("filesystem no-follow reader", () => {
     });
   });
 
+  test("rejects a symlink supplied as the resource root", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "topik-portable-root-link-"));
+    roots.push(parent);
+    const realRoot = join(parent, "real");
+    const linkedRoot = join(parent, "linked");
+    await mkdir(realRoot);
+    await writeFile(join(realRoot, "hero.png"), PNG_BYTES);
+    await symlink(realRoot, linkedRoot, "dir");
+
+    expect(await readPortableAssetFile({ root: linkedRoot, path: "hero.png" })).toMatchObject({
+      ok: false,
+      diagnostics: [{ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" }],
+    });
+  });
+
+  test.each([
+    ["Git LFS", "*.png filter=lfs\n"],
+    ["custom filter", "hero.png filter=custom\n"],
+    ["working-tree encoding", "*.png working-tree-encoding=UTF-16\n"],
+    ["unproven character-class pattern", "[h]ero.png filter=lfs\n"],
+    ["unproven recursive pattern", "**/*.png filter=lfs\n"],
+  ])("rejects effective or unproven %s attributes", async (_name, attributes) => {
+    const root = await mkdtemp(join(tmpdir(), "topik-portable-attributes-"));
+    roots.push(root);
+    await writeFile(join(root, ".gitattributes"), attributes);
+    await writeFile(join(root, "hero.png"), PNG_BYTES);
+
+    expect(await readPortableAssetFile({ root, path: "hero.png" })).toMatchObject({
+      ok: false,
+      diagnostics: [{ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" }],
+    });
+  });
+
+  test("applies nested Git attribute overrides in order", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topik-portable-attributes-override-"));
+    roots.push(root);
+    await mkdir(join(root, "assets"));
+    await writeFile(join(root, ".gitattributes"), "*.png filter=custom\n");
+    await writeFile(join(root, "assets", ".gitattributes"), "hero.png -filter\n");
+    await writeFile(join(root, "assets", "hero.png"), PNG_BYTES);
+
+    expect(await readPortableAssetFile({ root, path: "assets/hero.png" })).toMatchObject({
+      ok: true,
+    });
+  });
+
   test("stays anchored when an opened directory is swapped to a symlink", async () => {
     if (process.platform !== "linux") return;
     const root = await mkdtemp(join(tmpdir(), "topik-portable-race-root-"));

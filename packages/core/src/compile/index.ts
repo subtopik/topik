@@ -52,7 +52,7 @@ export async function compile(options: CompileOptions): Promise<CompileResult> {
     ({
       version: TOPIK_PORTABLE_ASSET_KEY_STATE_VERSION,
       keysByResource: {},
-      retiredKeys: [],
+      retiredKeysByResource: {},
     } as const);
 
   const wikiConfig = await findConfigFile(dir, WIKI_CONFIG_FILES);

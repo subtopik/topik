@@ -2,13 +2,16 @@ export { topikMarkdocConfig } from "./config";
 export {
   TOPIK_ASSET_REFERENCE_VERSION,
   extractTopikAssetOccurrences,
+  removeInvalidTopikAssetReferences,
   rewriteTopikAssetOccurrences,
   topikAssetReferenceSlots,
+  validateTopikAssetReference,
   type ExtractTopikAssetOccurrencesOptions,
   type TopikAssetOccurrence,
   type TopikAssetOccurrenceKind,
   type TopikAssetOccurrenceSemantics,
   type TopikAssetReferenceSlot,
+  type TopikAssetReferenceValidation,
 } from "./asset-references";
 export {
   formatTopikContent,

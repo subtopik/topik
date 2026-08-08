@@ -1,15 +1,14 @@
 import { createHash } from "node:crypto";
-import { posix } from "node:path";
 import {
   extractTopikAssetOccurrences,
-  rewriteTopikAssetOccurrences,
+  validateTopikAssetReference,
   type TopikAssetOccurrence,
 } from "@topik/content-schema";
 import type { AssetManifestV1, CoursePage, Guide, WikiPage } from "@topik/schema";
 import type { Resource } from "../resource";
 import { validateResources } from "../validate";
 import { ASSET_MANIFEST_SIDECAR_PATH } from "../portable/constants";
-import type { TopikAssetDiagnostic } from "../portable/diagnostics";
+import { topikAssetDiagnostic, type TopikAssetDiagnostic } from "../portable/diagnostics";
 import { readPortableAssetFile, type PortableAssetFileDescriptor } from "../portable/files";
 import {
   createTopikAssetSemanticRecord,
@@ -22,7 +21,10 @@ import { generateTopikAssetKey, isTopikAssetKey } from "../portable/key";
 import { serializeTopikJson } from "../portable/json";
 import { serializeAssetManifest } from "../portable/manifest";
 import { validateTopikPath, validateTopikPathSet } from "../portable/path";
-import { encodeTopikAssetReference } from "../portable/reference";
+import {
+  decodeTopikAssetReference,
+  validateTopikExternalAssetReference,
+} from "../portable/reference";
 import {
   sniffPortableMediaType,
   validatePortableAssetSnapshot,
@@ -37,8 +39,8 @@ export interface PortableAssetKeyStateV1 {
   version: typeof TOPIK_PORTABLE_ASSET_KEY_STATE_VERSION;
   /** Stable path-to-key assignments, scoped by `Type/name`. */
   keysByResource: Readonly<Record<string, Readonly<Record<string, string>>>>;
-  /** Deleted keys remain unavailable across retries. */
-  retiredKeys: readonly string[];
+  /** Deleted keys remain unavailable only inside their owning resource history. */
+  retiredKeysByResource: Readonly<Record<string, readonly string[]>>;
 }
 
 export interface PortableAssetCompilationOptions {
@@ -101,16 +103,15 @@ export async function compilePortableResourceArtifacts(
     throw new PortableAssetCompilationError("Portable compilation received an invalid resource");
   }
   const state = copyAndValidateState(input.keyState);
-  const reservedKeys = new Set<string>();
-  for (const assignments of Object.values(state.keysByResource)) {
-    for (const key of Object.values(assignments)) reservedKeys.add(key);
-  }
-  for (const key of state.retiredKeys) reservedKeys.add(key);
-
   const seenResources = new Set<string>();
   const rewrittenResources: Resource[] = [];
   const artifacts: PortableResourceArtifact[] = [];
   const contentResourceKeys = new Set<string>();
+  const resourceSourcePaths = new Set(
+    Object.values(input.sourcePathsByResource).map((path) =>
+      requirePath(path, "Content source path is not portable"),
+    ),
+  );
 
   for (const resource of input.resources) {
     const resourceKey = topikResourceKey(resource);
@@ -128,17 +129,22 @@ export async function compilePortableResourceArtifacts(
         "Content-bearing resource is missing an explicit source-path binding",
       );
     }
+    const downloadableLinkPositions = readDownloadablePositions(
+      input.downloadableLinkPositionsByResource,
+      resourceKey,
+    );
     const artifact = await compileOneResource({
       resource,
       rootDir: input.rootDir,
       sourcePath: input.sourcePathsByResource[resourceKey],
-      downloadableLinkPositions: input.downloadableLinkPositionsByResource?.[resourceKey] ?? [],
-      assignments: state.keysByResource[resourceKey] ?? {},
-      reservedKeys,
-      retiredKeys: state.retiredKeys,
+      resourceSourcePaths,
+      downloadableLinkPositions,
+      assignments: state.keysByResource.get(resourceKey) ?? new Map(),
+      retiredKeys: state.retiredKeysByResource.get(resourceKey) ?? new Set(),
       randomBytes: input.randomBytes,
     });
-    state.keysByResource[resourceKey] = artifact.assignments;
+    state.keysByResource.set(resourceKey, artifact.assignments);
+    state.retiredKeysByResource.set(resourceKey, artifact.retiredKeys);
     rewrittenResources.push(artifact.value.resource);
     artifacts.push(artifact.value);
   }
@@ -159,24 +165,26 @@ export async function compilePortableResourceArtifacts(
       roots.diagnostics,
     );
   }
-  return { resources: rewrittenResources, artifacts, keyState: state };
+  return { resources: rewrittenResources, artifacts, keyState: materializeKeyState(state) };
 }
 
 interface CompileOneInput {
   resource: ContentBearingResource;
   rootDir: string;
   sourcePath: string;
+  resourceSourcePaths: ReadonlySet<string>;
   downloadableLinkPositions: readonly string[];
-  assignments: Readonly<Record<string, string>>;
-  reservedKeys: Set<string>;
-  retiredKeys: readonly string[];
+  assignments: ReadonlyMap<string, string>;
+  retiredKeys: ReadonlySet<string>;
   randomBytes?: (size: number) => Uint8Array;
 }
 
-async function compileOneResource(
-  input: CompileOneInput,
-): Promise<{ value: PortableResourceArtifact; assignments: Record<string, string> }> {
-  const sourcePath = requirePath(input.sourcePath, "Content source path is not portable");
+async function compileOneResource(input: CompileOneInput): Promise<{
+  value: PortableResourceArtifact;
+  assignments: Map<string, string>;
+  retiredKeys: Set<string>;
+}> {
+  requirePath(input.sourcePath, "Content source path is not portable");
   const resourceRoot = requirePath(
     `${input.resource.type}/${input.resource.name}`,
     "Resource output root is not portable",
@@ -185,31 +193,49 @@ async function compileOneResource(
   const contentPath = "content.topik";
   const extracted = extractTopikAssetOccurrences(input.resource.spec.content.value, {
     downloadableLinkPositions: input.downloadableLinkPositions,
+    includeGenericLinkCandidates: true,
   });
+  const explicitlyDownloadable = new Set(input.downloadableLinkPositions);
+  const downloadablePositions = new Set(input.downloadableLinkPositions);
   const localByPosition = new Map<string, { path: string; reference: string }>();
+  const assetFiles = new Map<string, PortableAssetFileDescriptor & { bytes: Uint8Array }>();
   for (const occurrence of extracted) {
-    if (occurrence.kind === "external-https") continue;
-    if (occurrence.kind === "unsafe") {
-      throw new PortableAssetCompilationError("Content contains an unsafe asset reference");
+    if (occurrence.slot === "link.href" && !explicitlyDownloadable.has(occurrence.position)) {
+      const proven = await provePlainDownload(occurrence, input, assetFiles);
+      if (proven === undefined) continue;
+      downloadablePositions.add(occurrence.position);
+      localByPosition.set(occurrence.position, proven);
+      continue;
     }
-    const resolved = resolveLocalReference(occurrence, sourcePath);
+    const resolved = resolveCanonicalLocalReference(occurrence);
+    if (resolved === undefined) continue;
+    if (occurrence.slot === "link.href" && input.resourceSourcePaths.has(resolved.path)) {
+      throw new PortableAssetCompilationError("Download declaration conflicts with a resource", [
+        topikAssetDiagnostic(
+          "TOPIK_ASSET_REFERENCE_AMBIGUOUS",
+          "Declared download resolves to a compiled resource source",
+          { location: { contentPosition: occurrence.position, path: resolved.path } },
+        ),
+      ]);
+    }
     localByPosition.set(occurrence.position, resolved);
   }
-  const rewrittenContent =
-    localByPosition.size === 0
-      ? input.resource.spec.content.value
-      : rewriteTopikAssetOccurrences(
-          input.resource.spec.content.value,
-          (occurrence) => localByPosition.get(occurrence.position)?.reference,
-          { downloadableLinkPositions: input.downloadableLinkPositions },
-        );
+  const content = input.resource.spec.content.value;
 
-  const assignments = { ...input.assignments };
-  const assetFiles = new Map<string, PortableAssetFileDescriptor & { bytes: Uint8Array }>();
-  const assets: AssetManifestV1["assets"] = {};
+  const assignments = new Map(input.assignments);
+  const retiredKeys = new Set(input.retiredKeys);
+  const assets: AssetManifestV1["assets"] = Object.create(null) as AssetManifestV1["assets"];
   const paths = [...new Set([...localByPosition.values()].map((entry) => entry.path))].sort(
     compareUtf8,
   );
+  const currentPaths = new Set(paths);
+  for (const [path, key] of assignments) {
+    if (!currentPaths.has(path)) {
+      assignments.delete(path);
+      retiredKeys.add(key);
+    }
+  }
+  const reservedKeys = new Set(assignments.values());
   const completePaths = validateTopikPathSet([descriptorPath, contentPath, ...paths], {
     bindingRoot: resourceRoot,
   });
@@ -221,12 +247,12 @@ async function compileOneResource(
   }
 
   for (const path of paths) {
-    const persistedKey = assignments[path];
+    const persistedKey = assignments.get(path);
     const generated = generateTopikAssetKey({
       ...(persistedKey === undefined ? {} : { persistedKey }),
       randomBytes: input.randomBytes,
-      reservedKeys: input.reservedKeys,
-      retiredKeys: input.retiredKeys,
+      reservedKeys,
+      retiredKeys,
     });
     if (!generated.ok) {
       throw new PortableAssetCompilationError(
@@ -235,27 +261,27 @@ async function compileOneResource(
       );
     }
     const key = generated.value;
-    const existingAssignment = Object.entries(assignments).find(
+    const existingAssignment = [...assignments].find(
       ([otherPath, otherKey]) => otherPath !== path && otherKey === key,
     );
-    if (
-      existingAssignment !== undefined ||
-      (persistedKey === undefined && input.reservedKeys.has(key))
-    ) {
+    if (existingAssignment !== undefined || (persistedKey === undefined && reservedKeys.has(key))) {
       throw new PortableAssetCompilationError("Portable key state assigns one key more than once");
     }
-    assignments[path] = key;
-    input.reservedKeys.add(key);
+    assignments.set(path, key);
+    reservedKeys.add(key);
 
-    const read = await readPortableAssetFile({ root: input.rootDir, path });
-    if (!read.ok || read.value.bytes === undefined) {
-      throw new PortableAssetCompilationError(
-        "Portable asset bytes could not be proven",
-        read.diagnostics,
-      );
+    let file = assetFiles.get(path);
+    if (file === undefined) {
+      const read = await readPortableAssetFile({ root: input.rootDir, path });
+      if (!read.ok || read.value.bytes === undefined) {
+        throw new PortableAssetCompilationError(
+          "Portable asset bytes could not be proven",
+          read.diagnostics,
+        );
+      }
+      file = read.value as PortableAssetFileDescriptor & { bytes: Uint8Array };
+      assetFiles.set(path, file);
     }
-    const file = read.value as PortableAssetFileDescriptor & { bytes: Uint8Array };
-    assetFiles.set(path, file);
     assets[key] = {
       digest: { algorithm: "sha256", value: sha256(file.bytes) },
       mediaType: sniffPortableMediaType(file.bytes),
@@ -264,7 +290,7 @@ async function compileOneResource(
     };
   }
 
-  const resource = replaceResourceContent(input.resource, rewrittenContent);
+  const resource = replaceResourceContent(input.resource, content);
   const manifest: AssetManifestV1 = {
     apiVersion: "v1",
     assets,
@@ -290,7 +316,7 @@ async function compileOneResource(
   }
   const manifestBytes = serializedManifest.value;
   const descriptorBytes = new TextEncoder().encode(serializeTopikJson(resource));
-  const contentBytes = new TextEncoder().encode(rewrittenContent);
+  const contentBytes = new TextEncoder().encode(content);
   const inventory: TopikMaterializationFileInput[] = [
     { path: descriptorPath, type: "regular", mode: "100644", bytes: descriptorBytes },
     { path: contentPath, type: "regular", mode: "100644", bytes: contentBytes },
@@ -313,8 +339,8 @@ async function compileOneResource(
     contents: [
       {
         path: contentPath,
-        source: rewrittenContent,
-        downloadableLinkPositions: input.downloadableLinkPositions,
+        source: content,
+        downloadableLinkPositions: [...downloadablePositions],
       },
     ],
     files: [...assetFiles.values()],
@@ -333,6 +359,7 @@ async function compileOneResource(
   );
   return {
     assignments,
+    retiredKeys,
     value: {
       resourceRoot,
       resource,
@@ -346,46 +373,61 @@ async function compileOneResource(
   };
 }
 
-function resolveLocalReference(
+function resolveCanonicalLocalReference(
   occurrence: TopikAssetOccurrence,
-  sourcePath: string,
-): { path: string; reference: string } {
-  if (
-    occurrence.reference.startsWith("/") ||
-    occurrence.reference.includes("?") ||
-    occurrence.reference.includes("#")
-  ) {
-    throw new PortableAssetCompilationError("Local asset references must be canonical paths");
-  }
-  let decoded: string;
-  try {
-    decoded = decodeURIComponent(occurrence.reference);
-  } catch {
-    throw new PortableAssetCompilationError("Local asset reference encoding is invalid");
-  }
-  const fileRelative = decoded.startsWith("./") || decoded.startsWith("../");
-  const resolved = fileRelative
-    ? posix.normalize(posix.join(posix.dirname(sourcePath), decoded))
-    : decoded;
-  if (resolved === ".." || resolved.startsWith("../") || posix.isAbsolute(resolved)) {
-    throw new PortableAssetCompilationError("Local asset reference escapes its resource root");
-  }
-  const path = requirePath(resolved, "Local asset reference is not a portable path");
-  const encoded = encodeTopikAssetReference(path);
-  if (!encoded.ok) {
+): { path: string; reference: string } | undefined {
+  const syntax = validateTopikAssetReference(occurrence.reference);
+  if (syntax.valid && syntax.kind === "external-https") return undefined;
+  if (!syntax.valid) {
+    const validation =
+      syntax.failureKind === "external"
+        ? validateTopikExternalAssetReference(occurrence.reference)
+        : decodeTopikAssetReference(occurrence.reference);
     throw new PortableAssetCompilationError(
-      "Local asset reference cannot be canonicalized",
-      encoded.diagnostics,
+      "Content contains an invalid asset reference",
+      validation.ok ? [] : validation.diagnostics,
     );
   }
-  return { path, reference: encoded.value };
+  const decoded = decodeTopikAssetReference(occurrence.reference);
+  if (!decoded.ok) {
+    throw new PortableAssetCompilationError(
+      "Local asset reference is not canonical",
+      decoded.diagnostics,
+    );
+  }
+  return { path: decoded.value, reference: occurrence.reference };
 }
 
-function copyAndValidateState(input?: PortableAssetKeyStateV1): {
+async function provePlainDownload(
+  occurrence: TopikAssetOccurrence,
+  input: CompileOneInput,
+  assetFiles: Map<string, PortableAssetFileDescriptor & { bytes: Uint8Array }>,
+): Promise<{ path: string; reference: string } | undefined> {
+  const syntax = validateTopikAssetReference(occurrence.reference);
+  if (!syntax.valid || syntax.kind !== "local") return undefined;
+  const decoded = decodeTopikAssetReference(occurrence.reference);
+  if (!decoded.ok || input.resourceSourcePaths.has(decoded.value)) return undefined;
+  const read = await readPortableAssetFile({ root: input.rootDir, path: decoded.value });
+  if (!read.ok || read.value.bytes === undefined) {
+    if (read.diagnostics.every((diagnostic) => diagnostic.id === "TOPIK_ASSET_FILE_MISSING")) {
+      return undefined;
+    }
+    throw new PortableAssetCompilationError(
+      "Generic link target could not be proven as a portable download",
+      read.diagnostics,
+    );
+  }
+  assetFiles.set(decoded.value, read.value as PortableAssetFileDescriptor & { bytes: Uint8Array });
+  return { path: decoded.value, reference: occurrence.reference };
+}
+
+interface MutableKeyState {
   version: typeof TOPIK_PORTABLE_ASSET_KEY_STATE_VERSION;
-  keysByResource: Record<string, Record<string, string>>;
-  retiredKeys: string[];
-} {
+  keysByResource: Map<string, Map<string, string>>;
+  retiredKeysByResource: Map<string, Set<string>>;
+}
+
+function copyAndValidateState(input?: PortableAssetKeyStateV1): MutableKeyState {
   if (
     input !== undefined &&
     (!isPlainRecord(input) ||
@@ -393,34 +435,101 @@ function copyAndValidateState(input?: PortableAssetKeyStateV1): {
       input.version !== TOPIK_PORTABLE_ASSET_KEY_STATE_VERSION ||
       !Object.hasOwn(input, "keysByResource") ||
       !isPlainRecord(input.keysByResource) ||
-      !Object.hasOwn(input, "retiredKeys") ||
-      !Array.isArray(input.retiredKeys))
+      !Object.hasOwn(input, "retiredKeysByResource") ||
+      !isPlainRecord(input.retiredKeysByResource))
   ) {
     throw new PortableAssetCompilationError("Portable key state version is unsupported");
   }
-  const keysByResource: Record<string, Record<string, string>> = {};
-  const seen = new Set<string>();
+  const keysByResource = new Map<string, Map<string, string>>();
+  const retiredKeysByResource = new Map<string, Set<string>>();
   for (const [resource, assignments] of Object.entries(input?.keysByResource ?? {})) {
-    if (!isPlainRecord(assignments)) {
+    if (!validateTopikPath(resource).ok || !isPlainRecord(assignments)) {
       throw new PortableAssetCompilationError("Portable key state is invalid or ambiguous");
     }
-    keysByResource[resource] = {};
+    const byPath = new Map<string, string>();
+    const seen = new Set<string>();
     for (const [path, key] of Object.entries(assignments)) {
       if (!validateTopikPath(path).ok || !isTopikAssetKey(key) || seen.has(key)) {
         throw new PortableAssetCompilationError("Portable key state is invalid or ambiguous");
       }
       seen.add(key);
-      keysByResource[resource][path] = key;
+      byPath.set(path, key);
     }
+    keysByResource.set(resource, byPath);
   }
-  const retiredKeys = [...(input?.retiredKeys ?? [])];
-  for (const key of retiredKeys) {
-    if (!isTopikAssetKey(key) || seen.has(key)) {
-      throw new PortableAssetCompilationError("Portable key state reuses an invalid retired key");
+  for (const [resource, retired] of Object.entries(input?.retiredKeysByResource ?? {})) {
+    if (!validateTopikPath(resource).ok || !Array.isArray(retired)) {
+      throw new PortableAssetCompilationError("Portable key state is invalid or ambiguous");
     }
-    seen.add(key);
+    const seen = new Set(keysByResource.get(resource)?.values() ?? []);
+    const retiredSet = new Set<string>();
+    for (const key of retired) {
+      if (typeof key !== "string" || !isTopikAssetKey(key) || seen.has(key)) {
+        throw new PortableAssetCompilationError("Portable key state reuses an invalid retired key");
+      }
+      seen.add(key);
+      retiredSet.add(key);
+    }
+    retiredKeysByResource.set(resource, retiredSet);
   }
-  return { version: TOPIK_PORTABLE_ASSET_KEY_STATE_VERSION, keysByResource, retiredKeys };
+  return { version: TOPIK_PORTABLE_ASSET_KEY_STATE_VERSION, keysByResource, retiredKeysByResource };
+}
+
+function materializeKeyState(state: MutableKeyState): PortableAssetKeyStateV1 {
+  const keysByResource: Record<string, Record<string, string>> = Object.create(null) as Record<
+    string,
+    Record<string, string>
+  >;
+  const retiredKeysByResource: Record<string, string[]> = Object.create(null) as Record<
+    string,
+    string[]
+  >;
+  const resourceKeys = new Set([
+    ...state.keysByResource.keys(),
+    ...state.retiredKeysByResource.keys(),
+  ]);
+  for (const resource of [...resourceKeys].sort(compareUtf8)) {
+    const assignments: Record<string, string> = Object.create(null) as Record<string, string>;
+    for (const [path, key] of [...(state.keysByResource.get(resource) ?? [])].sort(
+      ([left], [right]) => compareUtf8(left, right),
+    )) {
+      Object.defineProperty(assignments, path, {
+        value: key,
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
+    }
+    Object.defineProperty(keysByResource, resource, {
+      value: assignments,
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
+    Object.defineProperty(retiredKeysByResource, resource, {
+      value: [...(state.retiredKeysByResource.get(resource) ?? [])].sort(compareUtf8),
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
+  }
+  return {
+    version: TOPIK_PORTABLE_ASSET_KEY_STATE_VERSION,
+    keysByResource,
+    retiredKeysByResource,
+  };
+}
+
+function readDownloadablePositions(
+  input: Readonly<Record<string, readonly string[]>> | undefined,
+  resourceKey: string,
+): readonly string[] {
+  if (input === undefined || !Object.hasOwn(input, resourceKey)) return [];
+  const positions = input[resourceKey];
+  if (!Array.isArray(positions) || positions.some((position) => typeof position !== "string")) {
+    throw new PortableAssetCompilationError("Download position declarations are invalid");
+  }
+  return positions;
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {

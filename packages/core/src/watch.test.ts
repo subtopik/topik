@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
@@ -62,7 +62,7 @@ describe("watch", () => {
   }, 10_000);
 
   test("emits the owning resource update with a refreshed artifact when only asset bytes change", async () => {
-    await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](./hero.png)\n");
+    await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](hero.png)\n");
     await writeFile(join(dir, "hero.png"), PNG_BYTES);
     watcher = await watch({ dir });
 
@@ -94,6 +94,36 @@ describe("watch", () => {
     const result = await updated;
     expect(result.resource).toBe(watcher.resources.get(key));
     expect([...result.artifactBytes]).toEqual([...changedBytes]);
+    expect(result.digest).not.toBe(beforeEntry?.digest.value);
+  }, 10_000);
+
+  test("watches valid assets inside dot-prefixed directories", async () => {
+    await mkdir(join(dir, ".images"));
+    await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](.images/hero.png)\n");
+    await writeFile(join(dir, ".images", "hero.png"), PNG_BYTES);
+    watcher = await watch({ dir });
+
+    const key = "Guide/guides-intro";
+    const beforeEntry = Object.values(watcher.artifacts.get(key)?.manifest.assets ?? {})[0];
+    const changedBytes = Uint8Array.from(PNG_BYTES);
+    changedBytes[changedBytes.length - 1] ^= 1;
+    const updated = new Promise<{ bytes: Uint8Array; digest: string }>((resolve) => {
+      watcher.on("update", (updatedKey) => {
+        if (updatedKey !== key) return;
+        const artifact = watcher.artifacts.get(updatedKey);
+        const entry = Object.values(artifact?.manifest.assets ?? {})[0];
+        const file = artifact?.inventory.find((candidate) => candidate.path === ".images/hero.png");
+        if (entry !== undefined && file !== undefined) {
+          resolve({ bytes: file.bytes, digest: entry.digest.value });
+        }
+      });
+    });
+
+    await delay(500);
+    await writeFile(join(dir, ".images", "hero.png"), changedBytes);
+
+    const result = await updated;
+    expect([...result.bytes]).toEqual([...changedBytes]);
     expect(result.digest).not.toBe(beforeEntry?.digest.value);
   }, 10_000);
 

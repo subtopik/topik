@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { boolean, command, positional, string } from "@drizzle-team/brocli";
 import {
@@ -70,6 +70,7 @@ export const compile = command({
     const links = options.links as LinkValidationPolicy;
     const outDir = options.outDir ? resolve(options.outDir) : join(dir, ".topik", "resources");
     const keyStatePath = join(outDir, ".topik", "asset-key-state.json");
+    await assertSafeOutputTree(outDir);
     const keyState = await readAssetKeyState(keyStatePath);
     const { artifacts, assetKeyState, diagnostics, resources } = await compileContent({
       dir,
@@ -122,15 +123,7 @@ export const compile = command({
     await mkdir(dirname(keyStatePath), { recursive: true });
     await writeFile(keyStatePath, serializeTopikJson(assetKeyState));
 
-    await Promise.all(
-      artifacts.flatMap((artifact) =>
-        artifact.inventory.map(async (file) => {
-          const path = join(outDir, "portable", artifact.resourceRoot, file.path);
-          await mkdir(dirname(path), { recursive: true });
-          await writeFile(path, file.bytes);
-        }),
-      ),
-    );
+    await materializePortableRoots(outDir, artifacts);
 
     console.log(
       `Compiled ${resources.length} resources and ${artifacts.length} portable roots to ${outDir}`,
@@ -143,6 +136,77 @@ async function readAssetKeyState(path: string): Promise<PortableAssetKeyStateV1 
     return parseStrictTopikJson(await readFile(path, "utf8")) as PortableAssetKeyStateV1;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
+async function materializePortableRoots(
+  outDir: string,
+  artifacts: Awaited<ReturnType<typeof compileContent>>["artifacts"],
+): Promise<void> {
+  const portableDir = join(outDir, "portable");
+  await assertSafeOutputTree(portableDir);
+  const stageDir = await mkdtemp(join(outDir, ".topik-portable-stage-"));
+  let backupDir: string | undefined;
+  let previousMoved = false;
+  try {
+    await Promise.all(
+      artifacts.flatMap((artifact) =>
+        artifact.inventory.map(async (file) => {
+          const path = join(stageDir, artifact.resourceRoot, file.path);
+          await mkdir(dirname(path), { recursive: true });
+          await writeFile(path, file.bytes, { flag: "wx" });
+        }),
+      ),
+    );
+
+    await assertSafeOutputTree(portableDir);
+    if (await pathExists(portableDir)) {
+      backupDir = await mkdtemp(join(outDir, ".topik-portable-backup-"));
+      await rename(portableDir, join(backupDir, "portable"));
+      previousMoved = true;
+    }
+    await rename(stageDir, portableDir);
+    if (backupDir !== undefined) await rm(backupDir, { recursive: true, force: true });
+  } catch (error) {
+    if (previousMoved && !(await pathExists(portableDir)) && backupDir !== undefined) {
+      await rename(join(backupDir, "portable"), portableDir).catch(() => undefined);
+    }
+    await rm(stageDir, { recursive: true, force: true }).catch(() => undefined);
+    if (backupDir !== undefined) {
+      await rm(backupDir, { recursive: true, force: true }).catch(() => undefined);
+    }
+    throw error;
+  }
+}
+
+async function assertSafeOutputTree(path: string): Promise<void> {
+  let stat;
+  try {
+    stat = await lstat(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  if (stat.isSymbolicLink() || !stat.isDirectory()) {
+    throw new CliError("Compilation output contains a link or non-directory collision");
+  }
+  for (const entry of await readdir(path)) {
+    const child = join(path, entry);
+    const childStat = await lstat(child);
+    if (childStat.isSymbolicLink()) {
+      throw new CliError("Compilation output contains a link or non-directory collision");
+    }
+    if (childStat.isDirectory()) await assertSafeOutputTree(child);
+  }
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await lstat(path);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
     throw error;
   }
 }

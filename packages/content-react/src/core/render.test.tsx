@@ -208,6 +208,149 @@ describe("content-react core", () => {
     expect(diagnostics.some((message) => message.includes("'quiz' requires"))).toBe(true);
   });
 
+  it.each([
+    "http://example.com/a.png",
+    "file:///tmp/a.png",
+    "data:image/png;base64,AA==",
+    "blob:https://example.com/id",
+    "javascript:alert(1)",
+    "//example.com/a.png",
+    "/absolute.png",
+    "./relative.png",
+    "assets%2fhero.png",
+    "é.png",
+  ])("diagnoses and removes unsafe asset reference %s before rendering", (reference) => {
+    const diagnostics: string[] = [];
+    const html = renderToStaticMarkup(
+      <>
+        {renderTopikMarkdown(`{% figure src="${reference}" alt="Unsafe" /%}`, {
+          components: {
+            TopikFigure: ({ darkSrc, src }) =>
+              typeof src === "string" ? (
+                <picture>
+                  {typeof darkSrc === "string" ? <source srcSet={darkSrc} /> : null}
+                  <img alt="" src={src} />
+                </picture>
+              ) : null,
+          },
+          onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id),
+        })}
+      </>,
+    );
+    expect(diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^TOPIK_(?:ASSET_PATH_INVALID|EXTERNAL_REFERENCE_UNSAFE)$/u),
+      ]),
+    );
+    expect(html).not.toContain(reference);
+    expect(html).not.toMatch(/\b(?:src|srcset|href)="/iu);
+    expect(html).not.toContain('rel="preload"');
+  });
+
+  it.each([
+    "![Unsafe][id]\n\n[id]:\n  é.png\n",
+    '![Unsafe][id]\n\n[id]:\n  &eacute;.png\n  "Title"\n',
+  ])("does not render a parser-normalized continuation destination", (content) => {
+    const diagnostics: string[] = [];
+    const html = renderToStaticMarkup(
+      <>
+        {renderTopikMarkdown(content, {
+          components: {
+            TopikImage: ({ src }) =>
+              typeof src === "string" ? <img alt="" data-unsafe src={src} /> : null,
+          },
+          onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id),
+        })}
+      </>,
+    );
+    expect(diagnostics).toContain("TOPIK_ASSET_PATH_INVALID");
+    expect(html).not.toContain("data-unsafe");
+    expect(html).not.toMatch(/\bsrc=/u);
+    expect(html).not.toContain('rel="preload"');
+  });
+
+  it("does not render a raw non-ASCII Markdown destination after parser normalization", () => {
+    const diagnostics: string[] = [];
+    const html = renderToStaticMarkup(
+      <>
+        {renderTopikMarkdown("![Unsafe](é.png)", {
+          components: {
+            TopikImage: ({ src }) =>
+              typeof src === "string" ? <img alt="" data-unsafe src={src} /> : null,
+          },
+          onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id),
+        })}
+      </>,
+    );
+    expect(diagnostics).toContain("TOPIK_ASSET_PATH_INVALID");
+    expect(html).not.toContain("data-unsafe");
+    expect(html).not.toMatch(/\bsrc=/u);
+  });
+
+  it("does not render a raw non-ASCII reference-style image destination", () => {
+    const diagnostics: string[] = [];
+    const html = renderToStaticMarkup(
+      <>
+        {renderTopikMarkdown("![Unsafe][id]\n\n[id]: é.png\n", {
+          components: {
+            TopikImage: ({ src }) =>
+              typeof src === "string" ? <img alt="" data-unsafe src={src} /> : null,
+          },
+          onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id),
+        })}
+      </>,
+    );
+    expect(diagnostics).toContain("TOPIK_ASSET_PATH_INVALID");
+    expect(html).not.toContain("data-unsafe");
+    expect(html).not.toMatch(/\bsrc=/u);
+    expect(html).not.toContain('rel="preload"');
+  });
+
+  it.each([
+    "![Unsafe](&eacute;.png)\n",
+    "![Unsafe][id]\n\n[id]: &eacute;.png\n",
+    "![Unsafe](hero\\.png)\n",
+  ])("does not render a parser-unescaped source destination", (content) => {
+    const diagnostics: string[] = [];
+    const html = renderToStaticMarkup(
+      <>
+        {renderTopikMarkdown(content, {
+          components: {
+            TopikImage: ({ src }) =>
+              typeof src === "string" ? <img alt="" data-unsafe src={src} /> : null,
+          },
+          onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id),
+        })}
+      </>,
+    );
+    expect(diagnostics).toContain("TOPIK_ASSET_PATH_INVALID");
+    expect(html).not.toContain("data-unsafe");
+    expect(html).not.toMatch(/\bsrc=/u);
+    expect(html).not.toContain('rel="preload"');
+  });
+
+  it("renders canonical local and allowed external HTTPS asset references", () => {
+    const html = renderToStaticMarkup(
+      <>
+        {renderTopikMarkdown(
+          '{% figure src="assets/caf%C3%A9.png" darkSrc="https://example.com/dark.png?q=1#x" alt="Hero" /%}',
+          {
+            components: {
+              TopikFigure: ({ darkSrc, src }) => (
+                <picture>
+                  <source srcSet={String(darkSrc)} />
+                  <img alt="" src={String(src)} />
+                </picture>
+              ),
+            },
+          },
+        )}
+      </>,
+    );
+    expect(html).toContain('src="assets/caf%C3%A9.png"');
+    expect(html).toContain('srcSet="https://example.com/dark.png?q=1#x"');
+  });
+
   it("server-renders compiled content without crashing", () => {
     const tree = compileTopikContent('{% callout title="SSR" %}Works.{% /callout %}');
     const html = renderToString(<>{renderTopikContent(tree)}</>);

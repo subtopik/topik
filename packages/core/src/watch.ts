@@ -86,10 +86,7 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
 
   const fsWatcher = chokidarWatch(dir, {
     ignoreInitial: true,
-    ignored: [
-      /(^|[/\\])\../, // dotfiles
-      "**/node_modules/**",
-    ],
+    ignored: [/(^|[/\\])(?:\.git|\.topik)(?:[/\\]|$)/, "**/node_modules/**"],
   });
 
   fsWatcher.on("add", scheduleRecompile);

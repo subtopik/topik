@@ -481,7 +481,7 @@ navigation:
       "hex",
     );
     await writeFile(join(dir, "hero.png"), png);
-    await writePage("hello", "# Hello\n\n![hero](./hero.png)\n");
+    await writePage("hello", "# Hello\n\n![hero](hero.png)\n");
 
     const result = await compileWiki({ dir });
     const page = result.resources.find((r) => r.type === "WikiPage")!;
@@ -500,7 +500,7 @@ navigation:
       "hex",
     );
     await writeFile(join(dir, "hero.png"), png);
-    await writePage("hello", '# Hello\n\n{% figure src="./hero.png" alt="Hero" /%}\n');
+    await writePage("hello", '# Hello\n\n{% figure src="hero.png" alt="Hero" /%}\n');
 
     const result = await compileWiki({ dir });
     const page = result.resources.find((r) => r.type === "WikiPage")!;

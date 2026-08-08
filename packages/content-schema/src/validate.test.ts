@@ -92,7 +92,7 @@ Run the validator.
 {% /step %}
 {% /steps %}
 
-{% figure src="./hero.png" darkSrc="./hero-dark.png" alt="Course dashboard" caption="Dashboard overview" /%}
+{% figure src="hero.png" darkSrc="hero-dark.png" alt="Course dashboard" caption="Dashboard overview" /%}
 
 {% codeGroup %}
 {% codeTab title="pnpm" %}
@@ -135,10 +135,10 @@ graph TD;
     expect(idsFor('{% callout variant="surprise" /%}')).toContain("attribute-value-invalid");
     expect(idsFor('{% callout variant="note" /%}')).toContain("attribute-value-invalid");
     expect(idsFor('{% card href="/docs" /%}')).toContain("attribute-missing-required");
-    expect(idsFor('{% figure src="./image.png" /%}')).toContain("attribute-missing-required");
-    expect(
-      idsFor('{% figure src="./image.png" darkSrc="./image-dark.png" alt="Image" /%}'),
-    ).toEqual([]);
+    expect(idsFor('{% figure src="image.png" /%}')).toContain("attribute-missing-required");
+    expect(idsFor('{% figure src="image.png" darkSrc="image-dark.png" alt="Image" /%}')).toEqual(
+      [],
+    );
     expect(idsFor("{% math /%}")).toContain("attribute-missing-required");
     expect(idsFor("{% codeTab %}```ts\nconst x = 1;\n```{% /codeTab %}")).toContain(
       "attribute-missing-required",
@@ -148,6 +148,82 @@ graph TD;
     expect(idsFor('{% card title="Unsafe" href="data:text/plain,test" /%}')).toContain(
       "link-scheme-unsafe",
     );
+  });
+
+  test.each([
+    "http://example.com/a.png",
+    "file:///tmp/a.png",
+    "data:image/png;base64,AA==",
+    "blob:https://example.com/id",
+    "javascript:alert(1)",
+    "//example.com/a.png",
+    "/absolute.png",
+    "./relative.png",
+    "assets%2fhero.png",
+    "é.png",
+  ])("rejects unsafe or noncanonical asset reference %s", (reference) => {
+    const result = validateTopikContent(`{% figure src="${reference}" alt="Unsafe reference" /%}`);
+    expect(result.valid).toBe(false);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: expect.stringMatching(/^TOPIK_(?:ASSET_PATH_INVALID|EXTERNAL_REFERENCE_UNSAFE)$/u),
+          level: "error",
+        }),
+      ]),
+    );
+  });
+
+  test("accepts canonical local and credential-free HTTPS asset references", () => {
+    expect(
+      validateTopikContent(
+        '{% figure src="assets/caf%C3%A9.png" darkSrc="https://example.com/dark.png?q=1#x" alt="Hero" /%}',
+      ),
+    ).toMatchObject({ valid: true, errors: [] });
+  });
+
+  test("rejects a raw non-ASCII reference-style image destination", () => {
+    expect(validateTopikContent("![Hero][id]\n\n[id]: é.png\n")).toMatchObject({
+      valid: false,
+      errors: expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_ASSET_PATH_INVALID", type: "image.src" }),
+      ]),
+    });
+    expect(
+      validateTopikContent("![Good][good]\n\n[unused]: &eacute;.png\n[good]: good.png\n"),
+    ).toMatchObject({ valid: true, errors: [] });
+  });
+
+  test.each([
+    "![Hero](&eacute;.png)\n",
+    "![Hero][id]\n\n[id]: &eacute;.png\n",
+    "![Hero](hero\\.png)\n",
+    "![Hero][id]\n\n[id]: hero\\.png\n",
+  ])("rejects parser-unescaped source destination bytes in %s", (source) => {
+    expect(validateTopikContent(source)).toMatchObject({
+      valid: false,
+      errors: expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_ASSET_PATH_INVALID", type: "image.src" }),
+      ]),
+    });
+  });
+
+  test("validates exact continuation-line definition destinations independently from titles", () => {
+    for (const source of [
+      "![Hero][id]\n\n[id]:\n  é.png\n",
+      '![Hero][id]\n\n[id]:\n  &eacute;.png\n  "Title"\n',
+    ]) {
+      expect(validateTopikContent(source)).toMatchObject({
+        valid: false,
+        errors: expect.arrayContaining([
+          expect.objectContaining({ id: "TOPIK_ASSET_PATH_INVALID", type: "image.src" }),
+        ]),
+      });
+    }
+    expect(validateTopikContent('![Hero][id]\n\n[id]:\n  hero.png\n  "Title"\n')).toMatchObject({
+      valid: true,
+      errors: [],
+    });
   });
 
   test("validates nested child structure", () => {

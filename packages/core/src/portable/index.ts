@@ -86,16 +86,7 @@ export {
   type TopikAssetSemanticRecordV1,
   type TopikAssetSemanticOccurrenceV1,
   type TopikMaterializationDescriptorsV1,
+  type TopikMaterializationContextV1,
   type TopikMaterializationFileInput,
   type TopikMaterializationRecordV1,
 } from "./identity";
-export {
-  TOPIK_LEGACY_ASSET_MIGRATION_VERSION,
-  migrateLegacyAssets,
-  type LegacyAssetByteProvider,
-  type LegacyAssetMigrationBackup,
-  type LegacyAssetMigrationOriginal,
-  type LegacyAssetMigrationRetryState,
-  type MigrateLegacyAssetsInput,
-  type MigratedLegacyAssets,
-} from "./migration";

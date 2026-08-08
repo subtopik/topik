@@ -11,15 +11,20 @@ import {
   serializeTopikJson,
   validatePortableAssetSnapshot,
 } from "@topik/core";
-import { guideV2Schema, type GuideV2 } from "@topik/schema";
+import { guideSchema, type Guide } from "@topik/schema";
 import { renderTopikMarkdown } from "./core/render";
 
 const root = join(import.meta.dirname, "fixtures", "portable-root");
 const descriptorPath = "guide.json";
 const contentPath = "content.md";
 const binaryPath = "files/manual.bin";
-const ajv = new Ajv2020({ strict: true, strictRequired: false, allErrors: true });
-const validateGuideV2 = ajv.compile(guideV2Schema);
+const ajv = new Ajv2020({
+  strict: true,
+  strictRequired: false,
+  allErrors: true,
+  ownProperties: true,
+});
+const validateGuide = ajv.compile(guideSchema);
 
 interface OfflineFixtureBytes {
   descriptor: Uint8Array;
@@ -48,10 +53,10 @@ function validateOfflineFixture(input: OfflineFixtureBytes) {
   } catch {
     return { ok: false as const, reason: "invalid descriptor/content encoding" };
   }
-  if (!validateGuideV2(descriptorValue)) {
-    return { ok: false as const, reason: "Guide/v2 schema mismatch" };
+  if (!validateGuide(descriptorValue)) {
+    return { ok: false as const, reason: "Guide/v1 schema mismatch" };
   }
-  const descriptor = descriptorValue as GuideV2;
+  const descriptor = descriptorValue as Guide;
   if (descriptor.spec.content.value !== content) {
     return { ok: false as const, reason: "descriptor content mismatch" };
   }
@@ -97,7 +102,7 @@ describe("offline portable resource root", () => {
     if (!validated.ok) return;
 
     expect(validated.descriptor).toMatchObject({
-      apiVersion: "v2",
+      apiVersion: "v1",
       type: "Guide",
       name: "offline-guide",
     });
@@ -130,7 +135,7 @@ describe("offline portable resource root", () => {
 
   test("rejects descriptor binding and descriptor-content mismatches", () => {
     const input = fixtureBytes();
-    const descriptor = parseStrictTopikJson(new TextDecoder().decode(input.descriptor)) as GuideV2;
+    const descriptor = parseStrictTopikJson(new TextDecoder().decode(input.descriptor)) as Guide;
 
     const wrongBinding = {
       ...input,

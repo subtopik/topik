@@ -2,7 +2,7 @@ import { describe, expect, test } from "vite-plus/test";
 import { analyzeTopikContent, validateTopikHref } from "./links";
 
 describe("Topik links", () => {
-  test("accepts supported internal, external, contact, and asset links", () => {
+  test("accepts supported internal, external, and contact links", () => {
     for (const href of [
       "#overview",
       "/guide/setup#install",
@@ -12,7 +12,6 @@ describe("Topik links", () => {
       "http://localhost:3000",
       "mailto:docs@example.com",
       "tel:+123456789",
-      "asset:0123456789abcdef",
     ]) {
       expect(validateTopikHref(href), href).toEqual([]);
     }
@@ -23,6 +22,7 @@ describe("Topik links", () => {
     expect(validateTopikHref("javascript:alert(1)")[0]?.id).toBe("link-scheme-unsafe");
     expect(validateTopikHref("data:text/plain,test")[0]?.id).toBe("link-scheme-unsafe");
     expect(validateTopikHref("ftp://example.com")[0]?.id).toBe("link-scheme-unsupported");
+    expect(validateTopikHref("custom:opaque")[0]?.id).toBe("link-scheme-unsupported");
     expect(validateTopikHref("//example.com")[0]?.id).toBe("link-url-protocol-relative");
     expect(validateTopikHref("https://")[0]?.id).toBe("link-url-invalid");
     expect(validateTopikHref("#%zz")[0]?.id).toBe("link-url-invalid");

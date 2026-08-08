@@ -41,7 +41,6 @@ export interface TopikComponentProps {
 export type TopikComponent = ComponentType<TopikComponentProps>;
 export type TopikComponentMap = Record<TopikComponentName, TopikComponent>;
 export type TopikComponentOverrides = Partial<TopikComponentMap>;
-export type TopikAssetResolver = (id: string) => string;
 export type TopikColorScheme = "light" | "dark";
 export type TopikLinkResolver = (href: string) => string;
 export type TopikLinkRenderProps = Omit<ComponentPropsWithoutRef<"a">, "href"> & {

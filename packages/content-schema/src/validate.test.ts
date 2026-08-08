@@ -233,7 +233,7 @@ graph TD;
     const ast = Markdoc.parse(`
 [Docs](/docs)
 
-![Hero](asset:hero)
+![Hero](assets/hero.png)
 
 \`\`\`ts
 const answer = 42;

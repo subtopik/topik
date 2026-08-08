@@ -55,15 +55,16 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
   });
 
   test("rewrites only declared slots", () => {
-    const source = '![image](old.png)\n\n{% card title="asset:leave" href="asset:leave" /%}';
+    const source = '![image](old.png)\n\n{% card title="leave" href="custom:leave" /%}';
     const rewritten = rewriteTopikAssetOccurrences(source, () => "new.png");
     expect(rewritten).toContain("![image](new.png)");
-    expect(rewritten).toContain('title="asset:leave"');
-    expect(rewritten).toContain('href="asset:leave"');
+    expect(rewritten).toContain('title="leave"');
+    expect(rewritten).toContain('href="custom:leave"');
   });
 
   test("rewrites light and dark figure slots independently", () => {
-    const source = '{% figure src="asset:light" darkSrc="asset:dark" alt="Theme preview" /%}';
+    const source =
+      '{% figure src="images/old-light.png" darkSrc="images/old-dark.png" alt="Theme preview" /%}';
     const rewritten = rewriteTopikAssetOccurrences(source, (occurrence) =>
       occurrence.slot === "figure.src" ? "images/light.png" : "images/dark.png",
     );

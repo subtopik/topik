@@ -6,6 +6,11 @@ import { pagePathToName } from "./compile/wiki";
 import { watch } from "./watch";
 import type { Watcher } from "./watch";
 
+const PNG_BYTES = Buffer.from(
+  "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000000500010d0a2db40000000049454e44ae426082",
+  "hex",
+);
+
 function delay(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -54,6 +59,42 @@ describe("watch", () => {
     const { key, resource } = await updated;
     expect(key).toBe("Guide/guides-intro");
     expect(resource).toHaveProperty("spec.content.value", "# Intro\n\nUpdated content.\n");
+  }, 10_000);
+
+  test("emits the owning resource update with a refreshed artifact when only asset bytes change", async () => {
+    await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](./hero.png)\n");
+    await writeFile(join(dir, "hero.png"), PNG_BYTES);
+    watcher = await watch({ dir });
+
+    const key = "Guide/guides-intro";
+    const before = watcher.artifacts.get(key);
+    expect(before).toBeDefined();
+    const beforeEntry = Object.values(before?.manifest.assets ?? {})[0];
+    expect(beforeEntry).toBeDefined();
+
+    const changedBytes = Uint8Array.from(PNG_BYTES);
+    changedBytes[changedBytes.length - 1] ^= 1;
+    const updated = new Promise<{ resource: unknown; artifactBytes: Uint8Array; digest: string }>(
+      (resolve) => {
+        watcher.on("update", (updatedKey, resource) => {
+          if (updatedKey !== key) return;
+          const artifact = watcher.artifacts.get(updatedKey);
+          const entry = Object.values(artifact?.manifest.assets ?? {})[0];
+          const file = artifact?.inventory.find((candidate) => candidate.path === "hero.png");
+          if (entry !== undefined && file !== undefined) {
+            resolve({ resource, artifactBytes: file.bytes, digest: entry.digest.value });
+          }
+        });
+      },
+    );
+
+    await delay(500);
+    await writeFile(join(dir, "hero.png"), changedBytes);
+
+    const result = await updated;
+    expect(result.resource).toBe(watcher.resources.get(key));
+    expect([...result.artifactBytes]).toEqual([...changedBytes]);
+    expect(result.digest).not.toBe(beforeEntry?.digest.value);
   }, 10_000);
 
   test("detects new files", async () => {

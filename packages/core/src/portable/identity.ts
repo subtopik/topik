@@ -2,10 +2,10 @@ import { createHash } from "node:crypto";
 import type { AssetManifestV1 } from "@topik/schema";
 import { ASSET_MANIFEST_SIDECAR_PATH, TOPIK_MATERIALIZATION_VERSION } from "./constants";
 import { topikAssetDiagnostic, type TopikAssetResult } from "./diagnostics";
-import { serializeTopikJson } from "./json";
+import { parseStrictTopikJson, serializeTopikJson } from "./json";
 import { parseAssetManifest } from "./manifest";
 import { validateTopikPath, validateTopikPathSet } from "./path";
-import type { ResolvedTopikAssetOccurrence } from "./snapshot";
+import { sniffPortableMediaType, type ResolvedTopikAssetOccurrence } from "./snapshot";
 
 export type TopikAssetSemanticOccurrenceV1 =
   | {
@@ -63,6 +63,11 @@ export interface TopikMaterializationFileInput {
   type: "regular";
   mode: "100644" | "0644";
   bytes: Uint8Array;
+}
+
+export interface TopikMaterializationContextV1 {
+  /** Exact owned file that materializes `resource.spec.content.value` as UTF-8. */
+  contentPath: string;
 }
 
 export interface TopikMaterializationRecordV1 {
@@ -134,15 +139,17 @@ export function digestTopikAssetSemanticRecord(record: TopikAssetSemanticRecordV
 export function createTopikMaterializationRecord(
   descriptors: TopikMaterializationDescriptorsV1,
   files: readonly TopikMaterializationFileInput[],
-  sidecarBytes: Uint8Array,
+  context: TopikMaterializationContextV1,
 ): TopikMaterializationRecordV1 {
-  const decoder = new TextDecoder("utf-8", { fatal: true });
-  const sidecarText = decoder.decode(sidecarBytes);
-  if (!parseAssetManifest(sidecarBytes).ok) {
-    throw new TypeError("Materialization requires canonical validated AssetManifest/v1 bytes");
-  }
   const inventory = new Map<string, TopikMaterializationFileInput>();
   for (const file of files) {
+    if (
+      file.type !== "regular" ||
+      (file.mode !== "100644" && file.mode !== "0644") ||
+      !(file.bytes instanceof Uint8Array)
+    ) {
+      throw new TypeError("Materialization inventory contains an unsupported file type or mode");
+    }
     const path = validateTopikPath(file.path, {
       allowControlSidecar: file.path === ASSET_MANIFEST_SIDECAR_PATH,
     });
@@ -157,18 +164,74 @@ export function createTopikMaterializationRecord(
   if (!validateTopikPathSet(portableInventoryPaths).ok) {
     throw new TypeError("Materialization inventory contains a portable path collision");
   }
-  const providedSidecar = inventory.get(ASSET_MANIFEST_SIDECAR_PATH);
-  if (providedSidecar && !equalBytes(providedSidecar.bytes, sidecarBytes)) {
-    throw new TypeError("Inventoried sidecar bytes differ from the canonical sidecar bytes");
+  const sidecar = inventory.get(ASSET_MANIFEST_SIDECAR_PATH);
+  if (sidecar === undefined) {
+    throw new TypeError("Materialization inventory is missing the canonical sidecar");
   }
-  if (!inventory.has(ASSET_MANIFEST_SIDECAR_PATH)) {
-    inventory.set(ASSET_MANIFEST_SIDECAR_PATH, {
-      path: ASSET_MANIFEST_SIDECAR_PATH,
-      type: "regular",
-      mode: "100644",
-      bytes: sidecarBytes,
+  const parsedManifest = parseAssetManifest(sidecar.bytes);
+  if (!parsedManifest.ok) {
+    throw new TypeError("Materialization requires canonical validated AssetManifest/v1 bytes");
+  }
+  const manifest = parsedManifest.value.manifest;
+
+  const contentPath = validateTopikPath(context.contentPath);
+  if (!contentPath.ok) throw new TypeError("Materialization content path is invalid");
+  const expectedPaths = new Set([
+    ASSET_MANIFEST_SIDECAR_PATH,
+    manifest.resource.path,
+    context.contentPath,
+    ...Object.values(manifest.assets).map((entry) => entry.path),
+  ]);
+  if (
+    expectedPaths.size !== Object.keys(manifest.assets).length + 3 ||
+    inventory.size !== expectedPaths.size ||
+    [...expectedPaths].some((path) => !inventory.has(path)) ||
+    [...inventory.keys()].some((path) => !expectedPaths.has(path))
+  ) {
+    throw new TypeError("Materialization inventory is not the complete manifest-owned file set");
+  }
+
+  const resourceFile = inventory.get(manifest.resource.path);
+  const contentFile = inventory.get(context.contentPath);
+  if (resourceFile === undefined || contentFile === undefined) {
+    throw new TypeError("Materialization is missing its bound resource or content bytes");
+  }
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  let resource: unknown;
+  try {
+    const resourceText = decoder.decode(resourceFile.bytes);
+    resource = parseStrictTopikJson(resourceText);
+    if (serializeTopikJson(resource) !== resourceText) {
+      throw new TypeError("Resource descriptor is not canonical topik-json-v1");
+    }
+  } catch (error) {
+    throw new TypeError("Materialization resource descriptor is not canonical JSON", {
+      cause: error,
     });
   }
+  if (!matchesResourceBinding(resource, manifest.resource)) {
+    throw new TypeError("Materialization resource descriptor does not match the manifest binding");
+  }
+  const embeddedContent = readEmbeddedContent(resource);
+  if (
+    embeddedContent === undefined ||
+    !equalBytes(contentFile.bytes, new TextEncoder().encode(embeddedContent))
+  ) {
+    throw new TypeError("Materialized content differs from the bound resource descriptor");
+  }
+
+  for (const entry of Object.values(manifest.assets)) {
+    const file = inventory.get(entry.path);
+    if (
+      file === undefined ||
+      file.bytes.byteLength !== entry.size ||
+      sha256(file.bytes) !== entry.digest.value ||
+      sniffPortableMediaType(file.bytes) !== entry.mediaType
+    ) {
+      throw new TypeError("Materialized asset bytes differ from the manifest entry");
+    }
+  }
+
   return {
     descriptor: TOPIK_MATERIALIZATION_VERSION,
     descriptors: { ...descriptors },
@@ -181,7 +244,7 @@ export function createTopikMaterializationRecord(
         sha256: sha256(file.bytes),
       }))
       .sort((left, right) => compareUtf8(left.path, right.path)),
-    sidecarBytes: sidecarText,
+    sidecarBytes: decoder.decode(sidecar.bytes),
   };
 }
 
@@ -263,4 +326,27 @@ function compareTreePath(left: readonly number[], right: readonly number[]): num
 
 function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
   return left.byteLength === right.byteLength && left.every((byte, index) => byte === right[index]);
+}
+
+function matchesResourceBinding(value: unknown, binding: AssetManifestV1["resource"]): boolean {
+  if (!isRecord(value)) return false;
+  return (
+    Object.hasOwn(value, "apiVersion") &&
+    value.apiVersion === binding.apiVersion &&
+    Object.hasOwn(value, "type") &&
+    value.type === binding.type &&
+    Object.hasOwn(value, "name") &&
+    value.name === binding.name
+  );
+}
+
+function readEmbeddedContent(value: unknown): string | undefined {
+  if (!isRecord(value) || !Object.hasOwn(value, "spec") || !isRecord(value.spec)) return undefined;
+  if (!Object.hasOwn(value.spec, "content") || !isRecord(value.spec.content)) return undefined;
+  if (!Object.hasOwn(value.spec.content, "value")) return undefined;
+  return typeof value.spec.content.value === "string" ? value.spec.content.value : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

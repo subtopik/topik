@@ -1,31 +1,11 @@
-import { constants, realpathSync } from "node:fs";
-import { open } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { resolve } from "node:path";
 import { command, positional, string } from "@drizzle-team/brocli";
-import { watch, type Resource, type Watcher } from "@topik/core";
+import { watch, type Watcher } from "@topik/core";
 
 const DEV_HOST = "127.0.0.1";
 const DEFAULT_ALLOWED_ORIGIN = "https://write.subtopik.com";
 const REQUEST_VARY_HEADERS = "Origin, Sec-Fetch-Site";
-
-const SAFE_READ_FLAGS =
-  constants.O_RDONLY |
-  (typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0) |
-  (typeof constants.O_NONBLOCK === "number" ? constants.O_NONBLOCK : 0);
-
-const ASSET_EXTENSIONS: Record<string, string> = {
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".svg": "image/svg+xml",
-  ".webp": "image/webp",
-  ".avif": "image/avif",
-  ".ico": "image/x-icon",
-  ".mp4": "video/mp4",
-  ".webm": "video/webm",
-};
 
 function sendSSE(res: ServerResponse, event: string, data: unknown) {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -40,7 +20,15 @@ function handleResources(
     "Content-Type": "application/json",
     ...corsHeaders,
   });
-  res.end(JSON.stringify({ resources: [...watcher.resources.values()] }));
+  res.end(
+    JSON.stringify({
+      resources: [...watcher.resources.values()],
+      portableArtifacts: [...watcher.artifacts.values()].map((artifact) => ({
+        resourceRoot: artifact.resourceRoot,
+        manifest: artifact.manifest,
+      })),
+    }),
+  );
 }
 
 function handleEvents(watcher: Watcher, res: ServerResponse, corsHeaders: Record<string, string>) {
@@ -54,11 +42,18 @@ function handleEvents(watcher: Watcher, res: ServerResponse, corsHeaders: Record
   // Send initial sync with all current resources
   sendSSE(res, "sync", {
     resources: Object.fromEntries(watcher.resources),
+    portableArtifacts: Object.fromEntries(
+      [...watcher.artifacts].map(([root, artifact]) => [root, artifact.manifest]),
+    ),
   });
 
   // Forward updates
   const onUpdate = (key: string, resource: unknown) => {
-    sendSSE(res, "update", { key, resource });
+    sendSSE(res, "update", {
+      key,
+      resource,
+      portableArtifact: watcher.artifacts.get(key)?.manifest,
+    });
   };
   watcher.on("update", onUpdate);
 
@@ -67,97 +62,52 @@ function handleEvents(watcher: Watcher, res: ServerResponse, corsHeaders: Record
   });
 }
 
-function getAsset(watcher: Watcher, name: string): Extract<Resource, { type: "Asset" }> | null {
-  const resource = watcher.resources.get(`Asset/${name}`);
-  return resource?.type === "Asset" ? resource : null;
-}
-
-function handleAsset(
+function handlePortableFile(
   watcher: Watcher,
-  dir: string,
   url: URL,
   res: ServerResponse,
   corsHeaders: Record<string, string>,
 ): boolean {
-  if (!url.pathname.startsWith("/assets/")) {
+  if (!url.pathname.startsWith("/portable/")) {
     return false;
   }
 
-  let name: string;
+  let relativePath: string;
   try {
-    name = decodeURIComponent(url.pathname.slice("/assets/".length));
+    relativePath = decodeURIComponent(url.pathname.slice("/portable/".length));
   } catch {
     res.writeHead(404, corsHeaders);
     res.end();
     return true;
   }
-  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) {
+  const components = relativePath.split("/");
+  if (components.length < 3 || components.some((component) => component.length === 0)) {
     res.writeHead(404, corsHeaders);
     res.end();
     return true;
   }
 
-  const asset = getAsset(watcher, name);
-  if (!asset) {
+  const resourceRoot = components.slice(0, 2).join("/");
+  const ownedPath = components.slice(2).join("/");
+  const artifact = watcher.artifacts.get(resourceRoot);
+  const file = artifact?.inventory.find((candidate) => candidate.path === ownedPath);
+  if (artifact === undefined || file === undefined) {
     res.writeHead(404, corsHeaders);
     res.end();
     return true;
   }
 
-  let filePath: string;
-  let realDir: string;
-  let realFilePath: string;
-  try {
-    filePath = resolve(join(dir, asset.spec.uri));
-    realDir = realpathSync(dir);
-    realFilePath = realpathSync(filePath);
-  } catch {
-    res.writeHead(404, corsHeaders);
-    res.end();
-    return true;
-  }
-
-  const relativeAssetPath = relative(realDir, realFilePath);
-  if (
-    relativeAssetPath !== "" &&
-    (relativeAssetPath === ".." ||
-      relativeAssetPath.startsWith(`..${sep}`) ||
-      isAbsolute(relativeAssetPath))
-  ) {
-    res.writeHead(404, corsHeaders);
-    res.end();
-    return true;
-  }
-
-  readRegularFile(realFilePath)
-    .then((data) => {
-      res.writeHead(200, {
-        "Content-Type":
-          asset.spec.mediaType ?? ASSET_EXTENSIONS[extname(filePath)] ?? "application/octet-stream",
-        ...corsHeaders,
-        "Cache-Control": "no-cache",
-      });
-      res.end(data);
-    })
-    .catch(() => {
-      res.writeHead(500, corsHeaders);
-      res.end();
-    });
+  const mediaType = Object.values(artifact.manifest.assets).find(
+    (entry) => entry.path === ownedPath,
+  )?.mediaType;
+  res.writeHead(200, {
+    "Content-Type": mediaType ?? (ownedPath.endsWith(".json") ? "application/json" : "text/plain"),
+    ...corsHeaders,
+    "Cache-Control": "no-cache",
+  });
+  res.end(file.bytes);
 
   return true;
-}
-
-async function readRegularFile(filePath: string): Promise<Buffer> {
-  const file = await open(filePath, SAFE_READ_FLAGS);
-  try {
-    const stat = await file.stat();
-    if (!stat.isFile()) {
-      throw new Error(`Asset is not a regular file: ${filePath}`);
-    }
-    return await file.readFile();
-  } finally {
-    await file.close();
-  }
 }
 
 function normalizeAllowedOrigin(value: string): string {
@@ -216,12 +166,7 @@ function rejectRequest(res: ServerResponse) {
   res.end("Forbidden");
 }
 
-function createRequestHandler(
-  watcher: Watcher,
-  dir: string,
-  getPort: () => number,
-  allowedOrigin: string,
-) {
+function createRequestHandler(watcher: Watcher, getPort: () => number, allowedOrigin: string) {
   return (req: IncomingMessage, res: ServerResponse) => {
     if (!isAllowedHost(req.headers.host, getPort())) {
       rejectRequest(res);
@@ -284,7 +229,7 @@ function createRequestHandler(
       return;
     }
 
-    if (req.method === "GET" && handleAsset(watcher, dir, url, res, corsHeaders)) {
+    if (req.method === "GET" && handlePortableFile(watcher, url, res, corsHeaders)) {
       return;
     }
 
@@ -325,7 +270,7 @@ export async function startDevServer(options: {
   });
 
   let activePort = options.port;
-  const server = createServer(createRequestHandler(watcher, dir, () => activePort, allowedOrigin));
+  const server = createServer(createRequestHandler(watcher, () => activePort, allowedOrigin));
 
   try {
     await new Promise<void>((resolveListening, rejectListening) => {

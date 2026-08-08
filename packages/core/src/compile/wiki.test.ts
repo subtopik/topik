@@ -474,7 +474,7 @@ navigation:
     expect(wiki!.spec.description).toBe("Documentation for Topik.");
   });
 
-  test("extracts local image references as Asset resources", async () => {
+  test("compiles local images directly into a page-scoped portable artifact", async () => {
     await writeWikiConfig("id: tw\ntitle: Wiki\nnavigation:\n  - hello\n");
     const png = Buffer.from(
       "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000000500010d0a2db40000000049454e44ae426082",
@@ -484,13 +484,13 @@ navigation:
     await writePage("hello", "# Hello\n\n![hero](./hero.png)\n");
 
     const result = await compileWiki({ dir });
-    const assets = result.resources.filter((r) => r.type === "Asset");
     const page = result.resources.find((r) => r.type === "WikiPage")!;
+    const entries = Object.entries(result.artifacts[0].manifest.assets);
 
-    expect(assets).toHaveLength(1);
-    expect(assets[0].name).toMatch(/^[a-f0-9]{16}$/);
-    expect(page.spec.content.value).toContain(`![hero](asset:${assets[0].name})`);
-    expect(page.spec.assets).toEqual([assets[0].name]);
+    expect(entries).toHaveLength(1);
+    expect(entries[0][0]).toMatch(/^ast_[0-7][0-9a-hjkmnp-tv-z]{25}$/u);
+    expect(page.spec.content.value).toContain("![hero](hero.png)");
+    expect(page.spec).not.toHaveProperty("assets");
   });
 
   test("extracts local asset references from valid Topik tags", async () => {
@@ -503,12 +503,11 @@ navigation:
     await writePage("hello", '# Hello\n\n{% figure src="./hero.png" alt="Hero" /%}\n');
 
     const result = await compileWiki({ dir });
-    const assets = result.resources.filter((r) => r.type === "Asset");
     const page = result.resources.find((r) => r.type === "WikiPage")!;
 
-    expect(assets).toHaveLength(1);
-    expect(page.spec.content.value).toContain(`src="asset:${assets[0].name}"`);
-    expect(page.spec.assets).toEqual([assets[0].name]);
+    expect(Object.values(result.artifacts[0].manifest.assets)).toHaveLength(1);
+    expect(page.spec.content.value).toContain('src="hero.png"');
+    expect(page.spec).not.toHaveProperty("assets");
   });
 
   test("validates same-page and cross-page heading links", async () => {
@@ -638,7 +637,11 @@ navigation:
   test("returns no resources when the wiki config is missing", async () => {
     await writePage("hello", "# Hello\n");
 
-    await expect(compileWiki({ dir })).resolves.toEqual({ diagnostics: [], resources: [] });
+    await expect(compileWiki({ dir })).resolves.toMatchObject({
+      diagnostics: [],
+      resources: [],
+      artifacts: [],
+    });
   });
 
   test("rejects navigation page paths that cannot become wiki page names", async () => {

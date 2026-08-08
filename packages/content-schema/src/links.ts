@@ -3,7 +3,7 @@ import { assignTopikHeadingIds, type TopikHeading } from "./headings";
 import { parseTopikContent } from "./content";
 import type { TopikContentDiagnostic } from "./diagnostics";
 
-const ALLOWED_SCHEMES = new Set(["asset", "http", "https", "mailto", "tel"]);
+const ALLOWED_SCHEMES = new Set(["http", "https", "mailto", "tel"]);
 const UNSAFE_SCHEMES = new Set(["data", "javascript", "vbscript"]);
 const SCHEME = /^([a-z][a-z0-9+.-]*):/i;
 const TOPIK_BASE_URL = new URL("https://topik.local/");
@@ -124,7 +124,7 @@ export function validateTopikHref(value: unknown): ValidationError[] {
     if ((scheme === "http" || scheme === "https") && !parsed.hostname) {
       return [linkError("link-url-invalid", `Invalid ${scheme} URL.`)];
     }
-    if ((scheme === "mailto" || scheme === "tel" || scheme === "asset") && !parsed.pathname) {
+    if ((scheme === "mailto" || scheme === "tel") && !parsed.pathname) {
       return [linkError("link-url-invalid", `Invalid ${scheme} link.`)];
     }
     if (parsed.hash) decodeURIComponent(parsed.hash.slice(1));

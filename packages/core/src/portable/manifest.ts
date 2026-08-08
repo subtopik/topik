@@ -18,7 +18,12 @@ import {
   type TopikAssetDiagnostic,
   type TopikAssetResult,
 } from "./diagnostics";
-import { parseStrictTopikJson, serializeTopikJson, TopikJsonSyntaxError } from "./json";
+import {
+  isTopikJsonDataValue,
+  parseStrictTopikJson,
+  serializeTopikJson,
+  TopikJsonSyntaxError,
+} from "./json";
 import { isTopikAssetKey } from "./key";
 import { validateTopikPath, validateTopikPathSet } from "./path";
 import { validateTopikExternalAssetReference } from "./reference";
@@ -28,7 +33,12 @@ const decoder = new TextDecoder("utf-8", { fatal: true });
 const FORBIDDEN_TEXT =
   /[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Default_Ignorable_Code_Point}\p{Bidi_Control}\p{Noncharacter_Code_Point}]/u;
 
-const ajv = new Ajv2020({ strict: true, strictRequired: false, allErrors: true });
+const ajv = new Ajv2020({
+  strict: true,
+  strictRequired: false,
+  allErrors: true,
+  ownProperties: true,
+});
 ajv.addFormat("topik-path-v1", {
   type: "string",
   validate: (value: string) => validateTopikPath(value).ok,
@@ -175,6 +185,18 @@ export function validateAssetManifestValue(
 ): TopikAssetResult<AssetManifestV1> {
   const capabilityProblem = validateCapabilities(capabilities);
   if (capabilityProblem !== undefined) return { ok: false, diagnostics: [capabilityProblem] };
+  if (!isTopikJsonDataValue(value)) {
+    return {
+      ok: false,
+      diagnostics: [
+        topikAssetDiagnostic(
+          "TOPIK_ASSET_MANIFEST_SCHEMA_INVALID",
+          "Manifest must contain only own topik-json-v1 data properties",
+          { descriptorVersion: TOPIK_JSON_VERSION, location: { jsonPointer: "/" } },
+        ),
+      ],
+    };
+  }
   const descriptorDiagnostic = validateDescriptors(value, capabilities);
   if (descriptorDiagnostic !== undefined) return { ok: false, diagnostics: [descriptorDiagnostic] };
   if (jsonDepth(value) > capabilities.maxJsonDepth) {
@@ -309,7 +331,12 @@ export function serializeAssetManifest(
       ],
     };
   }
-  return { ok: true, value: bytes, diagnostics: [] };
+  const reparsed = parseAssetManifest(bytes, {
+    capabilities,
+    bindingRoot: context.bindingRoot,
+  });
+  if (!reparsed.ok) return { ok: false, diagnostics: reparsed.diagnostics };
+  return { ok: true, value: reparsed.value.canonicalBytes, diagnostics: [] };
 }
 
 function validateDescriptors(

@@ -25,7 +25,6 @@ export function TopikContent({
   content,
   onNavigateLink,
   renderLink,
-  resolveAsset,
   resolveLink,
   ...compileOptions
 }: TopikContentProps) {
@@ -57,13 +56,11 @@ export function TopikContent({
       effectiveResolveLink,
     ],
   );
-  const effectiveResolveAsset = resolveAsset ?? context?.resolveAsset;
   const rendered = useMemo(
     () =>
       renderTopikMarkdown(content, {
         ...compileOptions,
         components: mergedComponents,
-        resolveAsset: effectiveResolveAsset,
       }),
     [
       compileOptions.config,
@@ -71,7 +68,6 @@ export function TopikContent({
       compileOptions.onDiagnostic,
       compileOptions.validate,
       content,
-      effectiveResolveAsset,
       mergedComponents,
     ],
   );

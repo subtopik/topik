@@ -8,6 +8,10 @@ import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 import { startDevServer, type StartedDevServer } from "./index";
 
 const WRITE_ORIGIN = "https://write.subtopik.com";
+const PNG_BYTES = Buffer.from(
+  "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000000500010d0a2db40000000049454e44ae426082",
+  "hex",
+);
 
 function addressOf(runningServer: StartedDevServer): AddressInfo {
   const address = runningServer.server.address();
@@ -251,12 +255,12 @@ describe("dev command", () => {
     expect(data.resources.find((r) => r.type === "WikiPage")?.name).toMatch(/^docs-[a-f0-9]{16}$/);
   });
 
-  test("GET /assets/:name serves compiled assets without exposing source routes", async () => {
+  test("GET /portable/:type/:name serves resource-scoped inventory files", async () => {
     await rm(join(dir, "collection.yaml"));
     await rm(join(dir, "intro.md"));
     await writeFile(join(dir, "wiki.yaml"), "id: docs\ntitle: Docs\nnavigation:\n  - intro\n");
     await mkdir(join(dir, "images"), { recursive: true });
-    await writeFile(join(dir, "images", "hero.png"), "not really a png");
+    await writeFile(join(dir, "images", "hero.png"), PNG_BYTES);
     await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](./images/hero.png)\n");
 
     const port = await start();
@@ -264,24 +268,25 @@ describe("dev command", () => {
     const resources = (await (await fetch(`http://127.0.0.1:${port}/resources`)).json()) as {
       resources: { type: string; name: string }[];
     };
-    const asset = resources.resources.find((r) => r.type === "Asset");
-    expect(asset).toBeDefined();
+    const page = resources.resources.find((resource) => resource.type === "WikiPage");
+    expect(page).toBeDefined();
 
-    const assetRes = await fetch(`http://127.0.0.1:${port}/assets/${asset!.name}`, {
-      headers: { Origin: WRITE_ORIGIN },
-    });
+    const assetRes = await fetch(
+      `http://127.0.0.1:${port}/portable/WikiPage/${page!.name}/images/hero.png`,
+      { headers: { Origin: WRITE_ORIGIN } },
+    );
     expect(assetRes.status).toBe(200);
     expect(assetRes.headers.get("content-type")).toBe("image/png");
     expect(assetRes.headers.get("access-control-allow-origin")).toBe(WRITE_ORIGIN);
-    expect(await assetRes.text()).toBe("not really a png");
+    expect(Buffer.from(await assetRes.arrayBuffer())).toEqual(PNG_BYTES);
 
-    const rejectedAssetRes = await fetch(`http://127.0.0.1:${port}/assets/${asset!.name}`, {
-      headers: { Origin: "https://attacker.example" },
-    });
+    const rejectedAssetRes = await fetch(
+      `http://127.0.0.1:${port}/portable/WikiPage/${page!.name}/images/hero.png`,
+      { headers: { Origin: "https://attacker.example" } },
+    );
     expect(rejectedAssetRes.status).toBe(403);
-    expect(await rejectedAssetRes.text()).not.toContain("not really a png");
 
-    const malformedAssetRes = await fetch(`http://127.0.0.1:${port}/assets/%E0%A4%A`);
+    const malformedAssetRes = await fetch(`http://127.0.0.1:${port}/portable/%E0%A4%A`);
     expect(malformedAssetRes.status).not.toBe(500);
     expect(malformedAssetRes.status).toBe(404);
 
@@ -289,12 +294,12 @@ describe("dev command", () => {
     expect(sourcePathRes.status).toBe(404);
   });
 
-  test("does not serve a compiled asset after it is replaced by an outside symlink", async () => {
+  test("serves only the proven snapshot after a source asset becomes an outside symlink", async () => {
     const external = await mkdtemp(join(tmpdir(), "topik-dev-secret-"));
     try {
       await mkdir(join(dir, "images"), { recursive: true });
       const assetPath = join(dir, "images", "hero.png");
-      await writeFile(assetPath, "public asset");
+      await writeFile(assetPath, PNG_BYTES);
       await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](./images/hero.png)\n");
       await writeFile(join(external, "secret.png"), "secret bytes");
 
@@ -303,15 +308,19 @@ describe("dev command", () => {
       const resources = (await (await fetch(`http://127.0.0.1:${port}/resources`)).json()) as {
         resources: { type: string; name: string }[];
       };
-      const asset = resources.resources.find((resource) => resource.type === "Asset");
-      expect(asset).toBeDefined();
+      const guide = resources.resources.find((resource) => resource.type === "Guide");
+      expect(guide).toBeDefined();
 
       await rm(assetPath);
       await symlink(join(external, "secret.png"), assetPath);
 
-      const response = await fetch(`http://127.0.0.1:${port}/assets/${asset!.name}`);
-      expect(response.status).toBe(404);
-      expect(await response.text()).not.toContain("secret bytes");
+      const response = await fetch(
+        `http://127.0.0.1:${port}/portable/Guide/${guide!.name}/images/hero.png`,
+      );
+      expect(response.status).toBe(200);
+      const responseBytes = Buffer.from(await response.arrayBuffer());
+      expect(responseBytes).toEqual(PNG_BYTES);
+      expect(responseBytes.toString()).not.toContain("secret bytes");
     } finally {
       await rm(external, { recursive: true, force: true });
     }

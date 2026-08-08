@@ -1,14 +1,25 @@
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
-import { assetSchema, guideSchema, wikiSchema, wikiPageSchema } from "@topik/schema";
+import {
+  courseModuleSchema,
+  coursePageSchema,
+  courseSchema,
+  guideSchema,
+  personSchema,
+  wikiPageSchema,
+  wikiSchema,
+} from "@topik/schema";
 import type { ResourceType } from "./resource";
 
-const ajv = new Ajv2020({ strict: true, discriminator: true });
+const ajv = new Ajv2020({ strict: true, discriminator: true, ownProperties: true });
 addFormats(ajv);
 
 const validators: Record<ResourceType, ReturnType<typeof ajv.compile>> = {
-  Asset: ajv.compile(assetSchema),
+  Course: ajv.compile(courseSchema),
+  CourseModule: ajv.compile(courseModuleSchema),
+  CoursePage: ajv.compile(coursePageSchema),
   Guide: ajv.compile(guideSchema),
+  Person: ajv.compile(personSchema),
   Wiki: ajv.compile(wikiSchema),
   WikiPage: ajv.compile(wikiPageSchema),
 };

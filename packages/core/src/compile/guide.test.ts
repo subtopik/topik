@@ -226,10 +226,14 @@ describe("compileGuides", () => {
   test("returns no resources when the collection config is missing", async () => {
     await writeGuide("post", "# Post\n");
 
-    await expect(compileGuides({ dir })).resolves.toEqual({ diagnostics: [], resources: [] });
+    await expect(compileGuides({ dir })).resolves.toMatchObject({
+      diagnostics: [],
+      resources: [],
+      artifacts: [],
+    });
   });
 
-  test("extracts local image references as Asset resources", async () => {
+  test("compiles local images directly into a resource-scoped portable artifact", async () => {
     await writeCollectionConfig("id: blog\ntitle: Blog\n");
     const png = Buffer.from(
       "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000000500010d0a2db40000000049454e44ae426082",
@@ -240,16 +244,16 @@ describe("compileGuides", () => {
 
     const result = await compileGuides({ dir });
     const guide = result.resources.find((r) => r.type === "Guide") as Guide;
-    const assets = result.resources.filter((r) => r.type === "Asset");
+    const artifact = result.artifacts[0];
+    const entries = Object.entries(artifact.manifest.assets);
 
-    expect(assets).toHaveLength(1);
-    expect(assets[0]).toMatchObject({
-      type: "Asset",
-      spec: { uri: "hero.png", mediaType: "image/png" },
-    });
-    expect(assets[0].name).toMatch(/^[a-f0-9]{16}$/);
-    expect(guide.spec.content.value).toContain(`![hero](asset:${assets[0].name})`);
-    expect(guide.spec.assets).toEqual([assets[0].name]);
+    expect(result.resources).toHaveLength(1);
+    expect(entries).toHaveLength(1);
+    expect(entries[0][0]).toMatch(/^ast_[0-7][0-9a-hjkmnp-tv-z]{25}$/u);
+    expect(entries[0][1]).toMatchObject({ path: "hero.png", mediaType: "image/png" });
+    expect(guide.spec.content.value).toContain("![hero](hero.png)");
+    expect(guide.spec).not.toHaveProperty("assets");
+    expect(artifact.resourceRoot).toBe("Guide/blog-post");
   });
 
   test("omits assets manifest when no assets are referenced", async () => {
@@ -261,7 +265,7 @@ describe("compileGuides", () => {
     expect(guide.spec).not.toHaveProperty("assets");
   });
 
-  test("dedupes assets referenced from multiple guides", async () => {
+  test("keeps shared physical files independently owned by each guide", async () => {
     await writeCollectionConfig("id: blog\ntitle: Blog\n");
     const png = Buffer.from(
       "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000000500010d0a2db40000000049454e44ae426082",
@@ -272,8 +276,11 @@ describe("compileGuides", () => {
     await writeGuide("two", "# Two\n\n![s](./shared.png)\n");
 
     const result = await compileGuides({ dir });
-    const assets = result.resources.filter((r) => r.type === "Asset");
-    expect(assets).toHaveLength(1);
+    expect(result.resources).toHaveLength(2);
+    expect(result.artifacts).toHaveLength(2);
+    const entries = result.artifacts.map((artifact) => Object.entries(artifact.manifest.assets)[0]);
+    expect(entries.map((entry) => entry[1].path)).toEqual(["shared.png", "shared.png"]);
+    expect(new Set(entries.map((entry) => entry[0])).size).toBe(2);
   });
 
   test("rejects invalid Topik content in guides", async () => {

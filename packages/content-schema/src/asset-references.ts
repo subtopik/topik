@@ -69,8 +69,6 @@ export interface ExtractTopikAssetOccurrencesOptions {
   manifestPaths?: ReadonlySet<string> | readonly string[];
   /** Explicit schema/application declarations for downloadable generic-link positions. */
   downloadableLinkPositions?: ReadonlySet<string> | readonly string[];
-  /** Explicit adapter mode for legacy compilers whose declared link slots were downloads. */
-  declareAllLinksAsDownloads?: boolean;
 }
 
 export function extractTopikAssetOccurrences(
@@ -89,7 +87,6 @@ export function extractTopikAssetOccurrences(
       if (reference == null) continue;
       if (
         definition.conditional === "manifest-entry" &&
-        options.declareAllLinksAsDownloads !== true &&
         !downloadableLinkPositions.has(position) &&
         !manifestUnambiguouslyContains(reference, manifestPaths)
       ) {
@@ -126,7 +123,6 @@ export function rewriteTopikAssetOccurrences(
       if (reference == null) continue;
       if (
         definition.conditional === "manifest-entry" &&
-        options.declareAllLinksAsDownloads !== true &&
         !downloadableLinkPositions.has(position) &&
         !manifestUnambiguouslyContains(reference, manifestPaths)
       ) {

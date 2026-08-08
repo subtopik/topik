@@ -1,10 +1,13 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { boolean, command, positional, string } from "@drizzle-team/brocli";
 import {
   compile as compileContent,
+  parseStrictTopikJson,
+  serializeTopikJson,
   validateResources,
   type LinkValidationPolicy,
+  type PortableAssetKeyStateV1,
   type Resource,
 } from "@topik/core";
 import { printDiagnostics } from "../diagnostics";
@@ -65,9 +68,13 @@ export const compile = command({
     const dir = resolve(options.dir);
     const format = options.format as Format;
     const links = options.links as LinkValidationPolicy;
-    const { diagnostics, resources } = await compileContent({
+    const outDir = options.outDir ? resolve(options.outDir) : join(dir, ".topik", "resources");
+    const keyStatePath = join(outDir, ".topik", "asset-key-state.json");
+    const keyState = await readAssetKeyState(keyStatePath);
+    const { artifacts, assetKeyState, diagnostics, resources } = await compileContent({
       dir,
       validation: { links },
+      assets: { keyState },
     });
     printDiagnostics(diagnostics);
 
@@ -86,11 +93,16 @@ export const compile = command({
       for (const resource of resources) {
         console.log(`${resource.type}/${resource.name}${ext}`);
       }
-      console.log(`\n${resources.length} resources (dry run)`);
+      for (const artifact of artifacts) {
+        for (const file of artifact.inventory) {
+          console.log(`portable/${artifact.resourceRoot}/${file.path}`);
+        }
+      }
+      console.log(
+        `\n${resources.length} resources and ${artifacts.length} portable roots (dry run)`,
+      );
       return;
     }
-
-    const outDir = options.outDir ? resolve(options.outDir) : join(dir, ".topik", "resources");
 
     if (options.clean) {
       await rm(outDir, { recursive: true, force: true });
@@ -107,7 +119,30 @@ export const compile = command({
         ),
       ),
     );
+    await mkdir(dirname(keyStatePath), { recursive: true });
+    await writeFile(keyStatePath, serializeTopikJson(assetKeyState));
 
-    console.log(`Compiled ${resources.length} resources to ${outDir}`);
+    await Promise.all(
+      artifacts.flatMap((artifact) =>
+        artifact.inventory.map(async (file) => {
+          const path = join(outDir, "portable", artifact.resourceRoot, file.path);
+          await mkdir(dirname(path), { recursive: true });
+          await writeFile(path, file.bytes);
+        }),
+      ),
+    );
+
+    console.log(
+      `Compiled ${resources.length} resources and ${artifacts.length} portable roots to ${outDir}`,
+    );
   },
 });
+
+async function readAssetKeyState(path: string): Promise<PortableAssetKeyStateV1 | undefined> {
+  try {
+    return parseStrictTopikJson(await readFile(path, "utf8")) as PortableAssetKeyStateV1;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+}

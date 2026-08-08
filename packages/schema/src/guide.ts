@@ -82,15 +82,6 @@ export const guideSchema = {
           required: ["format", "value"],
           additionalProperties: false,
         },
-        assets: {
-          type: "array",
-          items: {
-            type: "string",
-            pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$",
-            maxLength: 63,
-          },
-          description: "Asset names referenced by this guide, in document order",
-        },
       },
       required: ["title", "slug", "content"],
       additionalProperties: false,

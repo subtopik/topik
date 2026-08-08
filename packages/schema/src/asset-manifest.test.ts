@@ -4,9 +4,7 @@ import Ajv2020 from "ajv/dist/2020";
 import { describe, expect, test } from "vite-plus/test";
 import { assetManifestV1Schema, type AssetManifestLicenseV1 } from "./asset-manifest";
 import { guideSchema } from "./guide";
-import { guideV2Schema } from "./guide-v2";
 import { wikiPageSchema } from "./wiki-page";
-import { wikiPageV2Schema } from "./wiki-page-v2";
 
 const canonicalExample = {
   apiVersion: "v1",
@@ -130,17 +128,15 @@ describe("AssetManifest/v1 schema artifact", () => {
 });
 
 describe("portable target resource versions", () => {
-  test("keeps v1 schemas intact and gives v2 immutable identities without spec.assets", () => {
+  test("uses the portable Guide and WikiPage shapes directly at v1", () => {
     expect(guideSchema.properties.apiVersion.const).toBe("v1");
     expect(wikiPageSchema.properties.apiVersion.const).toBe("v1");
-    expect(guideV2Schema.$id).toBe("https://topik.dev/schemas/guide/v2.json");
-    expect(wikiPageV2Schema.$id).toBe("https://topik.dev/schemas/wiki-page/v2.json");
-    expect(guideV2Schema.properties.spec.properties).not.toHaveProperty("assets");
-    expect(wikiPageV2Schema.properties.spec.properties).not.toHaveProperty("assets");
-    const validateGuideV2 = ajv.compile(guideV2Schema);
+    expect(guideSchema.properties.spec.properties).not.toHaveProperty("assets");
+    expect(wikiPageSchema.properties.spec.properties).not.toHaveProperty("assets");
+    const validateGuide = ajv.compile(guideSchema);
     expect(
-      validateGuideV2({
-        apiVersion: "v2",
+      validateGuide({
+        apiVersion: "v1",
         type: "Guide",
         name: "guide",
         spec: {
@@ -151,8 +147,8 @@ describe("portable target resource versions", () => {
       }),
     ).toBe(true);
     expect(
-      validateGuideV2({
-        apiVersion: "v2",
+      validateGuide({
+        apiVersion: "v1",
         type: "Guide",
         name: "guide",
         spec: {

@@ -43,22 +43,34 @@ advertise lower deployment limits but may not silently weaken the portable maxim
 operations accept an optional binding-root context so the complete root-plus-path stays within 768
 UTF-8 bytes.
 
-## Legacy migration and rollback
+## Direct resource compilation
 
-The existing `Asset/v1`, Guide/WikiPage v1 `spec.assets`, digest-prefix `asset:` locator, and legacy
-compiler remain separate and unchanged. Use the explicitly versioned `migrateLegacyAssets` adapter
-with exact original content/resource bytes, legacy Asset resources, an immutable byte provider, and
-persisted retry state. A successful migration verifies the full bytes, reuses or creates random
-portable keys, writes canonical relative references, returns Guide/WikiPage v2 without
-`spec.assets`, and returns one canonical sidecar. Exact JSON or YAML Guide/WikiPage and Asset
-resource snapshots are parsed, schema-validated, and matched to the supplied resource objects
-before migration. It never mutates source files.
+Guide and WikiPage resources use their portable v1 shapes directly. Their content retains canonical
+local paths and does not carry a second asset-name list. `compileGuides`, `compileWiki`, and
+`compilePortableResourceArtifacts` produce one `PortableResourceArtifact` for each Guide, WikiPage,
+or CoursePage. Asset-free content resources receive an empty manifest; Wiki, Course, and
+CourseModule containers receive no artifact and cannot own another resource's files.
 
-Keep the returned exact backup until the target has been validated and accepted. Migration fails
-instead of guessing when digest-prefix identity, original paths, metadata, accessibility, or bytes
-are ambiguous or lost. Retry with the returned state to reproduce the same keys and target bytes;
-retired keys are never reused. Rollback restores or appends from the preserved source representation
-rather than reinterpreting legacy bytes as portable v1.
+Every artifact declares a collision-free `Type/name` resource root, an exact resource binding, the
+canonical sidecar bytes, the validated snapshot, semantic identity, exact materialization identity,
+and a complete inventory containing:
+
+- `resource.json`, the canonical bound resource descriptor;
+- `content.topik`, the exact UTF-8 materialization of the descriptor's content;
+- every byte-verified manifest asset at its canonical relative path; and
+- `.topik/assets.json`.
+
+The compiler reads assets with the descriptor-anchored no-follow filesystem helper. It derives
+SHA-256, size, and media type from the opened bytes, reuses one manifest entry for repeated
+occurrences within a resource, and never shares ownership across resources. Opaque keys come from a
+CSPRNG. Compilation returns `assetKeyState`; pass it back through the `assets.keyState` option on a
+retry to retain exact key assignments. Tests may inject `assets.randomBytes`, while production
+callers normally omit it.
+
+The CLI continues to write ordinary resource files under `Type/name.<format>` and writes each exact
+portable root under `portable/Type/name/`. This layout allows several logical resources to coexist
+without competing for one physical sidecar. The development server exposes proven inventory bytes
+at `/portable/Type/name/<owned-path>` and never serves an unchecked source path.
 
 ## Release status
 

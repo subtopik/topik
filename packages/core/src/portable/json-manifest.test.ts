@@ -49,6 +49,34 @@ describe("topik-json-v1", () => {
     );
   });
 
+  test("preserves __proto__ members as ordinary own JSON data", () => {
+    const source = '{"__proto__":{"polluted":true},"nested":{"__proto__":"kept"}}';
+    const parsed = parseStrictTopikJson(source) as Record<string, unknown>;
+    expect(Object.getPrototypeOf(parsed)).toBeNull();
+    expect(Object.hasOwn(parsed, "__proto__")).toBe(true);
+    expect(Object.getPrototypeOf(parsed.__proto__)).toBeNull();
+    const nested = parsed.nested as Record<string, unknown>;
+    expect(Object.hasOwn(nested, "__proto__")).toBe(true);
+    expect(nested.__proto__).toBe("kept");
+    expect(({} as { polluted?: boolean }).polluted).toBeUndefined();
+
+    const reparsed = parseStrictTopikJson(serializeTopikJson(parsed)) as Record<string, unknown>;
+    expect(Object.hasOwn(reparsed, "__proto__")).toBe(true);
+    expect(Object.hasOwn(reparsed.nested as object, "__proto__")).toBe(true);
+  });
+
+  test("rejects inherited manifest data and reparses every successful serialization", () => {
+    const inheritedManifest = Object.create(emptyManifest()) as AssetManifestV1;
+    expect(validateAssetManifestValue(inheritedManifest)).toMatchObject({ ok: false });
+    expect(serializeAssetManifest(inheritedManifest)).toMatchObject({ ok: false });
+    expect(() => serializeTopikJson(inheritedManifest)).toThrow(/serializable|prototype/u);
+
+    const serialized = serializeAssetManifest(emptyManifest());
+    expect(serialized.ok).toBe(true);
+    if (!serialized.ok) return;
+    expect(parseAssetManifest(serialized.value)).toMatchObject({ ok: true });
+  });
+
   test("rejects duplicate members and malformed/non-integer numbers before schema validation", () => {
     const duplicate = '{"apiVersion":"v1","apiVersion":"v1"}';
     expect(() => parseStrictTopikJson(duplicate)).toThrow(/Duplicate/u);

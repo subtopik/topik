@@ -5,29 +5,25 @@ import type { TopikLinkRenderProps } from "../core/components";
 import { TopikContent } from "./TopikContent";
 
 describe("TopikContent", () => {
-  it("renders styled default components and resolves assets", () => {
+  it("renders styled default components with portable asset paths", () => {
     const html = renderToStaticMarkup(
-      <TopikContent
-        content='{% callout title="Asset" %}{% figure src="asset:hero" alt="Hero" /%}{% /callout %}'
-        resolveAsset={(id) => `/cdn/${id}.webp`}
-      />,
+      <TopikContent content='{% callout title="Asset" %}{% figure src="assets/hero.webp" alt="Hero" /%}{% /callout %}' />,
     );
 
     expect(html).toContain('class="topik-content"');
     expect(html).toContain('class="topik-callout not-prose"');
-    expect(html).toContain('src="/cdn/hero.webp"');
+    expect(html).toContain('src="assets/hero.webp"');
   });
 
   it("passes an explicit color scheme to figures", () => {
     const html = renderToStaticMarkup(
       <TopikContent
         colorScheme="dark"
-        content='{% figure src="asset:hero" darkSrc="asset:hero-dark" alt="Hero" /%}'
-        resolveAsset={(id) => `/cdn/${id}.webp`}
+        content='{% figure src="assets/hero.webp" darkSrc="assets/hero-dark.webp" alt="Hero" /%}'
       />,
     );
 
-    expect(html).toContain('src="/cdn/hero-dark.webp"');
+    expect(html).toContain('src="assets/hero-dark.webp"');
     expect(html).not.toContain("prefers-color-scheme");
   });
 
@@ -114,19 +110,18 @@ describe("TopikContent", () => {
     expect(html).not.toContain("href=");
   });
 
-  it("uses provider component overrides and asset resolver", () => {
+  it("uses provider component overrides with portable paths", () => {
     const html = renderToStaticMarkup(
       <TopikContentProvider
         components={{
           TopikFigure: ({ src }) => <span data-provider-src={String(src)} />,
         }}
-        resolveAsset={(id) => `/provider/${id}.png`}
       >
-        <TopikContent content='{% figure src="asset:hero" alt="Hero" /%}' />
+        <TopikContent content='{% figure src="assets/hero.png" alt="Hero" /%}' />
       </TopikContentProvider>,
     );
 
-    expect(html).toContain('data-provider-src="/provider/hero.png"');
+    expect(html).toContain('data-provider-src="assets/hero.png"');
   });
 
   it("keeps default quiz behavior when leaf components are overridden", () => {

@@ -39,7 +39,7 @@ function manifest(
     },
     pathRules: "topik-path-v1",
     referenceRules: "topik-asset-reference-v1",
-    resource: { apiVersion: "v2", type: "Guide", name: "guide", path: "guide.json" },
+    resource: { apiVersion: "v1", type: "Guide", name: "guide", path: "guide.json" },
     serializer: "topik-json-v1",
     type: "AssetManifest",
   };

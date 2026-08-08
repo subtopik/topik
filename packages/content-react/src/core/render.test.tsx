@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { renderToStaticMarkup, renderToString } from "react-dom/server";
-import { TopikContentProvider, useTopikAssetResolver, useTopikComponents } from "./context";
+import { TopikContentProvider, useTopikComponents } from "./context";
 import { getTopikComponents } from "./components";
 import { compileTopikContent, renderTopikContent, renderTopikMarkdown } from "./render";
 
@@ -36,11 +36,11 @@ Run it.
 {% /step %}
 {% /steps %}
 
-{% figure src="asset:hero" darkSrc="asset:hero-dark" alt="Hero" caption="A figure" /%}
+{% figure src="assets/hero.png" darkSrc="assets/hero-dark.png" alt="Hero" caption="A figure" /%}
 
 Inline {% badge variant="success" %}stable{% /badge %}.
 
-![Logo](asset:logo)
+![Logo](assets/logo.png)
 
 {% codeGroup %}
 {% codeTab title="pnpm" %}
@@ -140,12 +140,7 @@ describe("content-react core", () => {
       TopikUnderline: ({ children }) => <u data-underline>{children}</u>,
     });
     const html = renderToStaticMarkup(
-      <>
-        {renderTopikMarkdown(allComponentsContent, {
-          components,
-          resolveAsset: (id) => `/assets/${id}.png`,
-        })}
-      </>,
+      <>{renderTopikMarkdown(allComponentsContent, { components })}</>,
     );
 
     expect(html).toContain('data-callout="Remember"');
@@ -159,8 +154,8 @@ describe("content-react core", () => {
     expect(html).toContain('data-code-block="sh"');
     expect(html).toContain("data-steps");
     expect(html).toContain('data-step="Install"');
-    expect(html).toContain('src="/assets/hero.png"');
-    expect(html).toContain('src="/assets/logo.png"');
+    expect(html).toContain('src="assets/hero.png"');
+    expect(html).toContain('src="assets/logo.png"');
     expect(html).toContain("<mark>stable</mark>");
     expect(html).toContain("data-math");
     expect(html).toContain("data-math-inline");
@@ -176,16 +171,14 @@ describe("content-react core", () => {
     expect(html).toContain("data-explanation");
   });
 
-  it("provides components and asset resolver through context", () => {
+  it("provides components through context while preserving portable paths", () => {
     function ContextRenderer() {
       const components = useTopikComponents();
-      const resolveAsset = useTopikAssetResolver();
 
       return (
         <>
-          {renderTopikMarkdown('{% figure src="asset:logo" alt="Logo" /%}', {
+          {renderTopikMarkdown('{% figure src="assets/logo.svg" alt="Logo" /%}', {
             components,
-            resolveAsset,
           })}
         </>
       );
@@ -196,13 +189,12 @@ describe("content-react core", () => {
         components={{
           TopikFigure: ({ src }) => <span data-src={String(src)} />,
         }}
-        resolveAsset={(id) => `/resolved/${id}.svg`}
       >
         <ContextRenderer />
       </TopikContentProvider>,
     );
 
-    expect(html).toContain('data-src="/resolved/logo.svg"');
+    expect(html).toContain('data-src="assets/logo.svg"');
   });
 
   it("reports validation diagnostics", () => {
@@ -246,6 +238,5 @@ describe("content-react core", () => {
     expect(html).toContain('src="assets/getting-started/hero.png"');
     expect(html).toContain('src="assets/light.png"');
     expect(html).toContain('data-dark-src="assets/dark.png"');
-    expect(html).not.toContain("asset:");
   });
 });

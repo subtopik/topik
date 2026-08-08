@@ -1,10 +1,13 @@
 import type { TopikContentDiagnostic } from "@topik/content-schema";
 import { parse as parseYaml } from "yaml";
 import type { Resource } from "../resource";
+import type { PortableAssetKeyStateV1, PortableResourceArtifact } from "./assets";
 
 export interface CompileResult {
   diagnostics: TopikContentDiagnostic[];
   resources: Resource[];
+  artifacts: PortableResourceArtifact[];
+  assetKeyState: PortableAssetKeyStateV1;
 }
 
 export type LinkValidationPolicy = "error" | "warning" | "off";

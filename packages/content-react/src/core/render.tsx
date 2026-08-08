@@ -7,11 +7,7 @@ import {
   type TopikContentDiagnostic,
 } from "@topik/content-schema";
 import * as React from "react";
-import {
-  getTopikComponents,
-  type TopikAssetResolver,
-  type TopikComponentOverrides,
-} from "./components";
+import { getTopikComponents, type TopikComponentOverrides } from "./components";
 
 export interface CompileTopikContentOptions {
   file?: string;
@@ -22,7 +18,6 @@ export interface CompileTopikContentOptions {
 
 export interface RenderTopikContentOptions {
   components?: TopikComponentOverrides;
-  resolveAsset?: TopikAssetResolver;
 }
 
 export interface RenderTopikMarkdownOptions
@@ -48,11 +43,7 @@ export function renderTopikContent(
   tree: RenderableTreeNode,
   options: RenderTopikContentOptions = {},
 ): React.ReactNode {
-  const resolvedTree = options.resolveAsset
-    ? resolveTopikAssetReferences(tree, options.resolveAsset)
-    : tree;
-
-  return Markdoc.renderers.react(resolvedTree, React, {
+  return Markdoc.renderers.react(tree, React, {
     components: getTopikComponents(options.components),
   });
 }
@@ -62,25 +53,6 @@ export function renderTopikMarkdown(
   options: RenderTopikMarkdownOptions = {},
 ): React.ReactNode {
   return renderTopikContent(compileTopikContent(content, options), options);
-}
-
-export function resolveTopikAssetReferences<T>(value: T, resolveAsset: TopikAssetResolver): T {
-  if (typeof value === "string") {
-    return (value.startsWith("asset:") ? resolveAsset(value.slice("asset:".length)) : value) as T;
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((item) => resolveTopikAssetReferences(item, resolveAsset)) as T;
-  }
-
-  if (value === null || typeof value !== "object") return value;
-
-  const entries = Object.entries(value).map(([key, nestedValue]) => [
-    key,
-    resolveTopikAssetReferences(nestedValue, resolveAsset),
-  ]);
-
-  return Object.fromEntries(entries) as T;
 }
 
 function mergeConfigs(base: Config, override: Config = {}): Config {

@@ -14,7 +14,7 @@
   "pathRules": "topik-path-v1",
   "referenceRules": "topik-asset-reference-v1",
   "resource": {
-    "apiVersion": "v2",
+    "apiVersion": "v1",
     "name": "offline-guide",
     "path": "guide.json",
     "type": "Guide"

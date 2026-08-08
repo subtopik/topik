@@ -40,7 +40,7 @@ Create your first lesson.
 {% /step %}
 {% /steps %}
 
-{% figure src="asset:diagram" alt="Lesson diagram" caption="Assets can be resolved by the host app." /%}
+{% figure src="assets/diagram.png" alt="Lesson diagram" caption="Portable resource asset." /%}
 
 {% quiz %}
 {% question type="single-choice" %}
@@ -62,7 +62,6 @@ const meta = {
   component: TopikContent,
   args: {
     content: learningPage,
-    resolveAsset: (id: string) => `https://placehold.co/960x420?text=${encodeURIComponent(id)}`,
   },
 } satisfies Meta<typeof TopikContent>;
 
@@ -79,10 +78,10 @@ export const InvalidDiagnostics: Story = {
   },
 };
 
-export const AssetResolution: Story = {
+export const PortableAssetPaths: Story = {
   args: {
-    content: '{% figure src="asset:hero" darkSrc="asset:hero-dark" alt="Resolved asset" /%}',
-    resolveAsset: (id: string) => `https://placehold.co/960x420?text=${encodeURIComponent(id)}`,
+    content:
+      '{% figure src="assets/hero.png" darkSrc="assets/hero-dark.png" alt="Portable asset" /%}',
   },
 };
 

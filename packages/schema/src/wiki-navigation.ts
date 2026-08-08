@@ -129,7 +129,6 @@ export function resolveWikiContentHref(
   currentPageName: string,
   resolved: ResolvedWikiNavigation,
 ): ResolvedWikiContentLink | null {
-  if (href.startsWith("asset:")) return null;
   const currentPage = resolved.pageByName.get(currentPageName);
   if (!currentPage) return null;
 

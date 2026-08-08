@@ -44,7 +44,7 @@ export function parseStrictTopikJson(source: string, maxDepth = 8): unknown {
   function object(depth: number, pointer: string): Record<string, unknown> {
     offset++;
     whitespace();
-    const result: Record<string, unknown> = {};
+    const result = Object.create(null) as Record<string, unknown>;
     const keys = new Set<string>();
     if (source[offset] === "}") {
       offset++;
@@ -62,7 +62,12 @@ export function parseStrictTopikJson(source: string, maxDepth = 8): unknown {
       whitespace();
       if (source[offset] !== ":") throw new TopikJsonSyntaxError("Expected ':'", offset);
       offset++;
-      result[key] = value(depth + 1, memberPointer);
+      Object.defineProperty(result, key, {
+        configurable: true,
+        enumerable: true,
+        value: value(depth + 1, memberPointer),
+        writable: true,
+      });
       whitespace();
       if (source[offset] === "}") {
         offset++;
@@ -159,6 +164,16 @@ export function serializeTopikJson(value: unknown): string {
   return `${pretty(value, 0)}\n`;
 }
 
+/** True only for values whose complete own-property graph is topik-json-v1 data. */
+export function isTopikJsonDataValue(value: unknown): boolean {
+  try {
+    assertSerializable(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function topikJsonDescriptor(): { id: typeof TOPIK_JSON_VERSION } {
   return { id: TOPIK_JSON_VERSION };
 }
@@ -199,13 +214,58 @@ function assertSerializable(value: unknown, seen = new Set<object>()): void {
   }
   if (seen.has(value)) throw new TypeError("Cyclic value is not serializable");
   seen.add(value);
-  for (const [key, nested] of Object.entries(value)) {
-    if (hasLoneSurrogate(key) || nested === undefined) {
-      throw new TypeError("topik-json-v1 rejects invalid keys and undefined values");
+
+  if (Array.isArray(value)) {
+    if (Object.getPrototypeOf(value) !== Array.prototype) {
+      throw new TypeError("topik-json-v1 rejects nonstandard array prototypes");
     }
-    assertSerializable(nested, seen);
+    const names = Object.getOwnPropertyNames(value);
+    const symbols = Object.getOwnPropertySymbols(value);
+    if (
+      symbols.length !== 0 ||
+      names.length !== value.length + 1 ||
+      names.some((name) => name !== "length" && !isArrayIndex(name, value.length))
+    ) {
+      throw new TypeError("topik-json-v1 requires dense arrays without extra properties");
+    }
+    for (let index = 0; index < value.length; index++) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+      if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
+        throw new TypeError("topik-json-v1 requires own array data properties");
+      }
+      assertSerializable(descriptor.value, seen);
+    }
+  } else {
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw new TypeError("topik-json-v1 rejects inherited or custom object prototypes");
+    }
+    if (Object.getOwnPropertySymbols(value).length !== 0) {
+      throw new TypeError("topik-json-v1 rejects symbol properties");
+    }
+    for (const key of Object.getOwnPropertyNames(value)) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (
+        hasLoneSurrogate(key) ||
+        descriptor === undefined ||
+        !("value" in descriptor) ||
+        !descriptor.enumerable ||
+        descriptor.value === undefined
+      ) {
+        throw new TypeError(
+          "topik-json-v1 requires enumerable own data properties with defined values",
+        );
+      }
+      assertSerializable(descriptor.value, seen);
+    }
   }
   seen.delete(value);
+}
+
+function isArrayIndex(value: string, length: number): boolean {
+  if (!/^(?:0|[1-9][0-9]*)$/u.test(value)) return false;
+  const index = Number(value);
+  return Number.isSafeInteger(index) && index >= 0 && index < length && String(index) === value;
 }
 
 function compareUtf16(left: string, right: string): number {

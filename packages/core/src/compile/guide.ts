@@ -4,7 +4,11 @@ import { analyzeTopikContent, validateTopikContent } from "@topik/content-schema
 import type { Guide } from "@topik/schema";
 import type { Resource } from "../resource";
 import { parseCollectionConfig } from "../config/collection";
-import { extractAssets } from "./assets";
+import {
+  compilePortableResourceArtifacts,
+  TOPIK_PORTABLE_ASSET_KEY_STATE_VERSION,
+  type PortableAssetCompilationOptions,
+} from "./assets";
 import { readOptionalConfigFile } from "./config";
 import {
   FileNotRegularError,
@@ -25,6 +29,7 @@ import { validateLocalFragments } from "./links";
 export interface CompileGuidesOptions {
   dir: string;
   validation?: CompileValidationOptions;
+  assets?: PortableAssetCompilationOptions;
 }
 
 export async function compileGuides(options: CompileGuidesOptions): Promise<CompileResult> {
@@ -42,7 +47,16 @@ export async function inspectGuides(options: CompileGuidesOptions): Promise<Comp
     "collection.json",
   ]);
   if (raw == null) {
-    return { diagnostics: [], resources: [] };
+    return {
+      diagnostics: [],
+      resources: [],
+      artifacts: [],
+      assetKeyState: options.assets?.keyState ?? {
+        version: TOPIK_PORTABLE_ASSET_KEY_STATE_VERSION,
+        keysByResource: {},
+        retiredKeys: [],
+      },
+    };
   }
 
   const config = parseCollectionConfig(raw);
@@ -52,7 +66,7 @@ export async function inspectGuides(options: CompileGuidesOptions): Promise<Comp
 
   const resources: Resource[] = [];
   const diagnostics: CompileResult["diagnostics"] = [];
-  const assetsById = new Map<string, (typeof resources)[number]>();
+  const sourcePathsByResource: Record<string, string> = {};
 
   for (const file of markdownFiles) {
     const filePath = join(dir, file);
@@ -88,32 +102,18 @@ export async function inspectGuides(options: CompileGuidesOptions): Promise<Comp
     const validation = validateTopikContent(content, { file: filePath });
     diagnostics.push(...validation.errors);
     if (!validation.valid) continue;
-    const {
-      content: rewritten,
-      assets,
-      manifest,
-    } = await extractAssets(content, {
-      baseDir: dir,
-      filePath,
-    });
-    for (const asset of assets) {
-      if (!assetsById.has(asset.name)) {
-        assetsById.set(asset.name, asset);
-      }
-    }
-
     const slug = fileToSlug(file);
     const name = `${config.id}-${slug}`;
     const title =
       typeof frontmatter.title === "string"
         ? frontmatter.title
-        : extractMarkdownTitle(rewritten, slug);
+        : extractMarkdownTitle(content, slug);
 
     const tags = mergeTags(config.tags, frontmatter.tags);
     const authors = parseReferenceList(frontmatter.authors, "authors", file);
     const description =
       typeof frontmatter.description === "string" ? frontmatter.description : undefined;
-    const analysis = analyzeTopikContent(rewritten, { file: filePath });
+    const analysis = analyzeTopikContent(content, { file: filePath });
     diagnostics.push(...analysis.diagnostics);
     diagnostics.push(...validateLocalFragments(analysis, linkValidationPolicy(options.validation)));
 
@@ -129,20 +129,29 @@ export async function inspectGuides(options: CompileGuidesOptions): Promise<Comp
         ...(tags.length > 0 ? { tags } : {}),
         content: {
           format: "topik",
-          value: rewritten,
+          value: content,
         },
-        ...(manifest.length > 0 ? { assets: manifest } : {}),
       },
     };
 
     resources.push(guide);
+    sourcePathsByResource[`Guide/${guide.name}`] = file;
   }
 
-  for (const asset of assetsById.values()) {
-    resources.push(asset);
-  }
-
-  return { diagnostics, resources };
+  const compiled = await compilePortableResourceArtifacts({
+    rootDir: dir,
+    resources,
+    sourcePathsByResource,
+    downloadableLinkPositionsByResource: options.assets?.downloadableLinkPositionsByResource,
+    keyState: options.assets?.keyState,
+    randomBytes: options.assets?.randomBytes,
+  });
+  return {
+    diagnostics,
+    resources: compiled.resources,
+    artifacts: compiled.artifacts,
+    assetKeyState: compiled.keyState,
+  };
 }
 
 function fileToSlug(filename: string): string {

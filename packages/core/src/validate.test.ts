@@ -77,4 +77,21 @@ describe("validateResources", () => {
       },
     ]);
   });
+
+  test("does not allow inherited members to satisfy resource schemas", () => {
+    const valid = {
+      apiVersion: "v1",
+      type: "Guide",
+      name: "guide",
+      spec: {
+        title: "Guide",
+        slug: "guide",
+        content: { format: "topik", value: "# Guide\n" },
+      },
+    };
+    expect(validateResources([Object.create(valid)])).toMatchObject({ valid: false });
+    expect(validateResources([{ ...valid, spec: Object.create(valid.spec) }])).toMatchObject({
+      valid: false,
+    });
+  });
 });

@@ -168,6 +168,57 @@ describe("explicit legacy asset migration", () => {
     expect(result.value.content).toBe("[Download](images/hero.png)\n");
   });
 
+  test.each([
+    ["direct", "guide.md", "images/hero.png"],
+    ["file-relative", "guide.md", "./images/hero.png"],
+    ["root-absolute", "guide.md", "/images/hero.png"],
+    ["nested relative", "guides/chapter.md", "../images/hero.png"],
+  ])("migrates a provable %s legacy download", async (_description, contentPath, reference) => {
+    const downloadSource = `[Download](${reference})\n`;
+    const resource: Guide = {
+      ...guide,
+      spec: { ...guide.spec, content: { format: "topik", value: downloadSource } },
+    };
+    const result = await migrateLegacyAssets({
+      original: { ...original(resource), contentPath },
+      byteProvider: provider(),
+      state,
+      randomBytes: () => new Uint8Array(16),
+    });
+    expect(result.ok, result.ok ? undefined : JSON.stringify(result.diagnostics)).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.content).toBe("[Download](images/hero.png)\n");
+  });
+
+  test("fails closed when a legacy download path matches several supplied Assets", async () => {
+    const secondAsset: Asset = { ...asset, name: "1111111111111111" };
+    const downloadSource = "[Download](./images/hero.png)\n";
+    const resource: Guide = {
+      ...guide,
+      spec: {
+        ...guide.spec,
+        assets: [asset.name, secondAsset.name],
+        content: { format: "topik", value: downloadSource },
+      },
+    };
+    const result = await migrateLegacyAssets({
+      original: original(resource, [
+        { resource: asset, bytes: bytes(asset) },
+        { resource: secondAsset, bytes: bytes(secondAsset) },
+      ]),
+      byteProvider: provider(),
+      state,
+      randomBytes: () => new Uint8Array(16),
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_LEGACY_ASSET_REFERENCE_AMBIGUOUS" }),
+      ]),
+    );
+  });
+
   test("requires exact valid snapshots for the legacy resource and Asset resources", async () => {
     for (const resourceBytes of [
       new Uint8Array(),

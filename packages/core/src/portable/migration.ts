@@ -167,21 +167,47 @@ export async function migrateLegacyAssets(
   }
   if (diagnostics.length > 0) return { ok: false, diagnostics };
 
-  const manifestPaths = [...assetsByName.values()].map(([asset]) => asset.resource.spec.uri);
-  const downloadableLinkPositions = extractTopikAssetOccurrences(source, {
-    manifestPaths,
+  const assetsByPath = indexLegacyAssetsByPath(assetsByName);
+  const downloadableLinkPositions: string[] = [];
+  for (const occurrence of extractTopikAssetOccurrences(source, {
     declareAllLinksAsDownloads: true,
-  })
-    .filter(
-      (occurrence) => occurrence.slot === "link.href" && occurrence.reference.startsWith("asset:"),
-    )
-    .map((occurrence) => occurrence.position);
-  const occurrenceOptions = { manifestPaths, downloadableLinkPositions };
+  })) {
+    if (occurrence.slot !== "link.href") continue;
+    if (occurrence.reference.startsWith("asset:")) {
+      downloadableLinkPositions.push(occurrence.position);
+      continue;
+    }
+    if (occurrence.kind !== "local") continue;
+    const candidates = resolveLegacyPathCandidates(
+      occurrence.reference,
+      original.contentPath,
+      assetsByPath,
+    );
+    if (candidates.length === 1) {
+      downloadableLinkPositions.push(occurrence.position);
+    } else if (candidates.length > 1) {
+      diagnostics.push(
+        ambiguous(
+          occurrence.reference,
+          "Legacy path resolves to several Asset resources",
+          occurrence.position,
+        ),
+      );
+    }
+  }
+  if (diagnostics.length > 0) return { ok: false, diagnostics };
+
+  const occurrenceOptions = { downloadableLinkPositions };
   const occurrences = extractTopikAssetOccurrences(source, occurrenceOptions);
   const assetByPosition = new Map<string, { resource: Asset; bytes: Uint8Array }>();
   for (const occurrence of occurrences) {
     if (occurrence.kind === "external-https") continue;
-    const resolved = resolveLegacyOccurrence(occurrence, original.contentPath, assetsByName);
+    const resolved = resolveLegacyOccurrence(
+      occurrence,
+      original.contentPath,
+      assetsByName,
+      assetsByPath,
+    );
     if (!resolved.ok) {
       diagnostics.push(...resolved.diagnostics);
       continue;
@@ -423,6 +449,7 @@ function resolveLegacyOccurrence(
   occurrence: TopikAssetOccurrence,
   contentPath: string,
   assetsByName: ReadonlyMap<string, Array<{ resource: Asset; bytes: Uint8Array }>>,
+  assetsByPath: ReadonlyMap<string, Array<{ resource: Asset; bytes: Uint8Array }>>,
 ): TopikAssetResult<{ resource: Asset; bytes: Uint8Array }> {
   if (occurrence.reference.startsWith("asset:")) {
     const name = occurrence.reference.slice("asset:".length);
@@ -437,13 +464,7 @@ function resolveLegacyOccurrence(
       ],
     };
   }
-  const resolvedPath = resolveLegacyPath(occurrence.reference, contentPath);
-  if (resolvedPath === undefined) {
-    return { ok: false, diagnostics: [unresolved(occurrence.reference, occurrence.position)] };
-  }
-  const candidates = [...assetsByName.values()]
-    .flat()
-    .filter((asset) => asset.resource.spec.uri === resolvedPath);
+  const candidates = resolveLegacyPathCandidates(occurrence.reference, contentPath, assetsByPath);
   if (candidates.length === 1) return { ok: true, value: candidates[0], diagnostics: [] };
   return {
     ok: false,
@@ -457,6 +478,29 @@ function resolveLegacyOccurrence(
         : unresolved(occurrence.reference, occurrence.position),
     ],
   };
+}
+
+function indexLegacyAssetsByPath(
+  assetsByName: ReadonlyMap<string, Array<{ resource: Asset; bytes: Uint8Array }>>,
+): ReadonlyMap<string, Array<{ resource: Asset; bytes: Uint8Array }>> {
+  const assetsByPath = new Map<string, Array<{ resource: Asset; bytes: Uint8Array }>>();
+  for (const asset of [...assetsByName.values()].flat()) {
+    const path = canonicalLegacyAssetPath(asset.resource.spec.uri);
+    if (!path.ok) continue;
+    const candidates = assetsByPath.get(path.value) ?? [];
+    candidates.push(asset);
+    assetsByPath.set(path.value, candidates);
+  }
+  return assetsByPath;
+}
+
+function resolveLegacyPathCandidates(
+  reference: string,
+  contentPath: string,
+  assetsByPath: ReadonlyMap<string, Array<{ resource: Asset; bytes: Uint8Array }>>,
+): readonly { resource: Asset; bytes: Uint8Array }[] {
+  const resolvedPath = resolveLegacyPath(reference, contentPath);
+  return resolvedPath === undefined ? [] : (assetsByPath.get(resolvedPath) ?? []);
 }
 
 function resolveLegacyPath(reference: string, contentPath: string): string | undefined {

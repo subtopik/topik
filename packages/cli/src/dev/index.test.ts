@@ -277,6 +277,7 @@ describe("dev command", () => {
     );
     expect(assetRes.status).toBe(200);
     expect(assetRes.headers.get("content-type")).toBe("image/png");
+    expect(assetRes.headers.get("x-content-type-options")).toBe("nosniff");
     expect(assetRes.headers.get("access-control-allow-origin")).toBe(WRITE_ORIGIN);
     expect(Buffer.from(await assetRes.arrayBuffer())).toEqual(PNG_BYTES);
 
@@ -292,6 +293,19 @@ describe("dev command", () => {
 
     const sourcePathRes = await fetch(`http://127.0.0.1:${port}/images/hero.png`);
     expect(sourcePathRes.status).toBe(404);
+  });
+
+  test("serves proven opaque downloads with enforced non-inline headers", async () => {
+    await writeFile(join(dir, "manual.bin"), "offline bytes");
+    await writeFile(join(dir, "intro.md"), "# Intro\n\n[Download](manual.bin)\n");
+    const port = await start();
+
+    const response = await fetch(`http://127.0.0.1:${port}/portable/Guide/docs-intro/manual.bin`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("application/octet-stream");
+    expect(response.headers.get("content-disposition")).toBe("attachment");
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(await response.text()).toBe("offline bytes");
   });
 
   test("refreshes the dev snapshot when a dot-prefixed asset changes", async () => {

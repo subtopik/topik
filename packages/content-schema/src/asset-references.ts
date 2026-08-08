@@ -61,6 +61,8 @@ export interface TopikAssetOccurrence {
   treePath: readonly number[];
   slot: TopikAssetReferenceSlot["slot"];
   role: TopikAssetReferenceRole;
+  /** Parser-produced destination used only to prove what the exact source bytes resolve to. */
+  parsedReference: string;
   reference: string;
   kind: TopikAssetOccurrenceKind;
   semantics: TopikAssetOccurrenceSemantics;
@@ -94,13 +96,13 @@ export function extractTopikAssetOccurrences(
     for (const definition of matchingSlots(node)) {
       const position = formatPosition(treePath, definition.attribute);
       const parsedReference = stringAttribute(node, definition.attribute);
+      if (parsedReference == null) continue;
       const reference =
         definition.node === "image"
           ? (exactReferences.images.shift() ?? parsedReference)
           : definition.node === "link"
             ? (exactReferences.links.shift() ?? parsedReference)
             : parsedReference;
-      if (reference == null) continue;
       if (
         definition.conditional === "manifest-entry" &&
         options.includeGenericLinkCandidates !== true &&
@@ -114,6 +116,7 @@ export function extractTopikAssetOccurrences(
         treePath,
         slot: definition.slot,
         role: definition.role,
+        parsedReference,
         reference,
         kind: classifyReference(reference),
         semantics: occurrenceSemantics(node, definition),
@@ -138,13 +141,13 @@ export function rewriteTopikAssetOccurrences(
     for (const definition of matchingSlots(node)) {
       const position = formatPosition(treePath, definition.attribute);
       const parsedReference = stringAttribute(node, definition.attribute);
+      if (parsedReference == null) continue;
       const reference =
         definition.node === "image"
           ? (exactReferences.images.shift() ?? parsedReference)
           : definition.node === "link"
             ? (exactReferences.links.shift() ?? parsedReference)
             : parsedReference;
-      if (reference == null) continue;
       if (
         definition.conditional === "manifest-entry" &&
         options.includeGenericLinkCandidates !== true &&
@@ -158,6 +161,7 @@ export function rewriteTopikAssetOccurrences(
         treePath,
         slot: definition.slot,
         role: definition.role,
+        parsedReference,
         reference,
         kind: classifyReference(reference),
         semantics: occurrenceSemantics(node, definition),
@@ -445,7 +449,7 @@ function scanMarkdownDestinations(
     if (!image && source[index] !== "[") continue;
     const opening = image ? index + 1 : index;
     if (isEscaped(source, opening)) continue;
-    const labelEnd = findUnescaped(source, "]", opening + 1);
+    const labelEnd = findBalancedMarkdownLabelEnd(source, opening);
     if (labelEnd === -1) continue;
     const kind = image ? "image" : "link";
     const label = source.slice(opening + 1, labelEnd);
@@ -467,6 +471,13 @@ function scanMarkdownDestinations(
     }
     if (reference !== undefined && reference.length > 0) {
       destinations.push({ kind, reference });
+      if (kind === "link") {
+        destinations.push(
+          ...scanMarkdownDestinations(label, definitions).filter(
+            (destination) => destination.kind === "image",
+          ),
+        );
+      }
       index = end;
     }
   }
@@ -592,6 +603,20 @@ function isEscaped(value: string, index: number): boolean {
 function findUnescaped(value: string, character: string, start: number): number {
   for (let index = start; index < value.length; index++) {
     if (value[index] === character && !isEscaped(value, index)) return index;
+  }
+  return -1;
+}
+
+function findBalancedMarkdownLabelEnd(value: string, opening: number): number {
+  let depth = 1;
+  for (let index = opening + 1; index < value.length; index++) {
+    if (isEscaped(value, index)) continue;
+    if (value[index] === "[") {
+      depth++;
+    } else if (value[index] === "]") {
+      depth--;
+      if (depth === 0) return index;
+    }
   }
   return -1;
 }

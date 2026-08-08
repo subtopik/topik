@@ -287,10 +287,43 @@ export function sniffPortableMediaType(bytes: Uint8Array): string {
     return "audio/mpeg";
   }
   if (ascii(bytes, 4, 4) === "ftyp") return "video/mp4";
-  const text = safeText(bytes.slice(0, 4096)).trimStart().toLowerCase();
-  if (/^(?:<!doctype\s+html|<html\b)/u.test(text)) return "text/html";
-  if (/^<\?xml[^>]*>\s*<svg\b/u.test(text) || /^<svg\b/u.test(text)) return "image/svg+xml";
+  if (
+    has(0x7f, 0x45, 0x4c, 0x46) ||
+    has(0x4d, 0x5a) ||
+    has(0xfe, 0xed, 0xfa, 0xce) ||
+    has(0xce, 0xfa, 0xed, 0xfe) ||
+    has(0xfe, 0xed, 0xfa, 0xcf) ||
+    has(0xcf, 0xfa, 0xed, 0xfe) ||
+    has(0xca, 0xfe, 0xba, 0xbe) ||
+    has(0x23, 0x21)
+  ) {
+    return "application/x-executable";
+  }
+  if (has(0x00, 0x61, 0x73, 0x6d)) return "application/wasm";
+  const text = safeText(bytes.slice(0, 4096)).toLowerCase();
+  const markup = stripLeadingHtmlComments(text).trimStart();
+  if (/^<\?xml[^>]*>\s*<svg\b/u.test(markup) || /^<svg\b/u.test(markup)) {
+    return "image/svg+xml";
+  }
+  if (
+    /^(?:<!doctype\s+html\b|<[a-z][a-z0-9:-]*(?:\s|>|\/))/u.test(markup) ||
+    /<[^>]+\bon[a-z][a-z0-9_-]*\s*=/u.test(markup) ||
+    /<[^>]+(?:href|src)\s*=\s*["']?\s*javascript:/u.test(markup) ||
+    /<script\b/u.test(markup)
+  ) {
+    return "text/html";
+  }
   return "application/octet-stream";
+}
+
+function stripLeadingHtmlComments(value: string): string {
+  let result = value.trimStart();
+  while (result.startsWith("<!--")) {
+    const end = result.indexOf("-->", 4);
+    if (end === -1) break;
+    result = result.slice(end + 3).trimStart();
+  }
+  return result;
 }
 
 function sameResource(
@@ -322,9 +355,14 @@ function isInlineMediaCompatible(mediaType: string, role: TopikAssetOccurrence["
 }
 
 function isActiveType(mediaType: string): boolean {
-  return ["text/html", "image/svg+xml", "application/javascript", "text/javascript"].includes(
-    mediaType,
-  );
+  return [
+    "text/html",
+    "image/svg+xml",
+    "application/javascript",
+    "text/javascript",
+    "application/x-executable",
+    "application/wasm",
+  ].includes(mediaType);
 }
 
 function atOccurrence(

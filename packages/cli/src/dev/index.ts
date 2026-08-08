@@ -100,14 +100,30 @@ function handlePortableFile(
   const mediaType = Object.values(artifact.manifest.assets).find(
     (entry) => entry.path === ownedPath,
   )?.mediaType;
+  const contentType =
+    mediaType ?? (ownedPath.endsWith(".json") ? "application/json" : "text/plain");
   res.writeHead(200, {
-    "Content-Type": mediaType ?? (ownedPath.endsWith(".json") ? "application/json" : "text/plain"),
+    "Content-Type": contentType,
     ...corsHeaders,
     "Cache-Control": "no-cache",
+    "X-Content-Type-Options": "nosniff",
+    ...(isDownloadMediaType(contentType) ? { "Content-Disposition": "attachment" } : {}),
   });
   res.end(file.bytes);
 
   return true;
+}
+
+function isDownloadMediaType(mediaType: string): boolean {
+  return [
+    "application/octet-stream",
+    "text/html",
+    "image/svg+xml",
+    "application/javascript",
+    "text/javascript",
+    "application/x-executable",
+    "application/wasm",
+  ].includes(mediaType);
 }
 
 function normalizeAllowedOrigin(value: string): string {

@@ -180,6 +180,33 @@ describe("direct portable artifact compilation", () => {
     });
   });
 
+  test.each([
+    ["comment-prefixed HTML", "<!-- generated -->\n<html><body>x</body></html>"],
+    ["HTML fragment", "<div>fragment</div>"],
+    ["script fragment", "<script>alert(1)</script>"],
+    ["active body fragment", '<body onload="alert(1)">x</body>'],
+    ["SVG", '<svg xmlns="http://www.w3.org/2000/svg"><script /></svg>'],
+    ["executable signature", new Uint8Array([0x7f, 0x45, 0x4c, 0x46, 1])],
+  ])("rejects recognizable active %s disguised as an opaque download", async (_name, source) => {
+    const bytes = typeof source === "string" ? new TextEncoder().encode(source) : source;
+    await writeFile(join(dir, "active.bin"), bytes);
+    await expect(
+      compilePortableResourceArtifacts({
+        rootDir: dir,
+        resources: [guideResource("active", "[Download](active.bin)\n")],
+        sourcePathsByResource: { "Guide/active": "guide.md" },
+        randomBytes: entropy(),
+      }),
+    ).rejects.toMatchObject({
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({
+          id: "TOPIK_ASSET_ACTIVE_CONTENT_UNSUPPORTED",
+          severity: "error",
+        }),
+      ]),
+    });
+  });
+
   test("compiles a mixed resource set and assigns artifacts only to content-bearing resources", async () => {
     await mkdir(join(dir, "pages"));
     await writeFile(join(dir, "guide.md"), "![Guide](shared.png)\n");
@@ -576,6 +603,56 @@ describe("direct portable artifact compilation", () => {
         expect.objectContaining({ id: "TOPIK_ASSET_PATH_INVALID", severity: "error" }),
       ]),
     });
+  });
+
+  test.each([
+    ["inline raw image", "![Nested [image]](é.png)\n"],
+    ["reference entity image", "![Nested [image]][id]\n\n[id]: &eacute;.png\n"],
+    ["image nested in a link label", "[![Nested image](é.png)](manual.bin)\n"],
+    ["inline escaped download", "[Nested [download]](manual\\.bin)\n"],
+    ["reference raw download", "[Nested [download]][id]\n\n[id]: é.bin\n"],
+  ])("rejects a noncanonical %s destination behind a nested label", async (_name, content) => {
+    await writeFile(join(dir, "é.png"), PNG_BYTES);
+    await writeFile(join(dir, "é.bin"), "download");
+    await writeFile(join(dir, "manual.bin"), "download");
+    await expect(
+      compilePortableResourceArtifacts({
+        rootDir: dir,
+        resources: [guideResource("nested-invalid", content)],
+        sourcePathsByResource: { "Guide/nested-invalid": "guide.md" },
+        randomBytes: entropy(),
+      }),
+    ).rejects.toMatchObject({
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_ASSET_PATH_INVALID", severity: "error" }),
+      ]),
+    });
+  });
+
+  test("compiles canonical image and download destinations behind nested labels", async () => {
+    await writeFile(join(dir, "é.png"), PNG_BYTES);
+    await writeFile(join(dir, "manual.bin"), "download");
+    const result = await compilePortableResourceArtifacts({
+      rootDir: dir,
+      resources: [
+        guideResource(
+          "nested-canonical",
+          [
+            "![Nested [image]](%C3%A9.png)",
+            "[Nested [download]](manual.bin)",
+            "[Nested reference [download]][download-id]",
+            "",
+            "[download-id]: manual.bin",
+          ].join("\n\n"),
+        ),
+      ],
+      sourcePathsByResource: { "Guide/nested-canonical": "guide.md" },
+      randomBytes: entropy(),
+    });
+    expect(Object.values(result.artifacts[0].manifest.assets)).toMatchObject([
+      { path: "manual.bin" },
+      { path: "é.png" },
+    ]);
   });
 
   test.each([

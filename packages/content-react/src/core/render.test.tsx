@@ -329,6 +329,52 @@ describe("content-react core", () => {
     expect(html).not.toContain('rel="preload"');
   });
 
+  it.each([
+    "![Nested [unsafe]](é.png)\n",
+    "![Nested [unsafe]](&eacute;.png)\n",
+    "![Nested [unsafe]](hero\\.png)\n",
+    "![Nested [unsafe]][id]\n\n[id]: é.png\n",
+    "![Nested [unsafe]][id]\n\n[id]: &eacute;.png\n",
+    "![Nested [unsafe]][id]\n\n[id]: hero\\.png\n",
+    "[![Nested image](é.png)](manual.bin)\n",
+  ])("does not render a noncanonical destination behind a nested label", (content) => {
+    const diagnostics: string[] = [];
+    const html = renderToStaticMarkup(
+      <>
+        {renderTopikMarkdown(content, {
+          components: {
+            TopikImage: ({ src }) =>
+              typeof src === "string" ? <img alt="" data-unsafe src={src} /> : null,
+          },
+          onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id),
+        })}
+      </>,
+    );
+    expect(diagnostics).toContain("TOPIK_ASSET_PATH_INVALID");
+    expect(html).not.toContain("data-unsafe");
+    expect(html).not.toMatch(/\bsrc=/u);
+    expect(html).not.toContain('rel="preload"');
+  });
+
+  it("renders canonical encoded image destinations behind nested labels", () => {
+    const diagnostics: string[] = [];
+    const html = renderToStaticMarkup(
+      <>
+        {renderTopikMarkdown(
+          "![Inline [safe]](%C3%A9.png)\n\n![Reference [safe]][id]\n\n[id]: %C3%A9.png\n",
+          {
+            components: {
+              TopikImage: ({ src }) => <img alt="" src={String(src)} />,
+            },
+            onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id),
+          },
+        )}
+      </>,
+    );
+    expect(diagnostics).toEqual([]);
+    expect(html.match(/src="%C3%A9\.png"/gu)).toHaveLength(2);
+  });
+
   it("renders canonical local and allowed external HTTPS asset references", () => {
     const html = renderToStaticMarkup(
       <>

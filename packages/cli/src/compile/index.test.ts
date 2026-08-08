@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { link, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
@@ -138,13 +138,58 @@ describe("compile command", () => {
             validate: true,
             links: "error",
           }),
-        ).rejects.toThrow(/link or non-directory collision/u);
+        ).rejects.toThrow(/link or (?:non-directory|special-node) collision/u);
         expect(await readdir(outside)).toEqual([]);
       } finally {
         await rm(outside, { recursive: true, force: true });
       }
     },
   );
+
+  test("rejects a hard-linked resource destination without changing the outside file", async () => {
+    await rm(join(dir, "wiki.yaml"));
+    await writeFile(join(dir, "collection.yaml"), "id: docs\ntitle: Docs\n");
+    const outDir = join(dir, "compiled");
+    const outside = join(dir, "outside-resource.json");
+    await writeFile(outside, "outside bytes");
+    await mkdir(join(outDir, "Guide"), { recursive: true });
+    await link(outside, join(outDir, "Guide", "docs-intro.json"));
+
+    await expect(
+      (compile as CompileCommand).handler?.({
+        dir,
+        outDir,
+        format: "json",
+        dryRun: false,
+        clean: false,
+        validate: true,
+        links: "error",
+      }),
+    ).rejects.toThrow(/hard link/u);
+    expect(await readFile(outside, "utf8")).toBe("outside bytes");
+  });
+
+  test("rejects a symlinked output ancestor without creating files outside", async () => {
+    const outside = await mkdtemp(join(tmpdir(), "topik-cli-compile-ancestor-"));
+    const lexicalParent = join(dir, "output-link");
+    await symlink(outside, lexicalParent, "dir");
+    try {
+      await expect(
+        (compile as CompileCommand).handler?.({
+          dir,
+          outDir: join(lexicalParent, "compiled"),
+          format: "json",
+          dryRun: false,
+          clean: false,
+          validate: true,
+          links: "error",
+        }),
+      ).rejects.toThrow(/link or non-directory collision/u);
+      expect(await readdir(outside)).toEqual([]);
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
 
   test("replaces each portable output tree with the exact current inventory", async () => {
     await rm(join(dir, "wiki.yaml"));

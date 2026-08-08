@@ -6,6 +6,7 @@ import { afterEach, describe, expect, test } from "vite-plus/test";
 import type { AssetManifestV1 } from "@topik/schema";
 import {
   readPortableAssetFile,
+  sniffPortableMediaType,
   validatePortableAssetFile,
   validatePortableAssetSnapshot,
   type PortableAssetFileDescriptor,
@@ -175,6 +176,37 @@ describe("portable manifest/resource/occurrence/file validation", () => {
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.occurrences[0].reference).toBe(exact);
   });
+
+  test.each([
+    ["comment-prefixed HTML", "<!-- generated -->\n<!doctype html><title>x</title>", "text/html"],
+    ["HTML document", "<html><body>x</body></html>", "text/html"],
+    ["HTML fragment", "<div>fragment</div>", "text/html"],
+    ["script fragment", "<script>alert(1)</script>", "text/html"],
+    ["active body fragment", '<body onload="alert(1)">x</body>', "text/html"],
+    ["SVG", '<svg xmlns="http://www.w3.org/2000/svg"><script /></svg>', "image/svg+xml"],
+    ["Unix executable", new Uint8Array([0x7f, 0x45, 0x4c, 0x46, 1]), "application/x-executable"],
+    ["Windows executable", new Uint8Array([0x4d, 0x5a, 0, 0]), "application/x-executable"],
+    ["script executable", "#!/bin/sh\necho unsafe\n", "application/x-executable"],
+  ])("requires an explicit download policy for recognizable %s", (_name, source, mediaType) => {
+    const bytes = typeof source === "string" ? new TextEncoder().encode(source) : source;
+    expect(sniffPortableMediaType(bytes)).toBe(mediaType);
+    const active = manifest(bytes, { path: "files/active.bin", mediaType });
+    const input = {
+      manifest: active,
+      resource: active.resource,
+      contents: [{ path: "content.md", source: "[Download](files/active.bin)" }],
+      files: [file(bytes, { path: "files/active.bin" })],
+    };
+    expect(validatePortableAssetSnapshot(input)).toMatchObject({
+      ok: false,
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_ASSET_ACTIVE_CONTENT_UNSUPPORTED" }),
+      ]),
+    });
+    expect(validatePortableAssetSnapshot({ ...input, allowActiveDownloads: true })).toMatchObject({
+      ok: true,
+    });
+  });
 });
 
 describe("portable file security", () => {
@@ -290,6 +322,50 @@ describe("filesystem no-follow reader", () => {
     expect(await readPortableAssetFile({ root, path: "assets/hero.png" })).toMatchObject({
       ok: true,
     });
+  });
+
+  test("matches Git attribute anchors relative to the declaring directory", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topik-portable-attribute-anchors-"));
+    roots.push(root);
+    await mkdir(join(root, "assets", "deeper"), { recursive: true });
+    await writeFile(
+      join(root, ".gitattributes"),
+      [
+        "/root-only.png filter=lfs",
+        "basename.png filter=custom",
+        "assets/slashed.png working-tree-encoding=UTF-16",
+      ].join("\n"),
+    );
+    await writeFile(join(root, "assets", ".gitattributes"), "/nested-only.png filter=lfs\n");
+    for (const path of [
+      "root-only.png",
+      "assets/root-only.png",
+      "assets/basename.png",
+      "assets/slashed.png",
+      "assets/nested-only.png",
+      "assets/deeper/nested-only.png",
+    ]) {
+      await writeFile(join(root, path), PNG_BYTES);
+    }
+
+    expect(await readPortableAssetFile({ root, path: "root-only.png" })).toMatchObject({
+      ok: false,
+    });
+    expect(await readPortableAssetFile({ root, path: "assets/root-only.png" })).toMatchObject({
+      ok: true,
+    });
+    expect(await readPortableAssetFile({ root, path: "assets/basename.png" })).toMatchObject({
+      ok: false,
+    });
+    expect(await readPortableAssetFile({ root, path: "assets/slashed.png" })).toMatchObject({
+      ok: false,
+    });
+    expect(await readPortableAssetFile({ root, path: "assets/nested-only.png" })).toMatchObject({
+      ok: false,
+    });
+    expect(
+      await readPortableAssetFile({ root, path: "assets/deeper/nested-only.png" }),
+    ).toMatchObject({ ok: true });
   });
 
   test("stays anchored when an opened directory is swapped to a symlink", async () => {

@@ -29,6 +29,10 @@ occurrence resolves exactly one entry, every entry is referenced, and its regula
 non-executable file matches the recorded SHA-256, byte size, and media type verified from bytes.
 Symlinks, hard links, submodules, executables, special files, Git LFS pointers/filters,
 `working-tree-encoding`, and security-sensitive Git control files are rejected.
+Recognizable HTML, script, SVG, WebAssembly, and executable content cannot fall through as an opaque
+download. Snapshot callers must explicitly opt active content into a proven download occurrence with
+`allowActiveDownloads`; any server that supports that policy must force attachment disposition and
+disable content sniffing.
 Git-tree descriptors use mode `100644`; archive descriptors use `0644`. The filesystem helper
 succeeds only on Linux when it can traverse from open directory descriptors through `/proc/self/fd`
 with no-follow flags and stable before/after identity. Other platforms receive a visible unsupported
@@ -79,9 +83,11 @@ blocks portable emission.
 The CLI continues to write ordinary resource files under `Type/name.<format>` and writes each exact
 portable root under `portable/Type/name/`. This layout allows several logical resources to coexist
 without competing for one physical sidecar. Portable output is staged and replaces the previous tree
-as a complete inventory, pruning stale files and rejecting destination symlinks. The development
-server exposes proven inventory bytes at `/portable/Type/name/<owned-path>` and never serves an
-unchecked source path.
+as a complete inventory, pruning stale files. On Linux, output traversal and writes stay anchored to
+open directory descriptors; symlinked ancestors, destination symlinks, hard links, and special nodes
+are rejected. Other platforms fail visibly when that proof is unavailable. The development server
+exposes proven inventory bytes at `/portable/Type/name/<owned-path>`, sends `nosniff`, forces opaque
+and active download types to `attachment`, and never serves an unchecked source path.
 
 ## Release status
 

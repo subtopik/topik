@@ -91,6 +91,63 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
     });
   });
 
+  test("retains exact destinations behind balanced nested image and link labels", () => {
+    const source = [
+      "![Inline [raw]](é.png)",
+      "![Reference [entity]][image-id]",
+      "[Inline [escaped]](manual\\.bin)",
+      "[Reference [raw]][download-id]",
+      "",
+      "[image-id]: &eacute;.png",
+      "[download-id]: é.bin",
+      "[unused]: &eacute;.png",
+    ].join("\n");
+
+    expect(
+      extractTopikAssetOccurrences(source, { includeGenericLinkCandidates: true }).map(
+        ({ kind, reference, slot }) => ({ kind, reference, slot }),
+      ),
+    ).toEqual([
+      { kind: "unsafe", reference: "é.png", slot: "image.src" },
+      { kind: "unsafe", reference: "&eacute;.png", slot: "image.src" },
+      { kind: "unsafe", reference: "manual\\.bin", slot: "link.href" },
+      { kind: "unsafe", reference: "é.bin", slot: "link.href" },
+    ]);
+  });
+
+  test("keeps canonical destinations behind balanced nested labels", () => {
+    const source = [
+      "![Inline [canonical]](%C3%A9.png)",
+      "![Reference [canonical]][image-id]",
+      "[Download [canonical]](manual.bin)",
+      "[Reference download [canonical]][download-id]",
+      "",
+      "[image-id]: %C3%A9.png",
+      "[download-id]: manual.bin",
+    ].join("\n");
+    expect(
+      extractTopikAssetOccurrences(source, { includeGenericLinkCandidates: true }).map(
+        ({ kind, reference }) => ({ kind, reference }),
+      ),
+    ).toEqual([
+      { kind: "local", reference: "%C3%A9.png" },
+      { kind: "local", reference: "%C3%A9.png" },
+      { kind: "local", reference: "manual.bin" },
+      { kind: "local", reference: "manual.bin" },
+    ]);
+  });
+
+  test("retains an exact image destination nested inside a link label", () => {
+    expect(
+      extractTopikAssetOccurrences("[![Nested image](é.png)](manual.bin)", {
+        includeGenericLinkCandidates: true,
+      }),
+    ).toMatchObject([
+      { slot: "link.href", reference: "manual.bin", kind: "local" },
+      { slot: "image.src", reference: "é.png", kind: "unsafe" },
+    ]);
+  });
+
   test("retains exact destinations for full, collapsed, shortcut, and repeated image references", () => {
     const source = [
       "![Canonical][canonical]",

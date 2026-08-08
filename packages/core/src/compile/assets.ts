@@ -404,7 +404,25 @@ async function provePlainDownload(
   assetFiles: Map<string, PortableAssetFileDescriptor & { bytes: Uint8Array }>,
 ): Promise<{ path: string; reference: string } | undefined> {
   const syntax = validateTopikAssetReference(occurrence.reference);
-  if (!syntax.valid || syntax.kind !== "local") return undefined;
+  if (!syntax.valid) {
+    const parsedSyntax = validateTopikAssetReference(occurrence.parsedReference);
+    if (!parsedSyntax.valid || parsedSyntax.kind !== "local") return undefined;
+    const parsedPath = decodeTopikAssetReference(occurrence.parsedReference);
+    if (!parsedPath.ok || input.resourceSourcePaths.has(parsedPath.value)) return undefined;
+    const proven = await readPortableAssetFile({ root: input.rootDir, path: parsedPath.value });
+    if (!proven.ok) {
+      if (proven.diagnostics.every((diagnostic) => diagnostic.id === "TOPIK_ASSET_FILE_MISSING")) {
+        return undefined;
+      }
+      throw new PortableAssetCompilationError(
+        "Generic link target could not be proven as a portable download",
+        proven.diagnostics,
+      );
+    }
+    resolveCanonicalLocalReference(occurrence);
+    throw new PortableAssetCompilationError("Invalid generic download reference was accepted");
+  }
+  if (syntax.kind !== "local") return undefined;
   const decoded = decodeTopikAssetReference(occurrence.reference);
   if (!decoded.ok || input.resourceSourcePaths.has(decoded.value)) return undefined;
   const read = await readPortableAssetFile({ root: input.rootDir, path: decoded.value });

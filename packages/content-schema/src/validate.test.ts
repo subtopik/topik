@@ -208,6 +208,31 @@ graph TD;
     });
   });
 
+  test.each([
+    "![Nested [raw]](é.png)\n",
+    "![Nested [entity]](&eacute;.png)\n",
+    "![Nested [escaped]](hero\\.png)\n",
+    "![Nested [reference]][id]\n\n[id]: é.png\n",
+    "![Nested [reference]][id]\n\n[id]: &eacute;.png\n",
+    "![Nested [reference]][id]\n\n[id]: hero\\.png\n",
+    "[![Nested image](é.png)](manual.bin)\n",
+  ])("rejects exact noncanonical destinations behind nested labels in %s", (source) => {
+    expect(validateTopikContent(source)).toMatchObject({
+      valid: false,
+      errors: expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_ASSET_PATH_INVALID", type: "image.src" }),
+      ]),
+    });
+  });
+
+  test("accepts canonical encoded destinations behind nested labels", () => {
+    expect(
+      validateTopikContent(
+        "![Inline [canonical]](%C3%A9.png)\n\n![Reference [canonical]][id]\n\n[id]: %C3%A9.png\n",
+      ),
+    ).toMatchObject({ valid: true, errors: [] });
+  });
+
   test("validates exact continuation-line definition destinations independently from titles", () => {
     for (const source of [
       "![Hero][id]\n\n[id]:\n  é.png\n",

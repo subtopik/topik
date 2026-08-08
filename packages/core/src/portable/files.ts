@@ -386,9 +386,10 @@ function gitAttributePatternMatches(pattern: string, relativePath: string): bool
   if (pattern.length === 0 || pattern.startsWith("!") || pattern.endsWith("/")) return false;
   const anchored = pattern.startsWith("/");
   const normalizedPattern = anchored ? pattern.slice(1) : pattern;
-  const candidate = normalizedPattern.includes("/")
-    ? relativePath
-    : (relativePath.split("/").at(-1) ?? relativePath);
+  const candidate =
+    anchored || normalizedPattern.includes("/")
+      ? relativePath
+      : (relativePath.split("/").at(-1) ?? relativePath);
   return globToRegExp(normalizedPattern).test(candidate);
 }
 

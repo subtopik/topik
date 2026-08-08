@@ -377,6 +377,20 @@ function resolveCanonicalLocalReference(
   occurrence: TopikAssetOccurrence,
 ): { path: string; reference: string } | undefined {
   const syntax = validateTopikAssetReference(occurrence.reference);
+  if (occurrence.reference !== occurrence.parsedReference && syntax.valid) {
+    throw new PortableAssetCompilationError(
+      "Content contains a parser-normalized asset reference",
+      [
+        topikAssetDiagnostic(
+          syntax.kind === "external-https"
+            ? "TOPIK_EXTERNAL_REFERENCE_UNSAFE"
+            : "TOPIK_ASSET_PATH_INVALID",
+          "Asset reference source spelling is not canonical",
+          { location: { contentPosition: occurrence.position } },
+        ),
+      ],
+    );
+  }
   if (syntax.valid && syntax.kind === "external-https") return undefined;
   if (!syntax.valid) {
     const validation =

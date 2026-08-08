@@ -420,6 +420,27 @@ describe("content-react core", () => {
     expect(html.match(/src="%C3%A9\.png"/gu)).toHaveLength(2);
   });
 
+  it("does not render a multiline external entity by borrowing an escaped construct", () => {
+    const diagnostics: string[] = [];
+    const source =
+      "![Multiline](\n  https://example.com/a&amp;b\n) \\![fake](https://example.com/a&b)";
+    const html = renderToStaticMarkup(
+      <>
+        {renderTopikMarkdown(source, {
+          components: {
+            TopikImage: ({ src }) =>
+              typeof src === "string" ? <img alt="" data-unsafe src={src} /> : null,
+          },
+          onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id),
+        })}
+      </>,
+    );
+    expect(diagnostics).toContain("TOPIK_EXTERNAL_REFERENCE_UNSAFE");
+    expect(html).not.toContain("data-unsafe");
+    expect(html).not.toMatch(/\bsrc=/u);
+    expect(html).not.toContain('rel="preload"');
+  });
+
   it("renders canonical local and allowed external HTTPS asset references", () => {
     const html = renderToStaticMarkup(
       <>

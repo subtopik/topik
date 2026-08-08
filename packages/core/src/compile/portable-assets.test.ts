@@ -24,6 +24,7 @@ const PNG_BYTES = Buffer.from(
   "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000000500010d0a2db40000000049454e44ae426082",
   "hex",
 );
+const MARKUP_INSPECTION_LIMIT = 64 * 1024;
 
 function entropy() {
   let counter = 0;
@@ -215,6 +216,39 @@ describe("direct portable artifact compilation", () => {
       ]),
     });
   });
+
+  test.each([
+    ["HTML", "<html", "<html><body>x</body></html>"],
+    ["SVG", "<svg", '<svg xmlns="http://www.w3.org/2000/svg" />'],
+    ["XML", "<?xml", '<?xml version="1.0"?><html><body>x</body></html>'],
+    ["comment", "<!--", "<!-- generated --><html><body>x</body></html>"],
+    ["HTML doctype", "<!doctype html", "<!DOCTYPE html><html><body>x</body></html>"],
+    ["SVG doctype", "<!doctype svg", "<!DOCTYPE svg><svg />"],
+  ])(
+    "rejects %s whose active opener crosses the inspection boundary",
+    async (_name, prefix, payload) => {
+      const visiblePrefixBytes = Math.floor(prefix.length / 2);
+      await writeFile(
+        join(dir, "boundary-active.bin"),
+        `${" ".repeat(MARKUP_INSPECTION_LIMIT - visiblePrefixBytes)}${payload}`,
+      );
+      await expect(
+        compilePortableResourceArtifacts({
+          rootDir: dir,
+          resources: [guideResource("boundary-active", "[Download](boundary-active.bin)\n")],
+          sourcePathsByResource: { "Guide/boundary-active": "guide.md" },
+          randomBytes: entropy(),
+        }),
+      ).rejects.toMatchObject({
+        diagnostics: expect.arrayContaining([
+          expect.objectContaining({
+            id: "TOPIK_ASSET_ACTIVE_CONTENT_UNSUPPORTED",
+            severity: "error",
+          }),
+        ]),
+      });
+    },
+  );
 
   test("compiles a mixed resource set and assigns artifacts only to content-bearing resources", async () => {
     await mkdir(join(dir, "pages"));
@@ -714,6 +748,23 @@ describe("direct portable artifact compilation", () => {
       { path: "é.png" },
     ]);
     expect(result.artifacts[0].snapshot.occurrences).toHaveLength(4);
+  });
+
+  test("rejects a multiline external entity without borrowing a later escaped construct", async () => {
+    const content =
+      "![Multiline](\n  https://example.com/a&amp;b\n) \\![fake](https://example.com/a&b)";
+    await expect(
+      compilePortableResourceArtifacts({
+        rootDir: dir,
+        resources: [guideResource("multiline-external", content)],
+        sourcePathsByResource: { "Guide/multiline-external": "guide.md" },
+        randomBytes: entropy(),
+      }),
+    ).rejects.toMatchObject({
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_EXTERNAL_REFERENCE_UNSAFE", severity: "error" }),
+      ]),
+    });
   });
 
   test.each([

@@ -138,11 +138,45 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
     ]);
   });
 
-  test("fails closed when exact Markdown source pairing is unavailable", () => {
+  test("retains exact multiline Markdown destinations", () => {
     expect(extractTopikAssetOccurrences("![Multiline](\n  é.png\n)\n")).toMatchObject([
-      { reference: "", parsedReference: "%C3%A9.png", kind: "unsafe" },
+      { reference: "é.png", parsedReference: "%C3%A9.png", kind: "unsafe" },
     ]);
   });
+
+  test("pairs a multiline destination only with its own parser node", () => {
+    const source =
+      "![Multiline](\n  https://example.com/a&amp;b\n) \\![fake](https://example.com/a&b)";
+    expect(extractTopikAssetOccurrences(source)).toMatchObject([
+      {
+        reference: "https://example.com/a&amp;b",
+        parsedReference: "https://example.com/a&b",
+        kind: "unsafe",
+      },
+    ]);
+  });
+
+  test("ignores a parser-ineligible construct instead of associating it with a parser node", () => {
+    const unsupported = `${"(".repeat(33)}x${")".repeat(33)}`;
+    expect(
+      extractTopikAssetOccurrences(`![not-parsed](${unsupported}) ![real](%C3%A9.png)`),
+    ).toMatchObject([{ reference: "%C3%A9.png", parsedReference: "%C3%A9.png", kind: "local" }]);
+  });
+
+  test.each(["before", "after"])(
+    "fails closed when an unavailable equivalent construct appears %s a parser node",
+    (placement) => {
+      const unavailable = "![unavailable][id]";
+      const parsed = "![real](%C3%A9.png)";
+      const paragraph =
+        placement === "before" ? `${unavailable} ${parsed}` : `${parsed} ${unavailable}`;
+      const source = `${paragraph}\n\n> [id]: %C3%A9.png`;
+      expect(extractTopikAssetOccurrences(source)).toMatchObject([
+        { reference: "", parsedReference: "%C3%A9.png", kind: "unsafe" },
+        { reference: "", parsedReference: "%C3%A9.png", kind: "unsafe" },
+      ]);
+    },
+  );
 
   test("keeps canonical destinations behind balanced nested labels", () => {
     const source = [

@@ -347,7 +347,9 @@ function sniffPortableMarkupType(bytes: Uint8Array): string | undefined {
   ) {
     return "text/html";
   }
-  if (consumedPreamble && markup.startsWith("<")) return UNRESOLVED_ACTIVE_CONTENT_TYPE;
+  if (markup.startsWith("<") && (consumedPreamble || bytes.byteLength > inspected.byteLength)) {
+    return UNRESOLVED_ACTIVE_CONTENT_TYPE;
+  }
   return undefined;
 }
 

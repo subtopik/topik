@@ -257,6 +257,17 @@ graph TD;
     ).toMatchObject({ valid: true, errors: [] });
   });
 
+  test("rejects a multiline external entity without borrowing a later escaped construct", () => {
+    const source =
+      "![Multiline](\n  https://example.com/a&amp;b\n) \\![fake](https://example.com/a&b)";
+    expect(validateTopikContent(source)).toMatchObject({
+      valid: false,
+      errors: expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_EXTERNAL_REFERENCE_UNSAFE", type: "image.src" }),
+      ]),
+    });
+  });
+
   test("validates exact continuation-line definition destinations independently from titles", () => {
     for (const source of [
       "![Hero][id]\n\n[id]:\n  é.png\n",

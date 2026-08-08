@@ -27,19 +27,18 @@ export function validateTopikContent(
     ...markdocErrors.map(toTopikContentDiagnostic),
     ...extractTopikAssetOccurrences(source).flatMap((occurrence): TopikContentDiagnostic[] => {
       const validation = validateTopikAssetReference(occurrence.reference);
-      if (validation.valid) return [];
+      if (validation.valid && occurrence.kind !== "unsafe") return [];
+      const external = validation.valid
+        ? validation.kind === "external-https"
+        : validation.failureKind === "external";
       return [
         {
-          id:
-            validation.failureKind === "external"
-              ? "TOPIK_EXTERNAL_REFERENCE_UNSAFE"
-              : "TOPIK_ASSET_PATH_INVALID",
+          id: external ? "TOPIK_EXTERNAL_REFERENCE_UNSAFE" : "TOPIK_ASSET_PATH_INVALID",
           type: occurrence.slot,
           level: "error",
-          message:
-            validation.failureKind === "external"
-              ? "Asset reference requires credential-free HTTPS"
-              : "Local asset reference is not canonical topik-asset-reference-v1",
+          message: external
+            ? "Asset reference requires credential-free HTTPS"
+            : "Local asset reference is not canonical topik-asset-reference-v1",
           lines: [],
           ...(options.file === undefined ? {} : { file: options.file }),
         },

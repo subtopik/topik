@@ -18,6 +18,15 @@ const PNG_BYTES = Buffer.from(
   "hex",
 );
 const KEY = "ast_00000000000000000000000000";
+const MARKUP_INSPECTION_LIMIT = 64 * 1024;
+const BOUNDARY_ACTIVE_MARKUP = [
+  ["HTML", "<html", "<html><body>x</body></html>"],
+  ["SVG", "<svg", '<svg xmlns="http://www.w3.org/2000/svg" />'],
+  ["XML", "<?xml", '<?xml version="1.0"?><html><body>x</body></html>'],
+  ["comment", "<!--", "<!-- generated --><html><body>x</body></html>"],
+  ["HTML doctype", "<!doctype html", "<!DOCTYPE html><html><body>x</body></html>"],
+  ["SVG doctype", "<!doctype svg", "<!DOCTYPE svg><svg />"],
+] as const;
 
 function digest(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
@@ -249,6 +258,40 @@ describe("portable manifest/resource/occurrence/file validation", () => {
   ])("keeps genuine opaque %s as an attachment-safe media type", (_name, source) => {
     const bytes = typeof source === "string" ? new TextEncoder().encode(source) : source;
     expect(sniffPortableMediaType(bytes)).toBe("application/octet-stream");
+  });
+
+  test("fails closed for active markup split anywhere across the inspection boundary", () => {
+    for (const [name, prefix, payload] of BOUNDARY_ACTIVE_MARKUP) {
+      for (let visiblePrefixBytes = 0; visiblePrefixBytes <= prefix.length; visiblePrefixBytes++) {
+        const source = `${" ".repeat(MARKUP_INSPECTION_LIMIT - visiblePrefixBytes)}${payload}`;
+        const detected = sniffPortableMediaType(new TextEncoder().encode(source));
+        expect(`${name}:${visiblePrefixBytes}:${detected}`).not.toContain(
+          ":application/octet-stream",
+        );
+      }
+
+      const visiblePrefixBytes = Math.floor(prefix.length / 2);
+      const bytes = new TextEncoder().encode(
+        `${" ".repeat(MARKUP_INSPECTION_LIMIT - visiblePrefixBytes)}${payload}`,
+      );
+      const mediaType = sniffPortableMediaType(bytes);
+      const active = manifest(bytes, { path: "files/active.bin", mediaType });
+      const result = validatePortableAssetSnapshot({
+        manifest: active,
+        resource: active.resource,
+        contents: [{ path: "content.md", source: "[Download](files/active.bin)" }],
+        files: [file(bytes, { path: "files/active.bin" })],
+      });
+      expect({ name, result }).toMatchObject({
+        name,
+        result: {
+          ok: false,
+          diagnostics: expect.arrayContaining([
+            expect.objectContaining({ id: "TOPIK_ASSET_ACTIVE_CONTENT_UNSUPPORTED" }),
+          ]),
+        },
+      });
+    }
   });
 });
 

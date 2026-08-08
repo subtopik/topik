@@ -118,7 +118,7 @@ export function extractTopikAssetOccurrences(
         role: definition.role,
         parsedReference,
         reference,
-        kind: classifyReference(reference),
+        kind: classifyExactReference(reference, parsedReference),
         semantics: occurrenceSemantics(node, definition),
       });
     }
@@ -163,7 +163,7 @@ export function rewriteTopikAssetOccurrences(
         role: definition.role,
         parsedReference,
         reference,
-        kind: classifyReference(reference),
+        kind: classifyExactReference(reference, parsedReference),
         semantics: occurrenceSemantics(node, definition),
       };
       const replacement = replace(occurrence);
@@ -230,6 +230,13 @@ function plainText(node: TopikContentNode): string {
 
 function classifyReference(reference: string): TopikAssetOccurrenceKind {
   return validateTopikAssetReference(reference).kind;
+}
+
+function classifyExactReference(
+  reference: string,
+  parsedReference: string,
+): TopikAssetOccurrenceKind {
+  return reference === parsedReference ? classifyReference(reference) : "unsafe";
 }
 
 function manifestUnambiguouslyContains(reference: string, paths: ReadonlySet<string>): boolean {
@@ -316,7 +323,7 @@ export function removeInvalidTopikAssetReferences(root: TopikContentNode, source
       ? undefined
       : new Set(
           extractTopikAssetOccurrences(source)
-            .filter((occurrence) => !validateTopikAssetReference(occurrence.reference).valid)
+            .filter((occurrence) => occurrence.kind === "unsafe")
             .map((occurrence) => occurrence.position),
         );
   walk(root, [], (node, treePath) => {
@@ -394,7 +401,23 @@ function containsNonAscii(value: string): boolean {
 
 interface MarkdownDestination {
   kind: "image" | "link";
+  label: string;
   reference: string;
+  source: string;
+}
+
+interface ParsedMarkdownDestination {
+  kind: "image" | "link";
+  labelProof: string;
+  parsedReference: string;
+}
+
+interface MarkdownInlineToken {
+  type?: string;
+  attrs?: Array<[string, string]> | null;
+  content?: string;
+  markup?: string;
+  nesting?: number;
 }
 
 function exactMarkdownReferences(source: string): {
@@ -407,33 +430,150 @@ function exactMarkdownReferences(source: string): {
   const tokens = new Markdoc.Tokenizer().tokenize(source) as Array<{
     type?: string;
     content?: string;
-    children?: Array<{ type?: string; attrs?: Array<[string, string]> | null }> | null;
+    children?: MarkdownInlineToken[] | null;
   }>;
   for (const token of tokens) {
     if (token.type !== "inline" || token.children == null) continue;
     const scanned = scanMarkdownDestinations(token.content ?? "", definitions);
-    let scanIndex = 0;
-    for (const child of token.children) {
-      const kind =
-        child.type === "image" ? "image" : child.type === "link_open" ? "link" : undefined;
-      if (kind === undefined) continue;
-      const attribute = kind === "image" ? "src" : "href";
-      const parsed = child.attrs?.find(([name]) => name === attribute)?.[1];
-      if (parsed === undefined) continue;
-      let exact: string | undefined;
-      for (let index = scanIndex; index < scanned.length; index++) {
-        const candidate = scanned[index];
-        if (candidate.kind !== kind || !sameMarkdownDestination(candidate.reference, parsed)) {
-          continue;
-        }
-        exact = candidate.reference;
-        scanIndex = index + 1;
-        break;
-      }
-      (kind === "image" ? images : links).push(exact);
-    }
+    const parsed = parsedMarkdownDestinations(token.children);
+    images.push(...pairMarkdownDestinations("image", parsed, scanned, definitions));
+    links.push(...pairMarkdownDestinations("link", parsed, scanned, definitions));
   }
   return { images, links };
+}
+
+function parsedMarkdownDestinations(
+  children: readonly MarkdownInlineToken[],
+): ParsedMarkdownDestination[] {
+  const destinations: ParsedMarkdownDestination[] = [];
+  for (let index = 0; index < children.length; index++) {
+    const child = children[index];
+    if (child.type === "image") {
+      const parsedReference = child.attrs?.find(([name]) => name === "src")?.[1];
+      if (parsedReference !== undefined) {
+        destinations.push({
+          kind: "image",
+          labelProof: child.content ?? "",
+          parsedReference,
+        });
+      }
+      continue;
+    }
+    if (child.type !== "link_open") continue;
+    const parsedReference = child.attrs?.find(([name]) => name === "href")?.[1];
+    if (parsedReference === undefined) continue;
+    const closing = findMatchingLinkClose(children, index + 1);
+    if (closing === -1) {
+      destinations.push({ kind: "link", labelProof: "", parsedReference });
+      continue;
+    }
+    destinations.push({
+      kind: "link",
+      labelProof: markdownInlineTokenSignature(children.slice(index + 1, closing)),
+      parsedReference,
+    });
+  }
+  return destinations;
+}
+
+function findMatchingLinkClose(children: readonly MarkdownInlineToken[], start: number): number {
+  let depth = 1;
+  for (let index = start; index < children.length; index++) {
+    if (children[index].type === "link_open") depth++;
+    if (children[index].type === "link_close" && --depth === 0) return index;
+  }
+  return -1;
+}
+
+function pairMarkdownDestinations(
+  kind: MarkdownDestination["kind"],
+  parsed: readonly ParsedMarkdownDestination[],
+  scanned: readonly MarkdownDestination[],
+  definitions: ReadonlyMap<string, string>,
+): Array<string | undefined> {
+  const parsedKind = parsed.filter((destination) => destination.kind === kind);
+  const scannedKind = scanned.filter(
+    (destination) =>
+      destination.kind === kind && markdownDestinationParsesInOwnSpan(destination, definitions),
+  );
+  if (parsedKind.length !== scannedKind.length) return parsedKind.map(() => undefined);
+  const pairs = parsedKind.map((destination, index) => {
+    const candidate = scannedKind[index];
+    const labelProof =
+      kind === "image"
+        ? candidate.label
+        : markdownLabelTokenSignature(candidate.label, definitions);
+    return sameMarkdownDestination(candidate.reference, destination.parsedReference) &&
+      labelProof === destination.labelProof
+      ? candidate.reference
+      : undefined;
+  });
+  return pairs.some((reference) => reference === undefined)
+    ? parsedKind.map(() => undefined)
+    : pairs;
+}
+
+function markdownDestinationParsesInOwnSpan(
+  destination: MarkdownDestination,
+  definitions: ReadonlyMap<string, string>,
+): boolean {
+  const definitionSource = markdownReferenceDefinitionSource(definitions);
+  const source =
+    definitionSource.length === 0
+      ? destination.source
+      : `${destination.source}\n\n${definitionSource}`;
+  const tokens = new Markdoc.Tokenizer().tokenize(source) as Array<{
+    type?: string;
+    children?: MarkdownInlineToken[] | null;
+  }>;
+  const parsed = tokens.flatMap((token) =>
+    token.type === "inline" && token.children != null
+      ? parsedMarkdownDestinations(token.children)
+      : [],
+  );
+  const ownKind = parsed.filter((candidate) => candidate.kind === destination.kind);
+  if (ownKind.length !== 1) return false;
+  const labelProof =
+    destination.kind === "image"
+      ? destination.label
+      : markdownLabelTokenSignature(destination.label, definitions);
+  return (
+    ownKind[0].labelProof === labelProof &&
+    sameMarkdownDestination(destination.reference, ownKind[0].parsedReference)
+  );
+}
+
+function markdownLabelTokenSignature(
+  label: string,
+  definitions: ReadonlyMap<string, string>,
+): string {
+  const definitionSource = markdownReferenceDefinitionSource(definitions);
+  const source = definitionSource.length === 0 ? label : `${label}\n\n${definitionSource}`;
+  const inline = (
+    new Markdoc.Tokenizer().tokenize(source) as Array<{
+      type?: string;
+      children?: MarkdownInlineToken[] | null;
+    }>
+  ).find((token) => token.type === "inline");
+  return markdownInlineTokenSignature(inline?.children ?? []);
+}
+
+function markdownReferenceDefinitionSource(definitions: ReadonlyMap<string, string>): string {
+  return [...definitions]
+    .map(([definition, reference]) => `[${definition}]: ${reference}`)
+    .join("\n");
+}
+
+function markdownInlineTokenSignature(tokens: readonly MarkdownInlineToken[]): string {
+  return JSON.stringify(
+    tokens.map((token) => ({
+      attrs: token.attrs ?? null,
+      content: token.content ?? "",
+      markup: token.markup ?? "",
+      nesting: token.nesting ?? 0,
+      type: token.type ?? "",
+    })),
+  );
 }
 
 function scanMarkdownDestinations(
@@ -448,7 +588,10 @@ function scanMarkdownDestinations(
       if (closing !== -1) index = closing + width - 1;
       continue;
     }
-    const image = source[index] === "!" && source[index + 1] === "[";
+    const image = source[index] === "!" && source[index + 1] === "[" && !isEscaped(source, index);
+    if (source[index] === "[" && source[index - 1] === "!" && isEscaped(source, index - 1)) {
+      continue;
+    }
     if (!image && source[index] !== "[") continue;
     const opening = image ? index + 1 : index;
     if (isEscaped(source, opening)) continue;
@@ -473,7 +616,7 @@ function scanMarkdownDestinations(
       reference = definitions.get(normalizeMarkdownReference(label));
     }
     if (reference !== undefined && reference.length > 0) {
-      destinations.push({ kind, reference });
+      destinations.push({ kind, label, reference, source: source.slice(index, end + 1) });
       if (kind === "link") {
         destinations.push(
           ...scanMarkdownDestinations(label, definitions).filter(
@@ -492,7 +635,7 @@ function scanInlineMarkdownDestination(
   start: number,
 ): { reference: string; end: number } | undefined {
   let cursor = start;
-  while (source[cursor] === " " || source[cursor] === "\t") cursor++;
+  while (/[\t\n\r ]/u.test(source[cursor] ?? "")) cursor++;
   let reference: string;
   if (source[cursor] === "<") {
     const destinationEnd = findUnescaped(source, ">", cursor + 1);

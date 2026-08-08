@@ -7,6 +7,7 @@ import type {
 } from "@topik/schema";
 import { TOPIK_ASSET_REFERENCE_VERSION } from "./constants";
 import {
+  relocateTopikAssetDiagnostic,
   topikAssetDiagnostic,
   type TopikAssetDiagnostic,
   type TopikAssetResult,
@@ -331,14 +332,13 @@ function atOccurrence(
   contentPath: string,
   occurrence: TopikAssetOccurrence,
 ): TopikAssetDiagnostic[] {
-  return diagnostics.map((diagnostic) => ({
-    ...diagnostic,
-    location: {
+  return diagnostics.map((diagnostic) =>
+    relocateTopikAssetDiagnostic(diagnostic, {
       ...diagnostic.location,
       path: contentPath,
       contentPosition: occurrence.position,
-    },
-  }));
+    }),
+  );
 }
 
 function ascii(bytes: Uint8Array, start: number, length: number): string {

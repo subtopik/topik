@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { posix } from "node:path";
+import Ajv2020, { type ValidateFunction } from "ajv/dist/2020.js";
 import {
   extractTopikAssetOccurrences,
   rewriteTopikAssetOccurrences,
@@ -14,6 +15,8 @@ import type {
   WikiPage,
   WikiPageV2,
 } from "@topik/schema";
+import { assetSchema, guideSchema, wikiPageSchema } from "@topik/schema";
+import { parseDocument } from "yaml";
 import {
   ASSET_MANIFEST_API_VERSION,
   ASSET_MANIFEST_TYPE,
@@ -27,7 +30,7 @@ import {
   type TopikAssetResult,
 } from "./diagnostics";
 import { type PortableAssetFileDescriptor, validatePortableAssetFile } from "./files";
-import { serializeTopikJson } from "./json";
+import { parseStrictTopikJson, serializeTopikJson } from "./json";
 import { generateTopikAssetKey, type GenerateTopikAssetKeyOptions } from "./key";
 import { serializeAssetManifest } from "./manifest";
 import { validateTopikPath } from "./path";
@@ -36,6 +39,11 @@ import { sniffPortableMediaType, validatePortableAssetSnapshot } from "./snapsho
 
 export const TOPIK_LEGACY_ASSET_MIGRATION_VERSION =
   "topik-legacy-assets-v1-to-portable-v1" as const;
+
+const legacyAjv = new Ajv2020({ strict: true, strictRequired: false, allErrors: true });
+const validateLegacyGuide = legacyAjv.compile(guideSchema);
+const validateLegacyWikiPage = legacyAjv.compile(wikiPageSchema);
+const validateLegacyAsset = legacyAjv.compile(assetSchema);
 
 export interface LegacyAssetMigrationOriginal {
   contentPath: string;
@@ -103,19 +111,6 @@ export async function migrateLegacyAssets(
     return legacyFailure("Migration accepts only Guide/WikiPage v1 resources");
   }
 
-  let source: string;
-  try {
-    source = new TextDecoder("utf-8", { fatal: true }).decode(original.contentBytes);
-  } catch {
-    return legacyFailure("Original content bytes are not strict UTF-8");
-  }
-  if (source !== original.resource.spec.content.value) {
-    return legacyFailure("Original content bytes do not exactly match the legacy resource");
-  }
-  if (original.resourceBytes.byteLength === 0) {
-    return legacyFailure("Exact original resource bytes are required for reversible migration");
-  }
-
   const resourcePath = validateTopikPath(original.resourcePath);
   const contentPath = validateTopikPath(original.contentPath);
   if (!resourcePath.ok || !contentPath.ok) {
@@ -126,6 +121,35 @@ export async function migrateLegacyAssets(
         ...(!contentPath.ok ? contentPath.diagnostics : []),
       ],
     };
+  }
+  const resourceValidator =
+    original.resource.type === "Guide" ? validateLegacyGuide : validateLegacyWikiPage;
+  if (
+    !matchesLegacyResourceSnapshot(
+      original.resourceBytes,
+      original.resource,
+      resourceValidator,
+      original.resourcePath,
+    )
+  ) {
+    return legacyFailure("Exact original resource bytes are missing, malformed, or mismatched");
+  }
+  for (const asset of original.assets) {
+    if (!matchesLegacyResourceSnapshot(asset.bytes, asset.resource, validateLegacyAsset)) {
+      return legacyFailure(
+        "Exact legacy Asset resource bytes are missing, malformed, or mismatched",
+      );
+    }
+  }
+
+  let source: string;
+  try {
+    source = new TextDecoder("utf-8", { fatal: true }).decode(original.contentBytes);
+  } catch {
+    return legacyFailure("Original content bytes are not strict UTF-8");
+  }
+  if (source !== original.resource.spec.content.value) {
+    return legacyFailure("Original content bytes do not exactly match the legacy resource");
   }
 
   const assetsByName = new Map<string, Array<{ resource: Asset; bytes: Uint8Array }>>();
@@ -144,10 +168,16 @@ export async function migrateLegacyAssets(
   if (diagnostics.length > 0) return { ok: false, diagnostics };
 
   const manifestPaths = [...assetsByName.values()].map(([asset]) => asset.resource.spec.uri);
-  const occurrences = extractTopikAssetOccurrences(source, {
+  const downloadableLinkPositions = extractTopikAssetOccurrences(source, {
     manifestPaths,
     declareAllLinksAsDownloads: true,
-  });
+  })
+    .filter(
+      (occurrence) => occurrence.slot === "link.href" && occurrence.reference.startsWith("asset:"),
+    )
+    .map((occurrence) => occurrence.position);
+  const occurrenceOptions = { manifestPaths, downloadableLinkPositions };
+  const occurrences = extractTopikAssetOccurrences(source, occurrenceOptions);
   const assetByPosition = new Map<string, { resource: Asset; bytes: Uint8Array }>();
   for (const occurrence of occurrences) {
     if (occurrence.kind === "external-https") continue;
@@ -309,7 +339,7 @@ export async function migrateLegacyAssets(
   const content = rewriteTopikAssetOccurrences(
     source,
     (occurrence) => replacementByPosition.get(occurrence.position),
-    { manifestPaths, declareAllLinksAsDownloads: true },
+    occurrenceOptions,
   );
   const targetResource = migrateResource(original.resource, content);
   const assets: AssetManifestV1["assets"] = {};
@@ -466,13 +496,22 @@ function hasAccessibleMeaning(occurrence: TopikAssetOccurrence): boolean {
 }
 
 function legacyFailure<T>(message: string): TopikAssetResult<T> {
-  return { ok: false, diagnostics: [unresolved(message)] };
+  return {
+    ok: false,
+    diagnostics: [
+      topikAssetDiagnostic("TOPIK_LEGACY_ASSET_REFERENCE_UNRESOLVED", message, {
+        descriptorVersion: TOPIK_LEGACY_ASSET_MIGRATION_VERSION,
+        recovery: "choose-explicit-mapping",
+      }),
+    ],
+  };
 }
 
 function unresolved(value: string, position?: string): TopikAssetDiagnostic {
+  void value;
   return topikAssetDiagnostic(
     "TOPIK_LEGACY_ASSET_REFERENCE_UNRESOLVED",
-    `Legacy asset fact is unresolved: ${value}`,
+    "Legacy asset fact is unresolved",
     {
       descriptorVersion: TOPIK_LEGACY_ASSET_MIGRATION_VERSION,
       location: position === undefined ? {} : { contentPosition: position },
@@ -494,4 +533,53 @@ function ambiguous(value: string, message: string, position?: string): TopikAsse
 
 function safe(value: string): string {
   return JSON.stringify(value).slice(1, -1);
+}
+
+function matchesLegacyResourceSnapshot(
+  bytes: Uint8Array,
+  expected: unknown,
+  validate: ValidateFunction,
+  resourcePath?: string,
+): boolean {
+  if (bytes.byteLength === 0 || !validate(expected)) return false;
+  const parsed = parseLegacyResourceBytes(bytes, resourcePath);
+  if (parsed === undefined || !validate(parsed)) return false;
+  try {
+    return serializeTopikJson(parsed) === serializeTopikJson(expected);
+  } catch {
+    return false;
+  }
+}
+
+function parseLegacyResourceBytes(bytes: Uint8Array, resourcePath?: string): unknown {
+  let source: string;
+  try {
+    source = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return undefined;
+  }
+  if (source.trim().length === 0) return undefined;
+
+  const extension = resourcePath?.toLowerCase().match(/\.(json|ya?ml)$/u)?.[1];
+  if (extension === "json") return parseLegacyJson(source);
+  if (extension === "yaml" || extension === "yml") return parseLegacyYaml(source);
+  return parseLegacyJson(source) ?? parseLegacyYaml(source);
+}
+
+function parseLegacyJson(source: string): unknown {
+  try {
+    return parseStrictTopikJson(source, 32);
+  } catch {
+    return undefined;
+  }
+}
+
+function parseLegacyYaml(source: string): unknown {
+  try {
+    const document = parseDocument(source, { uniqueKeys: true });
+    if (document.errors.length > 0 || document.warnings.length > 0) return undefined;
+    return document.toJS({ maxAliasCount: 0 });
+  } catch {
+    return undefined;
+  }
 }

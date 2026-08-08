@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, test } from "vite-plus/test";
 import { extractTopikAssetOccurrences } from "@topik/content-schema";
 import type { Asset, AssetManifestV1, Guide } from "@topik/schema";
+import { stringify as stringifyYaml } from "yaml";
 import {
   TOPIK_LEGACY_ASSET_MIGRATION_VERSION,
   compareTopikAssetIdentities,
@@ -131,6 +132,116 @@ describe("explicit legacy asset migration", () => {
       randomBytes: () => new Uint8Array(16),
     });
     expect(result.ok && result.value.content).toBe("![Hero](images/hero.png)\n");
+  });
+
+  test("leaves navigation links unchanged while migrating declared asset slots", async () => {
+    const mixedSource = `![Hero](asset:${name})\n[Chapter](chapter.md)\n`;
+    const resource: Guide = {
+      ...guide,
+      spec: { ...guide.spec, content: { format: "topik", value: mixedSource } },
+    };
+    const result = await migrateLegacyAssets({
+      original: original(resource),
+      byteProvider: provider(),
+      state,
+      randomBytes: () => new Uint8Array(16),
+    });
+    expect(result.ok, result.ok ? undefined : JSON.stringify(result.diagnostics)).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.content).toBe("![Hero](images/hero.png)\n[Chapter](chapter.md)\n");
+  });
+
+  test("migrates explicit legacy asset downloads", async () => {
+    const downloadSource = `[Download](asset:${name})\n`;
+    const resource: Guide = {
+      ...guide,
+      spec: { ...guide.spec, content: { format: "topik", value: downloadSource } },
+    };
+    const result = await migrateLegacyAssets({
+      original: original(resource),
+      byteProvider: provider(),
+      state,
+      randomBytes: () => new Uint8Array(16),
+    });
+    expect(result.ok, result.ok ? undefined : JSON.stringify(result.diagnostics)).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.content).toBe("[Download](images/hero.png)\n");
+  });
+
+  test("requires exact valid snapshots for the legacy resource and Asset resources", async () => {
+    for (const resourceBytes of [
+      new Uint8Array(),
+      new TextEncoder().encode("not a resource"),
+      bytes({ ...guide, name: "unrelated" }),
+    ]) {
+      const result = await migrateLegacyAssets({
+        original: { ...original(), resourceBytes },
+        byteProvider: provider(),
+        state,
+      });
+      expect(result.ok).toBe(false);
+    }
+
+    for (const assetBytes of [
+      new Uint8Array(),
+      new TextEncoder().encode("not a resource"),
+      bytes({ ...asset, name: "0000000000000000" }),
+    ]) {
+      const result = await migrateLegacyAssets({
+        original: original(guide, [{ resource: asset, bytes: assetBytes }]),
+        byteProvider: provider(),
+        state,
+      });
+      expect(result.ok).toBe(false);
+    }
+  });
+
+  test("accepts valid noncanonical JSON resource snapshots without changing retry bytes", async () => {
+    const snapshot = {
+      ...original(),
+      resourceBytes: new TextEncoder().encode(JSON.stringify(guide)),
+      assets: [{ resource: asset, bytes: new TextEncoder().encode(JSON.stringify(asset)) }],
+    };
+    const first = await migrateLegacyAssets({
+      original: snapshot,
+      byteProvider: provider(),
+      state,
+      randomBytes: () => new Uint8Array(16),
+    });
+    expect(first.ok, first.ok ? undefined : JSON.stringify(first.diagnostics)).toBe(true);
+    if (!first.ok) return;
+    const retry = await migrateLegacyAssets({
+      original: snapshot,
+      byteProvider: provider(),
+      state: first.value.state,
+      randomBytes: () => new Uint8Array(16).fill(255),
+    });
+    expect(retry.ok).toBe(true);
+    if (!retry.ok) return;
+    expect(retry.value.resourceBytes).toEqual(first.value.resourceBytes);
+    expect(retry.value.manifestBytes).toEqual(first.value.manifestBytes);
+    expect(first.value.backup.resourceBytes).toEqual(snapshot.resourceBytes);
+    expect(first.value.backup.assetResources[0].bytes).toEqual(snapshot.assets[0].bytes);
+  });
+
+  test("accepts exact YAML snapshots for supported legacy resource representations", async () => {
+    const snapshot = {
+      ...original(),
+      resourcePath: "guide.yaml",
+      resourceBytes: new TextEncoder().encode(stringifyYaml(guide)),
+      assets: [{ resource: asset, bytes: new TextEncoder().encode(stringifyYaml(asset)) }],
+    };
+    const result = await migrateLegacyAssets({
+      original: snapshot,
+      byteProvider: provider(),
+      state,
+      randomBytes: () => new Uint8Array(16),
+    });
+    expect(result.ok, result.ok ? undefined : JSON.stringify(result.diagnostics)).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.manifest.resource.path).toBe("guide.yaml");
+    expect(result.value.backup.resourceBytes).toEqual(snapshot.resourceBytes);
+    expect(result.value.backup.assetResources[0].bytes).toEqual(snapshot.assets[0].bytes);
   });
 
   test("keeps light and dark figure occurrences distinct during migration", async () => {
@@ -369,6 +480,37 @@ describe("semantic and exact identities", () => {
       ),
     ).toMatchObject({ ok: true, value: { semanticEqual: true, exactEqual: false } });
     expect(exactA.sidecarBytes).toBe(new TextDecoder().decode(migrated.value.manifestBytes));
+  });
+
+  test.each([
+    [["Straße.png", "STRASSE.png"], "full NFKC casefold"],
+    [["ΟΣ.png", "οσ.png"], "Greek sigma casefold"],
+    [["a", "a/b"], "file-parent collision"],
+  ])("rejects materialization inventories with %s (%s)", (paths) => {
+    const descriptors: TopikMaterializationDescriptorsV1 = {
+      resourceApi: "Guide/v2",
+      contentApi: "topik-content/0.1",
+      contentSchema: "0.1.0",
+      manifestApi: "AssetManifest/v1",
+      pathRules: "topik-path-v1",
+      referenceRules: "topik-asset-reference-v1",
+      serializer: "topik-json-v1",
+      materializer: "topik-materialization-v1",
+      mapping: "resource-root-v1",
+      ownershipClassifier: "topik-assets-v1",
+    };
+    expect(() =>
+      createTopikMaterializationRecord(
+        descriptors,
+        paths.map((path) => ({
+          path,
+          type: "regular" as const,
+          mode: "100644" as const,
+          bytes: new Uint8Array([1]),
+        })),
+        emptySidecarBytes(),
+      ),
+    ).toThrow(/collision/u);
   });
 
   test("refuses comparisons when descriptors differ", () => {

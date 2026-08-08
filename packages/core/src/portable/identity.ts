@@ -4,7 +4,7 @@ import { ASSET_MANIFEST_SIDECAR_PATH, TOPIK_MATERIALIZATION_VERSION } from "./co
 import { topikAssetDiagnostic, type TopikAssetResult } from "./diagnostics";
 import { serializeTopikJson } from "./json";
 import { parseAssetManifest } from "./manifest";
-import { validateTopikPath } from "./path";
+import { validateTopikPath, validateTopikPathSet } from "./path";
 import type { ResolvedTopikAssetOccurrence } from "./snapshot";
 
 export type TopikAssetSemanticOccurrenceV1 =
@@ -150,6 +150,12 @@ export function createTopikMaterializationRecord(
       throw new TypeError("Materialization inventory contains an invalid or duplicate path");
     }
     inventory.set(file.path, file);
+  }
+  const portableInventoryPaths = [...inventory.keys()].filter(
+    (path) => path !== ASSET_MANIFEST_SIDECAR_PATH,
+  );
+  if (!validateTopikPathSet(portableInventoryPaths).ok) {
+    throw new TypeError("Materialization inventory contains a portable path collision");
   }
   const providedSidecar = inventory.get(ASSET_MANIFEST_SIDECAR_PATH);
   if (providedSidecar && !equalBytes(providedSidecar.bytes, sidecarBytes)) {

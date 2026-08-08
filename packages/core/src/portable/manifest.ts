@@ -13,6 +13,7 @@ import {
   type TopikAssetConsumerCapabilities,
 } from "./constants";
 import {
+  relocateTopikAssetDiagnostic,
   topikAssetDiagnostic,
   type TopikAssetDiagnostic,
   type TopikAssetResult,
@@ -228,14 +229,13 @@ export function validateAssetManifestValue(
     });
     if (!path.ok) {
       diagnostics.push(
-        ...path.diagnostics.map((diagnostic) => ({
-          ...diagnostic,
-          location: {
+        ...path.diagnostics.map((diagnostic) =>
+          relocateTopikAssetDiagnostic(diagnostic, {
             ...diagnostic.location,
             jsonPointer: `/assets/${escapePointer(key)}/path`,
             key,
-          },
-        })),
+          }),
+        ),
       );
     }
     const existingOwner = pathOwners.get(entry.path);
@@ -256,10 +256,12 @@ export function validateAssetManifestValue(
   });
   if (!resourcePath.ok) {
     diagnostics.push(
-      ...resourcePath.diagnostics.map((diagnostic) => ({
-        ...diagnostic,
-        location: { ...diagnostic.location, jsonPointer: "/resource/path" },
-      })),
+      ...resourcePath.diagnostics.map((diagnostic) =>
+        relocateTopikAssetDiagnostic(diagnostic, {
+          ...diagnostic.location,
+          jsonPointer: "/resource/path",
+        }),
+      ),
     );
   }
   for (const [key, entry] of entries) {

@@ -246,10 +246,7 @@ async function readPortableAssetFileAnchored(
               location: { path: options.path },
               recovery: "restore-file",
             })
-          : unsupportedPath(
-              options.path,
-              error instanceof Error ? error.message : "File read failed",
-            ),
+          : unsupportedPath(options.path, "File read failed without a portable no-follow proof"),
       ],
     };
   } finally {

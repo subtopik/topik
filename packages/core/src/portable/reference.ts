@@ -114,10 +114,11 @@ export function validateTopikExternalAssetReference(reference: string): TopikAss
 function referenceFailure(reference: string, message: string): TopikAssetResult<string> {
   return {
     ok: false,
+    source: encoder.encode(reference),
     diagnostics: [
       topikAssetDiagnostic("TOPIK_ASSET_PATH_INVALID", message, {
         descriptorVersion: TOPIK_ASSET_REFERENCE_VERSION,
-        location: { path: JSON.stringify(reference).slice(1, -1) },
+        location: { path: "[redacted-invalid-reference]" },
         reason: "percent_noncanonical",
       }),
     ],
@@ -127,10 +128,11 @@ function referenceFailure(reference: string, message: string): TopikAssetResult<
 function externalFailure(reference: string, message: string): TopikAssetResult<string> {
   return {
     ok: false,
+    source: encoder.encode(reference),
     diagnostics: [
       topikAssetDiagnostic("TOPIK_EXTERNAL_REFERENCE_UNSAFE", message, {
         descriptorVersion: TOPIK_ASSET_REFERENCE_VERSION,
-        location: { path: JSON.stringify(reference).slice(1, -1) },
+        location: { path: "[redacted-external-reference]" },
         recovery: "preserve-read-only",
       }),
     ],

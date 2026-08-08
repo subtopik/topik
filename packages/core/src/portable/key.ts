@@ -68,7 +68,7 @@ function invalidKey(key: string | undefined, message: string): TopikAssetResult<
     diagnostics: [
       topikAssetDiagnostic("TOPIK_ASSET_KEY_INVALID", message, {
         descriptorVersion: TOPIK_PATH_VERSION,
-        location: key === undefined ? {} : { key },
+        location: key === undefined ? {} : { key: "[redacted-invalid-key]" },
       }),
     ],
   };

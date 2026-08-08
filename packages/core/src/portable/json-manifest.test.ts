@@ -62,6 +62,19 @@ describe("topik-json-v1", () => {
     expect(() => parseStrictTopikJson("{/*no*/}")).toThrow();
   });
 
+  test("keeps escaped control and bidi member names out of diagnostic fields", () => {
+    const source = '{"\\u001b\\u202e":"first","\\u001b\\u202e":"second"}';
+    const result = parseAssetManifest(source);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.source).toEqual(new TextEncoder().encode(source));
+    expect(result.diagnostics[0].id).toBe("TOPIK_ASSET_MANIFEST_DUPLICATE_MEMBER");
+
+    for (const value of diagnosticStrings(result.diagnostics)) {
+      expect(value).not.toMatch(/[\p{Cc}\p{Bidi_Control}]/u);
+    }
+  });
+
   test("enforces raw-byte, BOM, and depth limits", () => {
     expect(parseAssetManifest(new Uint8Array(16_777_217))).toMatchObject({ ok: false });
     expect(parseAssetManifest(`\ufeff${serializeTopikJson(emptyManifest())}`)).toMatchObject({
@@ -184,3 +197,12 @@ describe("topik-json-v1", () => {
     expect(result.diagnostics[0].id).toBe(id);
   });
 });
+
+function diagnosticStrings(value: unknown): string[] {
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap(diagnosticStrings);
+  if (value !== null && typeof value === "object") {
+    return Object.values(value).flatMap(diagnosticStrings);
+  }
+  return [];
+}

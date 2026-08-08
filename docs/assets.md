@@ -34,11 +34,14 @@ parser/serializer, path/reference and collision validators, opaque key generator
 snapshot validation, filesystem no-follow reader, and semantic/materialization identity helpers.
 Operations return typed results with stable diagnostic IDs, blocking consequences, descriptor
 versions, safe locations, and recovery categories. Human wording and diagnostic order are not a
-compatibility surface. Each diagnostic has a safe opaque correlation ID; callers can replace the
-deterministic library default across an operation with `correlateTopikAssetResult`. Unknown manifest,
-serializer, path-rule, and reference-rule versions fail visibly; consumers may advertise lower
-deployment limits but may not silently weaken the portable maximum. Manifest operations accept an
-optional binding-root context so the complete root-plus-path stays within 768 UTF-8 bytes.
+compatibility surface. Diagnostics never contain unsafe references or raw untrusted source; when a
+failed result retains exact bytes in `source`, that field is deliberately non-loggable and must not
+be copied into diagnostics or telemetry. Each diagnostic has a safe opaque correlation ID; callers
+can replace the deterministic library default across an operation with `correlateTopikAssetResult`.
+Unknown manifest, serializer, path-rule, and reference-rule versions fail visibly; consumers may
+advertise lower deployment limits but may not silently weaken the portable maximum. Manifest
+operations accept an optional binding-root context so the complete root-plus-path stays within 768
+UTF-8 bytes.
 
 ## Legacy migration and rollback
 
@@ -47,7 +50,9 @@ compiler remain separate and unchanged. Use the explicitly versioned `migrateLeg
 with exact original content/resource bytes, legacy Asset resources, an immutable byte provider, and
 persisted retry state. A successful migration verifies the full bytes, reuses or creates random
 portable keys, writes canonical relative references, returns Guide/WikiPage v2 without
-`spec.assets`, and returns one canonical sidecar. It never mutates source files.
+`spec.assets`, and returns one canonical sidecar. Exact JSON or YAML Guide/WikiPage and Asset
+resource snapshots are parsed, schema-validated, and matched to the supplied resource objects
+before migration. It never mutates source files.
 
 Keep the returned exact backup until the target has been validated and accepted. Migration fails
 instead of guessing when digest-prefix identity, original paths, metadata, accessibility, or bytes

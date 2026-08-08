@@ -184,4 +184,28 @@ describe("topik-asset-reference-v1", () => {
       expect(validateTopikExternalAssetReference(unsafe)).toMatchObject({ ok: false });
     }
   });
+
+  test("keeps credential-bearing and control-bearing references out of diagnostics", () => {
+    const reference = "https://user:secret@example.com/a.png?token=signed-secret\u001b\u202e";
+    const result = validateTopikExternalAssetReference(reference);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+
+    const strings = diagnosticStrings(result.diagnostics);
+    for (const value of strings) {
+      expect(value).not.toContain("secret");
+      expect(value).not.toContain("signed-secret");
+      expect(value).not.toMatch(/[\p{Cc}\p{Bidi_Control}]/u);
+    }
+    expect(result.source).toEqual(new TextEncoder().encode(reference));
+  });
 });
+
+function diagnosticStrings(value: unknown): string[] {
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap(diagnosticStrings);
+  if (value !== null && typeof value === "object") {
+    return Object.values(value).flatMap(diagnosticStrings);
+  }
+  return [];
+}

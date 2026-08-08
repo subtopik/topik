@@ -87,6 +87,7 @@ export type TopikAssetResult<T> =
       ok: false;
       value?: T;
       diagnostics: readonly TopikAssetDiagnostic[];
+      /** Exact caller bytes are non-loggable evidence; never copy them into diagnostics/telemetry. */
       source?: Uint8Array;
     };
 
@@ -95,16 +96,27 @@ export function topikAssetDiagnostic(
   message: string,
   options: Partial<Omit<TopikAssetDiagnostic, "id" | "message" | "severity">> = {},
 ): TopikAssetDiagnostic {
+  const location = options.location ?? {};
   return {
     id,
     correlationId: options.correlationId ?? TOPIK_ASSET_DEFAULT_CORRELATION_ID,
     severity: "error",
     consequence: options.consequence ?? "block-resource",
-    descriptorVersion: options.descriptorVersion ?? "AssetManifest/v1",
-    location: options.location ?? {},
+    descriptorVersion: sanitizeDescriptorVersion(options.descriptorVersion ?? "AssetManifest/v1"),
+    location: {
+      ...(location.jsonPointer === undefined
+        ? {}
+        : { jsonPointer: sanitizeJsonPointer(location.jsonPointer) }),
+      ...(location.contentPosition === undefined
+        ? {}
+        : { contentPosition: sanitizeAsciiField(location.contentPosition, "[redacted]") }),
+      ...(location.path === undefined ? {} : { path: sanitizePath(location.path) }),
+      ...(location.key === undefined ? {} : { key: sanitizeKey(location.key) }),
+      ...(location.commit === undefined ? {} : { commit: sanitizeCommit(location.commit) }),
+    },
     recovery: options.recovery ?? "repair-source",
     ...(options.reason === undefined ? {} : { reason: options.reason }),
-    message,
+    message: sanitizeMessage(message),
   };
 }
 
@@ -120,4 +132,98 @@ export function correlateTopikAssetResult<T>(
     ...result,
     diagnostics: result.diagnostics.map((diagnostic) => ({ ...diagnostic, correlationId })),
   };
+}
+
+/** Internal composition helper that preserves sanitization when adding location context. */
+export function relocateTopikAssetDiagnostic(
+  diagnostic: TopikAssetDiagnostic,
+  location: TopikAssetDiagnosticLocation,
+): TopikAssetDiagnostic {
+  return topikAssetDiagnostic(diagnostic.id, diagnostic.message, {
+    correlationId: diagnostic.correlationId,
+    consequence: diagnostic.consequence,
+    descriptorVersion: diagnostic.descriptorVersion,
+    location,
+    recovery: diagnostic.recovery,
+    ...(diagnostic.reason === undefined ? {} : { reason: diagnostic.reason }),
+  });
+}
+
+const UNSAFE_DIAGNOSTIC_UNICODE =
+  /[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Default_Ignorable_Code_Point}\p{Bidi_Control}\p{Noncharacter_Code_Point}]/u;
+const UNSAFE_DIAGNOSTIC_WHITESPACE = /[\p{White_Space}&&[^ ]]/v;
+const SAFE_ASCII_FIELD = /^[\x20-\x7e]{1,1024}$/u;
+
+function sanitizeMessage(value: string): string {
+  return SAFE_ASCII_FIELD.test(value) ? value : "Diagnostic detail was redacted";
+}
+
+function sanitizeAsciiField(value: string, replacement: string): string {
+  return SAFE_ASCII_FIELD.test(value) ? value : replacement;
+}
+
+function sanitizeDescriptorVersion(value: string): string {
+  return /^[A-Za-z0-9][A-Za-z0-9./_-]{0,127}$/u.test(value) ? value : "unknown-descriptor";
+}
+
+function sanitizeKey(value: string): string {
+  return /^(?:ast_[0-7][0-9a-hjkmnp-tv-z]{25}|[0-9a-f]{16})$/u.test(value) ? value : "[redacted]";
+}
+
+function sanitizeCommit(value: string): string {
+  return /^[0-9a-f]{7,64}$/u.test(value) ? value : "[redacted]";
+}
+
+function sanitizeJsonPointer(value: string): string {
+  if (!value.startsWith("/")) return "/[redacted]";
+  const segments = value.slice(1).split("/");
+  return segments.every(isSafeJsonPointerSegment) ? value : "/[redacted]";
+}
+
+function isSafeJsonPointerSegment(value: string): boolean {
+  return (
+    value.length === 0 ||
+    /^(?:[0-9]+|ast_[0-7][0-9a-hjkmnp-tv-z]{25})$/u.test(value) ||
+    [
+      "algorithm",
+      "apiVersion",
+      "assets",
+      "attribution",
+      "creator",
+      "digest",
+      "license",
+      "mediaType",
+      "name",
+      "path",
+      "pathRules",
+      "referenceRules",
+      "resource",
+      "serializer",
+      "size",
+      "sourceUrl",
+      "spdxExpression",
+      "text",
+      "title",
+      "type",
+      "url",
+      "value",
+    ].includes(value)
+  );
+}
+
+function sanitizePath(value: string): string {
+  if (
+    value.length === 0 ||
+    value.length > 1024 ||
+    UNSAFE_DIAGNOSTIC_UNICODE.test(value) ||
+    UNSAFE_DIAGNOSTIC_WHITESPACE.test(value) ||
+    value.includes("?") ||
+    value.includes("#") ||
+    value.includes("\\") ||
+    /^[a-z][a-z0-9+.-]*:/iu.test(value) ||
+    value.startsWith("//")
+  ) {
+    return "[redacted]";
+  }
+  return value;
 }

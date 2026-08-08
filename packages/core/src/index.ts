@@ -27,3 +27,6 @@ export type { Resource, ResourceType } from "./resource";
 export { validateResources, type ValidationError, type ValidationResult } from "./validate";
 
 export { watch, type WatchOptions, type Watcher } from "./watch";
+
+/** Independent portable AssetManifest/v1 APIs. The legacy compiler remains unchanged. */
+export * from "./portable";

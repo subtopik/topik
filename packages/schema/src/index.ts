@@ -1,6 +1,16 @@
 export { personSchema, type Person } from "./person";
 export { assetSchema, type Asset } from "./asset";
+export {
+  assetManifestV1Schema,
+  type AssetManifestAttributionV1,
+  type AssetManifestDigestV1,
+  type AssetManifestEntryV1,
+  type AssetManifestLicenseV1,
+  type AssetManifestResourceBindingV1,
+  type AssetManifestV1,
+} from "./asset-manifest";
 export { guideSchema, type Guide } from "./guide";
+export { guideV2Schema, type GuideV2 } from "./guide-v2";
 export {
   WIKI_EXTERNAL_HREF_PATTERN,
   WIKI_NAV_ICON_PATTERN,
@@ -42,6 +52,7 @@ export {
   type WikiSwitcherNode,
 } from "./wiki-navigation";
 export { wikiPageSchema, type WikiPage } from "./wiki-page";
+export { wikiPageV2Schema, type WikiPageV2 } from "./wiki-page-v2";
 export { courseSchema, type Course } from "./course";
 export { courseModuleSchema, type CourseModule } from "./course-module";
 export { coursePageSchema, type CoursePage } from "./course-page";

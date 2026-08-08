@@ -14,13 +14,14 @@
   "type": "module",
   "exports": {
     ".": "./dist/index.mjs",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./asset-manifest/v1.json": "./dist/asset-manifest-v1.json"
   },
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "build": "vp pack",
+    "build": "vp pack && cp src/asset-manifest-v1.json dist/asset-manifest-v1.json",
     "dev": "vp pack --watch",
     "test": "vp test",
     "check": "vp check",

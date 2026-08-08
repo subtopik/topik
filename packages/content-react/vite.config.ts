@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 const contentSchemaSource = fileURLToPath(
   new URL("../content-schema/src/index.ts", import.meta.url),
 );
+const coreSource = fileURLToPath(new URL("../core/src/index.ts", import.meta.url));
+const schemaSource = fileURLToPath(new URL("../schema/src/index.ts", import.meta.url));
 
 export default defineConfig({
   pack: {
@@ -38,6 +40,8 @@ export default defineConfig({
   test: {
     alias: {
       "@topik/content-schema": contentSchemaSource,
+      "@topik/core": coreSource,
+      "@topik/schema": schemaSource,
     },
     environment: "jsdom",
   },

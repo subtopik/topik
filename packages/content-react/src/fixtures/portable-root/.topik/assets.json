@@ -1,0 +1,24 @@
+{
+  "apiVersion": "v1",
+  "assets": {
+    "ast_00000000000000000000000000": {
+      "digest": {
+        "algorithm": "sha256",
+        "value": "22e3a2780f894d9edb42ff05ed92f60deb399e0a2baf6c1c210a14d3957003c7"
+      },
+      "mediaType": "application/octet-stream",
+      "path": "files/manual.bin",
+      "size": 16
+    }
+  },
+  "pathRules": "topik-path-v1",
+  "referenceRules": "topik-asset-reference-v1",
+  "resource": {
+    "apiVersion": "v2",
+    "name": "offline-guide",
+    "path": "guide.json",
+    "type": "Guide"
+  },
+  "serializer": "topik-json-v1",
+  "type": "AssetManifest"
+}

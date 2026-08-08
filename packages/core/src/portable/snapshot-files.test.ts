@@ -1,0 +1,273 @@
+import { createHash } from "node:crypto";
+import { link, mkdir, mkdtemp, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, test } from "vite-plus/test";
+import type { AssetManifestV1 } from "@topik/schema";
+import {
+  readPortableAssetFile,
+  validatePortableAssetFile,
+  validatePortableAssetSnapshot,
+  type PortableAssetFileDescriptor,
+} from "./index";
+import { readPortableAssetFileWithTraversalHookForTest } from "./files";
+
+const PNG_BYTES = Buffer.from(
+  "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000000500010d0a2db40000000049454e44ae426082",
+  "hex",
+);
+const KEY = "ast_00000000000000000000000000";
+
+function digest(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+function manifest(
+  bytes: Uint8Array = PNG_BYTES,
+  overrides: Partial<AssetManifestV1["assets"][string]> = {},
+): AssetManifestV1 {
+  return {
+    apiVersion: "v1",
+    assets: {
+      [KEY]: {
+        path: "assets/hero.png",
+        digest: { algorithm: "sha256", value: digest(bytes) },
+        size: bytes.byteLength,
+        mediaType: "image/png",
+        ...overrides,
+      },
+    },
+    pathRules: "topik-path-v1",
+    referenceRules: "topik-asset-reference-v1",
+    resource: { apiVersion: "v2", type: "Guide", name: "guide", path: "guide.json" },
+    serializer: "topik-json-v1",
+    type: "AssetManifest",
+  };
+}
+
+function file(
+  bytes: Uint8Array = PNG_BYTES,
+  overrides: Partial<PortableAssetFileDescriptor> = {},
+): PortableAssetFileDescriptor {
+  return {
+    path: "assets/hero.png",
+    type: "regular",
+    mode: "100644",
+    bytes,
+    linkCount: 1,
+    ...overrides,
+  };
+}
+
+function validate(
+  source = "![First](assets/hero.png)\n\n![Second](assets/hero.png)",
+  manifestValue = manifest(),
+  files: readonly PortableAssetFileDescriptor[] = [file()],
+) {
+  return validatePortableAssetSnapshot({
+    manifest: manifestValue,
+    resource: manifestValue.resource,
+    contents: [{ path: "content.md", source }],
+    files,
+  });
+}
+
+describe("portable manifest/resource/occurrence/file validation", () => {
+  test("retains duplicate occurrences that share one entry and verifies exact bytes", () => {
+    const result = validate();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.occurrences).toHaveLength(2);
+    expect(result.value.occurrences.map((occurrence) => occurrence.assetKey)).toEqual([KEY, KEY]);
+    expect(result.value.files[0]).toMatchObject({
+      key: KEY,
+      digest: digest(PNG_BYTES),
+      verifiedMediaType: "image/png",
+    });
+  });
+
+  test.each([
+    ["missing occurrence", "![x](assets/missing.png)", "TOPIK_ASSET_MANIFEST_INCOMPLETE"],
+    ["unreferenced entry", "# none", "TOPIK_ASSET_ENTRY_UNREFERENCED"],
+    [
+      "missing alt",
+      '{% figure src="assets/hero.png" alt="" /%}',
+      "TOPIK_ASSET_REFERENCE_ACCESSIBILITY_INVALID",
+    ],
+  ])("rejects %s", (_name, source, id) => {
+    const result = validate(source);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.diagnostics.some((diagnostic) => diagnostic.id === id)).toBe(true);
+  });
+
+  test("rejects resource, digest, size, and verified media mismatches", () => {
+    const base = manifest();
+    const resourceMismatch = validatePortableAssetSnapshot({
+      manifest: base,
+      resource: { ...base.resource, name: "other" },
+      contents: [{ path: "content.md", source: "![x](assets/hero.png)" }],
+      files: [file()],
+    });
+    expect(resourceMismatch.ok).toBe(false);
+    if (!resourceMismatch.ok) {
+      expect(
+        resourceMismatch.diagnostics.some((d) => d.id === "TOPIK_ASSET_RESOURCE_MISMATCH"),
+      ).toBe(true);
+    }
+
+    const bad = manifest(PNG_BYTES, {
+      digest: { algorithm: "sha256", value: "0".repeat(64) },
+      size: 1,
+      mediaType: "image/jpeg",
+    });
+    const result = validate("![x](assets/hero.png)", bad);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(new Set(result.diagnostics.map((diagnostic) => diagnostic.id))).toEqual(
+      expect.objectContaining(
+        new Set([
+          "TOPIK_ASSET_DIGEST_MISMATCH",
+          "TOPIK_ASSET_SIZE_MISMATCH",
+          "TOPIK_ASSET_MEDIA_TYPE_MISMATCH",
+        ]),
+      ),
+    );
+  });
+
+  test("allows zero-byte opaque downloads but never renders them inline", () => {
+    const bytes = new Uint8Array();
+    const opaque = manifest(bytes, {
+      path: "files/empty.bin",
+      mediaType: "application/octet-stream",
+    });
+    expect(
+      validatePortableAssetSnapshot({
+        manifest: opaque,
+        resource: opaque.resource,
+        contents: [{ path: "content.md", source: "[empty](files/empty.bin)" }],
+        files: [file(bytes, { path: "files/empty.bin" })],
+      }),
+    ).toMatchObject({ ok: true });
+    const inline = validatePortableAssetSnapshot({
+      manifest: opaque,
+      resource: opaque.resource,
+      contents: [{ path: "content.md", source: "![empty](files/empty.bin)" }],
+      files: [file(bytes, { path: "files/empty.bin" })],
+    });
+    expect(inline.ok).toBe(false);
+    if (!inline.ok) {
+      expect(
+        inline.diagnostics.some((d) => d.id === "TOPIK_ASSET_ACTIVE_CONTENT_UNSUPPORTED"),
+      ).toBe(true);
+    }
+  });
+
+  test("preserves external HTTPS occurrences without file or manifest ownership", () => {
+    const empty = { ...manifest(), assets: {} };
+    const exact = "https://example.com/hero.png?q=1#dark";
+    const result = validatePortableAssetSnapshot({
+      manifest: empty,
+      resource: empty.resource,
+      contents: [{ path: "content.md", source: `![hero](${exact})` }],
+      files: [],
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.occurrences[0].reference).toBe(exact);
+  });
+});
+
+describe("portable file security", () => {
+  test.each([
+    ["symlink", { type: "symlink" }],
+    ["hard link", { type: "hardlink" }],
+    ["gitlink", { type: "gitlink", mode: "160000" }],
+    ["executable", { mode: "100755" }],
+    ["ADS", { hasAlternateDataStream: true }],
+    ["LFS attribute", { contentFilter: "lfs" }],
+    ["filter", { contentFilter: "custom" }],
+    ["encoding", { workingTreeEncoding: "utf-16" }],
+  ])("rejects %s descriptors", (_name, overrides) => {
+    expect(validatePortableAssetFile(file(PNG_BYTES, overrides as never))).toMatchObject({
+      ok: false,
+      diagnostics: [{ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" }],
+    });
+  });
+
+  test("rejects LFS pointers and near-miss signatures", () => {
+    const pointer = new TextEncoder().encode(
+      "version https://git-lfs.github.com/spec/v1\noid sha256:" + "a".repeat(64) + "\nsize 1\n",
+    );
+    expect(validatePortableAssetFile(file(pointer))).toMatchObject({ ok: false });
+  });
+
+  test("enforces source-specific Git and archive modes", () => {
+    expect(
+      validatePortableAssetFile(file(PNG_BYTES, { source: "git", mode: "100644" })),
+    ).toMatchObject({ ok: true });
+    expect(
+      validatePortableAssetFile(file(PNG_BYTES, { source: "archive", mode: "0644" })),
+    ).toMatchObject({ ok: true });
+    expect(
+      validatePortableAssetFile(file(PNG_BYTES, { source: "git", mode: "0644" })),
+    ).toMatchObject({ ok: false });
+    expect(
+      validatePortableAssetFile(file(PNG_BYTES, { source: "archive", mode: "100644" })),
+    ).toMatchObject({ ok: false });
+    expect(validatePortableAssetFile(file(PNG_BYTES, { mode: "0644" }))).toMatchObject({
+      ok: true,
+    });
+  });
+});
+
+describe("filesystem no-follow reader", () => {
+  const roots: string[] = [];
+  afterEach(async () => {
+    await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  });
+
+  test("accepts a stable regular file and rejects symlink traversal and hard links", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topik-portable-files-"));
+    roots.push(root);
+    await mkdir(join(root, "assets"));
+    await writeFile(join(root, "assets", "hero.png"), PNG_BYTES, { mode: 0o644 });
+    expect(await readPortableAssetFile({ root, path: "assets/hero.png" })).toMatchObject({
+      ok: true,
+    });
+
+    await symlink("assets", join(root, "linked"));
+    expect(await readPortableAssetFile({ root, path: "linked/hero.png" })).toMatchObject({
+      ok: false,
+    });
+
+    await link(join(root, "assets", "hero.png"), join(root, "assets", "copy.png"));
+    expect(await readPortableAssetFile({ root, path: "assets/copy.png" })).toMatchObject({
+      ok: false,
+    });
+  });
+
+  test("stays anchored when an opened directory is swapped to a symlink", async () => {
+    if (process.platform !== "linux") return;
+    const root = await mkdtemp(join(tmpdir(), "topik-portable-race-root-"));
+    const outside = await mkdtemp(join(tmpdir(), "topik-portable-race-outside-"));
+    roots.push(root, outside);
+    await mkdir(join(root, "assets"));
+    await writeFile(join(root, "assets", "hero.png"), PNG_BYTES, { mode: 0o644 });
+    await writeFile(join(outside, "hero.png"), new Uint8Array([1, 2, 3]), { mode: 0o644 });
+
+    let swapped = false;
+    const result = await readPortableAssetFileWithTraversalHookForTest(
+      { root, path: "assets/hero.png" },
+      async (components) => {
+        if (swapped || components.join("/") !== "assets") return;
+        swapped = true;
+        await rename(join(root, "assets"), join(root, "assets-original"));
+        await symlink(outside, join(root, "assets"));
+      },
+    );
+
+    expect(swapped).toBe(true);
+    expect(result).toMatchObject({ ok: true });
+    if (result.ok) expect(result.value.bytes).toEqual(PNG_BYTES);
+  });
+});

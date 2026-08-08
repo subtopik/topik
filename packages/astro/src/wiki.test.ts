@@ -32,7 +32,7 @@ describe("topikWikiLoader", () => {
     const context = createMockContext();
     await loader.load(context);
 
-    expect(context.entries.size).toBe(4);
+    expect(context.entries.size).toBe(5);
     const home = [...context.entries.values()].find((entry) => entry.data.slug === "");
     expect(home).toMatchObject({
       id: expect.stringMatching(wikiPageNamePattern),
@@ -51,6 +51,7 @@ describe("topikWikiLoader", () => {
       "resources",
       "navigation",
       "rendering",
+      "assets",
     ]);
   });
 
@@ -84,6 +85,12 @@ describe("topikWikiLoader", () => {
             page: expect.stringMatching(wikiPageNamePattern),
             slug: "rendering",
             sourcePath: "rendering",
+          },
+          {
+            type: "page",
+            page: expect.stringMatching(wikiPageNamePattern),
+            slug: "assets",
+            sourcePath: "assets",
           },
         ],
       },

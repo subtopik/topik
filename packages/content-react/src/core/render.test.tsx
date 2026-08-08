@@ -223,4 +223,29 @@ describe("content-react core", () => {
     expect(tree).toBeTruthy();
     expect(html).toContain("Works.");
   });
+
+  it("renders portable resource-root-relative references offline without a host resolver", () => {
+    const html = renderToStaticMarkup(
+      <>
+        {renderTopikMarkdown(
+          '![Offline hero](assets/getting-started/hero.png)\n\n{% figure src="assets/light.png" darkSrc="assets/dark.png" alt="Theme" /%}',
+          {
+            components: {
+              TopikImage: ({ alt, src }) => <img alt={String(alt)} src={String(src)} />,
+              TopikFigure: ({ alt, darkSrc, src }) => (
+                <picture data-dark-src={String(darkSrc)}>
+                  <img alt={String(alt)} src={String(src)} />
+                </picture>
+              ),
+            },
+          },
+        )}
+      </>,
+    );
+
+    expect(html).toContain('src="assets/getting-started/hero.png"');
+    expect(html).toContain('src="assets/light.png"');
+    expect(html).toContain('data-dark-src="assets/dark.png"');
+    expect(html).not.toContain("asset:");
+  });
 });

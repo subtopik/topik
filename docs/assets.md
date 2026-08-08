@@ -12,8 +12,8 @@ resource through its `(type, apiVersion, name, path)` tuple.
 
 Content names local assets with canonical resource-root-relative URI paths, for example
 `assets/intro/hero.png`. Non-unreserved UTF-8 bytes use uppercase percent encoding. A conforming
-checkout or extracted portable archive therefore remains renderable offline without Vulpo, hosted
-identifiers, delivery URLs, credentials, or network access. An absolute credential-free HTTPS URL
+checkout or extracted portable archive therefore remains renderable offline without a host service,
+remote identifiers, delivery URLs, credentials, or network access. An absolute credential-free HTTPS URL
 is a distinct external reference: its exact query and fragment are preserved, it has no sidecar
 entry, and ordinary consumers never fetch it. Other schemes, protocol-relative URLs, credentials,
 and controls are invalid in asset slots.
@@ -58,6 +58,6 @@ rather than reinterpreting legacy bytes as portable v1.
 ## Release status
 
 This repository change and its current package version do **not** claim portable-asset conformance
-or constitute a public release. The implementation can ship only in a future ENG-15/ENG-51
-coordinated Topik package set with exact package versions, provenance, packed-export checks, and
-fixture evidence. No package version or publication tag is changed here.
+or constitute a public release. The implementation can ship only in a future coordinated public
+Topik package release set with exact package versions, provenance, packed-export checks, and fixture
+evidence. No package version or publication tag is changed here.

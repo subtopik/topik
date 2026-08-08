@@ -216,7 +216,11 @@ async function readPortableAssetFileAnchored(
       await afterDirectoryOpened?.(components.slice(0, index + 1));
     }
 
-    if (attributes.filter === "set" || attributes.workingTreeEncoding === "set") {
+    if (
+      (attributes.filter !== undefined && attributes.filter !== "unspecified") ||
+      (attributes.workingTreeEncoding !== undefined &&
+        attributes.workingTreeEncoding !== "unspecified")
+    ) {
       return {
         ok: false,
         diagnostics: [

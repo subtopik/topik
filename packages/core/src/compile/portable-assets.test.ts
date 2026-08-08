@@ -182,10 +182,19 @@ describe("direct portable artifact compilation", () => {
 
   test.each([
     ["comment-prefixed HTML", "<!-- generated -->\n<html><body>x</body></html>"],
+    ["padded HTML", `${" ".repeat(4096)}<html><body>x</body></html>`],
+    ["XML-prefixed HTML", '<?xml version="1.0"?><html><body>x</body></html>'],
     ["HTML fragment", "<div>fragment</div>"],
     ["script fragment", "<script>alert(1)</script>"],
     ["active body fragment", '<body onload="alert(1)">x</body>'],
     ["SVG", '<svg xmlns="http://www.w3.org/2000/svg"><script /></svg>'],
+    ["padded SVG", `${" ".repeat(4096)}<svg xmlns="http://www.w3.org/2000/svg" />`],
+    ["SVG doctype", '<!DOCTYPE svg PUBLIC "x"><svg />'],
+    [
+      "XML/comment-prefixed SVG",
+      '<?xml version="1.0"?><!-- generated --><svg xmlns="http://www.w3.org/2000/svg" />',
+    ],
+    ["inspection-exhausting padding", `${" ".repeat(64 * 1024)}<html><body>x</body></html>`],
     ["executable signature", new Uint8Array([0x7f, 0x45, 0x4c, 0x46, 1])],
   ])("rejects recognizable active %s disguised as an opaque download", async (_name, source) => {
     const bytes = typeof source === "string" ? new TextEncoder().encode(source) : source;
@@ -653,6 +662,58 @@ describe("direct portable artifact compilation", () => {
       { path: "manual.bin" },
       { path: "é.png" },
     ]);
+  });
+
+  test.each([
+    ["inline raw image", "![Code `]`](é.png)\n"],
+    ["reference entity image", "![Code `[`][id]\n\n[id]: &eacute;.png\n"],
+    ["inline escaped download", "[Code `]`](manual\\.bin)\n"],
+    ["reference raw download", "[Code `[`][id]\n\n[id]: é.bin\n"],
+  ])("rejects a noncanonical %s destination behind a code-span label", async (_name, content) => {
+    await writeFile(join(dir, "é.png"), PNG_BYTES);
+    await writeFile(join(dir, "é.bin"), "download");
+    await writeFile(join(dir, "manual.bin"), "download");
+    await expect(
+      compilePortableResourceArtifacts({
+        rootDir: dir,
+        resources: [guideResource("code-label-invalid", content)],
+        sourcePathsByResource: { "Guide/code-label-invalid": "guide.md" },
+        randomBytes: entropy(),
+      }),
+    ).rejects.toMatchObject({
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_ASSET_PATH_INVALID", severity: "error" }),
+      ]),
+    });
+  });
+
+  test("compiles canonical image and download destinations behind code-span labels", async () => {
+    await writeFile(join(dir, "é.png"), PNG_BYTES);
+    await writeFile(join(dir, "manual.bin"), "download");
+    const result = await compilePortableResourceArtifacts({
+      rootDir: dir,
+      resources: [
+        guideResource(
+          "code-label-canonical",
+          [
+            "![Inline `]`](%C3%A9.png)",
+            "![Reference `[`][image-id]",
+            "[Inline `]`](manual.bin)",
+            "[Reference `[`][download-id]",
+            "",
+            "[image-id]: %C3%A9.png",
+            "[download-id]: manual.bin",
+          ].join("\n"),
+        ),
+      ],
+      sourcePathsByResource: { "Guide/code-label-canonical": "guide.md" },
+      randomBytes: entropy(),
+    });
+    expect(Object.values(result.artifacts[0].manifest.assets)).toMatchObject([
+      { path: "manual.bin" },
+      { path: "é.png" },
+    ]);
+    expect(result.artifacts[0].snapshot.occurrences).toHaveLength(4);
   });
 
   test.each([

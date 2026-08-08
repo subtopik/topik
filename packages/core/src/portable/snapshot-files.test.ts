@@ -179,11 +179,45 @@ describe("portable manifest/resource/occurrence/file validation", () => {
 
   test.each([
     ["comment-prefixed HTML", "<!-- generated -->\n<!doctype html><title>x</title>", "text/html"],
+    ["padded HTML", `${" ".repeat(4096)}<html><body>x</body></html>`, "text/html"],
+    ["text-prefixed HTML", "generated:\n<html><body>x</body></html>", "text/html"],
+    ["XML-prefixed HTML", '<?xml version="1.0"?><html><body>x</body></html>', "text/html"],
     ["HTML document", "<html><body>x</body></html>", "text/html"],
     ["HTML fragment", "<div>fragment</div>", "text/html"],
     ["script fragment", "<script>alert(1)</script>", "text/html"],
     ["active body fragment", '<body onload="alert(1)">x</body>', "text/html"],
     ["SVG", '<svg xmlns="http://www.w3.org/2000/svg"><script /></svg>', "image/svg+xml"],
+    [
+      "padded SVG",
+      `${" ".repeat(4096)}<svg xmlns="http://www.w3.org/2000/svg" />`,
+      "image/svg+xml",
+    ],
+    [
+      "text-prefixed SVG",
+      'generated:\n<svg xmlns="http://www.w3.org/2000/svg" />',
+      "image/svg+xml",
+    ],
+    ["SVG doctype", '<!DOCTYPE svg PUBLIC "x"><svg />', "image/svg+xml"],
+    [
+      "XML/comment-prefixed SVG",
+      '<?xml version="1.0"?><!-- generated --><svg xmlns="http://www.w3.org/2000/svg" />',
+      "image/svg+xml",
+    ],
+    [
+      "inspection-exhausting HTML padding",
+      `${" ".repeat(64 * 1024)}<html><body>x</body></html>`,
+      "application/x-topik-active-content",
+    ],
+    [
+      "inspection-exhausting comment",
+      `<!--${" ".repeat(64 * 1024)}--><html><body>x</body></html>`,
+      "text/html",
+    ],
+    [
+      "inspection-exhausting XML declaration",
+      `<?xml${" ".repeat(64 * 1024)}?><svg />`,
+      "application/x-topik-active-content",
+    ],
     ["Unix executable", new Uint8Array([0x7f, 0x45, 0x4c, 0x46, 1]), "application/x-executable"],
     ["Windows executable", new Uint8Array([0x4d, 0x5a, 0, 0]), "application/x-executable"],
     ["script executable", "#!/bin/sh\necho unsafe\n", "application/x-executable"],
@@ -206,6 +240,15 @@ describe("portable manifest/resource/occurrence/file validation", () => {
     expect(validatePortableAssetSnapshot({ ...input, allowActiveDownloads: true })).toMatchObject({
       ok: true,
     });
+  });
+
+  test.each([
+    ["plain text", "ordinary offline download"],
+    ["bounded whitespace", " ".repeat(64 * 1024)],
+    ["binary controls", new Uint8Array([0, 1, 2, 3, 4])],
+  ])("keeps genuine opaque %s as an attachment-safe media type", (_name, source) => {
+    const bytes = typeof source === "string" ? new TextEncoder().encode(source) : source;
+    expect(sniffPortableMediaType(bytes)).toBe("application/octet-stream");
   });
 });
 
@@ -297,6 +340,8 @@ describe("filesystem no-follow reader", () => {
     ["Git LFS", "*.png filter=lfs\n"],
     ["custom filter", "hero.png filter=custom\n"],
     ["working-tree encoding", "*.png working-tree-encoding=UTF-16\n"],
+    ["explicitly unset filter", "hero.png -filter\n"],
+    ["explicitly unset working-tree encoding", "hero.png -working-tree-encoding\n"],
     ["unproven character-class pattern", "[h]ero.png filter=lfs\n"],
     ["unproven recursive pattern", "**/*.png filter=lfs\n"],
   ])("rejects effective or unproven %s attributes", async (_name, attributes) => {
@@ -311,12 +356,18 @@ describe("filesystem no-follow reader", () => {
     });
   });
 
-  test("applies nested Git attribute overrides in order", async () => {
+  test("accepts only explicit resets to unspecified in nested Git attributes", async () => {
     const root = await mkdtemp(join(tmpdir(), "topik-portable-attributes-override-"));
     roots.push(root);
     await mkdir(join(root, "assets"));
-    await writeFile(join(root, ".gitattributes"), "*.png filter=custom\n");
-    await writeFile(join(root, "assets", ".gitattributes"), "hero.png -filter\n");
+    await writeFile(
+      join(root, ".gitattributes"),
+      "*.png filter=custom working-tree-encoding=UTF-16\n",
+    );
+    await writeFile(
+      join(root, "assets", ".gitattributes"),
+      "hero.png !filter !working-tree-encoding\n",
+    );
     await writeFile(join(root, "assets", "hero.png"), PNG_BYTES);
 
     expect(await readPortableAssetFile({ root, path: "assets/hero.png" })).toMatchObject({

@@ -99,9 +99,9 @@ export function extractTopikAssetOccurrences(
       if (parsedReference == null) continue;
       const reference =
         definition.node === "image"
-          ? (exactReferences.images.shift() ?? parsedReference)
+          ? (exactReferences.images.shift() ?? "")
           : definition.node === "link"
-            ? (exactReferences.links.shift() ?? parsedReference)
+            ? (exactReferences.links.shift() ?? "")
             : parsedReference;
       if (
         definition.conditional === "manifest-entry" &&
@@ -144,9 +144,9 @@ export function rewriteTopikAssetOccurrences(
       if (parsedReference == null) continue;
       const reference =
         definition.node === "image"
-          ? (exactReferences.images.shift() ?? parsedReference)
+          ? (exactReferences.images.shift() ?? "")
           : definition.node === "link"
-            ? (exactReferences.links.shift() ?? parsedReference)
+            ? (exactReferences.links.shift() ?? "")
             : parsedReference;
       if (
         definition.conditional === "manifest-entry" &&
@@ -397,9 +397,12 @@ interface MarkdownDestination {
   reference: string;
 }
 
-function exactMarkdownReferences(source: string): { images: string[]; links: string[] } {
-  const images: string[] = [];
-  const links: string[] = [];
+function exactMarkdownReferences(source: string): {
+  images: Array<string | undefined>;
+  links: Array<string | undefined>;
+} {
+  const images: Array<string | undefined> = [];
+  const links: Array<string | undefined> = [];
   const definitions = parseMarkdownReferenceDefinitions(source);
   const tokens = new Markdoc.Tokenizer().tokenize(source) as Array<{
     type?: string;
@@ -417,7 +420,7 @@ function exactMarkdownReferences(source: string): { images: string[]; links: str
       const attribute = kind === "image" ? "src" : "href";
       const parsed = child.attrs?.find(([name]) => name === attribute)?.[1];
       if (parsed === undefined) continue;
-      let exact = parsed;
+      let exact: string | undefined;
       for (let index = scanIndex; index < scanned.length; index++) {
         const candidate = scanned[index];
         if (candidate.kind !== kind || !sameMarkdownDestination(candidate.reference, parsed)) {
@@ -441,7 +444,7 @@ function scanMarkdownDestinations(
   for (let index = 0; index < source.length; index++) {
     if (source[index] === "`" && !isEscaped(source, index)) {
       const width = countRun(source, index, "`");
-      const closing = source.indexOf("`".repeat(width), index + width);
+      const closing = findClosingBacktickRun(source, index + width, width);
       if (closing !== -1) index = closing + width - 1;
       continue;
     }
@@ -611,12 +614,30 @@ function findBalancedMarkdownLabelEnd(value: string, opening: number): number {
   let depth = 1;
   for (let index = opening + 1; index < value.length; index++) {
     if (isEscaped(value, index)) continue;
+    if (value[index] === "`") {
+      const width = countRun(value, index, "`");
+      const closing = findClosingBacktickRun(value, index + width, width);
+      if (closing !== -1) {
+        index = closing + width - 1;
+        continue;
+      }
+    }
     if (value[index] === "[") {
       depth++;
     } else if (value[index] === "]") {
       depth--;
       if (depth === 0) return index;
     }
+  }
+  return -1;
+}
+
+function findClosingBacktickRun(value: string, start: number, width: number): number {
+  for (let index = start; index < value.length; index++) {
+    if (value[index] !== "`") continue;
+    const candidateWidth = countRun(value, index, "`");
+    if (candidateWidth === width) return index;
+    index += candidateWidth - 1;
   }
   return -1;
 }

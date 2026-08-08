@@ -30,9 +30,10 @@ non-executable file matches the recorded SHA-256, byte size, and media type veri
 Symlinks, hard links, submodules, executables, special files, Git LFS pointers/filters,
 `working-tree-encoding`, and security-sensitive Git control files are rejected.
 Recognizable HTML, script, SVG, WebAssembly, and executable content cannot fall through as an opaque
-download. Snapshot callers must explicitly opt active content into a proven download occurrence with
-`allowActiveDownloads`; any server that supports that policy must force attachment disposition and
-disable content sniffing.
+download, including content behind bounded padding, declarations, and comments. An unresolved active
+preamble that exhausts the inspection bound fails closed. Snapshot callers must explicitly opt active
+content into a proven download occurrence with `allowActiveDownloads`; any server that supports that
+policy must force attachment disposition and disable content sniffing.
 Git-tree descriptors use mode `100644`; archive descriptors use `0644`. The filesystem helper
 succeeds only on Linux when it can traverse from open directory descriptors through `/proc/self/fd`
 with no-follow flags and stable before/after identity. Other platforms receive a visible unsupported
@@ -77,8 +78,10 @@ retry to retain exact key assignments. Key history is scoped by resource root, s
 may use the same opaque key text. Removing an assignment retires its key within that resource's
 history; a later re-addition cannot reuse it. Tests may inject `assets.randomBytes`, while production
 callers normally omit it. Filesystem compilation rejects a symlink supplied as its root and evaluates
-applicable root and nested `.gitattributes`; an effective `filter` or `working-tree-encoding` attribute
-blocks portable emission.
+applicable root and nested `.gitattributes`; any effective `filter` or `working-tree-encoding` state
+other than unspecified blocks portable emission. An explicit `!filter` or
+`!working-tree-encoding` resets that attribute to unspecified; an explicit `-` unset remains
+non-portable.
 
 The CLI continues to write ordinary resource files under `Type/name.<format>` and writes each exact
 portable root under `portable/Type/name/`. This layout allows several logical resources to coexist

@@ -233,6 +233,30 @@ graph TD;
     ).toMatchObject({ valid: true, errors: [] });
   });
 
+  test.each([
+    "![Inline `]`](é.png)\n",
+    "![Inline `[`](&eacute;.png)\n",
+    "![Inline `]`](hero\\.png)\n",
+    "![Reference `]`][id]\n\n[id]: é.png\n",
+    "![Reference `[`][id]\n\n[id]: &eacute;.png\n",
+    "![Reference `]`][id]\n\n[id]: hero\\.png\n",
+  ])("rejects exact noncanonical destinations behind code-span labels in %s", (source) => {
+    expect(validateTopikContent(source)).toMatchObject({
+      valid: false,
+      errors: expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_ASSET_PATH_INVALID", type: "image.src" }),
+      ]),
+    });
+  });
+
+  test("accepts canonical encoded destinations behind code-span labels", () => {
+    expect(
+      validateTopikContent(
+        "![Inline `]`](%C3%A9.png)\n\n![Reference `[`][id]\n\n[id]: %C3%A9.png\n",
+      ),
+    ).toMatchObject({ valid: true, errors: [] });
+  });
+
   test("validates exact continuation-line definition destinations independently from titles", () => {
     for (const source of [
       "![Hero][id]\n\n[id]:\n  é.png\n",

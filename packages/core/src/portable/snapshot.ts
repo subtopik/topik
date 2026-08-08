@@ -300,30 +300,61 @@ export function sniffPortableMediaType(bytes: Uint8Array): string {
     return "application/x-executable";
   }
   if (has(0x00, 0x61, 0x73, 0x6d)) return "application/wasm";
-  const text = safeText(bytes.slice(0, 4096)).toLowerCase();
-  const markup = stripLeadingHtmlComments(text).trimStart();
-  if (/^<\?xml[^>]*>\s*<svg\b/u.test(markup) || /^<svg\b/u.test(markup)) {
+  return sniffPortableMarkupType(bytes) ?? "application/octet-stream";
+}
+
+const MARKUP_INSPECTION_LIMIT = 64 * 1024;
+const UNRESOLVED_ACTIVE_CONTENT_TYPE = "application/x-topik-active-content";
+
+function sniffPortableMarkupType(bytes: Uint8Array): string | undefined {
+  const inspected = bytes.slice(0, MARKUP_INSPECTION_LIMIT);
+  const text = new TextDecoder("utf-8").decode(inspected).toLowerCase();
+  let cursor = skipMarkupWhitespace(text, 0);
+  let consumedPreamble = false;
+  while (cursor < text.length) {
+    if (text.startsWith("<!--", cursor)) {
+      const end = text.indexOf("-->", cursor + 4);
+      if (end === -1) return "text/html";
+      consumedPreamble = true;
+      cursor = skipMarkupWhitespace(text, end + 3);
+      continue;
+    }
+    if (text.startsWith("<?xml", cursor)) {
+      const end = text.indexOf("?>", cursor + 5);
+      if (end === -1) return UNRESOLVED_ACTIVE_CONTENT_TYPE;
+      consumedPreamble = true;
+      cursor = skipMarkupWhitespace(text, end + 2);
+      continue;
+    }
+    break;
+  }
+
+  if (cursor === text.length) {
+    return bytes.byteLength > inspected.byteLength && (cursor > 0 || consumedPreamble)
+      ? UNRESOLVED_ACTIVE_CONTENT_TYPE
+      : undefined;
+  }
+
+  const markup = text.slice(cursor);
+  if (/<!doctype\s+svg\b/u.test(markup) || /<svg\b/u.test(markup)) {
     return "image/svg+xml";
   }
   if (
-    /^(?:<!doctype\s+html\b|<[a-z][a-z0-9:-]*(?:\s|>|\/))/u.test(markup) ||
+    /(?:<!doctype\s+html\b|<[a-z][a-z0-9:-]*(?:\s|>|\/))/u.test(markup) ||
     /<[^>]+\bon[a-z][a-z0-9_-]*\s*=/u.test(markup) ||
     /<[^>]+(?:href|src)\s*=\s*["']?\s*javascript:/u.test(markup) ||
     /<script\b/u.test(markup)
   ) {
     return "text/html";
   }
-  return "application/octet-stream";
+  if (consumedPreamble && markup.startsWith("<")) return UNRESOLVED_ACTIVE_CONTENT_TYPE;
+  return undefined;
 }
 
-function stripLeadingHtmlComments(value: string): string {
-  let result = value.trimStart();
-  while (result.startsWith("<!--")) {
-    const end = result.indexOf("-->", 4);
-    if (end === -1) break;
-    result = result.slice(end + 3).trimStart();
-  }
-  return result;
+function skipMarkupWhitespace(value: string, start: number): number {
+  let cursor = start;
+  while (/\s/u.test(value[cursor] ?? "")) cursor++;
+  return cursor;
 }
 
 function sameResource(
@@ -362,6 +393,7 @@ function isActiveType(mediaType: string): boolean {
     "text/javascript",
     "application/x-executable",
     "application/wasm",
+    UNRESOLVED_ACTIVE_CONTENT_TYPE,
   ].includes(mediaType);
 }
 
@@ -381,14 +413,6 @@ function atOccurrence(
 
 function ascii(bytes: Uint8Array, start: number, length: number): string {
   return String.fromCharCode(...bytes.slice(start, start + length));
-}
-
-function safeText(bytes: Uint8Array): string {
-  try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch {
-    return "";
-  }
 }
 
 function escapePointer(value: string): string {

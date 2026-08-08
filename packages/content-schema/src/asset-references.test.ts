@@ -115,12 +115,63 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
     ]);
   });
 
+  test("retains exact destinations when image and link labels contain code-span brackets", () => {
+    const source = [
+      "![Inline `]`](&eacute;.png)",
+      "![Reference `[`][image-id]",
+      "[Inline `]`](manual\\.bin)",
+      "[Reference `[`][download-id]",
+      "",
+      "[image-id]: é.png",
+      "[download-id]: é.bin",
+    ].join("\n");
+
+    expect(
+      extractTopikAssetOccurrences(source, { includeGenericLinkCandidates: true }).map(
+        ({ kind, reference, slot }) => ({ kind, reference, slot }),
+      ),
+    ).toEqual([
+      { kind: "unsafe", reference: "&eacute;.png", slot: "image.src" },
+      { kind: "unsafe", reference: "é.png", slot: "image.src" },
+      { kind: "unsafe", reference: "manual\\.bin", slot: "link.href" },
+      { kind: "unsafe", reference: "é.bin", slot: "link.href" },
+    ]);
+  });
+
+  test("fails closed when exact Markdown source pairing is unavailable", () => {
+    expect(extractTopikAssetOccurrences("![Multiline](\n  é.png\n)\n")).toMatchObject([
+      { reference: "", parsedReference: "%C3%A9.png", kind: "unsafe" },
+    ]);
+  });
+
   test("keeps canonical destinations behind balanced nested labels", () => {
     const source = [
       "![Inline [canonical]](%C3%A9.png)",
       "![Reference [canonical]][image-id]",
       "[Download [canonical]](manual.bin)",
       "[Reference download [canonical]][download-id]",
+      "",
+      "[image-id]: %C3%A9.png",
+      "[download-id]: manual.bin",
+    ].join("\n");
+    expect(
+      extractTopikAssetOccurrences(source, { includeGenericLinkCandidates: true }).map(
+        ({ kind, reference }) => ({ kind, reference }),
+      ),
+    ).toEqual([
+      { kind: "local", reference: "%C3%A9.png" },
+      { kind: "local", reference: "%C3%A9.png" },
+      { kind: "local", reference: "manual.bin" },
+      { kind: "local", reference: "manual.bin" },
+    ]);
+  });
+
+  test("keeps canonical destinations behind code-span labels", () => {
+    const source = [
+      "![Inline `]`](%C3%A9.png)",
+      "![Reference `[`][image-id]",
+      "[Download `]`](manual.bin)",
+      "[Reference download `[`][download-id]",
       "",
       "[image-id]: %C3%A9.png",
       "[download-id]: manual.bin",

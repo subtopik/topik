@@ -123,6 +123,7 @@ function isDownloadMediaType(mediaType: string): boolean {
     "text/javascript",
     "application/x-executable",
     "application/wasm",
+    "application/x-topik-active-content",
   ].includes(mediaType);
 }
 

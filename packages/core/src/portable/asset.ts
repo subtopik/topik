@@ -124,6 +124,19 @@ export function validateAssetValue(value: unknown): TopikAssetResult<Asset> {
         "/apiVersion",
       );
     }
+    const spec = Object.hasOwn(value, "spec") && isRecord(value.spec) ? value.spec : undefined;
+    if (
+      spec !== undefined &&
+      Object.hasOwn(spec, "size") &&
+      typeof spec.size === "number" &&
+      spec.size > TOPIK_ASSET_LIMITS.maxAssetBytes
+    ) {
+      return failure(
+        "TOPIK_ASSET_SIZE_MISMATCH",
+        "Asset size exceeds the portable byte limit",
+        "/spec/size",
+      );
+    }
   }
   if (!validateSchema(value)) {
     return { ok: false, diagnostics: (validateSchema.errors ?? []).map(schemaDiagnostic) };

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 import { extractTopikAssetOccurrences } from "@topik/content-schema";
 import type { Asset, Course, CourseModule, CoursePage, Guide, Wiki, WikiPage } from "@topik/schema";
 import type { Resource } from "../resource";
+import { TOPIK_ASSET_LIMITS } from "../portable/constants";
 import { AssetCompilationError, compileAssetResources, loadAssetDescriptors } from "./assets";
 
 const PNG_BYTES = Buffer.from(
@@ -389,6 +390,38 @@ describe("compilation-wide named Assets", () => {
     expect(result.resources.filter((resource) => resource.type === "Asset")).toHaveLength(2);
     expect(result.payloads).toHaveLength(1);
     expect(result.resources.find((resource) => resource.name === "remote-manual")).toEqual(remote);
+  });
+
+  test("enforces the portable size ceiling for generic remote Asset compilation", async () => {
+    const remote = (size: number): Asset => ({
+      apiVersion: "v1",
+      type: "Asset",
+      name: "remote-manual",
+      spec: {
+        uri: "https://cdn.example.com/revisions/manual.pdf",
+        integrity: `sha256:${"0".repeat(64)}`,
+        size,
+        mediaType: "application/pdf",
+      },
+    });
+    await expect(
+      compileAssetResources({
+        rootDir: dir,
+        resources: [remote(TOPIK_ASSET_LIMITS.maxAssetBytes)],
+        sourcePathsByResource: {},
+      }),
+    ).resolves.toMatchObject({ resources: [expect.objectContaining({ name: "remote-manual" })] });
+    await expect(
+      compileAssetResources({
+        rootDir: dir,
+        resources: [remote(TOPIK_ASSET_LIMITS.maxAssetBytes + 1)],
+        sourcePathsByResource: {},
+      }),
+    ).rejects.toMatchObject({
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_ASSET_SCHEMA_INVALID" }),
+      ]),
+    });
   });
 
   test("enforces declared remote media compatibility for every referenced role", async () => {

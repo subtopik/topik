@@ -1,6 +1,6 @@
 import { constants } from "node:fs";
 import { lstat, open, realpath, type FileHandle } from "node:fs/promises";
-import { isAbsolute, relative, sep } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 
 const SAFE_READ_FLAGS =
   constants.O_RDONLY |
@@ -52,9 +52,14 @@ export async function assertRegularFileWithinRoot(
 }
 
 async function openRegularFileWithinRoot(filePath: string, rootDir: string): Promise<FileHandle> {
+  const authoredRoot = resolve(rootDir);
+  const authoredFile = resolve(filePath);
   const [canonicalRoot, canonicalFile] = await Promise.all([realpath(rootDir), realpath(filePath)]);
   if (!isWithinRoot(canonicalRoot, canonicalFile)) {
     throw new FileOutsideCompilationRootError(filePath, rootDir);
+  }
+  if (authoredRoot !== canonicalRoot || authoredFile !== canonicalFile) {
+    throw new FileNotRegularError(filePath);
   }
 
   // Check before opening so directories and special files (notably FIFOs) cannot block or

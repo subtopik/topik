@@ -121,6 +121,7 @@ export const compile = command({
 export interface CompilationReplaceTestHooks {
   beforePublish?: () => void | Promise<void>;
   afterPublish?: () => void | Promise<void>;
+  afterSupersededGenerationProof?: () => void | Promise<void>;
 }
 
 export async function replaceCompilationTree(
@@ -180,7 +181,11 @@ export async function replaceCompilationTree(
     }
     if (published && existing !== undefined) {
       try {
-        await removeOwnedCompilationGeneration(parent, existing);
+        await proveSupersededCompilationGeneration(
+          parent,
+          existing,
+          hooks.afterSupersededGenerationProof,
+        );
       } catch (error) {
         operationError ??= error;
       }
@@ -307,17 +312,14 @@ async function assertOutputTargetAbsent(targetPath: string): Promise<void> {
   throw new CliError("Compilation output appeared before atomic publish");
 }
 
-async function removeOwnedCompilationGeneration(
+async function proveSupersededCompilationGeneration(
   parent: FileHandle,
   existing: OwnedCompilationGeneration,
+  afterProof?: () => void | Promise<void>,
 ): Promise<void> {
   const path = procFdChild(parent.fd, existing.target);
   await assertDirectoryIdentity(path, existing.identity);
-  try {
-    await rm(path, { recursive: true, force: false });
-  } catch {
-    throw new CliError("Superseded compilation generation could not be removed safely");
-  }
+  await afterProof?.();
 }
 
 function isCompilationGenerationName(value: string): boolean {

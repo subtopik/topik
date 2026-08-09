@@ -466,7 +466,7 @@ export async function compileAssetResources(
       assetNames: payload.assetNames,
     })),
   );
-  const inventory = validateTopikMaterializationRecord(materialization, resolvedAssets);
+  const inventory = validateTopikMaterializationRecord(materialization, resources);
   if (!inventory.ok)
     throw new AssetCompilationError("Compiled inventory is incomplete", inventory.diagnostics);
   return { resources, payloads, semantic, materialization };

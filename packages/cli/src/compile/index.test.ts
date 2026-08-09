@@ -15,6 +15,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
+import { TOPIK_ASSET_LIMITS } from "@topik/core";
 import { compile, replaceCompilationTree } from "./index";
 
 const PNG_BYTES = Buffer.from(
@@ -83,6 +84,41 @@ describe("compile command", () => {
 
     expect(log).toHaveBeenCalledWith("Asset/manual.json");
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/^assets\/sha256\/[0-9a-f]{64}$/u));
+  });
+
+  test("enforces the remote Asset size ceiling through the CLI", async () => {
+    await mkdir(join(dir, "assets"));
+    const descriptorPath = join(dir, "assets", "remote.json");
+    const descriptor = (size: number) =>
+      `${JSON.stringify({
+        apiVersion: "v1",
+        type: "Asset",
+        name: "remote-manual",
+        spec: {
+          uri: "https://cdn.example.com/revisions/manual.pdf",
+          integrity: `sha256:${"0".repeat(64)}`,
+          size,
+          mediaType: "application/pdf",
+        },
+      })}\n`;
+    const options = {
+      dir,
+      format: "json" as const,
+      dryRun: true,
+      validate: true,
+      links: "error" as const,
+    };
+
+    await writeFile(descriptorPath, descriptor(TOPIK_ASSET_LIMITS.maxAssetBytes));
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    await expect((compile as CompileCommand).handler?.(options)).resolves.toBeUndefined();
+
+    await writeFile(descriptorPath, descriptor(TOPIK_ASSET_LIMITS.maxAssetBytes + 1));
+    await expect((compile as CompileCommand).handler?.(options)).rejects.toMatchObject({
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_ASSET_SIZE_MISMATCH" }),
+      ]),
+    });
   });
 
   test("uses the same generated identity for canonically equivalent CLI namespaces", async () => {
@@ -161,10 +197,13 @@ describe("compile command", () => {
     expect(secondGeneration).not.toBe(firstGeneration);
     expect(await readFile(join(outDir, ".topik", "materialization.json"))).toEqual(firstIdentity);
     await expect(readFile(join(outDir, "stale.bin"))).rejects.toMatchObject({ code: "ENOENT" });
-    await expect(lstat(join(dir, firstGeneration))).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await lstat(join(dir, firstGeneration))).isDirectory()).toBe(true);
+    expect(await readFile(join(dir, firstGeneration, "stale.bin"), "utf8")).toBe("stale");
     expect(
-      (await readdir(dir)).filter((name) => name.startsWith(".topik-compilation-generation-")),
-    ).toEqual([secondGeneration]);
+      (await readdir(dir))
+        .filter((name) => name.startsWith(".topik-compilation-generation-"))
+        .sort(),
+    ).toEqual([firstGeneration, secondGeneration].sort());
   });
 
   test("rejects a symlinked output ancestor without writing outside", async () => {
@@ -343,7 +382,7 @@ describe("compile command", () => {
     expect(await readFile(join(outDir, "generation.txt"), "utf8")).toBe("new");
     const newGeneration = await readlink(outDir);
     expect(newGeneration).not.toBe(oldGeneration);
-    await expect(lstat(join(dir, oldGeneration))).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await lstat(join(dir, oldGeneration))).isDirectory()).toBe(true);
 
     await expect(
       replaceCompilationTree(outDir, ownedFiles("never-visible"), {
@@ -364,7 +403,7 @@ describe("compile command", () => {
     ).rejects.toThrow("interrupted after publish");
     expect(await readFile(join(outDir, "generation.txt"), "utf8")).toBe("published");
     expect(await readlink(outDir)).not.toBe(newGeneration);
-    await expect(lstat(join(dir, newGeneration))).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await lstat(join(dir, newGeneration))).isDirectory()).toBe(true);
   });
 
   test("publishes without external commands when PATH has no mv implementation", async () => {
@@ -406,21 +445,19 @@ describe("compile command", () => {
     ).toHaveLength(1);
   });
 
-  test("does not prune a stale-generation path whose identity changes after publish", async () => {
+  test("retains unrelated content swapped in immediately after stale-generation proof", async () => {
     const outDir = join(dir, "cleanup-race-output");
     const displaced = join(dir, "displaced-stale-generation");
     await replaceCompilationTree(outDir, ownedFiles("old"));
     const oldGeneration = await readlink(outDir);
 
-    await expect(
-      replaceCompilationTree(outDir, ownedFiles("new"), {
-        afterPublish: async () => {
-          await rename(join(dir, oldGeneration), displaced);
-          await mkdir(join(dir, oldGeneration));
-          await writeFile(join(dir, oldGeneration, "author.txt"), "preserve me");
-        },
-      }),
-    ).rejects.toThrow(/identity changed/u);
+    await replaceCompilationTree(outDir, ownedFiles("new"), {
+      afterSupersededGenerationProof: async () => {
+        await rename(join(dir, oldGeneration), displaced);
+        await mkdir(join(dir, oldGeneration));
+        await writeFile(join(dir, oldGeneration, "author.txt"), "preserve me");
+      },
+    });
 
     expect(await readFile(join(outDir, "generation.txt"), "utf8")).toBe("new");
     expect(await readFile(join(dir, oldGeneration, "author.txt"), "utf8")).toBe("preserve me");

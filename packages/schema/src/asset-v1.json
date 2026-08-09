@@ -107,7 +107,7 @@
           "type": "string"
         },
         "size": {
-          "maximum": 9007199254740991,
+          "maximum": 268435456,
           "minimum": 0,
           "type": "integer"
         },

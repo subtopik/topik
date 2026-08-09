@@ -1,8 +1,19 @@
 import { createHash } from "node:crypto";
 import type { Asset } from "@topik/schema";
-import { TOPIK_MATERIALIZATION_VERSION } from "./constants";
-import { topikAssetDiagnostic, type TopikAssetResult } from "./diagnostics";
-import { serializeTopikJson } from "./json";
+import type { Resource } from "../resource";
+import { validateResources } from "../validate";
+import {
+  TOPIK_ASSET_LIMITS,
+  TOPIK_ASSET_OUTPUT_PREFIX,
+  TOPIK_MATERIALIZATION_VERSION,
+} from "./constants";
+import {
+  topikAssetDiagnostic,
+  type TopikAssetDiagnosticId,
+  type TopikAssetResult,
+} from "./diagnostics";
+import { isTopikJsonDataValue, serializeTopikJson } from "./json";
+import { validateTopikPathSet } from "./path";
 
 export interface TopikAssetReferenceMappingV1 {
   resource: string;
@@ -101,33 +112,191 @@ export function createTopikMaterializationRecord(
 }
 
 export function validateTopikMaterializationRecord(
-  record: TopikMaterializationRecordV1,
-  assets: readonly Asset[],
+  record: unknown,
+  resources: readonly Resource[],
 ): TopikAssetResult<TopikMaterializationRecordV1> {
-  const payloads = new Map(record.payloads.map((payload) => [payload.path, payload]));
-  const descriptors = new Set(record.resources.map((resource) => resource.resource));
-  const missing = assets.find(
-    (asset) =>
-      !descriptors.has(`Asset/${asset.name}`) ||
-      (!asset.spec.uri.startsWith("https://") &&
-        (!payloads.has(asset.spec.uri) ||
-          !payloads.get(asset.spec.uri)?.assetNames.includes(asset.name) ||
-          `sha256:${payloads.get(asset.spec.uri)?.sha256}` !== asset.spec.integrity ||
-          payloads.get(asset.spec.uri)?.size !== asset.spec.size)),
-  );
-  if (missing !== undefined) {
-    return {
-      ok: false,
-      diagnostics: [
-        topikAssetDiagnostic(
-          "TOPIK_ASSET_INVENTORY_INCOMPLETE",
-          "Materialization omits or mismatches a required Asset descriptor or payload",
-          { location: { key: missing.name, path: missing.spec.uri } },
-        ),
-      ],
-    };
+  if (!isRecord(record) || !Object.hasOwn(record, "descriptor")) {
+    return materializationFailure(
+      "TOPIK_ASSET_SCHEMA_INVALID",
+      "Materialization record is malformed",
+    );
+  }
+  if (record.descriptor !== TOPIK_MATERIALIZATION_VERSION) {
+    return materializationFailure(
+      "TOPIK_ASSET_UNSUPPORTED_VERSION",
+      "Materialization descriptor version is unsupported",
+      "topik-materialization-unknown",
+    );
+  }
+  if (!isMaterializationRecordV1(record)) {
+    return materializationFailure(
+      "TOPIK_ASSET_SCHEMA_INVALID",
+      "Materialization record is malformed",
+    );
+  }
+  if (!hasCanonicalMaterializationStructure(record)) {
+    return materializationFailure(
+      "TOPIK_ASSET_INVENTORY_INCOMPLETE",
+      "Materialization inventory records are noncanonical or duplicated",
+    );
+  }
+
+  if (!validateResources(resources).valid) {
+    return materializationFailure(
+      "TOPIK_ASSET_INVENTORY_INCOMPLETE",
+      "Materialization requires a valid complete compiled resource set",
+    );
+  }
+
+  const expected = expectedMaterializationRecord(resources);
+  if (expected === undefined || serializeTopikJson(record) !== serializeTopikJson(expected)) {
+    return materializationFailure(
+      "TOPIK_ASSET_INVENTORY_INCOMPLETE",
+      "Materialization does not exactly describe the compiled resource set",
+    );
   }
   return { ok: true, value: record, diagnostics: [] };
+}
+
+function isMaterializationRecordV1(
+  value: Record<string, unknown>,
+): value is Record<string, unknown> & TopikMaterializationRecordV1 {
+  if (
+    !isTopikJsonDataValue(value) ||
+    !hasExactKeys(value, ["descriptor", "payloads", "resources"]) ||
+    !Array.isArray(value.resources) ||
+    !Array.isArray(value.payloads)
+  ) {
+    return false;
+  }
+  return (
+    value.resources.every(
+      (entry) =>
+        isRecord(entry) &&
+        hasExactKeys(entry, ["path", "resource", "sha256", "size"]) &&
+        typeof entry.resource === "string" &&
+        typeof entry.path === "string" &&
+        validInventorySize(entry.size, TOPIK_ASSET_LIMITS.maxDescriptorBytes) &&
+        isSha256(entry.sha256),
+    ) &&
+    value.payloads.every(
+      (entry) =>
+        isRecord(entry) &&
+        hasExactKeys(entry, ["assetNames", "path", "sha256", "size"]) &&
+        typeof entry.path === "string" &&
+        validInventorySize(entry.size, TOPIK_ASSET_LIMITS.maxAssetBytes) &&
+        isSha256(entry.sha256) &&
+        Array.isArray(entry.assetNames) &&
+        entry.assetNames.every((name) => typeof name === "string"),
+    )
+  );
+}
+
+function hasCanonicalMaterializationStructure(record: TopikMaterializationRecordV1): boolean {
+  const resourceKeys = record.resources.map((entry) => entry.resource);
+  const resourcePaths = record.resources.map((entry) => entry.path);
+  const payloadPaths = record.payloads.map((entry) => entry.path);
+  if (
+    new Set(resourceKeys).size !== resourceKeys.length ||
+    new Set(resourcePaths).size !== resourcePaths.length ||
+    new Set(payloadPaths).size !== payloadPaths.length ||
+    !isSorted(resourceKeys) ||
+    !isSorted(payloadPaths) ||
+    record.payloads.some(
+      (entry) =>
+        new Set(entry.assetNames).size !== entry.assetNames.length || !isSorted(entry.assetNames),
+    )
+  ) {
+    return false;
+  }
+  const paths = validateTopikPathSet([...resourcePaths, ...payloadPaths]);
+  return paths.ok;
+}
+
+function expectedMaterializationRecord(
+  resources: readonly Resource[],
+): TopikMaterializationRecordV1 | undefined {
+  let descriptorRecord: TopikMaterializationRecordV1;
+  try {
+    descriptorRecord = createTopikMaterializationRecord(
+      resources.map((resource) => ({
+        resource,
+        bytes: new TextEncoder().encode(serializeTopikJson(resource)),
+      })),
+      [],
+    );
+  } catch {
+    return undefined;
+  }
+  const payloads = new Map<string, TopikMaterializationPayloadV1>();
+  for (const resource of resources) {
+    if (resource.type !== "Asset" || resource.spec.uri.startsWith("https://")) continue;
+    const { integrity, size, uri } = resource.spec;
+    if (
+      integrity === undefined ||
+      size === undefined ||
+      size > TOPIK_ASSET_LIMITS.maxAssetBytes ||
+      uri !== `${TOPIK_ASSET_OUTPUT_PREFIX}/${integrity.slice("sha256:".length)}`
+    ) {
+      return undefined;
+    }
+    const sha256 = integrity.slice("sha256:".length);
+    if (!isSha256(sha256)) return undefined;
+    const existing = payloads.get(uri);
+    if (existing !== undefined) {
+      if (existing.sha256 !== sha256 || existing.size !== size) return undefined;
+      (existing.assetNames as string[]).push(resource.name);
+    } else {
+      payloads.set(uri, { path: uri, size, sha256, assetNames: [resource.name] });
+    }
+  }
+  const sortedPayloads = [...payloads.values()]
+    .map((payload) => ({ ...payload, assetNames: [...payload.assetNames].sort(compareUtf8) }))
+    .sort((left, right) => compareUtf8(left.path, right.path));
+  const expected = {
+    descriptor: TOPIK_MATERIALIZATION_VERSION,
+    resources: descriptorRecord.resources,
+    payloads: sortedPayloads,
+  } satisfies TopikMaterializationRecordV1;
+  return hasCanonicalMaterializationStructure(expected) ? expected : undefined;
+}
+
+function materializationFailure(
+  id: TopikAssetDiagnosticId,
+  message: string,
+  descriptorVersion: string = TOPIK_MATERIALIZATION_VERSION,
+): TopikAssetResult<TopikMaterializationRecordV1> {
+  return {
+    ok: false,
+    diagnostics: [
+      topikAssetDiagnostic(id, message, {
+        consequence: "block-identity-and-writes",
+        descriptorVersion,
+        recovery: "revalidate-or-migrate",
+      }),
+    ],
+  };
+}
+
+function validInventorySize(value: unknown, maximum: number): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= maximum;
+}
+
+function isSha256(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{64}$/u.test(value);
+}
+
+function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
+  const keys = Object.keys(value).sort();
+  return keys.length === expected.length && keys.every((key, index) => key === expected[index]);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isSorted(values: readonly string[]): boolean {
+  return values.every((value, index) => index === 0 || compareUtf8(values[index - 1], value) <= 0);
 }
 
 export function digestTopikAssetSemanticRecord(record: TopikAssetSemanticRecordV1): string {

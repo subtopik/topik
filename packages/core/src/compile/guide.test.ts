@@ -62,6 +62,32 @@ describe("compileGuides", () => {
     expect(result.payloads).toEqual([]);
   });
 
+  test("rejects an in-root symlinked collection config before implicit Asset ownership", async () => {
+    await writeFile(join(dir, "collection-source.yaml"), "id: blog\ntitle: Blog\n");
+    await symlink("collection-source.yaml", join(dir, "collection.yaml"));
+    await writeGuide("config", "[Configuration](collection-source.yaml)\n");
+
+    await expect(
+      compileGuides({
+        dir,
+        validation: { links: "off" },
+        assets: { sourceNamespace: "symlinked-guide-config" },
+      }),
+    ).rejects.toThrow(/not a regular file/u);
+  });
+
+  test("rejects an in-root symlinked guide source", async () => {
+    await writeCollectionConfig("id: blog\ntitle: Blog\n");
+    await writeFile(join(dir, "post-source.txt"), "# Linked guide\n");
+    await symlink("post-source.txt", join(dir, "post.md"));
+
+    await expect(compileGuides({ dir })).rejects.toMatchObject({
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ id: "guide-not-regular-file", level: "error" }),
+      ]),
+    });
+  });
+
   test("extracts title from markdown heading", async () => {
     await writeCollectionConfig("id: blog\ntitle: Blog\n");
     await writeGuide("my-post", "# My Custom Title\n\nContent here.");
@@ -200,22 +226,16 @@ describe("compileGuides", () => {
     }
   });
 
-  test("allows markdown symlinks that resolve within the compilation directory", async () => {
+  test("rejects markdown symlinks that resolve within the compilation directory", async () => {
     await writeCollectionConfig("id: blog\ntitle: Blog\n");
     await mkdir(join(dir, "shared"));
     await writeFile(join(dir, "shared", "post.md"), "# Shared Post\n\nReusable content.\n");
     await symlink(join(dir, "shared", "post.md"), join(dir, "alias.md"));
 
-    const result = await compileGuides({ dir });
-
-    expect(result.resources).toHaveLength(1);
-    expect(result.resources[0]).toMatchObject({
-      type: "Guide",
-      name: "blog-alias",
-      spec: {
-        title: "Shared Post",
-        content: { value: "# Shared Post\n\nReusable content.\n" },
-      },
+    await expect(compileGuides({ dir })).rejects.toMatchObject({
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ id: "guide-not-regular-file", level: "error" }),
+      ]),
     });
   });
 

@@ -212,7 +212,7 @@ export async function migrateLegacyDigestOutput(
       if (
         occurrences.some(
           (occurrence) =>
-            occurrence.kind === "asset" ||
+            isUnreconciledLegacyAssetOccurrence(occurrence) ||
             occurrence.reference.startsWith("asset:") ||
             occurrence.parsedReference.startsWith("asset:"),
         )
@@ -230,6 +230,9 @@ export async function migrateLegacyDigestOutput(
         entry.spec.content.value,
         (occurrence) => {
           if (isUnmigratableUnsafeOccurrence(occurrence)) throw new Error("malformed");
+          if (isUnreconciledLegacyAssetOccurrence(occurrence) && occurrence.kind !== "asset") {
+            throw new Error("unreconciled");
+          }
           if (occurrence.kind !== "asset") return undefined;
           const oldName = occurrence.reference.slice("asset:".length);
           const next = nameMap.get(oldName);
@@ -276,6 +279,12 @@ export async function migrateLegacyDigestOutput(
     diagnostics: [],
     ...(failureSource === undefined ? {} : { source: failureSource }),
   };
+}
+
+function isUnreconciledLegacyAssetOccurrence(occurrence: TopikAssetOccurrence): boolean {
+  return (
+    occurrence.slot !== "link.href" && (occurrence.kind === "local" || occurrence.kind === "asset")
+  );
 }
 
 function isUnmigratableUnsafeOccurrence(occurrence: TopikAssetOccurrence): boolean {

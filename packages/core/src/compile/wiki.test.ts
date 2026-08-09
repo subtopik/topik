@@ -104,6 +104,35 @@ navigation:
     }
   });
 
+  test("rejects an in-root symlinked wiki config before explicit Asset ownership", async () => {
+    await writeFile(
+      join(dir, "wiki-source.yaml"),
+      "id: tw\ntitle: Test Wiki\nnavigation:\n  - hello\n",
+    );
+    await symlink("wiki-source.yaml", join(dir, "wiki.yaml"));
+    await writePage("hello", "# Hello\n");
+    await mkdir(join(dir, "assets"));
+    await writeFile(
+      join(dir, "assets", "config.json"),
+      `${JSON.stringify({
+        apiVersion: "v1",
+        type: "Asset",
+        name: "wiki-config",
+        spec: { uri: "wiki-source.yaml" },
+      })}\n`,
+    );
+
+    await expect(compileWiki({ dir })).rejects.toThrow(/not a regular file/u);
+  });
+
+  test("rejects an in-root symlinked wiki page source", async () => {
+    await writeWikiConfig("id: tw\ntitle: Test Wiki\nnavigation:\n  - linked\n");
+    await writeFile(join(dir, "linked-source.txt"), "# Linked page\n");
+    await symlink("linked-source.txt", join(dir, "linked.md"));
+
+    await expect(compileWiki({ dir })).rejects.toThrow(/not a regular file/u);
+  });
+
   test("collapses index pages in slug", async () => {
     await writeWikiConfig(`
 id: tw

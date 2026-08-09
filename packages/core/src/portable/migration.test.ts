@@ -128,6 +128,106 @@ describe("legacy digest-output migration", () => {
     expect(result).not.toHaveProperty("value");
   });
 
+  test.each([
+    ["Markdown image", "![Local](local.png)"],
+    ["figure", '{% figure src="local.png" alt="Local" /%}'],
+  ])(
+    "rejects leftover local %s occurrences for absent, empty, and nonempty Asset lists",
+    async (_name, localOccurrence) => {
+      const bytes = Buffer.from("portable bytes\n");
+      await writeFile(join(dir, "manual.bin"), bytes);
+      const asset = legacyAsset(bytes, "manual.bin");
+      const listedReference = `![Manual](asset:${asset.name})`;
+      const inputs = [
+        legacyEnvelope([legacyGuide(localOccurrence)]),
+        legacyEnvelope([legacyGuide(localOccurrence, [])]),
+        legacyEnvelope([
+          asset,
+          legacyGuide(`${listedReference}\n\n${localOccurrence}`, [asset.name]),
+        ]),
+      ];
+      for (const input of inputs) {
+        const result = await migrateLegacyDigestOutput(input, {
+          rootDir: dir,
+          stableSourceNamespace: "migration-fixture",
+        });
+        expect(result.ok).toBe(false);
+        expect(result).not.toHaveProperty("value");
+      }
+    },
+  );
+
+  test.each([
+    ["Markdown image", (name: string) => `![Canonical](asset:${name})`],
+    ["figure", (name: string) => `{% figure src="asset:${name}" alt="Canonical" /%}`],
+  ])(
+    "rejects unreconciled canonical %s occurrences for absent, empty, and nonempty Asset lists",
+    async (_name, occurrence) => {
+      const bytes = Buffer.from("portable bytes\n");
+      await writeFile(join(dir, "manual.bin"), bytes);
+      const asset = legacyAsset(bytes, "manual.bin");
+      const missing = "0000000000000000";
+      const inputs = [
+        legacyEnvelope([legacyGuide(occurrence(missing))]),
+        legacyEnvelope([legacyGuide(occurrence(missing), [])]),
+        legacyEnvelope([
+          asset,
+          legacyGuide(`![Listed](asset:${asset.name})\n\n${occurrence(missing)}`, [asset.name]),
+        ]),
+      ];
+      for (const input of inputs) {
+        const result = await migrateLegacyDigestOutput(input, {
+          rootDir: dir,
+          stableSourceNamespace: "migration-fixture",
+        });
+        expect(result.ok).toBe(false);
+        expect(result).not.toHaveProperty("value");
+      }
+    },
+  );
+
+  test("preserves truly asset-free absent and empty lists", async () => {
+    for (const guide of [legacyGuide("No assets"), legacyGuide("Still no assets", [])]) {
+      const result = await migrateLegacyDigestOutput(legacyEnvelope([guide]), {
+        rootDir: dir,
+        stableSourceNamespace: "migration-fixture",
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) continue;
+      expect(result.value.resources[0].spec).not.toHaveProperty("assets");
+    }
+  });
+
+  test("rewrites a reconciled canonical figure occurrence from a nonempty list", async () => {
+    const bytes = Buffer.from("portable bytes\n");
+    await writeFile(join(dir, "manual.bin"), bytes);
+    const asset = legacyAsset(bytes, "manual.bin");
+    const result = await migrateLegacyDigestOutput(
+      legacyEnvelope([
+        asset,
+        legacyGuide(`{% figure src="asset:${asset.name}" alt="Manual" /%}`, [asset.name]),
+      ]),
+      { rootDir: dir, stableSourceNamespace: "migration-fixture" },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const migratedAsset = result.value.resources.find((resource) => resource.type === "Asset");
+    expect(result.value.resources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "Guide",
+          spec: expect.objectContaining({
+            content: expect.objectContaining({
+              value: expect.stringContaining(`asset:${migratedAsset?.name}`),
+            }),
+            slug: "guide",
+            title: "Guide",
+          }),
+        }),
+      ]),
+    );
+  });
+
   test("does not migrate a normalized destination using proof from a Markdoc attribute", async () => {
     const content =
       '![x][id] {% callout title="![x](%C3%A9.png)" %}foo{% /callout %}\n\n> [id]: é.png';

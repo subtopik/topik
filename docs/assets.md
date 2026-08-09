@@ -37,7 +37,8 @@ from the bytes.
 
 Remote input uses a credential-free immutable HTTPS URL. It must supply integrity, size, and media
 type because compilation does not fetch it. User information, queries, fragments, and signed or
-expiring URL forms are rejected. Remote Assets keep their HTTPS URI and produce no local payload.
+expiring URL forms are rejected. Both local and remote Assets are limited to 256 MiB. Remote Assets
+keep their HTTPS URI and produce no local payload.
 
 ## Implicit names
 
@@ -102,15 +103,19 @@ prove compiler ownership; source directories, source ancestors, and unowned popu
 are never replacement targets. The output path is a compiler-owned relative pointer to a complete
 sibling generation. Renaming that pointer is the one visibility transition, so concurrent readers
 observe either the complete old generation or the complete new generation without requiring an
-external atomic-exchange utility. Superseded generations are removed only after publication. A
-legacy real-directory output is left untouched and must be moved aside explicitly before adopting
-the pointer layout. Dry-run output reports both resource descriptors and payloads.
+external atomic-exchange utility. Superseded generations are retained outside the live pointer so
+cleanup cannot delete a path that changes after ownership proof; callers may archive them through a
+separate explicitly scoped process. A legacy real-directory output is left untouched and must be
+moved aside explicitly before adopting the pointer layout. Dry-run output reports both resource
+descriptors and payloads.
 
 Semantic identity records Asset names and their exact content-reference mappings. Exact
 materialization identity records the path, byte size, and SHA-256 of every canonical JSON resource
 descriptor and deduplicated payload. A byte change preserves explicit and same-path implicit
 identity while changing exact materialization. Omitting a required Asset descriptor or payload
-invalidates the inventory.
+invalidates the inventory. Exported validation requires the known record version, canonical unique
+paths, exact sizes and SHA-256 values, and one descriptor for every compiled resource, including
+non-Asset resources.
 
 At render time, `@topik/content-react` accepts a named resolver:
 
@@ -130,7 +135,9 @@ caller supplies the stable source namespace and source root. Input can be the ac
 path-and-byte backup of the complete input set. Migration verifies each local file and
 old integrity, derives the new path-based name and exact facts, rewrites only declared content
 slots, and removes obsolete arrays. An absent `spec.assets` on an asset-free Guide or WikiPage is
-treated as an empty legacy list and remains absent.
+treated as an empty legacy list and remains absent. Absent and empty lists are accepted only when
+content has no local or canonical Asset-capable image or figure occurrence; nonempty lists must
+reconcile every such occurrence before migration can succeed.
 
 Migration is all-or-nothing. Missing, malformed, remote, colliding, partially referenced, or
 ambiguous input fails without producing a partial result, and retrying with the same input is
@@ -145,7 +152,9 @@ component to 255 UTF-8 bytes, a path to 64 components, and a bound repository pa
 
 Local reads are anchored to open directory descriptors and reject symlinks, hard links, Git links,
 special files, executables, changed-during-read files, Git LFS pointers, filters, and working-tree
-encodings. Effective Git attributes include ancestors from the worktree boundary, repository
+encodings. Compiler configuration and content inputs also reject symlinked files or path ancestors,
+including aliases whose targets remain inside the compilation root. Effective Git attributes
+include ancestors from the worktree boundary, repository
 `info/attributes`, and configured global/system attributes; evidence is checked before and after
 the byte read, and every effective transform fails closed. An Asset is limited to 256 MiB; a
 descriptor is limited to 1 MiB; a compilation accepts

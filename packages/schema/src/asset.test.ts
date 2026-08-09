@@ -18,7 +18,8 @@ ajv.addFormat(
 );
 ajv.addFormat("spdx-expression-2.3", () => true);
 
-testSchema("asset", ajv.compile(assetV1Schema));
+const validateAsset = ajv.compile(assetV1Schema);
+testSchema("asset", validateAsset);
 
 describe("Asset/v1 raw schema", () => {
   test("ships the immutable raw schema without source/dist drift", () => {
@@ -37,5 +38,21 @@ describe("Asset/v1 raw schema", () => {
     // @ts-expect-error Asset/v1 does not permit an empty license object.
     const invalid: AssetLicense = {};
     void invalid;
+  });
+
+  test("caps declared remote size at the portable 256 MiB boundary", () => {
+    const remote = {
+      apiVersion: "v1",
+      type: "Asset",
+      name: "remote",
+      spec: {
+        uri: "https://cdn.example.com/revisions/manual.pdf",
+        integrity: `sha256:${"0".repeat(64)}`,
+        mediaType: "application/pdf",
+        size: 268_435_456,
+      },
+    };
+    expect(validateAsset(remote)).toBe(true);
+    expect(validateAsset({ ...remote, spec: { ...remote.spec, size: 268_435_457 } })).toBe(false);
   });
 });

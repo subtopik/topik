@@ -10,6 +10,7 @@ import {
 import { parseStrictTopikJson, serializeTopikJson } from "./json";
 import { sniffPortableMediaType, TOPIK_UNRESOLVED_ACTIVE_CONTENT_TYPE } from "./media";
 import { topikAssetDiagnostic } from "./diagnostics";
+import { TOPIK_ASSET_LIMITS } from "./constants";
 
 const complete: Asset = {
   apiVersion: "v1",
@@ -70,6 +71,31 @@ describe("Asset/v1 strict JSON", () => {
         spec: { ...complete.spec, uri: "https://cdn.example.com/rev.png#x" },
       }),
     ).toMatchObject({ ok: false });
+  });
+
+  test("enforces the portable size ceiling for runtime values and descriptors", () => {
+    const remote = {
+      ...complete,
+      spec: {
+        ...complete.spec,
+        uri: "https://cdn.example.com/revisions/logo.png",
+        size: TOPIK_ASSET_LIMITS.maxAssetBytes,
+      },
+    };
+    expect(validateAssetValue(remote)).toMatchObject({ ok: true });
+    expect(parseAsset(serializeTopikJson(remote))).toMatchObject({ ok: true });
+
+    const oversized = {
+      ...remote,
+      spec: { ...remote.spec, size: TOPIK_ASSET_LIMITS.maxAssetBytes + 1 },
+    };
+    expect(validateAssetValue(oversized)).toMatchObject({
+      ok: false,
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_ASSET_SIZE_MISMATCH" }),
+      ]),
+    });
+    expect(parseAsset(serializeTopikJson(oversized))).toMatchObject({ ok: false });
   });
 });
 

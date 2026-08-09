@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { constants } from "node:fs";
+import { constants, lstatSync, readlinkSync, renameSync, symlinkSync } from "node:fs";
 import {
   lstat,
   mkdir,
@@ -126,6 +126,9 @@ export interface CompilationReplaceTestHooks {
   afterPublishStagingProof?: (path: string) => void | Promise<void>;
   afterFileStagingProof?: (path: string) => void | Promise<void>;
   afterFailedGenerationProof?: (path: string) => void | Promise<void>;
+  afterStagedGenerationProof?: (path: string) => void | Promise<void>;
+  afterOutputTargetProof?: (path: string) => void | Promise<void>;
+  afterPublishPointerProof?: (path: string) => void | Promise<void>;
 }
 
 export async function replaceCompilationTree(
@@ -162,19 +165,32 @@ export async function replaceCompilationTree(
       );
       await generation.handle.sync();
       await hooks.beforePublish?.();
+      await assertDirectoryIdentity(generation.path, generation.identity);
+      await hooks.afterStagedGenerationProof?.(generation.path);
       if (existing !== undefined) {
-        await assertCompilationGenerationBinding(parent, target, existing);
+        let stagedPointer: OwnedStagedPointer;
         try {
           await symlink(basename(generation.path), stagedLink, "dir");
-          await rename(stagedLink, targetPath);
+          stagedPointer = await proveStagedPointer(stagedLink, basename(generation.path));
         } catch {
+          throw new CliError("Compilation output pointer could not be staged safely");
+        }
+        await hooks.afterPublishPointerProof?.(stagedLink);
+        await assertCompilationGenerationBinding(parent, target, existing);
+        await hooks.afterOutputTargetProof?.(targetPath);
+        try {
+          publishReplacementPointerSync(parent, target, existing, generation, stagedPointer);
+        } catch (error) {
+          if (error instanceof CliError) throw error;
           throw new CliError("Compilation output pointer could not be replaced atomically");
         }
       } else {
         await assertOutputTargetAbsent(targetPath);
+        await hooks.afterOutputTargetProof?.(targetPath);
         try {
-          await symlink(basename(generation.path), targetPath, "dir");
-        } catch {
+          publishInitialPointerSync(targetPath, generation);
+        } catch (error) {
+          if (error instanceof CliError) throw error;
           throw new CliError("Compilation output pointer could not be published atomically");
         }
       }
@@ -207,6 +223,67 @@ export async function replaceCompilationTree(
     await fileStaging?.handle.close().catch(() => undefined);
     await existing?.handle.close().catch(() => undefined);
     await parent.close().catch(() => undefined);
+  }
+}
+
+function publishInitialPointerSync(targetPath: string, generation: OwnedTemporaryDirectory): void {
+  assertDirectoryIdentitySync(generation.path, generation.identity);
+  try {
+    // symlink(2) is the conditional transition: an intervening target produces EEXIST and survives.
+    symlinkSync(basename(generation.path), targetPath, "dir");
+  } catch {
+    throw new CliError("Compilation output changed before conditional publish");
+  }
+}
+
+function publishReplacementPointerSync(
+  parent: FileHandle,
+  target: string,
+  existing: OwnedCompilationGeneration,
+  generation: OwnedTemporaryDirectory,
+  stagedPointer: OwnedStagedPointer,
+): void {
+  // Node does not expose an inode-conditional rename. Recheck both descriptor-backed bindings and
+  // perform the single atomic rename synchronously, with no promise, callback, or event-loop yield
+  // in between. The deterministic seam is before these final checks.
+  assertDirectoryIdentitySync(generation.path, generation.identity);
+  assertStagedPointerBindingSync(stagedPointer);
+  assertCompilationGenerationBindingSync(parent, target, existing);
+  assertDirectoryIdentitySync(generation.path, generation.identity);
+  assertStagedPointerBindingSync(stagedPointer);
+  renameSync(stagedPointer.path, procFdChild(parent.fd, target));
+}
+
+interface OwnedStagedPointer {
+  path: string;
+  target: string;
+  identity: { dev: number; ino: number };
+}
+
+async function proveStagedPointer(path: string, target: string): Promise<OwnedStagedPointer> {
+  const stat = await lstat(path);
+  const actualTarget = await readlink(path, { encoding: "utf8" });
+  if (!stat.isSymbolicLink() || actualTarget !== target) {
+    throw new CliError("Compilation output pointer staging identity changed");
+  }
+  return { path, target, identity: { dev: stat.dev, ino: stat.ino } };
+}
+
+function assertStagedPointerBindingSync(staged: OwnedStagedPointer): void {
+  try {
+    const stat = lstatSync(staged.path);
+    const target = readlinkSync(staged.path, { encoding: "utf8" });
+    if (
+      !stat.isSymbolicLink() ||
+      stat.dev !== staged.identity.dev ||
+      stat.ino !== staged.identity.ino ||
+      target !== staged.target
+    ) {
+      throw new CliError("Compilation output pointer staging identity changed");
+    }
+  } catch (error) {
+    if (error instanceof CliError) throw error;
+    throw new CliError("Compilation output pointer staging identity changed");
   }
 }
 
@@ -340,6 +417,36 @@ async function assertCompilationGenerationBinding(
   await assertDirectoryIdentity(procFdChild(parent.fd, existing.target), existing.identity);
 }
 
+function assertCompilationGenerationBindingSync(
+  parent: FileHandle,
+  target: string,
+  existing: OwnedCompilationGeneration,
+): void {
+  let pointerIdentity: ReturnType<typeof lstatSync>;
+  try {
+    pointerIdentity = lstatSync(procFdChild(parent.fd, target));
+  } catch {
+    throw new CliError("Compilation output identity changed before atomic publish");
+  }
+  if (
+    !pointerIdentity.isSymbolicLink() ||
+    pointerIdentity.dev !== existing.pointerIdentity.dev ||
+    pointerIdentity.ino !== existing.pointerIdentity.ino
+  ) {
+    throw new CliError("Compilation output identity changed before atomic publish");
+  }
+  let current: string;
+  try {
+    current = readlinkSync(procFdChild(parent.fd, target), { encoding: "utf8" });
+  } catch {
+    throw new CliError("Compilation output identity changed before atomic publish");
+  }
+  if (current !== existing.target) {
+    throw new CliError("Compilation output identity changed before atomic publish");
+  }
+  assertDirectoryIdentitySync(procFdChild(parent.fd, existing.target), existing.identity);
+}
+
 async function assertOutputTargetAbsent(targetPath: string): Promise<void> {
   try {
     await lstat(targetPath);
@@ -385,6 +492,18 @@ async function assertDirectoryIdentity(
     throw new CliError("Compilation output identity changed during publish");
   } finally {
     await handle?.close().catch(() => undefined);
+  }
+}
+
+function assertDirectoryIdentitySync(path: string, expected: { dev: bigint; ino: bigint }): void {
+  try {
+    const actual = lstatSync(path, { bigint: true });
+    if (!actual.isDirectory() || actual.dev !== expected.dev || actual.ino !== expected.ino) {
+      throw new CliError("Compilation output identity changed during publish");
+    }
+  } catch (error) {
+    if (error instanceof CliError) throw error;
+    throw new CliError("Compilation output identity changed during publish");
   }
 }
 

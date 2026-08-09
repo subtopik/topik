@@ -499,6 +499,135 @@ describe("compile command", () => {
     expect(await readdir(displaced)).toEqual([]);
   });
 
+  test.each([
+    ["directory", "absent"],
+    ["symlink", "absent"],
+    ["directory", "replacement"],
+    ["symlink", "replacement"],
+  ] as const)(
+    "never publishes a generation-path %s replacement for %s output",
+    async (replacementKind, mode) => {
+      const outDir = join(dir, `generation-binding-${mode}-${replacementKind}`);
+      const displacedGeneration = join(
+        dir,
+        `displaced-intended-generation-${mode}-${replacementKind}`,
+      );
+      const unrelatedTarget = join(dir, `unrelated-generation-${mode}-${replacementKind}`);
+      let replacementGeneration = "";
+      if (mode === "replacement") await replaceCompilationTree(outDir, ownedFiles("old"));
+
+      await expect(
+        replaceCompilationTree(outDir, ownedFiles("new"), {
+          afterStagedGenerationProof: async (path) => {
+            replacementGeneration = join(dir, path.slice(path.lastIndexOf("/") + 1));
+            await rename(path, displacedGeneration);
+            if (replacementKind === "directory") {
+              await mkdir(path);
+              await writeOwnedTree(path, "unrelated");
+            } else {
+              await mkdir(unrelatedTarget);
+              await writeOwnedTree(unrelatedTarget, "unrelated");
+              await symlink(unrelatedTarget, path, "dir");
+            }
+          },
+        }),
+      ).rejects.toThrow(/identity changed/u);
+
+      if (mode === "replacement") {
+        expect(await readFile(join(outDir, "generation.txt"), "utf8")).toBe("old");
+        expect((await listFiles(outDir)).sort()).toEqual(
+          ownedFiles("old")
+            .map((file) => file.path)
+            .sort(),
+        );
+      } else {
+        await expect(lstat(outDir)).rejects.toMatchObject({ code: "ENOENT" });
+      }
+      expect(await readFile(join(replacementGeneration, "generation.txt"), "utf8")).toBe(
+        "unrelated",
+      );
+      if (replacementKind === "symlink") {
+        expect(await readlink(replacementGeneration)).toBe(unrelatedTarget);
+      }
+      expect(await readFile(join(displacedGeneration, "generation.txt"), "utf8")).toBe("new");
+    },
+  );
+
+  test.each([
+    ["absent", "regular"],
+    ["absent", "symlink"],
+    ["replacement", "regular"],
+    ["replacement", "symlink"],
+  ] as const)(
+    "preserves a %s-output %s target inserted after the prior proof",
+    async (mode, newcomerKind) => {
+      const outDir = join(dir, `target-race-${mode}-${newcomerKind}`);
+      const displacedOld = join(dir, `displaced-old-${mode}-${newcomerKind}`);
+      const newcomerTarget = join(dir, `newcomer-target-${mode}-${newcomerKind}`);
+      if (mode === "replacement") await replaceCompilationTree(outDir, ownedFiles("old"));
+      if (newcomerKind === "symlink") {
+        await mkdir(newcomerTarget);
+        await writeFile(join(newcomerTarget, "author.txt"), "preserve me");
+      }
+
+      await expect(
+        replaceCompilationTree(outDir, ownedFiles("new"), {
+          afterOutputTargetProof: async (path) => {
+            if (mode === "replacement") await rename(path, displacedOld);
+            if (newcomerKind === "regular") await writeFile(path, "preserve me");
+            else await symlink(newcomerTarget, path, "dir");
+          },
+        }),
+      ).rejects.toThrow(/changed|identity/u);
+
+      if (newcomerKind === "regular") {
+        expect(await readFile(outDir, "utf8")).toBe("preserve me");
+      } else {
+        expect(await readlink(outDir)).toBe(newcomerTarget);
+        expect(await readFile(join(outDir, "author.txt"), "utf8")).toBe("preserve me");
+      }
+      if (mode === "replacement") {
+        expect(await readFile(join(displacedOld, "generation.txt"), "utf8")).toBe("old");
+        expect((await listFiles(displacedOld)).sort()).toEqual(
+          ownedFiles("old")
+            .map((file) => file.path)
+            .sort(),
+        );
+      }
+    },
+  );
+
+  test("rejects a publish pointer replaced after its own identity proof", async () => {
+    const outDir = join(dir, "publish-pointer-binding");
+    const displacedPointer = join(dir, "displaced-publish-pointer");
+    const unrelatedGeneration = join(dir, "unrelated-publish-pointer-target");
+    let replacementPointer = "";
+    await replaceCompilationTree(outDir, ownedFiles("old"));
+    await mkdir(unrelatedGeneration);
+    await writeOwnedTree(unrelatedGeneration, "unrelated");
+
+    await expect(
+      replaceCompilationTree(outDir, ownedFiles("new"), {
+        afterPublishPointerProof: async (path) => {
+          const descriptorPath = path.slice(0, path.lastIndexOf("/"));
+          replacementPointer = join(await readlink(descriptorPath), "current");
+          await rename(path, displacedPointer);
+          await symlink(unrelatedGeneration, path, "dir");
+        },
+      }),
+    ).rejects.toThrow(/staging identity changed/u);
+
+    expect(await readFile(join(outDir, "generation.txt"), "utf8")).toBe("old");
+    expect((await listFiles(outDir)).sort()).toEqual(
+      ownedFiles("old")
+        .map((file) => file.path)
+        .sort(),
+    );
+    expect(await readlink(replacementPointer)).toBe(unrelatedGeneration);
+    expect(await readFile(join(unrelatedGeneration, "generation.txt"), "utf8")).toBe("unrelated");
+    expect(await readlink(displacedPointer)).toMatch(/^\.topik-compilation-generation-/u);
+  });
+
   test("does not delete an unowned target swapped in after ownership proof", async () => {
     const outDir = join(dir, "raced-output");
     const displaced = join(dir, "displaced-owned-output");
@@ -556,6 +685,13 @@ function ownedFiles(generation: string): Array<{ path: string; bytes: string }> 
       bytes: '{"assetNames":[],"descriptor":"topik-asset-semantic-v1","references":[]}\n',
     },
   ];
+}
+
+async function writeOwnedTree(root: string, generation: string): Promise<void> {
+  for (const file of ownedFiles(generation)) {
+    await mkdir(dirname(join(root, file.path)), { recursive: true });
+    await writeFile(join(root, file.path), file.bytes);
+  }
 }
 
 function sha256(bytes: Uint8Array): string {

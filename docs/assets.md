@@ -103,13 +103,15 @@ prove compiler ownership; source directories, source ancestors, and unowned popu
 are never replacement targets. The output path is a compiler-owned relative pointer to a complete
 sibling generation. Renaming that pointer is the one visibility transition, so concurrent readers
 observe either the complete old generation or the complete new generation without requiring an
-external atomic-exchange utility. Superseded generations are retained outside the live pointer so
-cleanup cannot delete a path that changes after ownership proof; callers may archive them through a
-separate explicitly scoped process. Compiler-created publish, failed-generation, and file-staging
-directories are likewise descriptor-anchored and retained rather than recursively deleting a
-replaced pathname. A legacy real-directory output is left untouched and must be moved aside
-explicitly before adopting the pointer layout. Dry-run output reports both resource descriptors and
-payloads.
+external atomic-exchange utility. Initial publication is a conditional symlink creation.
+Replacement rechecks the exact open generation and prior pointer immediately before a non-yielding
+atomic transition; a changed generation or output name fails without publishing or replacing the
+newcomer. Superseded generations are retained outside the live pointer so cleanup cannot delete a
+path that changes after ownership proof; callers may archive them through a separate explicitly
+scoped process. Compiler-created publish, failed-generation, and file-staging directories are
+likewise descriptor-anchored and retained rather than recursively deleting a replaced pathname. A
+legacy real-directory output is left untouched and must be moved aside explicitly before adopting
+the pointer layout. Dry-run output reports both resource descriptors and payloads.
 
 Semantic identity records Asset names and their exact content-reference mappings. Exact
 materialization identity records the path, byte size, and SHA-256 of every canonical JSON resource
@@ -174,7 +176,8 @@ Diagnostics expose stable IDs and safe relative locations without copying untrus
 absolute machine paths, traversal spellings, URI paths, or bytes.
 Canonical Asset JSON uses deterministic recursive key ordering, normalized JSON scalars, LF, and
 one final newline. Parsing rejects duplicate members, inherited properties, unsupported versions,
-unknown fields, invalid UTF-8, and noncanonical persisted bytes.
+unknown fields, invalid UTF-8, and noncanonical persisted bytes. Behavior-defining source-reference
+and license-expression parsers are exact-version runtime dependencies.
 
 ## Release status
 

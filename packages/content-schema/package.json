@@ -28,7 +28,7 @@
   },
   "dependencies": {
     "@markdoc/markdoc": "catalog:",
-    "entities": "^4.5.0",
+    "entities": "catalog:",
     "github-slugger": "catalog:"
   },
   "devDependencies": {

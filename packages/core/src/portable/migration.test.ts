@@ -198,6 +198,63 @@ describe("legacy digest-output migration", () => {
     }
   });
 
+  test.each([
+    ["plain", "[License](LICENSES/MIT.txt)"],
+    ["encoded", "[License](LICENSES/MIT%2Etxt)"],
+    ["query", "[Manual](downloads/manual.pdf?download=1)"],
+    ["fragment", "[Archive](downloads/archive.zip#sha256)"],
+    ["encoded query and fragment", "[Notes](release%20notes.txt?raw=1#latest)"],
+  ])(
+    "rejects %s legacy download links for absent, empty, and nonempty Asset lists",
+    async (_name, legacyDownload) => {
+      const bytes = Buffer.from("portable bytes\n");
+      await writeFile(join(dir, "manual.bin"), bytes);
+      const asset = legacyAsset(bytes, "manual.bin");
+      const inputs = [
+        legacyEnvelope([legacyGuide(legacyDownload)]),
+        legacyEnvelope([legacyGuide(legacyDownload, [])]),
+        legacyEnvelope([
+          asset,
+          legacyGuide(`![Listed](asset:${asset.name})\n\n${legacyDownload}`, [asset.name]),
+        ]),
+      ];
+      for (const input of inputs) {
+        const result = await migrateLegacyDigestOutput(input, {
+          rootDir: dir,
+          stableSourceNamespace: "migration-fixture",
+        });
+        expect(result.ok).toBe(false);
+        expect(result).not.toHaveProperty("value");
+      }
+    },
+  );
+
+  test("preserves Markdown navigation across absent, empty, and nonempty Asset lists", async () => {
+    const navigation = "[Next](guides/next.md?view=full#install)";
+    const bytes = Buffer.from("portable bytes\n");
+    await writeFile(join(dir, "manual.bin"), bytes);
+    const asset = legacyAsset(bytes, "manual.bin");
+    const inputs = [
+      legacyEnvelope([legacyGuide(navigation)]),
+      legacyEnvelope([legacyGuide(navigation, [])]),
+      legacyEnvelope([
+        asset,
+        legacyGuide(`![Manual](asset:${asset.name})\n\n${navigation}`, [asset.name]),
+      ]),
+    ];
+
+    for (const input of inputs) {
+      const result = await migrateLegacyDigestOutput(input, {
+        rootDir: dir,
+        stableSourceNamespace: "migration-fixture",
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) continue;
+      const guide = result.value.resources.find((resource) => resource.type === "Guide");
+      expect(guide?.spec.content.value).toContain(navigation);
+    }
+  });
+
   test("rewrites a reconciled canonical figure occurrence from a nonempty list", async () => {
     const bytes = Buffer.from("portable bytes\n");
     await writeFile(join(dir, "manual.bin"), bytes);

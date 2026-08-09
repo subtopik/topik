@@ -98,6 +98,54 @@ describe("exact Asset materialization inventory", () => {
       ok: false,
       diagnostics: [{ id: "TOPIK_ASSET_SCHEMA_INVALID" }],
     });
+
+    for (const descriptor of [null, 2, true, {}]) {
+      expect(
+        validateTopikMaterializationRecord({ ...mutableRecord(), descriptor }, resources),
+      ).toMatchObject({
+        ok: false,
+        diagnostics: [{ id: "TOPIK_ASSET_SCHEMA_INVALID" }],
+      });
+    }
+  });
+
+  test("rejects accessors and custom prototypes without executing supplied getters", () => {
+    let getterCalls = 0;
+    const descriptorAccessor = {
+      payloads: mutableRecord().payloads,
+      resources: mutableRecord().resources,
+    };
+    Object.defineProperty(descriptorAccessor, "descriptor", {
+      enumerable: true,
+      get: () => {
+        getterCalls++;
+        throw new Error("must not execute");
+      },
+    });
+    expect(validateTopikMaterializationRecord(descriptorAccessor, resources)).toMatchObject({
+      ok: false,
+      diagnostics: [{ id: "TOPIK_ASSET_SCHEMA_INVALID" }],
+    });
+
+    const nestedAccessor = mutableRecord();
+    Object.defineProperty(nestedAccessor.resources[0], "path", {
+      enumerable: true,
+      get: () => {
+        getterCalls++;
+        throw new Error("must not execute");
+      },
+    });
+    expect(validateTopikMaterializationRecord(nestedAccessor, resources)).toMatchObject({
+      ok: false,
+      diagnostics: [{ id: "TOPIK_ASSET_SCHEMA_INVALID" }],
+    });
+    expect(getterCalls).toBe(0);
+
+    const customPrototype = Object.assign(Object.create({ inherited: true }), mutableRecord());
+    expect(validateTopikMaterializationRecord(customPrototype, resources)).toMatchObject({
+      ok: false,
+      diagnostics: [{ id: "TOPIK_ASSET_SCHEMA_INVALID" }],
+    });
   });
 
   test("rejects corrupt descriptor and payload facts", () => {

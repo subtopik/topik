@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import {
   lstat,
@@ -8,7 +9,6 @@ import {
   readdir,
   realpath,
   rename,
-  rm,
   symlink,
 } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
@@ -31,6 +31,7 @@ import {
 
 const COMPILATION_GENERATION_PREFIX = ".topik-compilation-generation-";
 const COMPILATION_PUBLISH_PREFIX = ".topik-compilation-publish-";
+const COMPILATION_FILE_STAGE_PREFIX = ".topik-compilation-file-stage-";
 
 export const compile = command({
   name: "compile",
@@ -122,6 +123,9 @@ export interface CompilationReplaceTestHooks {
   beforePublish?: () => void | Promise<void>;
   afterPublish?: () => void | Promise<void>;
   afterSupersededGenerationProof?: () => void | Promise<void>;
+  afterPublishStagingProof?: (path: string) => void | Promise<void>;
+  afterFileStagingProof?: (path: string) => void | Promise<void>;
+  afterFailedGenerationProof?: (path: string) => void | Promise<void>;
 }
 
 export async function replaceCompilationTree(
@@ -136,31 +140,32 @@ export async function replaceCompilationTree(
   const parent = await openAnchoredOutputDirectory(dirname(absolutePath), true);
   if (parent === undefined) throw new CliError("Compilation output parent could not be created");
   let existing: OwnedCompilationGeneration | undefined;
-  let stageHandle: FileHandle | undefined;
-  let stageDir: string | undefined;
-  let publishDir: string | undefined;
+  let generation: OwnedTemporaryDirectory | undefined;
+  let publishStaging: OwnedTemporaryDirectory | undefined;
+  let fileStaging: OwnedTemporaryDirectory | undefined;
   let published = false;
   try {
     const targetPath = procFdChild(parent.fd, target);
     existing = await openOwnedCompilationGeneration(parent, target);
-    stageDir = await mkdtemp(procFdChild(parent.fd, COMPILATION_GENERATION_PREFIX));
-    stageHandle = await open(
-      stageDir,
-      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
-    );
-    publishDir = await mkdtemp(procFdChild(parent.fd, COMPILATION_PUBLISH_PREFIX));
-    const stagedLink = join(publishDir, "current");
+    generation = await createOwnedTemporaryDirectory(parent, COMPILATION_GENERATION_PREFIX);
+    fileStaging = await createOwnedTemporaryDirectory(parent, COMPILATION_FILE_STAGE_PREFIX);
+    await proveRetainedTemporaryDirectory(fileStaging, hooks.afterFileStagingProof);
+    publishStaging = await createOwnedTemporaryDirectory(parent, COMPILATION_PUBLISH_PREFIX);
+    await proveRetainedTemporaryDirectory(publishStaging, hooks.afterPublishStagingProof);
+    const stagedLink = procFdChild(publishStaging.handle.fd, "current");
     let operationError: unknown;
     try {
       await Promise.all(
-        files.map((file) => writeAnchoredFile(stageHandle as FileHandle, file.path, file.bytes)),
+        files.map((file) =>
+          writeAnchoredFile(generation!.handle, fileStaging!.handle, file.path, file.bytes),
+        ),
       );
-      await stageHandle.sync();
+      await generation.handle.sync();
       await hooks.beforePublish?.();
       if (existing !== undefined) {
         await assertCompilationGenerationBinding(parent, target, existing);
         try {
-          await symlink(basename(stageDir), stagedLink, "dir");
+          await symlink(basename(generation.path), stagedLink, "dir");
           await rename(stagedLink, targetPath);
         } catch {
           throw new CliError("Compilation output pointer could not be replaced atomically");
@@ -168,7 +173,7 @@ export async function replaceCompilationTree(
       } else {
         await assertOutputTargetAbsent(targetPath);
         try {
-          await symlink(basename(stageDir), targetPath, "dir");
+          await symlink(basename(generation.path), targetPath, "dir");
         } catch {
           throw new CliError("Compilation output pointer could not be published atomically");
         }
@@ -192,16 +197,49 @@ export async function replaceCompilationTree(
     }
     if (operationError !== undefined) throw operationError;
   } finally {
-    await stageHandle?.close().catch(() => undefined);
+    if (generation !== undefined && !published) {
+      await proveRetainedTemporaryDirectory(generation, hooks.afterFailedGenerationProof).catch(
+        () => undefined,
+      );
+    }
+    await generation?.handle.close().catch(() => undefined);
+    await publishStaging?.handle.close().catch(() => undefined);
+    await fileStaging?.handle.close().catch(() => undefined);
     await existing?.handle.close().catch(() => undefined);
-    if (publishDir !== undefined) {
-      await rm(publishDir, { recursive: true, force: true }).catch(() => undefined);
-    }
-    if (stageDir !== undefined && !published) {
-      await rm(stageDir, { recursive: true, force: true }).catch(() => undefined);
-    }
     await parent.close().catch(() => undefined);
   }
+}
+
+interface OwnedTemporaryDirectory {
+  path: string;
+  handle: FileHandle;
+  identity: { dev: bigint; ino: bigint };
+}
+
+async function createOwnedTemporaryDirectory(
+  parent: FileHandle,
+  prefix: string,
+): Promise<OwnedTemporaryDirectory> {
+  const path = await mkdtemp(procFdChild(parent.fd, prefix));
+  let handle: FileHandle | undefined;
+  try {
+    handle = await open(path, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+    const stat = await handle.stat({ bigint: true });
+    if (!stat.isDirectory()) throw new CliError("Compilation staging identity is invalid");
+    return { path, handle, identity: { dev: stat.dev, ino: stat.ino } };
+  } catch (error) {
+    await handle?.close().catch(() => undefined);
+    if (error instanceof CliError) throw error;
+    throw new CliError("Compilation staging identity could not be proven");
+  }
+}
+
+async function proveRetainedTemporaryDirectory(
+  temporary: OwnedTemporaryDirectory,
+  afterProof?: (path: string) => void | Promise<void>,
+): Promise<void> {
+  await assertDirectoryIdentity(temporary.path, temporary.identity);
+  await afterProof?.(temporary.path);
 }
 
 interface OwnedCompilationGeneration {
@@ -514,14 +552,15 @@ async function assertSafeOutputTree(directory: FileHandle): Promise<void> {
 
 async function writeAnchoredFile(
   root: FileHandle,
+  staging: FileHandle,
   relativePath: string,
   bytes: string | Uint8Array,
 ): Promise<void> {
   const components = safeOutputComponents(relativePath);
   const directories: FileHandle[] = [];
   let parent = root;
-  let stagedDirectory: string | undefined;
   let stagedFile: FileHandle | undefined;
+  const stagedPath = procFdChild(staging.fd, randomUUID());
   try {
     for (const component of components.slice(0, -1)) {
       const child = await openAnchoredChildDirectory(parent, component, true);
@@ -554,8 +593,6 @@ async function writeAnchoredFile(
       }
     }
 
-    stagedDirectory = await mkdtemp(procFdChild(parent.fd, ".topik-file-stage-"));
-    const stagedPath = join(stagedDirectory, "file");
     stagedFile = await open(
       stagedPath,
       constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
@@ -569,9 +606,6 @@ async function writeAnchoredFile(
     await rename(stagedPath, path);
   } finally {
     await stagedFile?.close().catch(() => undefined);
-    if (stagedDirectory !== undefined) {
-      await rm(stagedDirectory, { recursive: true, force: true }).catch(() => undefined);
-    }
     await Promise.all(directories.map((handle) => handle.close().catch(() => undefined)));
   }
 }

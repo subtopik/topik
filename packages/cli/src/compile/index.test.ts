@@ -420,6 +420,85 @@ describe("compile command", () => {
     expect(await readFile(join(outDir, "generation.txt"), "utf8")).toBe("new");
   });
 
+  test("retains unrelated content swapped in after publish-staging proof", async () => {
+    const outDir = join(dir, "publish-staging-race");
+    const displaced = join(dir, "displaced-publish-staging");
+    let replacement = "";
+
+    await replaceCompilationTree(outDir, ownedFiles("new"), {
+      afterPublishStagingProof: async (path) => {
+        replacement = join(dir, path.slice(path.lastIndexOf("/") + 1));
+        await rename(path, displaced);
+        await mkdir(path);
+        await writeFile(join(path, "author.txt"), "preserve me");
+      },
+    });
+
+    expect(await readFile(join(outDir, "generation.txt"), "utf8")).toBe("new");
+    expect((await listFiles(outDir)).sort()).toEqual(
+      ownedFiles("new")
+        .map((file) => file.path)
+        .sort(),
+    );
+    expect(await readFile(join(replacement, "author.txt"), "utf8")).toBe("preserve me");
+    expect(await readdir(displaced)).toEqual([]);
+  });
+
+  test("retains unrelated content swapped in after failed-generation proof", async () => {
+    const outDir = join(dir, "failed-generation-race");
+    const displaced = join(dir, "displaced-failed-generation");
+    let replacement = "";
+    await replaceCompilationTree(outDir, ownedFiles("old"));
+
+    await expect(
+      replaceCompilationTree(outDir, ownedFiles("new"), {
+        beforePublish: () => {
+          throw new Error("stop before publish");
+        },
+        afterFailedGenerationProof: async (path) => {
+          replacement = join(dir, path.slice(path.lastIndexOf("/") + 1));
+          await rename(path, displaced);
+          await mkdir(path);
+          await writeFile(join(path, "author.txt"), "preserve me");
+        },
+      }),
+    ).rejects.toThrow("stop before publish");
+
+    expect(await readFile(join(outDir, "generation.txt"), "utf8")).toBe("old");
+    expect((await listFiles(outDir)).sort()).toEqual(
+      ownedFiles("old")
+        .map((file) => file.path)
+        .sort(),
+    );
+    expect(await readFile(join(replacement, "author.txt"), "utf8")).toBe("preserve me");
+    expect(await readFile(join(displaced, "generation.txt"), "utf8")).toBe("new");
+  });
+
+  test("uses the anchored file-staging descriptor after its pathname is replaced", async () => {
+    const outDir = join(dir, "file-staging-race");
+    const displaced = join(dir, "displaced-file-staging");
+    let replacement = "";
+    await replaceCompilationTree(outDir, ownedFiles("old"));
+
+    await replaceCompilationTree(outDir, ownedFiles("new"), {
+      afterFileStagingProof: async (path) => {
+        replacement = join(dir, path.slice(path.lastIndexOf("/") + 1));
+        await rename(path, displaced);
+        await mkdir(path);
+        await writeFile(join(path, "author.txt"), "preserve me");
+      },
+    });
+
+    expect(await readFile(join(outDir, "generation.txt"), "utf8")).toBe("new");
+    expect((await listFiles(outDir)).sort()).toEqual(
+      ownedFiles("new")
+        .map((file) => file.path)
+        .sort(),
+    );
+    expect(await readFile(join(replacement, "author.txt"), "utf8")).toBe("preserve me");
+    expect(await readdir(displaced)).toEqual([]);
+  });
+
   test("does not delete an unowned target swapped in after ownership proof", async () => {
     const outDir = join(dir, "raced-output");
     const displaced = join(dir, "displaced-owned-output");
@@ -439,10 +518,10 @@ describe("compile command", () => {
     expect(await readFile(join(displaced, "generation.txt"), "utf8")).toBe("old");
     expect(
       (await readdir(dir)).filter((name) => name.startsWith(".topik-compilation-publish-")),
-    ).toEqual([]);
+    ).not.toEqual([]);
     expect(
       (await readdir(dir)).filter((name) => name.startsWith(".topik-compilation-generation-")),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
   });
 
   test("retains unrelated content swapped in immediately after stale-generation proof", async () => {

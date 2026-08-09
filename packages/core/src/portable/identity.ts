@@ -115,7 +115,12 @@ export function validateTopikMaterializationRecord(
   record: unknown,
   resources: readonly Resource[],
 ): TopikAssetResult<TopikMaterializationRecordV1> {
-  if (!isRecord(record) || !Object.hasOwn(record, "descriptor")) {
+  if (
+    !isTopikJsonDataValue(record) ||
+    !isRecord(record) ||
+    !Object.hasOwn(record, "descriptor") ||
+    typeof record.descriptor !== "string"
+  ) {
     return materializationFailure(
       "TOPIK_ASSET_SCHEMA_INVALID",
       "Materialization record is malformed",
@@ -162,7 +167,6 @@ function isMaterializationRecordV1(
   value: Record<string, unknown>,
 ): value is Record<string, unknown> & TopikMaterializationRecordV1 {
   if (
-    !isTopikJsonDataValue(value) ||
     !hasExactKeys(value, ["descriptor", "payloads", "resources"]) ||
     !Array.isArray(value.resources) ||
     !Array.isArray(value.payloads)

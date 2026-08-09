@@ -105,9 +105,11 @@ sibling generation. Renaming that pointer is the one visibility transition, so c
 observe either the complete old generation or the complete new generation without requiring an
 external atomic-exchange utility. Superseded generations are retained outside the live pointer so
 cleanup cannot delete a path that changes after ownership proof; callers may archive them through a
-separate explicitly scoped process. A legacy real-directory output is left untouched and must be
-moved aside explicitly before adopting the pointer layout. Dry-run output reports both resource
-descriptors and payloads.
+separate explicitly scoped process. Compiler-created publish, failed-generation, and file-staging
+directories are likewise descriptor-anchored and retained rather than recursively deleting a
+replaced pathname. A legacy real-directory output is left untouched and must be moved aside
+explicitly before adopting the pointer layout. Dry-run output reports both resource descriptors and
+payloads.
 
 Semantic identity records Asset names and their exact content-reference mappings. Exact
 materialization identity records the path, byte size, and SHA-256 of every canonical JSON resource
@@ -115,7 +117,9 @@ descriptor and deduplicated payload. A byte change preserves explicit and same-p
 identity while changing exact materialization. Omitting a required Asset descriptor or payload
 invalidates the inventory. Exported validation requires the known record version, canonical unique
 paths, exact sizes and SHA-256 values, and one descriptor for every compiled resource, including
-non-Asset resources.
+non-Asset resources. Unknown inputs must be complete prototype-safe own-data graphs; accessors,
+custom prototypes, and malformed descriptor types are schema-invalid without executing supplied
+getters.
 
 At render time, `@topik/content-react` accepts a named resolver:
 
@@ -136,8 +140,10 @@ path-and-byte backup of the complete input set. Migration verifies each local fi
 old integrity, derives the new path-based name and exact facts, rewrites only declared content
 slots, and removes obsolete arrays. An absent `spec.assets` on an asset-free Guide or WikiPage is
 treated as an empty legacy list and remains absent. Absent and empty lists are accepted only when
-content has no local or canonical Asset-capable image or figure occurrence; nonempty lists must
-reconcile every such occurrence before migration can succeed.
+content has no local or canonical Asset-capable image or figure occurrence. Markdown links with an
+extension treated as a download by the earlier compiler are also Asset-capable, including encoded,
+query, and fragment spellings, while ordinary Markdown navigation remains navigation. Nonempty
+lists must reconcile every Asset-capable occurrence before migration can succeed.
 
 Migration is all-or-nothing. Missing, malformed, remote, colliding, partially referenced, or
 ambiguous input fails without producing a partial result, and retrying with the same input is

@@ -43,6 +43,37 @@ interface LegacyAsset {
   spec: { uri: string; integrity: string; mediaType?: string };
 }
 
+const LEGACY_DOWNLOAD_EXTENSIONS = new Set([
+  ".avif",
+  ".bmp",
+  ".csv",
+  ".doc",
+  ".docx",
+  ".flac",
+  ".gif",
+  ".gz",
+  ".ico",
+  ".jpeg",
+  ".jpg",
+  ".m4a",
+  ".mp3",
+  ".mp4",
+  ".ogg",
+  ".pdf",
+  ".png",
+  ".ppt",
+  ".pptx",
+  ".svg",
+  ".tar",
+  ".txt",
+  ".wav",
+  ".webm",
+  ".webp",
+  ".xls",
+  ".xlsx",
+  ".zip",
+]);
+
 /** Migrate the public 16-hex digest output without accepting partial or remote sets. */
 export async function migrateLegacyDigestOutput(
   input: string | Uint8Array | readonly { path: string; bytes: string | Uint8Array }[],
@@ -282,9 +313,35 @@ export async function migrateLegacyDigestOutput(
 }
 
 function isUnreconciledLegacyAssetOccurrence(occurrence: TopikAssetOccurrence): boolean {
-  return (
-    occurrence.slot !== "link.href" && (occurrence.kind === "local" || occurrence.kind === "asset")
-  );
+  if (occurrence.slot === "link.href") return isLegacyDownloadReference(occurrence.reference);
+  return occurrence.kind === "local" || occurrence.kind === "asset";
+}
+
+/** Match the legacy compiler's extension-based Markdown download classification exactly. */
+function isLegacyDownloadReference(reference: string): boolean {
+  if (
+    reference.length === 0 ||
+    reference.startsWith("#") ||
+    reference.startsWith("mailto:") ||
+    reference.startsWith("tel:") ||
+    reference.startsWith("data:") ||
+    reference.startsWith("//") ||
+    /^[a-z][a-z0-9+.-]*:/iu.test(reference)
+  ) {
+    return false;
+  }
+  const query = reference.indexOf("?");
+  const fragment = reference.indexOf("#");
+  const end = query < 0 ? fragment : fragment < 0 ? query : Math.min(query, fragment);
+  const encodedPath = end < 0 ? reference : reference.slice(0, end);
+  let path = encodedPath;
+  try {
+    path = decodeURIComponent(encodedPath);
+  } catch {
+    // The legacy classifier used the original spelling when decoding failed.
+  }
+  const extension = /\.([a-z0-9]+)$/iu.exec(path)?.[1];
+  return extension !== undefined && LEGACY_DOWNLOAD_EXTENSIONS.has(`.${extension.toLowerCase()}`);
 }
 
 function isUnmigratableUnsafeOccurrence(occurrence: TopikAssetOccurrence): boolean {

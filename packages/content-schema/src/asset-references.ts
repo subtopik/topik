@@ -12,7 +12,7 @@ export interface TopikAssetReferenceSlot {
   attribute: "src" | "darkSrc" | "href";
   slot: "image.src" | "figure.src" | "figure.darkSrc" | "link.href";
   role: TopikAssetReferenceRole;
-  conditional?: "manifest-entry";
+  conditional?: "proven-download";
 }
 
 /**
@@ -40,11 +40,11 @@ export const topikAssetReferenceSlots = [
     attribute: "href",
     slot: "link.href",
     role: "download",
-    conditional: "manifest-entry",
+    conditional: "proven-download",
   },
 ] as const satisfies readonly TopikAssetReferenceSlot[];
 
-export type TopikAssetOccurrenceKind = "local" | "external-https" | "unsafe";
+export type TopikAssetOccurrenceKind = "asset" | "local" | "external-https" | "unsafe";
 
 export interface TopikAssetOccurrenceSemantics {
   alt?: string;
@@ -69,8 +69,8 @@ export interface TopikAssetOccurrence {
 }
 
 export interface ExtractTopikAssetOccurrencesOptions {
-  /** Decoded manifest paths. Enables unambiguous generic download-link occurrences. */
-  manifestPaths?: ReadonlySet<string> | readonly string[];
+  /** Decoded regular-file paths. Enables unambiguous generic download-link occurrences. */
+  provenDownloadPaths?: ReadonlySet<string> | readonly string[];
   /** Explicit schema/application declarations for downloadable generic-link positions. */
   downloadableLinkPositions?: ReadonlySet<string> | readonly string[];
   /** Return generic-link candidates so a compiler can prove plain-mode downloads. */
@@ -78,6 +78,7 @@ export interface ExtractTopikAssetOccurrencesOptions {
 }
 
 export type TopikAssetReferenceValidation =
+  | { valid: true; kind: "asset"; name: string }
   | { valid: true; kind: "local"; decodedPath: string }
   | { valid: true; kind: "external-https" }
   | { valid: false; kind: "unsafe"; failureKind: "local" | "external" };
@@ -87,7 +88,7 @@ export function extractTopikAssetOccurrences(
   options: ExtractTopikAssetOccurrencesOptions = {},
 ): TopikAssetOccurrence[] {
   const ast = parseTopikContent(source);
-  const manifestPaths = toSet(options.manifestPaths);
+  const provenDownloadPaths = toSet(options.provenDownloadPaths);
   const downloadableLinkPositions = toSet(options.downloadableLinkPositions);
   const occurrences: TopikAssetOccurrence[] = [];
   const exactReferences = exactMarkdownReferences(source);
@@ -99,15 +100,16 @@ export function extractTopikAssetOccurrences(
       if (parsedReference == null) continue;
       const reference =
         definition.node === "image"
-          ? (exactReferences.images.shift() ?? "")
+          ? (takeExactMarkdownReference(exactReferences, node, "image") ?? "")
           : definition.node === "link"
-            ? (exactReferences.links.shift() ?? "")
+            ? (takeExactMarkdownReference(exactReferences, node, "link") ?? "")
             : parsedReference;
       if (
-        definition.conditional === "manifest-entry" &&
+        definition.conditional === "proven-download" &&
         options.includeGenericLinkCandidates !== true &&
         !downloadableLinkPositions.has(position) &&
-        !manifestUnambiguouslyContains(reference, manifestPaths)
+        !provenDownloadsUnambiguouslyContain(reference, provenDownloadPaths) &&
+        !isCanonicalAssetReference(reference)
       ) {
         continue;
       }
@@ -133,7 +135,7 @@ export function rewriteTopikAssetOccurrences(
   options: ExtractTopikAssetOccurrencesOptions = {},
 ): string {
   const ast = parseTopikContent(source);
-  const manifestPaths = toSet(options.manifestPaths);
+  const provenDownloadPaths = toSet(options.provenDownloadPaths);
   const downloadableLinkPositions = toSet(options.downloadableLinkPositions);
   const exactReferences = exactMarkdownReferences(source);
 
@@ -144,15 +146,16 @@ export function rewriteTopikAssetOccurrences(
       if (parsedReference == null) continue;
       const reference =
         definition.node === "image"
-          ? (exactReferences.images.shift() ?? "")
+          ? (takeExactMarkdownReference(exactReferences, node, "image") ?? "")
           : definition.node === "link"
-            ? (exactReferences.links.shift() ?? "")
+            ? (takeExactMarkdownReference(exactReferences, node, "link") ?? "")
             : parsedReference;
       if (
-        definition.conditional === "manifest-entry" &&
+        definition.conditional === "proven-download" &&
         options.includeGenericLinkCandidates !== true &&
         !downloadableLinkPositions.has(position) &&
-        !manifestUnambiguouslyContains(reference, manifestPaths)
+        !provenDownloadsUnambiguouslyContain(reference, provenDownloadPaths) &&
+        !isCanonicalAssetReference(reference)
       ) {
         continue;
       }
@@ -239,7 +242,10 @@ function classifyExactReference(
   return reference === parsedReference ? classifyReference(reference) : "unsafe";
 }
 
-function manifestUnambiguouslyContains(reference: string, paths: ReadonlySet<string>): boolean {
+function provenDownloadsUnambiguouslyContain(
+  reference: string,
+  paths: ReadonlySet<string>,
+): boolean {
   if (paths.size === 0) return false;
   const validation = validateTopikAssetReference(reference);
   return validation.valid && validation.kind === "local" && paths.has(validation.decodedPath);
@@ -254,6 +260,13 @@ function toSet(values?: ReadonlySet<string> | readonly string[]): ReadonlySet<st
 export function validateTopikAssetReference(reference: string): TopikAssetReferenceValidation {
   if (containsUnsafeUnicode(reference) || reference.includes("\\")) {
     return unsafe(reference);
+  }
+  if (reference.startsWith("asset:")) {
+    const name = reference.slice("asset:".length);
+    return /^(?:(?!auto-v1-)[a-z0-9]+(?:-[a-z0-9]+)*|auto-v1-[a-z2-7]{52})$/u.test(name) &&
+      name.length <= 63
+      ? { valid: true, kind: "asset", name }
+      : { valid: false, kind: "unsafe", failureKind: "local" };
   }
   if (reference.startsWith("https://")) {
     try {
@@ -316,6 +329,11 @@ export function validateTopikAssetReference(reference: string): TopikAssetRefere
   return { valid: true, kind: "local", decodedPath };
 }
 
+function isCanonicalAssetReference(reference: string): boolean {
+  const validation = validateTopikAssetReference(reference);
+  return validation.valid && validation.kind === "asset";
+}
+
 /** Remove invalid unconditional asset attributes before renderer transformation. */
 export function removeInvalidTopikAssetReferences(root: TopikContentNode, source?: string): void {
   const invalidSourcePositions =
@@ -328,7 +346,7 @@ export function removeInvalidTopikAssetReferences(root: TopikContentNode, source
         );
   walk(root, [], (node, treePath) => {
     for (const definition of matchingSlots(node)) {
-      if (definition.conditional === "manifest-entry") continue;
+      if (definition.conditional === "proven-download") continue;
       const reference = stringAttribute(node, definition.attribute);
       const sourceWasInvalid = invalidSourcePositions?.has(
         formatPosition(treePath, definition.attribute),
@@ -415,31 +433,101 @@ interface ParsedMarkdownDestination {
 interface MarkdownInlineToken {
   type?: string;
   attrs?: Array<[string, string]> | null;
+  children?: MarkdownInlineToken[] | null;
   content?: string;
+  level?: number;
+  map?: [number, number] | null;
   markup?: string;
   nesting?: number;
 }
 
-function exactMarkdownReferences(source: string): {
+interface ExactMarkdownReferenceContext {
   images: Array<string | undefined>;
   links: Array<string | undefined>;
-} {
-  const images: Array<string | undefined> = [];
-  const links: Array<string | undefined> = [];
-  const definitions = parseMarkdownReferenceDefinitions(source);
-  const tokens = new Markdoc.Tokenizer().tokenize(source) as Array<{
-    type?: string;
-    content?: string;
-    children?: MarkdownInlineToken[] | null;
-  }>;
+}
+
+type ExactMarkdownReferences = Map<string, ExactMarkdownReferenceContext>;
+
+function exactMarkdownReferences(source: string): ExactMarkdownReferences {
+  const references: ExactMarkdownReferences = new Map();
+  const definitions = parseMarkdownReferenceDefinitions(maskMarkdocTags(source));
+  const tokens = new Markdoc.Tokenizer().tokenize(source) as MarkdownInlineToken[];
+  const activeBlockMaps = new Map<number, [number, number]>();
   for (const token of tokens) {
+    const level = token.level ?? 0;
+    if (token.nesting === -1) activeBlockMaps.delete(level);
+    if (token.map != null) activeBlockMaps.set(level, token.map);
     if (token.type !== "inline" || token.children == null) continue;
-    const scanned = scanMarkdownDestinations(token.content ?? "", definitions);
+    const map = token.map ?? nearestBlockMap(activeBlockMaps, level);
+    if (map === undefined) continue;
+    const key = markdownContextKey(map);
+    const context = references.get(key) ?? { images: [], links: [] };
+    const scanned = scanMarkdownDestinations(maskMarkdocTags(token.content ?? ""), definitions);
     const parsed = parsedMarkdownDestinations(token.children);
-    images.push(...pairMarkdownDestinations("image", parsed, scanned, definitions));
-    links.push(...pairMarkdownDestinations("link", parsed, scanned, definitions));
+    context.images.push(...pairMarkdownDestinations("image", parsed, scanned, definitions));
+    context.links.push(...pairMarkdownDestinations("link", parsed, scanned, definitions));
+    references.set(key, context);
   }
-  return { images, links };
+  return references;
+}
+
+function takeExactMarkdownReference(
+  references: ExactMarkdownReferences,
+  node: TopikContentNode,
+  kind: MarkdownDestination["kind"],
+): string | undefined {
+  if (!Array.isArray(node.lines) || node.lines.length !== 2) return undefined;
+  const context = references.get(markdownContextKey(node.lines as [number, number]));
+  return context?.[kind === "image" ? "images" : "links"].shift();
+}
+
+function nearestBlockMap(
+  activeBlockMaps: ReadonlyMap<number, [number, number]>,
+  level: number,
+): [number, number] | undefined {
+  for (let candidate = level; candidate >= 0; candidate--) {
+    const map = activeBlockMaps.get(candidate);
+    if (map !== undefined) return map;
+  }
+  return undefined;
+}
+
+function markdownContextKey(map: readonly [number, number]): string {
+  return `${map[0]}:${map[1]}`;
+}
+
+/**
+ * Markdoc tag attributes are a separate parser context. Preserve byte and line offsets while
+ * preventing Markdown-looking attribute strings from proving a Markdown node destination.
+ */
+function maskMarkdocTags(source: string): string {
+  const masked = source.split("");
+  for (let index = 0; index < source.length - 1; index++) {
+    if (source[index] !== "{" || source[index + 1] !== "%" || isEscaped(source, index)) continue;
+    let quote: '"' | "'" | undefined;
+    let closing = -1;
+    for (let cursor = index + 2; cursor < source.length - 1; cursor++) {
+      const character = source[cursor];
+      if (quote !== undefined) {
+        if (character === quote && !isEscaped(source, cursor)) quote = undefined;
+        continue;
+      }
+      if ((character === '"' || character === "'") && !isEscaped(source, cursor)) {
+        quote = character;
+        continue;
+      }
+      if (character === "%" && source[cursor + 1] === "}") {
+        closing = cursor + 1;
+        break;
+      }
+    }
+    if (closing === -1) continue;
+    for (let cursor = index; cursor <= closing; cursor++) {
+      if (source[cursor] !== "\n" && source[cursor] !== "\r") masked[cursor] = " ";
+    }
+    index = closing;
+  }
+  return masked.join("");
 }
 
 function parsedMarkdownDestinations(

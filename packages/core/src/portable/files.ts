@@ -1,7 +1,7 @@
 import { constants } from "node:fs";
 import { lstat, open } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
-import { TOPIK_PATH_VERSION } from "./constants";
+import { TOPIK_ASSET_LIMITS, TOPIK_PATH_VERSION } from "./constants";
 import {
   topikAssetDiagnostic,
   type TopikAssetDiagnostic,
@@ -66,6 +66,8 @@ export function validatePortableAssetFile(
         recovery: "restore-file",
       }),
     );
+  } else if (file.bytes.byteLength > TOPIK_ASSET_LIMITS.maxAssetBytes) {
+    diagnostics.push(unsupported(file, "Asset bytes exceed the portable size limit"));
   } else if (looksLikeGitLfsPointer(file.bytes)) {
     diagnostics.push(
       unsupported(file, "Git LFS pointers and near-miss signatures are not portable bytes"),
@@ -245,6 +247,7 @@ async function readPortableAssetFileAnchored(
       !before.isFile() ||
       before.nlink !== 1n ||
       (before.mode & 0o111n) !== 0n ||
+      before.size > BigInt(TOPIK_ASSET_LIMITS.maxAssetBytes) ||
       (before.size > 0n && before.blocks * 512n < before.size)
     ) {
       return {

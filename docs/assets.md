@@ -1,100 +1,145 @@
 ---
-title: Portable assets
+title: Named assets
 ---
 
-# Portable assets
+# Named assets
 
-Portable assets use one canonical JSON sidecar at `.topik/assets.json`, relative to the exact
-resource root. The persisted identity is `AssetManifest/v1`, whose immutable schema ID is
-`https://topik.dev/schemas/asset-manifest/v1.json`. The behavior descriptors are
-`topik-json-v1`, `topik-path-v1`, and `topik-asset-reference-v1`. The sidecar binds exactly one
-resource through its `(type, apiVersion, name, path)` tuple.
+An `Asset/v1` resource gives bytes a stable logical name. Content refers to that name as
+`asset:<name>`, and a consumer supplies a resolver that maps the name to a usable URL. The resource
+schema is published at `https://topik.dev/schemas/asset/v1.json`.
 
-Content names local assets with canonical resource-root-relative URI paths, for example
-`assets/intro/hero.png`. Source references must already use that root-relative spelling: the compiler
-rejects leading `/`, `./`, `../`, encoded separators or traversal, and other noncanonical forms
-instead of normalizing or rewriting them. Non-unreserved UTF-8 bytes use uppercase percent encoding.
-A conforming checkout or extracted portable archive therefore remains renderable offline without a
-host service, remote identifiers, delivery URLs, credentials, or network access. An absolute
-credential-free HTTPS URL is a distinct external reference: its exact query and fragment are
-preserved, it has no sidecar entry, and ordinary consumers never fetch it. Other schemes,
-protocol-relative URLs, credentials, and controls are invalid in asset slots.
+An explicit name is a lowercase DNS label of at most 63 characters, such as `company-logo` or
+`installation-manual`. It remains the same when the Asset's URI changes, its bytes change, or both
+change. Integrity identifies one exact revision; it is not the logical identity.
 
-`@topik/content-schema` declares the Markdoc attributes that are asset slots and extracts every
-occurrence independently. It does not scan arbitrary strings. A generic link is a download only
-when explicitly declared or when compilation proves that its canonical target is a regular file
-which is not another resource or content file; ordinary navigation stays a link, and an explicitly
-declared resource link is an ambiguity error. A valid v1 sidecar is complete: every local
-occurrence resolves exactly one entry, every entry is referenced, and its regular
-non-executable file matches the recorded SHA-256, byte size, and media type verified from bytes.
-Symlinks, hard links, submodules, executables, special files, Git LFS pointers/filters,
-`working-tree-encoding`, and security-sensitive Git control files are rejected.
-Recognizable HTML, script, SVG, WebAssembly, and executable content cannot fall through as an opaque
-download, including content behind bounded padding, declarations, and comments. An unresolved active
-preamble that exhausts the inspection bound fails closed. Snapshot callers must explicitly opt active
-content into a proven download occurrence with `allowActiveDownloads`; any server that supports that
-policy must force attachment disposition and disable content sniffing.
-Git-tree descriptors use mode `100644`; archive descriptors use `0644`. The filesystem helper
-succeeds only on Linux when it can traverse from open directory descriptors through `/proc/self/fd`
-with no-follow flags and stable before/after identity. Other platforms receive a visible unsupported
-file diagnostic rather than a path-based best effort.
+```yaml
+apiVersion: v1
+type: Asset
+name: company-logo
+spec:
+  uri: media/logo.png
+  license:
+    spdxExpression: CC-BY-4.0
+  attribution:
+    text: Example attribution
+```
 
-`@topik/core` exports the version constants, consumer-capability declaration, canonical
-parser/serializer, path/reference and collision validators, opaque key generator, occurrence/file
-snapshot validation, filesystem no-follow reader, and semantic/materialization identity helpers.
-Operations return typed results with stable diagnostic IDs, blocking consequences, descriptor
-versions, safe locations, and recovery categories. Human wording and diagnostic order are not a
-compatibility surface. Diagnostics never contain unsafe references or raw untrusted source; when a
-failed result retains exact bytes in `source`, that field is deliberately non-loggable and must not
-be copied into diagnostics or telemetry. Each diagnostic has a safe opaque correlation ID; callers
-can replace the deterministic library default across an operation with `correlateTopikAssetResult`.
-Unknown manifest, serializer, path-rule, and reference-rule versions fail visibly; consumers may
-advertise lower deployment limits but may not silently weaken the portable maximum. Manifest
-operations accept an optional binding-root context so the complete root-plus-path stays within 768
-UTF-8 bytes.
+Place explicit descriptors below the compilation root's `assets/` directory as `.json`, `.yaml`, or
+`.yml` files. Files are read in canonical path order. Each `spec.uri` is relative to the compilation
+root, not to the descriptor. Asset declarations may also be supplied through the compiler API, and
+standalone declarations are retained even when no content refers to them. Names are unique across
+the complete compilation.
 
-## Direct resource compilation
+For local input, `integrity`, `size`, and `mediaType` are optional. Compilation reads the bytes and
+derives all three, while rejecting a supplied value that differs. The compiled resource uses
+`sha256:<64 lowercase hexadecimal characters>`, a non-negative byte size, and the media type proven
+from the bytes.
 
-Guide and WikiPage resources use their portable v1 shapes directly. Their content retains canonical
-local paths and does not carry a second asset-name list. `compileGuides`, `compileWiki`, and
-`compilePortableResourceArtifacts` produce one `PortableResourceArtifact` for each Guide, WikiPage,
-or CoursePage. Asset-free content resources receive an empty manifest; Wiki, Course, and
-CourseModule containers receive no artifact and cannot own another resource's files.
+Remote input uses a credential-free immutable HTTPS URL. It must supply integrity, size, and media
+type because compilation does not fetch it. User information, queries, fragments, and signed or
+expiring URL forms are rejected. Remote Assets keep their HTTPS URI and produce no local payload.
 
-Every artifact declares a collision-free `Type/name` resource root, an exact resource binding, the
-canonical sidecar bytes, the validated snapshot, semantic identity, exact materialization identity,
-and a complete inventory containing:
+## Implicit names
 
-- `resource.json`, the canonical bound resource descriptor;
-- `content.topik`, the exact UTF-8 materialization of the descriptor's content;
-- every byte-verified manifest asset at its canonical relative path; and
-- `.topik/assets.json`.
+A supported local image or proven download may be written as a relative path in source content.
+Compilation creates one implicit Asset and rewrites the compiled content to `asset:<generated-name>`.
+The generated form is `auto-v1-` followed by 52 lowercase unpadded RFC 4648 base32 characters. It is
+the full SHA-256 of:
 
-The compiler reads assets with the descriptor-anchored no-follow filesystem helper. It derives
-SHA-256, size, and media type from the opened bytes, reuses one manifest entry for repeated
-occurrences within a resource, and never shares ownership across resources. Opaque keys come from a
-CSPRNG. Compilation returns `assetKeyState`; pass it back through the `assets.keyState` option on a
-retry to retain exact key assignments. Key history is scoped by resource root, so independent roots
-may use the same opaque key text. Removing an assignment retires its key within that resource's
-history; a later re-addition cannot reuse it. Tests may inject `assets.randomBytes`, while production
-callers normally omit it. Filesystem compilation rejects a symlink supplied as its root and evaluates
-applicable root and nested `.gitattributes`; any effective `filter` or `working-tree-encoding` state
-other than unspecified blocks portable emission. An explicit `!filter` or
-`!working-tree-encoding` resets that attribute to unspecified; an explicit `-` unset remains
-non-portable.
+```text
+UTF8(NFC(stable source namespace)) + NUL + UTF8(normalized compilation-relative POSIX path)
+```
 
-The CLI continues to write ordinary resource files under `Type/name.<format>` and writes each exact
-portable root under `portable/Type/name/`. This layout allows several logical resources to coexist
-without competing for one physical sidecar. Portable output is staged and replaces the previous tree
-as a complete inventory, pruning stale files. On Linux, output traversal and writes stay anchored to
-open directory descriptors; symlinked ancestors, destination symlinks, hard links, and special nodes
-are rejected. Other platforms fail visibly when that proof is unavailable. The development server
-exposes proven inventory bytes at `/portable/Type/name/<owned-path>`, sends `nosniff`, forces opaque
-and active download types to `attachment`, and never serves an unchecked source path.
+The byte digest is deliberately absent from this name. Editing a file in place keeps its name;
+moving it creates a new name. Equal bytes at different paths remain distinct Assets, while repeated
+references to the same namespace and path reuse one Asset.
+
+Compiler callers provide `assets.sourceNamespace` only when implicit local references occur. The
+CLI accepts `--source-namespace`. If omitted, it derives a reproducible namespace from a stable Git
+remote identity and the compilation root's worktree-relative path. Branch, commit, checkout path,
+and machine path do not participate. When no stable Git identity exists, use the option explicitly.
+Explicit-only compilations need no namespace.
+
+The compiler inspects only Asset-capable slots declared by the content schema: Markdown image
+sources and declared component image/download attributes. It does not scan arbitrary attributes,
+frontmatter, code, captions, titles, labels, or unrelated links. A plain local link becomes a
+download only when the application declares that occurrence or compilation proves it targets a
+regular non-resource file. Ordinary navigation and external HTTPS references remain unchanged.
+
+## Shared compilation and output
+
+Asset discovery happens after all Guide, WikiPage, and CoursePage content is known. Resolution then
+runs once against one compilation-wide name set. Several resources can therefore refer to one
+explicit Asset, and local references to the same implicit namespace/path reuse one generated Asset.
+Containers do not own or duplicate payloads.
+
+The compiler emits resource descriptors only as canonical JSON in one self-contained tree:
+
+```text
+Asset/<name>.json
+Guide/<name>.json
+WikiPage/<name>.json
+assets/sha256/<full-sha256>
+.topik/materialization.json
+.topik/semantic.json
+```
+
+Compiled local Asset descriptors point to `assets/sha256/<full-sha256>`. Each unique byte payload is
+written once even when several Asset names use it. Resource and payload inventories use canonical
+ordering. Writes stage a complete replacement, prune stale output, and retain the prior tree if a
+replacement cannot complete. Dry-run output reports both resource descriptors and payloads.
+
+Semantic identity records Asset names and their exact content-reference mappings. Exact
+materialization identity records the path, byte size, and SHA-256 of every canonical JSON resource
+descriptor and deduplicated payload. A byte change preserves explicit and same-path implicit
+identity while changing exact materialization. Omitting a required Asset descriptor or payload
+invalidates the inventory.
+
+At render time, `@topik/content-react` accepts a named resolver:
+
+```tsx
+<TopikContent content={content} resolveAsset={(name) => assetUrls.get(name)} />
+```
+
+Resolution is limited to declared `asset:<name>` slots. A missing or malformed name reports a typed
+diagnostic and omits the browser-facing attribute instead of emitting an unresolved `asset:` URL.
+
+## Migration from 16-character digest names
+
+`migrateLegacyDigestOutput` upgrades the earlier compiler output that used 16 hexadecimal Asset
+names, SRI-style base64 integrity, content references to those names, and `spec.assets` arrays. The
+caller supplies the stable source namespace and source root. Migration verifies each local file and
+old integrity, derives the new path-based name and exact facts, rewrites only declared content
+slots, and removes obsolete arrays. An absent `spec.assets` on an asset-free Guide or WikiPage is
+treated as an empty legacy list and remains absent.
+
+Migration is all-or-nothing. Missing, malformed, remote, colliding, partially referenced, or
+ambiguous input fails without producing a partial result. A successful result includes the exact
+original input bytes as a backup, and retrying with the same input is deterministic.
+
+## Security and portability limits
+
+Paths must already be normalized compilation-relative POSIX paths. Absolute paths, traversal,
+separator and percent-encoding aliases, controls, bidi characters, non-NFC storage spellings,
+casefold/NFC collisions, and parent/file collisions are rejected. The path contract limits a
+component to 255 UTF-8 bytes, a path to 64 components, and a bound repository path to 768 bytes.
+
+Local reads are anchored to open directory descriptors and reject symlinks, hard links, Git links,
+special files, executables, changed-during-read files, Git LFS pointers, filters, and working-tree
+encodings. An Asset is limited to 256 MiB; a descriptor is limited to 1 MiB; a compilation accepts
+at most 10,000 Assets. Media inspection derives the type from bytes and recognizes active HTML,
+SVG, XML, script, WebAssembly, and executable forms behind bounded padding. Inspection completes a
+partial UTF-8 code point at the 64 KiB boundary or fails closed. Active local bytes are rejected by
+default; an explicit download-only policy may allow them, and servers must then force attachment
+delivery and `X-Content-Type-Options: nosniff`.
+
+Diagnostics expose stable IDs and safe locations without copying untrusted references or bytes.
+Canonical Asset JSON uses deterministic recursive key ordering, normalized JSON scalars, LF, and
+one final newline. Parsing rejects duplicate members, inherited properties, unsupported versions,
+unknown fields, invalid UTF-8, and noncanonical persisted bytes.
 
 ## Release status
 
-This repository change and its current package version do **not** claim portable-asset conformance
-or constitute a public release. The implementation can ship only in a future coordinated public
-Topik package release set with exact package versions, provenance, packed-export checks, and fixture
-evidence. No package version or publication tag is changed here.
+This repository change and its current package version do not constitute a package release or claim
+same-line conformance. A future coordinated package release must verify packed exports, exact
+versions, provenance, and fixture evidence.

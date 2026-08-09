@@ -1,17 +1,15 @@
 export {
-  ASSET_MANIFEST_API_VERSION,
-  ASSET_MANIFEST_SCHEMA_ID,
-  ASSET_MANIFEST_SIDECAR_PATH,
-  ASSET_MANIFEST_TYPE,
-  TOPIK_ASSET_DEFAULT_CAPABILITIES,
-  TOPIK_ASSET_PORTABLE_LIMITS,
+  ASSET_API_VERSION,
+  ASSET_SCHEMA_ID,
+  ASSET_TYPE,
+  TOPIK_ASSET_LIMITS,
+  TOPIK_ASSET_NAME_VERSION,
+  TOPIK_ASSET_OUTPUT_PREFIX,
   TOPIK_ASSET_REFERENCE_VERSION,
   TOPIK_JSON_VERSION,
   TOPIK_MATERIALIZATION_VERSION,
   TOPIK_PATH_V1_DESCRIPTOR,
   TOPIK_PATH_VERSION,
-  declareTopikAssetConsumerCapabilities,
-  type TopikAssetConsumerCapabilities,
 } from "./constants";
 export {
   TOPIK_ASSET_CORRELATION_ID_PATTERN,
@@ -27,12 +25,6 @@ export {
   type TopikAssetResult,
 } from "./diagnostics";
 export {
-  generateTopikAssetKey,
-  isTopikAssetKey,
-  TOPIK_ASSET_KEY_PATTERN,
-  type GenerateTopikAssetKeyOptions,
-} from "./key";
-export {
   computeTopikPathCollisionKey,
   toNfkcCasefold,
   validateTopikPath,
@@ -41,24 +33,24 @@ export {
   type ValidTopikPath,
 } from "./path";
 export {
-  decodeTopikAssetReference,
-  encodeTopikAssetReference,
-  validateTopikExternalAssetReference,
-} from "./reference";
-export {
   parseStrictTopikJson,
   serializeTopikJson,
   topikJsonDescriptor,
   TopikJsonSyntaxError,
 } from "./json";
 export {
-  parseAssetManifest,
-  serializeAssetManifest,
-  validateAssetManifestValue,
-  type AssetManifestValidationContext,
-  type ParseAssetManifestOptions,
-  type ParsedAssetManifest,
-} from "./manifest";
+  generateImplicitAssetName,
+  isExplicitAssetName,
+  isGeneratedAssetName,
+  parseAsset,
+  serializeAsset,
+  topikAssetNameDescriptor,
+  validateAssetUri,
+  validateAssetValue,
+  validateStableSourceNamespace,
+  type GenerateImplicitAssetNameOptions,
+  type ParsedAsset,
+} from "./asset";
 export {
   looksLikeGitLfsPointer,
   readPortableAssetFile,
@@ -69,24 +61,28 @@ export {
   type ReadPortableAssetFileOptions,
 } from "./files";
 export {
+  isInlineMediaCompatible,
+  isTopikActiveMediaType,
   sniffPortableMediaType,
-  validatePortableAssetSnapshot,
-  type PortableAssetContentSource,
-  type ResolvedTopikAssetOccurrence,
-  type ValidatePortableAssetSnapshotInput,
-  type ValidatedPortableAssetFile,
-  type ValidatedPortableAssetSnapshot,
-} from "./snapshot";
+  TOPIK_UNRESOLVED_ACTIVE_CONTENT_TYPE,
+} from "./media";
 export {
   compareTopikAssetIdentities,
   createTopikAssetSemanticRecord,
   createTopikMaterializationRecord,
   digestTopikAssetSemanticRecord,
   digestTopikMaterializationRecord,
+  validateTopikMaterializationRecord,
+  type TopikAssetReferenceMappingV1,
   type TopikAssetSemanticRecordV1,
-  type TopikAssetSemanticOccurrenceV1,
-  type TopikMaterializationDescriptorsV1,
-  type TopikMaterializationContextV1,
-  type TopikMaterializationFileInput,
+  type TopikMaterializationPayloadInput,
+  type TopikMaterializationPayloadV1,
   type TopikMaterializationRecordV1,
+  type TopikMaterializationResourceInput,
+  type TopikMaterializationResourceV1,
 } from "./identity";
+export {
+  migrateLegacyDigestOutput,
+  type LegacyDigestMigrationResult,
+  type MigrateLegacyDigestOutputOptions,
+} from "./migration";

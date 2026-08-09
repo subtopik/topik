@@ -12,11 +12,8 @@ import {
 } from "@topik/schema";
 import type { Resource } from "../resource";
 import { parseWikiConfig, WIKI_PAGE_NAME_HASH_LENGTH, type WikiNavNode } from "../config/wiki";
-import {
-  compilePortableResourceArtifacts,
-  TOPIK_PORTABLE_ASSET_KEY_STATE_VERSION,
-  type PortableAssetCompilationOptions,
-} from "./assets";
+import { compileAssetResources, type AssetCompilationOptions } from "./assets";
+import type { CompileResourceDiscovery } from "./guide";
 import { readOptionalConfigFile } from "./config";
 import { readRegularFileWithinRoot } from "./files";
 import {
@@ -33,7 +30,7 @@ import { validateWikiLinks, type WikiPageLinkAnalysis } from "./links";
 export interface CompileWikiOptions {
   dir: string;
   validation?: CompileValidationOptions;
-  assets?: PortableAssetCompilationOptions;
+  assets?: AssetCompilationOptions;
 }
 
 export async function compileWiki(options: CompileWikiOptions): Promise<CompileResult> {
@@ -43,20 +40,23 @@ export async function compileWiki(options: CompileWikiOptions): Promise<CompileR
 }
 
 export async function inspectWiki(options: CompileWikiOptions): Promise<CompileResult> {
+  const discovered = await discoverWiki(options);
+  const compiled = await compileAssetResources({
+    rootDir: resolve(options.dir),
+    resources: discovered.resources,
+    sourcePathsByResource: discovered.sourcePathsByResource,
+    ...options.assets,
+  });
+  return { diagnostics: discovered.diagnostics, ...compiled };
+}
+
+/** @internal Discovery phase used by the mixed top-level compiler. */
+export async function discoverWiki(options: CompileWikiOptions): Promise<CompileResourceDiscovery> {
   const dir = resolve(options.dir);
 
   const raw = await readOptionalConfigFile(dir, ["wiki.yaml", "wiki.yml", "wiki.json"]);
   if (raw == null) {
-    return {
-      diagnostics: [],
-      resources: [],
-      artifacts: [],
-      assetKeyState: options.assets?.keyState ?? {
-        version: TOPIK_PORTABLE_ASSET_KEY_STATE_VERSION,
-        keysByResource: {},
-        retiredKeysByResource: {},
-      },
-    };
+    return { diagnostics: [], resources: [], sourcePathsByResource: {} };
   }
 
   const config = parseWikiConfig(raw);
@@ -125,20 +125,7 @@ export async function inspectWiki(options: CompileWikiOptions): Promise<CompileR
     diagnostics.push(...validateWikiLinks(pageAnalyses, linkValidationPolicy(options.validation)));
   }
 
-  const compiled = await compilePortableResourceArtifacts({
-    rootDir: dir,
-    resources,
-    sourcePathsByResource,
-    downloadableLinkPositionsByResource: options.assets?.downloadableLinkPositionsByResource,
-    keyState: options.assets?.keyState,
-    randomBytes: options.assets?.randomBytes,
-  });
-  return {
-    diagnostics,
-    resources: compiled.resources,
-    artifacts: compiled.artifacts,
-    assetKeyState: compiled.keyState,
-  };
+  return { diagnostics, resources, sourcePathsByResource };
 }
 
 // Keep compiled WikiPage spec.description within wikiPageSchema's 1024-character limit.

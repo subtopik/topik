@@ -2,13 +2,14 @@ import { EventEmitter } from "node:events";
 import { resolve } from "node:path";
 import { watch as chokidarWatch } from "chokidar";
 import { compile } from "./compile";
-import type { PortableResourceArtifact } from "./compile/assets";
+import type { AssetCompilationOptions, AssetPayload } from "./compile/assets";
 import { digestTopikMaterializationRecord } from "./portable/identity";
 import type { Resource } from "./resource";
 
 export interface WatchOptions {
   dir: string;
   signal?: AbortSignal;
+  assets?: AssetCompilationOptions;
 }
 
 export type UpdateListener = (key: string, resource: Resource) => void;
@@ -17,8 +18,8 @@ export type ErrorListener = (error: Error) => void;
 export interface Watcher {
   /** Current compiled resources, keyed by `Type/name`. */
   resources: Map<string, Resource>;
-  /** Current content-bearing portable artifacts, keyed by their collision-free output root. */
-  artifacts: Map<string, PortableResourceArtifact>;
+  /** Current deduplicated local payloads, keyed by compilation-relative output path. */
+  payloads: Map<string, AssetPayload>;
   on(event: "update", listener: UpdateListener): this;
   on(event: "error", listener: ErrorListener): this;
   off(event: "update", listener: UpdateListener): this;
@@ -34,26 +35,28 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
   const dir = resolve(options.dir);
   const emitter = new EventEmitter();
   const resources = new Map<string, Resource>();
-  const artifacts = new Map<string, PortableResourceArtifact>();
+  const payloads = new Map<string, AssetPayload>();
 
   // Initial compile
-  const initial = await compile({ dir });
-  let assetKeyState = initial.assetKeyState;
+  const initial = await compile({ dir, assets: options.assets });
+  let materialization = initial.materialization;
   for (const resource of initial.resources) {
     resources.set(resourceKey(resource), resource);
   }
-  for (const artifact of initial.artifacts) artifacts.set(artifact.resourceRoot, artifact);
+  for (const payload of initial.payloads) payloads.set(payload.path, payload);
 
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   async function recompile() {
     try {
-      const result = await compile({ dir, assets: { keyState: assetKeyState } });
-      assetKeyState = result.assetKeyState;
+      const result = await compile({ dir, assets: options.assets });
       const newKeys = new Set<string>();
-      const previousArtifacts = new Map(artifacts);
-      artifacts.clear();
-      for (const artifact of result.artifacts) artifacts.set(artifact.resourceRoot, artifact);
+      const materializationChanged =
+        digestTopikMaterializationRecord(materialization) !==
+        digestTopikMaterializationRecord(result.materialization);
+      materialization = result.materialization;
+      payloads.clear();
+      for (const payload of result.payloads) payloads.set(payload.path, payload);
 
       for (const resource of result.resources) {
         const key = resourceKey(resource);
@@ -61,9 +64,8 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
 
         const existing = resources.get(key);
         const resourceChanged = !existing || JSON.stringify(existing) !== JSON.stringify(resource);
-        const artifactChanged = !sameArtifact(previousArtifacts.get(key), artifacts.get(key));
         resources.set(key, resource);
-        if (resourceChanged || artifactChanged) {
+        if (resourceChanged || (resource.type === "Asset" && materializationChanged)) {
           emitter.emit("update", key, resource);
         }
       }
@@ -101,7 +103,7 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
 
   const watcher = {
     resources,
-    artifacts,
+    payloads,
     on(event: string, listener: (...args: unknown[]) => void) {
       emitter.on(event, listener);
       return watcher;
@@ -117,15 +119,4 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
   };
 
   return watcher as Watcher;
-}
-
-function sameArtifact(
-  left: PortableResourceArtifact | undefined,
-  right: PortableResourceArtifact | undefined,
-): boolean {
-  if (left === undefined || right === undefined) return left === right;
-  return (
-    digestTopikMaterializationRecord(left.materialization) ===
-    digestTopikMaterializationRecord(right.materialization)
-  );
 }

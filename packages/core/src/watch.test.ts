@@ -61,29 +61,25 @@ describe("watch", () => {
     expect(resource).toHaveProperty("spec.content.value", "# Intro\n\nUpdated content.\n");
   }, 10_000);
 
-  test("emits the owning resource update with a refreshed artifact when only asset bytes change", async () => {
+  test("emits the named Asset update with a refreshed payload when bytes change", async () => {
     await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](hero.png)\n");
     await writeFile(join(dir, "hero.png"), PNG_BYTES);
-    watcher = await watch({ dir });
+    watcher = await watch({ dir, assets: { sourceNamespace: "watch-fixture" } });
 
-    const key = "Guide/guides-intro";
-    const before = watcher.artifacts.get(key);
+    const asset = [...watcher.resources.values()].find((resource) => resource.type === "Asset");
+    const key = `Asset/${asset?.name}`;
+    const before = [...watcher.payloads.values()][0];
     expect(before).toBeDefined();
-    const beforeEntry = Object.values(before?.manifest.assets ?? {})[0];
-    expect(beforeEntry).toBeDefined();
 
     const changedBytes = Uint8Array.from(PNG_BYTES);
     changedBytes[changedBytes.length - 1] ^= 1;
-    const updated = new Promise<{ resource: unknown; artifactBytes: Uint8Array; digest: string }>(
+    const updated = new Promise<{ resource: unknown; payloadBytes: Uint8Array; integrity: string }>(
       (resolve) => {
         watcher.on("update", (updatedKey, resource) => {
           if (updatedKey !== key) return;
-          const artifact = watcher.artifacts.get(updatedKey);
-          const entry = Object.values(artifact?.manifest.assets ?? {})[0];
-          const file = artifact?.inventory.find((candidate) => candidate.path === "hero.png");
-          if (entry !== undefined && file !== undefined) {
-            resolve({ resource, artifactBytes: file.bytes, digest: entry.digest.value });
-          }
+          const payload = [...watcher.payloads.values()][0];
+          if (payload !== undefined)
+            resolve({ resource, payloadBytes: payload.bytes, integrity: payload.integrity });
         });
       },
     );
@@ -93,29 +89,26 @@ describe("watch", () => {
 
     const result = await updated;
     expect(result.resource).toBe(watcher.resources.get(key));
-    expect([...result.artifactBytes]).toEqual([...changedBytes]);
-    expect(result.digest).not.toBe(beforeEntry?.digest.value);
+    expect([...result.payloadBytes]).toEqual([...changedBytes]);
+    expect(result.integrity).not.toBe(before?.integrity);
   }, 10_000);
 
   test("watches valid assets inside dot-prefixed directories", async () => {
     await mkdir(join(dir, ".images"));
     await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](.images/hero.png)\n");
     await writeFile(join(dir, ".images", "hero.png"), PNG_BYTES);
-    watcher = await watch({ dir });
+    watcher = await watch({ dir, assets: { sourceNamespace: "watch-fixture" } });
 
-    const key = "Guide/guides-intro";
-    const beforeEntry = Object.values(watcher.artifacts.get(key)?.manifest.assets ?? {})[0];
+    const asset = [...watcher.resources.values()].find((resource) => resource.type === "Asset");
+    const key = `Asset/${asset?.name}`;
+    const beforeEntry = [...watcher.payloads.values()][0];
     const changedBytes = Uint8Array.from(PNG_BYTES);
     changedBytes[changedBytes.length - 1] ^= 1;
     const updated = new Promise<{ bytes: Uint8Array; digest: string }>((resolve) => {
       watcher.on("update", (updatedKey) => {
         if (updatedKey !== key) return;
-        const artifact = watcher.artifacts.get(updatedKey);
-        const entry = Object.values(artifact?.manifest.assets ?? {})[0];
-        const file = artifact?.inventory.find((candidate) => candidate.path === ".images/hero.png");
-        if (entry !== undefined && file !== undefined) {
-          resolve({ bytes: file.bytes, digest: entry.digest.value });
-        }
+        const payload = [...watcher.payloads.values()][0];
+        if (payload !== undefined) resolve({ bytes: payload.bytes, digest: payload.integrity });
       });
     });
 
@@ -124,7 +117,7 @@ describe("watch", () => {
 
     const result = await updated;
     expect([...result.bytes]).toEqual([...changedBytes]);
-    expect(result.digest).not.toBe(beforeEntry?.digest.value);
+    expect(result.digest).not.toBe(beforeEntry?.integrity);
   }, 10_000);
 
   test("detects new files", async () => {

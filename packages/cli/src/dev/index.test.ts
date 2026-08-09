@@ -69,7 +69,12 @@ describe("dev command", () => {
   let runningServer: StartedDevServer | undefined;
 
   async function start(options: { allowOrigin?: string } = {}): Promise<number> {
-    runningServer = await startDevServer({ dir, port: 0, ...options });
+    runningServer = await startDevServer({
+      dir,
+      port: 0,
+      sourceNamespace: "dev-test-source",
+      ...options,
+    });
     return addressOf(runningServer).port;
   }
 
@@ -255,7 +260,7 @@ describe("dev command", () => {
     expect(data.resources.find((r) => r.type === "WikiPage")?.name).toMatch(/^docs-[a-f0-9]{16}$/);
   });
 
-  test("GET /portable/:type/:name serves resource-scoped inventory files", async () => {
+  test("GET /assets/sha256/:digest serves shared payloads", async () => {
     await rm(join(dir, "collection.yaml"));
     await rm(join(dir, "intro.md"));
     await writeFile(join(dir, "wiki.yaml"), "id: docs\ntitle: Docs\nnavigation:\n  - intro\n");
@@ -266,28 +271,26 @@ describe("dev command", () => {
     const port = await start();
 
     const resources = (await (await fetch(`http://127.0.0.1:${port}/resources`)).json()) as {
-      resources: { type: string; name: string }[];
+      resources: { type: string; name: string; spec?: { uri?: string } }[];
     };
-    const page = resources.resources.find((resource) => resource.type === "WikiPage");
-    expect(page).toBeDefined();
+    const asset = resources.resources.find((resource) => resource.type === "Asset");
+    expect(asset?.spec?.uri).toMatch(/^assets\/sha256\/[0-9a-f]{64}$/u);
 
-    const assetRes = await fetch(
-      `http://127.0.0.1:${port}/portable/WikiPage/${page!.name}/images/hero.png`,
-      { headers: { Origin: WRITE_ORIGIN } },
-    );
+    const assetRes = await fetch(`http://127.0.0.1:${port}/${asset?.spec?.uri}`, {
+      headers: { Origin: WRITE_ORIGIN },
+    });
     expect(assetRes.status).toBe(200);
     expect(assetRes.headers.get("content-type")).toBe("image/png");
     expect(assetRes.headers.get("x-content-type-options")).toBe("nosniff");
     expect(assetRes.headers.get("access-control-allow-origin")).toBe(WRITE_ORIGIN);
     expect(Buffer.from(await assetRes.arrayBuffer())).toEqual(PNG_BYTES);
 
-    const rejectedAssetRes = await fetch(
-      `http://127.0.0.1:${port}/portable/WikiPage/${page!.name}/images/hero.png`,
-      { headers: { Origin: "https://attacker.example" } },
-    );
+    const rejectedAssetRes = await fetch(`http://127.0.0.1:${port}/${asset?.spec?.uri}`, {
+      headers: { Origin: "https://attacker.example" },
+    });
     expect(rejectedAssetRes.status).toBe(403);
 
-    const malformedAssetRes = await fetch(`http://127.0.0.1:${port}/portable/%E0%A4%A`);
+    const malformedAssetRes = await fetch(`http://127.0.0.1:${port}/assets/sha256/%E0%A4%A`);
     expect(malformedAssetRes.status).not.toBe(500);
     expect(malformedAssetRes.status).toBe(404);
 
@@ -300,7 +303,10 @@ describe("dev command", () => {
     await writeFile(join(dir, "intro.md"), "# Intro\n\n[Download](manual.bin)\n");
     const port = await start();
 
-    const response = await fetch(`http://127.0.0.1:${port}/portable/Guide/docs-intro/manual.bin`);
+    const asset = [...runningServer!.watcher.resources.values()].find(
+      (resource) => resource.type === "Asset",
+    );
+    const response = await fetch(`http://127.0.0.1:${port}/${asset?.spec.uri}`);
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("application/octet-stream");
     expect(response.headers.get("content-disposition")).toBe("attachment");
@@ -314,10 +320,12 @@ describe("dev command", () => {
     await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](.images/hero.png)\n");
 
     const port = await start();
-    const key = "Guide/docs-intro";
-    const initialArtifact = runningServer!.watcher.artifacts.get(key);
-    const initialEntry = Object.values(initialArtifact?.manifest.assets ?? {})[0];
-    expect(initialEntry).toBeDefined();
+    const initialAsset = [...runningServer!.watcher.resources.values()].find(
+      (resource) => resource.type === "Asset",
+    );
+    const key = `Asset/${initialAsset?.name}`;
+    const initialPayload = [...runningServer!.watcher.payloads.values()][0];
+    expect(initialPayload).toBeDefined();
 
     const changedBytes = Uint8Array.from(PNG_BYTES);
     changedBytes[changedBytes.length - 1] ^= 1;
@@ -334,15 +342,12 @@ describe("dev command", () => {
 
     const resourcesResponse = await fetch(`http://127.0.0.1:${port}/resources`);
     const resources = (await resourcesResponse.json()) as {
-      portableArtifacts: { resourceRoot: string; manifest: { assets: Record<string, unknown> } }[];
+      payloads: { integrity: string; path: string }[];
     };
-    const refreshed = resources.portableArtifacts.find((artifact) => artifact.resourceRoot === key);
-    const refreshedEntry = Object.values(
-      refreshed?.manifest.assets ?? {},
-    )[0] as typeof initialEntry;
-    expect(refreshedEntry?.digest.value).not.toBe(initialEntry?.digest.value);
+    const refreshed = resources.payloads[0];
+    expect(refreshed?.integrity).not.toBe(initialPayload?.integrity);
 
-    const assetResponse = await fetch(`http://127.0.0.1:${port}/portable/${key}/.images/hero.png`);
+    const assetResponse = await fetch(`http://127.0.0.1:${port}/${refreshed?.path}`);
     expect(assetResponse.status).toBe(200);
     expect(Buffer.from(await assetResponse.arrayBuffer())).toEqual(Buffer.from(changedBytes));
   }, 10_000);
@@ -358,18 +363,13 @@ describe("dev command", () => {
 
       const port = await start();
 
-      const resources = (await (await fetch(`http://127.0.0.1:${port}/resources`)).json()) as {
-        resources: { type: string; name: string }[];
-      };
-      const guide = resources.resources.find((resource) => resource.type === "Guide");
-      expect(guide).toBeDefined();
+      const payloadPath = [...runningServer!.watcher.payloads.keys()][0];
+      expect(payloadPath).toBeDefined();
 
       await rm(assetPath);
       await symlink(join(external, "secret.png"), assetPath);
 
-      const response = await fetch(
-        `http://127.0.0.1:${port}/portable/Guide/${guide!.name}/images/hero.png`,
-      );
+      const response = await fetch(`http://127.0.0.1:${port}/${payloadPath}`);
       expect(response.status).toBe(200);
       const responseBytes = Buffer.from(await response.arrayBuffer());
       expect(responseBytes).toEqual(PNG_BYTES);

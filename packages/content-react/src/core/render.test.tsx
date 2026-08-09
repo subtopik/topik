@@ -1,8 +1,14 @@
-import { describe, expect, it } from "vite-plus/test";
+import Markdoc from "@markdoc/markdoc";
 import { renderToStaticMarkup, renderToString } from "react-dom/server";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { TopikContentProvider, useTopikComponents } from "./context";
 import { getTopikComponents } from "./components";
-import { compileTopikContent, renderTopikContent, renderTopikMarkdown } from "./render";
+import {
+  compileTopikContent,
+  renderTopikContent,
+  renderTopikMarkdown,
+  resolveTopikAssetReferences,
+} from "./render";
 
 const allComponentsContent = `
 # Lesson
@@ -81,6 +87,96 @@ Because it is correct.
 `;
 
 describe("content-react core", () => {
+  it("resolves names in declared slots during server rendering", () => {
+    const names: string[] = [];
+    const html = renderToStaticMarkup(
+      <>
+        {renderTopikMarkdown(
+          [
+            "![Logo](asset:company-logo)",
+            '{% figure src="asset:figure-light" darkSrc="asset:figure-dark" alt="Figure" /%}',
+            "[Download](asset:manual)",
+          ].join("\n\n"),
+          {
+            components: {
+              TopikFigure: ({ darkSrc, src }) => (
+                <picture>
+                  <source srcSet={String(darkSrc)} />
+                  <img alt="" src={String(src)} />
+                </picture>
+              ),
+              TopikImage: ({ src }) => <img alt="" src={String(src)} />,
+              TopikLink: ({ children, href }) => <a href={String(href)}>{children}</a>,
+            },
+            resolveAsset: (name) => {
+              names.push(name);
+              return `/compiled/${name}`;
+            },
+          },
+        )}
+      </>,
+    );
+
+    expect(names).toEqual(["company-logo", "figure-light", "figure-dark", "manual"]);
+    expect(html).toContain('src="/compiled/company-logo"');
+    expect(html).toContain('src="/compiled/figure-light"');
+    expect(html).toContain('srcSet="/compiled/figure-dark"');
+    expect(html).toContain('href="/compiled/manual"');
+    expect(html).not.toContain("asset:");
+  });
+
+  it("does not recursively rewrite arbitrary strings", () => {
+    const tree = new Markdoc.Tag("TopikCard", {
+      title: "asset:company-logo",
+      data: { nested: "asset:company-logo" },
+    });
+    const resolver = vi.fn(() => "/compiled/company-logo");
+
+    const resolved = resolveTopikAssetReferences(tree, resolver);
+
+    expect(resolver).not.toHaveBeenCalled();
+    expect(resolved.attributes).toEqual(tree.attributes);
+  });
+
+  it("fails closed for an unresolved named Asset", () => {
+    const diagnostics: string[] = [];
+    const html = renderToStaticMarkup(
+      <>
+        {renderTopikMarkdown("![Logo](asset:missing)", {
+          resolveAsset: () => undefined,
+          onAssetDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id),
+        })}
+      </>,
+    );
+
+    expect(diagnostics).toContain("TOPIK_ASSET_REFERENCE_MISSING");
+    expect(html).not.toContain("asset:");
+    expect(html).not.toMatch(/\bsrc=/u);
+  });
+
+  it("fails closed for a malformed named Asset in source and transformed trees", () => {
+    const sourceDiagnostics: string[] = [];
+    const resolutionDiagnostics: string[] = [];
+    const html = renderToStaticMarkup(
+      <>
+        {renderTopikMarkdown("![Logo](asset:auto-v1-short)", {
+          onDiagnostic: (diagnostic) => sourceDiagnostics.push(diagnostic.id),
+        })}
+      </>,
+    );
+    const resolved = resolveTopikAssetReferences(
+      new Markdoc.Tag("TopikImage", { src: "asset:auto-v1-short" }),
+      () => "/must-not-resolve",
+      { onDiagnostic: (diagnostic) => resolutionDiagnostics.push(diagnostic.id) },
+    );
+
+    expect(sourceDiagnostics).toContain("TOPIK_ASSET_REFERENCE_MALFORMED");
+    expect(resolutionDiagnostics).toContain("TOPIK_ASSET_REFERENCE_MALFORMED");
+    expect(resolved.attributes).not.toHaveProperty("src");
+    expect(html).not.toContain("asset:");
+    expect(html).not.toMatch(/\bsrc=/u);
+  });
+
   it("renders basic markdown nodes", () => {
     const html = renderToStaticMarkup(<>{renderTopikMarkdown("# Hello\n\nParagraph.")}</>);
 
@@ -304,6 +400,26 @@ describe("content-react core", () => {
     expect(html).not.toContain("data-unsafe");
     expect(html).not.toMatch(/\bsrc=/u);
     expect(html).not.toContain('rel="preload"');
+  });
+
+  it("does not render a destination proved only by an unrelated Markdoc attribute", () => {
+    const diagnostics: string[] = [];
+    const source =
+      '![x][id] {% callout title="![x](%C3%A9.png)" %}foo{% /callout %}\n\n> [id]: é.png';
+    const html = renderToStaticMarkup(
+      <>
+        {renderTopikMarkdown(source, {
+          components: {
+            TopikImage: ({ src }) =>
+              typeof src === "string" ? <img alt="" data-unsafe src={src} /> : null,
+          },
+          onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id),
+        })}
+      </>,
+    );
+    expect(diagnostics).toContain("TOPIK_ASSET_PATH_INVALID");
+    expect(html).not.toContain("data-unsafe");
+    expect(html).not.toMatch(/\bsrc=/u);
   });
 
   it.each([

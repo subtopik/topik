@@ -1,47 +1,22 @@
 import { constants } from "node:fs";
 import { mkdir, mkdtemp, open, readdir, rename, rm } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { boolean, command, positional, string } from "@drizzle-team/brocli";
 import {
   compile as compileContent,
-  parseStrictTopikJson,
   serializeTopikJson,
   validateResources,
   type LinkValidationPolicy,
-  type PortableAssetKeyStateV1,
-  type Resource,
 } from "@topik/core";
 import { printDiagnostics } from "../diagnostics";
 import { CliError } from "../errors";
 import { formatValidationFailure } from "../validation-output";
-
-type Format = "json" | "jsonl" | "yaml";
-
-const formatExtensions: Record<Format, string> = {
-  json: ".json",
-  jsonl: ".jsonl",
-  yaml: ".yaml",
-};
-
-async function toYaml(value: unknown): Promise<string> {
-  if (process.versions.bun) {
-    return Bun.YAML.stringify(value);
-  }
-  const { stringify } = await import("yaml");
-  return stringify(value);
-}
-
-function serialize(resource: Resource, format: Format): Promise<string> {
-  switch (format) {
-    case "json":
-      return Promise.resolve(JSON.stringify(resource, null, 2) + "\n");
-    case "jsonl":
-      return Promise.resolve(JSON.stringify(resource) + "\n");
-    case "yaml":
-      return toYaml(resource);
-  }
-}
+import {
+  deriveGitSourceNamespace,
+  explicitAssetOptions,
+  requiresSourceNamespace,
+} from "../source-namespace";
 
 export const compile = command({
   name: "compile",
@@ -51,8 +26,8 @@ export const compile = command({
     outDir: string("out-dir").alias("o").desc("Output directory for compiled resources"),
     format: string("format")
       .alias("f")
-      .desc("Output format")
-      .enum("json", "jsonl", "yaml")
+      .desc("Output format (canonical JSON only)")
+      .enum("json")
       .default("json"),
     dryRun: boolean("dry-run")
       .desc("Show what would be compiled without writing files")
@@ -65,25 +40,27 @@ export const compile = command({
       .desc("How unresolved wiki links and local guide fragments are handled")
       .enum("error", "warning", "off")
       .default("error"),
+    sourceNamespace: string("source-namespace").desc(
+      "Stable source namespace for implicit local Assets (derived from Git when omitted)",
+    ),
   },
   handler: async (options) => {
     const dir = resolve(options.dir);
-    const format = options.format as Format;
     const links = options.links as LinkValidationPolicy;
     const outDir = options.outDir ? resolve(options.outDir) : join(dir, ".topik", "resources");
-    const existingOutputRoot = await openAnchoredOutputDirectory(outDir, false);
-    let keyState: PortableAssetKeyStateV1 | undefined;
+    const explicitAssets = explicitAssetOptions(options.sourceNamespace);
+    let result: Awaited<ReturnType<typeof compileContent>>;
     try {
-      if (existingOutputRoot !== undefined) await assertSafeOutputTree(existingOutputRoot);
-      keyState = await readAssetKeyState(existingOutputRoot);
-    } finally {
-      await existingOutputRoot?.close();
+      result = await compileContent({ dir, validation: { links }, assets: explicitAssets });
+    } catch (error) {
+      if (explicitAssets !== undefined || !requiresSourceNamespace(error)) throw error;
+      result = await compileContent({
+        dir,
+        validation: { links },
+        assets: { sourceNamespace: await deriveGitSourceNamespace(dir) },
+      });
     }
-    const { artifacts, assetKeyState, diagnostics, resources } = await compileContent({
-      dir,
-      validation: { links },
-      assets: { keyState },
-    });
+    const { diagnostics, materialization, payloads, resources, semantic } = result;
     printDiagnostics(diagnostics);
 
     if (options.validate) {
@@ -95,98 +72,55 @@ export const compile = command({
       }
     }
 
-    const ext = formatExtensions[format];
-
     if (options.dryRun) {
       for (const resource of resources) {
-        console.log(`${resource.type}/${resource.name}${ext}`);
+        console.log(`${resource.type}/${resource.name}.json`);
       }
-      for (const artifact of artifacts) {
-        for (const file of artifact.inventory) {
-          console.log(`portable/${artifact.resourceRoot}/${file.path}`);
-        }
-      }
-      console.log(
-        `\n${resources.length} resources and ${artifacts.length} portable roots (dry run)`,
-      );
+      for (const payload of payloads) console.log(payload.path);
+      console.log(`\n${resources.length} resources and ${payloads.length} payloads (dry run)`);
       return;
     }
 
-    const outputRoot = await openAnchoredOutputDirectory(outDir, true);
-    if (outputRoot === undefined)
-      throw new CliError("Compilation output root could not be created");
-    try {
-      await assertSafeOutputTree(outputRoot);
-      if (options.clean) await cleanAnchoredOutputRoot(outputRoot);
-      await Promise.all(
-        resources.map(async (resource) =>
-          writeAnchoredFile(
-            outputRoot,
-            `${resource.type}/${resource.name}${ext}`,
-            await serialize(resource, format),
-          ),
-        ),
-      );
-      await writeAnchoredFile(
-        outputRoot,
-        ".topik/asset-key-state.json",
-        serializeTopikJson(assetKeyState),
-      );
-      await materializePortableRoots(outputRoot, artifacts);
-      await assertSafeOutputTree(outputRoot);
-      await assertOutputRootIdentity(outDir, outputRoot);
-    } finally {
-      await outputRoot.close();
-    }
+    const materializedResources = new Map(
+      materialization.resources.map((resource) => [resource.resource, resource]),
+    );
+    const files: Array<{ path: string; bytes: string | Uint8Array }> = resources.map((resource) => {
+      const materialized = materializedResources.get(`${resource.type}/${resource.name}`);
+      if (materialized === undefined) {
+        throw new CliError("Compiled materialization omits a resource descriptor");
+      }
+      return { path: materialized.path, bytes: serializeTopikJson(resource) };
+    });
+    files.push(
+      ...payloads.map((payload) => ({ path: payload.path, bytes: payload.bytes })),
+      { path: ".topik/materialization.json", bytes: serializeTopikJson(materialization) },
+      { path: ".topik/semantic.json", bytes: serializeTopikJson(semantic) },
+    );
+    await replaceCompilationTree(outDir, files);
 
     console.log(
-      `Compiled ${resources.length} resources and ${artifacts.length} portable roots to ${outDir}`,
+      `Compiled ${resources.length} resources and ${payloads.length} payloads to ${outDir}`,
     );
   },
 });
 
-async function assertOutputRootIdentity(absolutePath: string, expected: FileHandle): Promise<void> {
-  const reopened = await openAnchoredOutputDirectory(absolutePath, false);
-  if (reopened === undefined) throw new CliError("Compilation output root disappeared");
-  try {
-    const [before, after] = await Promise.all([
-      expected.stat({ bigint: true }),
-      reopened.stat({ bigint: true }),
-    ]);
-    if (before.dev !== after.dev || before.ino !== after.ino) {
-      throw new CliError("Compilation output root identity changed during materialization");
-    }
-  } finally {
-    await reopened.close();
-  }
-}
-
-async function readAssetKeyState(
-  outputRoot: FileHandle | undefined,
-): Promise<PortableAssetKeyStateV1 | undefined> {
-  if (outputRoot === undefined) return undefined;
-  try {
-    const bytes = await readAnchoredFile(outputRoot, ".topik/asset-key-state.json");
-    return bytes === undefined
-      ? undefined
-      : (parseStrictTopikJson(new TextDecoder().decode(bytes)) as PortableAssetKeyStateV1);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-    throw error;
-  }
-}
-
-async function materializePortableRoots(
-  outputRoot: FileHandle,
-  artifacts: Awaited<ReturnType<typeof compileContent>>["artifacts"],
+async function replaceCompilationTree(
+  absolutePath: string,
+  files: readonly { path: string; bytes: string | Uint8Array }[],
 ): Promise<void> {
-  const portableDir = procFdChild(outputRoot.fd, "portable");
-  const portableHandle = await openAnchoredChildDirectory(outputRoot, "portable", false);
-  if (portableHandle !== undefined) {
-    await assertSafeOutputTree(portableHandle);
-    await portableHandle.close();
+  const target = basename(absolutePath);
+  if (target.length === 0 || target === "." || target === "..") {
+    throw new CliError("Compilation output root is invalid");
   }
-  const stageDir = await mkdtemp(procFdChild(outputRoot.fd, ".topik-portable-stage-"));
+  const parent = await openAnchoredOutputDirectory(dirname(absolutePath), true);
+  if (parent === undefined) throw new CliError("Compilation output parent could not be created");
+  const targetPath = procFdChild(parent.fd, target);
+  const existing = await openAnchoredChildDirectory(parent, target, false);
+  if (existing !== undefined) {
+    await assertSafeOutputTree(existing);
+    await existing.close();
+  }
+  const stageDir = await mkdtemp(procFdChild(parent.fd, ".topik-compilation-stage-"));
   const stageHandle = await open(
     stageDir,
     constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
@@ -194,30 +128,20 @@ async function materializePortableRoots(
   let backupDir: string | undefined;
   let previousMoved = false;
   try {
-    await Promise.all(
-      artifacts.flatMap((artifact) =>
-        artifact.inventory.map((file) =>
-          writeAnchoredFile(stageHandle, `${artifact.resourceRoot}/${file.path}`, file.bytes),
-        ),
-      ),
-    );
-
-    const currentPortable = await openAnchoredChildDirectory(outputRoot, "portable", false);
-    if (currentPortable !== undefined) {
-      await assertSafeOutputTree(currentPortable);
-      await currentPortable.close();
-      backupDir = await mkdtemp(procFdChild(outputRoot.fd, ".topik-portable-backup-"));
-      await rename(portableDir, join(backupDir, "portable"));
+    await Promise.all(files.map((file) => writeAnchoredFile(stageHandle, file.path, file.bytes)));
+    if (existing !== undefined) {
+      backupDir = await mkdtemp(procFdChild(parent.fd, ".topik-compilation-backup-"));
+      await rename(targetPath, join(backupDir, "previous"));
       previousMoved = true;
     }
-    await rename(stageDir, portableDir);
+    await rename(stageDir, targetPath);
     if (backupDir !== undefined) await rm(backupDir, { recursive: true, force: true });
   } catch (error) {
-    const failedPortable = await openAnchoredChildDirectory(outputRoot, "portable", false);
-    const portableMissing = failedPortable === undefined;
-    await failedPortable?.close();
-    if (previousMoved && portableMissing && backupDir !== undefined) {
-      await rename(join(backupDir, "portable"), portableDir).catch(() => undefined);
+    const failedTarget = await openAnchoredChildDirectory(parent, target, false);
+    const targetMissing = failedTarget === undefined;
+    await failedTarget?.close();
+    if (previousMoved && targetMissing && backupDir !== undefined) {
+      await rename(join(backupDir, "previous"), targetPath).catch(() => undefined);
     }
     await rm(stageDir, { recursive: true, force: true }).catch(() => undefined);
     if (backupDir !== undefined) {
@@ -226,6 +150,7 @@ async function materializePortableRoots(
     throw error;
   } finally {
     await stageHandle.close().catch(() => undefined);
+    await parent.close().catch(() => undefined);
   }
 }
 
@@ -322,53 +247,6 @@ async function assertSafeOutputTree(directory: FileHandle): Promise<void> {
   }
 }
 
-async function readAnchoredFile(
-  root: FileHandle,
-  relativePath: string,
-): Promise<Uint8Array | undefined> {
-  const components = safeOutputComponents(relativePath);
-  const directories: FileHandle[] = [];
-  let parent = root;
-  let file: FileHandle | undefined;
-  try {
-    for (const component of components.slice(0, -1)) {
-      const child = await openAnchoredChildDirectory(parent, component, false);
-      if (child === undefined) return undefined;
-      directories.push(child);
-      parent = child;
-    }
-    try {
-      file = await open(
-        procFdChild(parent.fd, components.at(-1) ?? ""),
-        constants.O_RDONLY |
-          constants.O_NOFOLLOW |
-          (typeof constants.O_NONBLOCK === "number" ? constants.O_NONBLOCK : 0),
-      );
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-      throw new CliError("Compilation output state is not a safe regular file");
-    }
-    const before = await file.stat({ bigint: true });
-    if (!before.isFile() || before.nlink !== 1n) {
-      throw new CliError("Compilation output state is not a safe regular file");
-    }
-    const bytes = await file.readFile();
-    const after = await file.stat({ bigint: true });
-    if (
-      before.dev !== after.dev ||
-      before.ino !== after.ino ||
-      before.size !== after.size ||
-      before.mtimeNs !== after.mtimeNs
-    ) {
-      throw new CliError("Compilation output state changed while it was read");
-    }
-    return bytes;
-  } finally {
-    await file?.close().catch(() => undefined);
-    await Promise.all(directories.map((handle) => handle.close().catch(() => undefined)));
-  }
-}
-
 async function writeAnchoredFile(
   root: FileHandle,
   relativePath: string,
@@ -431,15 +309,6 @@ async function writeAnchoredFile(
     }
     await Promise.all(directories.map((handle) => handle.close().catch(() => undefined)));
   }
-}
-
-async function cleanAnchoredOutputRoot(root: FileHandle): Promise<void> {
-  await assertSafeOutputTree(root);
-  await Promise.all(
-    (await readdir(procFd(root.fd))).map((entry) =>
-      rm(procFdChild(root.fd, entry), { recursive: true, force: true }),
-    ),
-  );
 }
 
 function safeOutputComponents(relativePath: string): string[] {

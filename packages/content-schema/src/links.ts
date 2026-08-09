@@ -3,7 +3,7 @@ import { assignTopikHeadingIds, type TopikHeading } from "./headings";
 import { parseTopikContent } from "./content";
 import type { TopikContentDiagnostic } from "./diagnostics";
 
-const ALLOWED_SCHEMES = new Set(["http", "https", "mailto", "tel"]);
+const ALLOWED_SCHEMES = new Set(["asset", "http", "https", "mailto", "tel"]);
 const UNSAFE_SCHEMES = new Set(["data", "javascript", "vbscript"]);
 const SCHEME = /^([a-z][a-z0-9+.-]*):/i;
 const TOPIK_BASE_URL = new URL("https://topik.local/");
@@ -100,6 +100,14 @@ export function validateTopikHref(value: unknown): ValidationError[] {
   }
 
   const explicitScheme = SCHEME.exec(value)?.[1].toLowerCase();
+
+  if (explicitScheme === "asset") {
+    return /^(?:(?!auto-v1-)[a-z0-9]+(?:-[a-z0-9]+)*|auto-v1-[a-z2-7]{52})$/u.test(
+      value.slice("asset:".length),
+    ) && value.length <= "asset:".length + 63
+      ? []
+      : [linkError("link-asset-invalid", "Asset link must use a valid Asset name.")];
+  }
 
   try {
     const parsed = new URL(value, TOPIK_BASE_URL);

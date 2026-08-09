@@ -1,1 +1,0 @@
-[Manual](files/manual.bin)

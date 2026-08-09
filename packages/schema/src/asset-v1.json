@@ -1,0 +1,129 @@
+{
+  "$defs": {
+    "attribution": {
+      "additionalProperties": false,
+      "properties": {
+        "copyrightNotice": {
+          "format": "topik-plain-text-v1",
+          "maxLength": 512,
+          "minLength": 1,
+          "type": "string"
+        },
+        "creator": {
+          "format": "topik-plain-text-v1",
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "sourceUrl": {
+          "format": "topik-https-url-v1",
+          "maxLength": 2048,
+          "type": "string"
+        },
+        "text": {
+          "format": "topik-plain-text-v1",
+          "maxLength": 2048,
+          "minLength": 1,
+          "type": "string"
+        },
+        "title": {
+          "format": "topik-plain-text-v1",
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": ["text"],
+      "type": "object"
+    },
+    "license": {
+      "additionalProperties": false,
+      "anyOf": [{ "required": ["spdxExpression"] }, { "required": ["url"] }],
+      "properties": {
+        "spdxExpression": {
+          "format": "spdx-expression-2.3",
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "url": {
+          "format": "topik-https-url-v1",
+          "maxLength": 2048,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$id": "https://topik.dev/schemas/asset/v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": { "const": "v1" },
+    "labels": {
+      "additionalProperties": { "type": "string" },
+      "maxProperties": 256,
+      "propertyNames": {
+        "maxLength": 63,
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._/-]*[A-Za-z0-9])?$"
+      },
+      "type": "object"
+    },
+    "name": {
+      "oneOf": [
+        {
+          "maxLength": 63,
+          "pattern": "^(?!auto-v1-)[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "type": "string"
+        },
+        {
+          "pattern": "^auto-v1-[a-z2-7]{52}$",
+          "type": "string"
+        }
+      ]
+    },
+    "spec": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": { "uri": { "pattern": "^https://", "type": "string" } },
+            "required": ["uri"]
+          },
+          "then": { "required": ["integrity", "mediaType", "size"] }
+        }
+      ],
+      "properties": {
+        "attribution": { "$ref": "#/$defs/attribution" },
+        "integrity": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "license": { "$ref": "#/$defs/license" },
+        "mediaType": {
+          "maxLength": 127,
+          "pattern": "^[a-z0-9][a-z0-9!#$&^_.+-]*/[a-z0-9][a-z0-9!#$&^_.+-]*$",
+          "type": "string"
+        },
+        "size": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "uri": {
+          "format": "topik-asset-uri-v1",
+          "maxLength": 2048,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": ["uri"],
+      "type": "object"
+    },
+    "type": { "const": "Asset" }
+  },
+  "required": ["apiVersion", "type", "name", "spec"],
+  "title": "Topik Asset v1",
+  "type": "object"
+}

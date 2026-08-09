@@ -1,18 +1,17 @@
 export const TOPIK_ASSET_DIAGNOSTIC_IDS = [
-  "TOPIK_ASSET_MANIFEST_UNSUPPORTED_VERSION",
-  "TOPIK_ASSET_MANIFEST_UNSUPPORTED_SERIALIZER",
-  "TOPIK_ASSET_MANIFEST_UNSUPPORTED_PATH_RULES",
-  "TOPIK_ASSET_MANIFEST_UNSUPPORTED_REFERENCE_RULES",
-  "TOPIK_ASSET_MANIFEST_DUPLICATE_MEMBER",
-  "TOPIK_ASSET_MANIFEST_SCHEMA_INVALID",
-  "TOPIK_ASSET_MANIFEST_NON_CANONICAL",
-  "TOPIK_ASSET_RESOURCE_MISMATCH",
-  "TOPIK_ASSET_KEY_INVALID",
+  "TOPIK_ASSET_UNSUPPORTED_VERSION",
+  "TOPIK_ASSET_DUPLICATE_MEMBER",
+  "TOPIK_ASSET_SCHEMA_INVALID",
+  "TOPIK_ASSET_NON_CANONICAL",
+  "TOPIK_ASSET_NAME_INVALID",
+  "TOPIK_ASSET_NAME_COLLISION",
+  "TOPIK_ASSET_SOURCE_NAMESPACE_REQUIRED",
+  "TOPIK_ASSET_SOURCE_NAMESPACE_INVALID",
   "TOPIK_ASSET_PATH_INVALID",
   "TOPIK_ASSET_PATH_COLLISION",
   "TOPIK_ASSET_REFERENCE_AMBIGUOUS",
-  "TOPIK_ASSET_MANIFEST_INCOMPLETE",
-  "TOPIK_ASSET_ENTRY_UNREFERENCED",
+  "TOPIK_ASSET_REFERENCE_MALFORMED",
+  "TOPIK_ASSET_REFERENCE_MISSING",
   "TOPIK_ASSET_FILE_MISSING",
   "TOPIK_ASSET_DIGEST_MISMATCH",
   "TOPIK_ASSET_SIZE_MISMATCH",
@@ -21,8 +20,8 @@ export const TOPIK_ASSET_DIAGNOSTIC_IDS = [
   "TOPIK_ASSET_ACTIVE_CONTENT_UNSUPPORTED",
   "TOPIK_ASSET_REFERENCE_ACCESSIBILITY_INVALID",
   "TOPIK_EXTERNAL_REFERENCE_UNSAFE",
-  "TOPIK_ASSET_OWNERSHIP_UNPROVEN",
-  "TOPIK_ASSET_SHARED_SIDECAR_UNSUPPORTED",
+  "TOPIK_ASSET_INVENTORY_INCOMPLETE",
+  "TOPIK_ASSET_MIGRATION_INVALID",
   "TOPIK_ASSET_VERSION_INCOMPARABLE",
 ] as const;
 
@@ -100,7 +99,7 @@ export function topikAssetDiagnostic(
     correlationId: options.correlationId ?? TOPIK_ASSET_DEFAULT_CORRELATION_ID,
     severity: "error",
     consequence: options.consequence ?? "block-resource",
-    descriptorVersion: sanitizeDescriptorVersion(options.descriptorVersion ?? "AssetManifest/v1"),
+    descriptorVersion: sanitizeDescriptorVersion(options.descriptorVersion ?? "Asset/v1"),
     location: {
       ...(location.jsonPointer === undefined
         ? {}
@@ -165,7 +164,9 @@ function sanitizeDescriptorVersion(value: string): string {
 }
 
 function sanitizeKey(value: string): string {
-  return /^(?:ast_[0-7][0-9a-hjkmnp-tv-z]{25}|[0-9a-f]{16})$/u.test(value) ? value : "[redacted]";
+  return /^(?:[a-z0-9]+(?:-[a-z0-9]+)*|auto-v1-[a-z2-7]{52}|[0-9a-f]{16})$/u.test(value)
+    ? value
+    : "[redacted]";
 }
 
 function sanitizeCommit(value: string): string {
@@ -181,22 +182,18 @@ function sanitizeJsonPointer(value: string): string {
 function isSafeJsonPointerSegment(value: string): boolean {
   return (
     value.length === 0 ||
-    /^(?:[0-9]+|ast_[0-7][0-9a-hjkmnp-tv-z]{25})$/u.test(value) ||
+    /^(?:[0-9]+|[a-z0-9]+(?:-[a-z0-9]+)*|auto-v1-[a-z2-7]{52})$/u.test(value) ||
     [
       "algorithm",
       "apiVersion",
-      "assets",
       "attribution",
       "creator",
-      "digest",
+      "integrity",
       "license",
       "mediaType",
       "name",
-      "path",
-      "pathRules",
-      "referenceRules",
-      "resource",
-      "serializer",
+      "spec",
+      "uri",
       "size",
       "sourceUrl",
       "spdxExpression",

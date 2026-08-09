@@ -10,7 +10,7 @@ export default defineConfig({
     },
     exports: {
       customExports: {
-        "./asset-manifest/v1.json": "./dist/asset-manifest-v1.json",
+        "./asset/v1.json": "./dist/asset-v1.json",
       },
     },
   },

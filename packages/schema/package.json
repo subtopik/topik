@@ -15,13 +15,13 @@
   "exports": {
     ".": "./dist/index.mjs",
     "./package.json": "./package.json",
-    "./asset-manifest/v1.json": "./dist/asset-manifest-v1.json"
+    "./asset/v1.json": "./dist/asset-v1.json"
   },
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "build": "vp pack && cp src/asset-manifest-v1.json dist/asset-manifest-v1.json",
+    "build": "vp pack && cp src/asset-v1.json dist/asset-v1.json",
     "dev": "vp pack --watch",
     "test": "vp test",
     "check": "vp check",

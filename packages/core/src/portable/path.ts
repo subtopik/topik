@@ -21,7 +21,6 @@ const NFKC_CASEFOLD_V17 = parseNfkcCasefoldData(NFKC_CASEFOLD_V17_DATA);
 
 export interface ValidateTopikPathOptions {
   bindingRoot?: string;
-  allowControlSidecar?: boolean;
   capabilities?: {
     maxComponentUtf8Bytes?: number;
     maxComponents?: number;
@@ -134,15 +133,11 @@ export function validateTopikPath(
       DOS_STEM.test(stem) ||
       collision === ".git" ||
       /^git~[1-9][0-9]*$/u.test(collision) ||
-      (collision === ".topik" && !options.allowControlSidecar)
+      collision === ".topik"
     ) {
       return pathFailure(path, "reserved_name", "Path contains a reserved component");
     }
     collisionComponents.push(collision);
-  }
-
-  if (options.allowControlSidecar && path !== ".topik/assets.json") {
-    return pathFailure(path, "reserved_name", "Only the exact Topik control sidecar is allowed");
   }
 
   const repositoryPath = options.bindingRoot ? `${options.bindingRoot}/${path}` : path;

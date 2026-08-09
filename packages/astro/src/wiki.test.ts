@@ -49,9 +49,9 @@ describe("topikWikiLoader", () => {
     expect([...context.entries.values()].map((entry) => entry.data.slug)).toEqual([
       "",
       "resources",
+      "assets",
       "navigation",
       "rendering",
-      "assets",
     ]);
   });
 

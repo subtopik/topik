@@ -1,6 +1,7 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import {
   getTopikComponents,
+  type TopikAssetResolver,
   type TopikColorScheme,
   type TopikComponentMap,
   type TopikComponentOverrides,
@@ -16,6 +17,7 @@ export interface TopikContentContextValue {
   components: TopikComponentMap;
   componentOverrides?: TopikComponentOverrides;
   onNavigateLink?: TopikLinkHandler;
+  resolveAsset?: TopikAssetResolver;
   resolveLink?: TopikLinkResolver;
   renderLink?: TopikLinkRenderer;
 }
@@ -27,6 +29,7 @@ export interface TopikContentProviderProps {
   colorScheme?: TopikColorScheme;
   components?: TopikComponentOverrides;
   onNavigateLink?: TopikLinkHandler;
+  resolveAsset?: TopikAssetResolver;
   resolveLink?: TopikLinkResolver;
   renderLink?: TopikLinkRenderer;
 }
@@ -36,6 +39,7 @@ export function TopikContentProvider({
   colorScheme,
   components,
   onNavigateLink,
+  resolveAsset,
   resolveLink,
   renderLink,
 }: TopikContentProviderProps) {
@@ -45,10 +49,11 @@ export function TopikContentProvider({
       components: getTopikComponents(components),
       componentOverrides: components,
       onNavigateLink,
+      resolveAsset,
       resolveLink,
       renderLink,
     }),
-    [colorScheme, components, onNavigateLink, renderLink, resolveLink],
+    [colorScheme, components, onNavigateLink, renderLink, resolveAsset, resolveLink],
   );
 
   return <TopikContentContext.Provider value={value}>{children}</TopikContentContext.Provider>;
@@ -56,6 +61,10 @@ export function TopikContentProvider({
 
 export function useTopikComponents(): TopikComponentMap {
   return useContext(TopikContentContext)?.components ?? defaultTopikComponents;
+}
+
+export function useTopikAssetResolver(): TopikAssetResolver | undefined {
+  return useContext(TopikContentContext)?.resolveAsset;
 }
 
 export function useTopikLinkHandler(): TopikLinkHandler | undefined {

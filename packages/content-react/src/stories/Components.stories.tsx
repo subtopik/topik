@@ -76,7 +76,7 @@ export const MathAndMermaid: Story = {
 export const TableAndImage: Story = {
   args: {
     content: [
-      "![Portable image](assets/diagram.png)",
+      "![Named image](asset:diagram)",
       "",
       "| Feature | Default support | Rich support |",
       "| - | - | - |",
@@ -84,6 +84,7 @@ export const TableAndImage: Story = {
       "| Math | Source fallback | KaTeX rendering |",
       "| Mermaid | Source fallback | SVG diagram |",
     ].join("\n"),
+    resolveAsset: (name: string) => `https://placehold.co/920x360?text=${encodeURIComponent(name)}`,
   },
 };
 
@@ -107,7 +108,8 @@ export const Steps: Story = {
 export const FigureAndBadge: Story = {
   args: {
     content:
-      'Status: {% badge variant="info" %}draft{% /badge %}\n\n{% figure src="assets/diagram.png" alt="Diagram" caption="Figure caption" /%}',
+      'Status: {% badge variant="info" %}draft{% /badge %}\n\n{% figure src="asset:diagram" alt="Diagram" caption="Figure caption" /%}',
+    resolveAsset: (name: string) => `https://placehold.co/800x360?text=${encodeURIComponent(name)}`,
   },
 };
 

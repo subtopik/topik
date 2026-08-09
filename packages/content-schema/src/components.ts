@@ -9,8 +9,8 @@ export interface TopikAssetReferenceDefinition {
   /** Stable slot identifier used by topik-asset-reference-v1 extractors. */
   slot: string;
   role: TopikAssetReferenceRole;
-  /** Generic links are occurrences only when a valid manifest resolves them unambiguously. */
-  conditional?: "manifest-entry";
+  /** Generic links are occurrences only when a regular file resolves them unambiguously. */
+  conditional?: "proven-download";
 }
 
 export interface TopikComponentAttributeDefinition {
@@ -213,7 +213,7 @@ export const topikComponents = {
         assetReference: {
           slot: "link.href",
           role: "download",
-          conditional: "manifest-entry",
+          conditional: "proven-download",
         },
       },
       title: { type: "string", description: "Optional link title." },

@@ -1,13 +1,18 @@
 import type { TopikContentDiagnostic } from "@topik/content-schema";
 import { parse as parseYaml } from "yaml";
 import type { Resource } from "../resource";
-import type { PortableAssetKeyStateV1, PortableResourceArtifact } from "./assets";
+import type {
+  TopikAssetSemanticRecordV1,
+  TopikMaterializationRecordV1,
+} from "../portable/identity";
+import type { AssetPayload } from "./assets";
 
 export interface CompileResult {
   diagnostics: TopikContentDiagnostic[];
   resources: Resource[];
-  artifacts: PortableResourceArtifact[];
-  assetKeyState: PortableAssetKeyStateV1;
+  payloads: AssetPayload[];
+  semantic: TopikAssetSemanticRecordV1;
+  materialization: TopikMaterializationRecordV1;
 }
 
 export type LinkValidationPolicy = "error" | "warning" | "off";

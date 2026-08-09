@@ -72,6 +72,24 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
     });
   });
 
+  test("accepts exact named references and rejects malformed reserved generated names", () => {
+    const generated = `auto-v1-${"a".repeat(52)}`;
+    expect(validateTopikAssetReference("asset:company-logo")).toEqual({
+      valid: true,
+      kind: "asset",
+      name: "company-logo",
+    });
+    expect(validateTopikAssetReference(`asset:${generated}`)).toEqual({
+      valid: true,
+      kind: "asset",
+      name: generated,
+    });
+    expect(validateTopikAssetReference("asset:auto-v1-short")).toMatchObject({
+      valid: false,
+      kind: "unsafe",
+    });
+  });
+
   test("retains original Markdown destination bytes before parser normalization", () => {
     expect(extractTopikAssetOccurrences("![raw](é.png)\n")[0]).toMatchObject({
       reference: "é.png",
@@ -161,6 +179,25 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
     expect(
       extractTopikAssetOccurrences(`![not-parsed](${unsupported}) ![real](%C3%A9.png)`),
     ).toMatchObject([{ reference: "%C3%A9.png", parsedReference: "%C3%A9.png", kind: "local" }]);
+  });
+
+  test("never borrows exact-source proof from an arbitrary Markdoc attribute", () => {
+    const source =
+      '![x][id] {% callout title="![x](%C3%A9.png)" %}foo{% /callout %}\n\n> [id]: é.png';
+    expect(extractTopikAssetOccurrences(source)).toMatchObject([
+      { reference: "", parsedReference: "%C3%A9.png", kind: "unsafe", slot: "image.src" },
+    ]);
+  });
+
+  test("an arbitrary Markdoc attribute neither disturbs nor participates in rewriting", () => {
+    const source =
+      '![real](%C3%A9.png) {% callout title="![attribute](other.png)" %}foo{% /callout %}';
+    expect(extractTopikAssetOccurrences(source)).toMatchObject([
+      { reference: "%C3%A9.png", parsedReference: "%C3%A9.png", kind: "local" },
+    ]);
+    const rewritten = rewriteTopikAssetOccurrences(source, () => "replacement.png");
+    expect(rewritten).toContain("![real](replacement.png)");
+    expect(rewritten).toContain('title="![attribute](other.png)"');
   });
 
   test.each(["before", "after"])(
@@ -298,11 +335,11 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
     ).toMatchObject([{ reference: "good.png", kind: "local" }]);
   });
 
-  test("classifies generic links only through an explicit declaration or manifest path", () => {
+  test("classifies generic links only through an explicit declaration or proven file path", () => {
     const source = '[download](files/manual.bin)\n\n{% card title="X" href="files/hidden.bin" /%}';
     expect(extractTopikAssetOccurrences(source)).toHaveLength(0);
     expect(
-      extractTopikAssetOccurrences(source, { manifestPaths: ["files/manual.bin"] }),
+      extractTopikAssetOccurrences(source, { provenDownloadPaths: ["files/manual.bin"] }),
     ).toHaveLength(1);
     expect(topikAssetReferenceSlots.some((slot) => slot.slot === "link.href")).toBe(true);
   });

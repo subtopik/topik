@@ -2,6 +2,11 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { resolve } from "node:path";
 import { command, positional, string } from "@drizzle-team/brocli";
 import { watch, type Watcher } from "@topik/core";
+import {
+  deriveGitSourceNamespace,
+  explicitAssetOptions,
+  requiresSourceNamespace,
+} from "../source-namespace";
 
 const DEV_HOST = "127.0.0.1";
 const DEFAULT_ALLOWED_ORIGIN = "https://write.subtopik.com";
@@ -23,10 +28,7 @@ function handleResources(
   res.end(
     JSON.stringify({
       resources: [...watcher.resources.values()],
-      portableArtifacts: [...watcher.artifacts.values()].map((artifact) => ({
-        resourceRoot: artifact.resourceRoot,
-        manifest: artifact.manifest,
-      })),
+      payloads: [...watcher.payloads.values()].map(({ bytes: _bytes, ...payload }) => payload),
     }),
   );
 }
@@ -42,8 +44,8 @@ function handleEvents(watcher: Watcher, res: ServerResponse, corsHeaders: Record
   // Send initial sync with all current resources
   sendSSE(res, "sync", {
     resources: Object.fromEntries(watcher.resources),
-    portableArtifacts: Object.fromEntries(
-      [...watcher.artifacts].map(([root, artifact]) => [root, artifact.manifest]),
+    payloads: Object.fromEntries(
+      [...watcher.payloads].map(([path, { bytes: _bytes, ...payload }]) => [path, payload]),
     ),
   });
 
@@ -52,7 +54,6 @@ function handleEvents(watcher: Watcher, res: ServerResponse, corsHeaders: Record
     sendSSE(res, "update", {
       key,
       resource,
-      portableArtifact: watcher.artifacts.get(key)?.manifest,
     });
   };
   watcher.on("update", onUpdate);
@@ -62,46 +63,38 @@ function handleEvents(watcher: Watcher, res: ServerResponse, corsHeaders: Record
   });
 }
 
-function handlePortableFile(
+function handleAssetPayload(
   watcher: Watcher,
   url: URL,
   res: ServerResponse,
   corsHeaders: Record<string, string>,
 ): boolean {
-  if (!url.pathname.startsWith("/portable/")) {
+  if (!url.pathname.startsWith("/assets/sha256/")) {
     return false;
   }
 
   let relativePath: string;
   try {
-    relativePath = decodeURIComponent(url.pathname.slice("/portable/".length));
+    relativePath = decodeURIComponent(url.pathname.slice(1));
   } catch {
     res.writeHead(404, corsHeaders);
     res.end();
     return true;
   }
-  const components = relativePath.split("/");
-  if (components.length < 3 || components.some((component) => component.length === 0)) {
+  if (!/^assets\/sha256\/[0-9a-f]{64}$/u.test(relativePath)) {
     res.writeHead(404, corsHeaders);
     res.end();
     return true;
   }
 
-  const resourceRoot = components.slice(0, 2).join("/");
-  const ownedPath = components.slice(2).join("/");
-  const artifact = watcher.artifacts.get(resourceRoot);
-  const file = artifact?.inventory.find((candidate) => candidate.path === ownedPath);
-  if (artifact === undefined || file === undefined) {
+  const payload = watcher.payloads.get(relativePath);
+  if (payload === undefined) {
     res.writeHead(404, corsHeaders);
     res.end();
     return true;
   }
 
-  const mediaType = Object.values(artifact.manifest.assets).find(
-    (entry) => entry.path === ownedPath,
-  )?.mediaType;
-  const contentType =
-    mediaType ?? (ownedPath.endsWith(".json") ? "application/json" : "text/plain");
+  const contentType = payload.mediaType;
   res.writeHead(200, {
     "Content-Type": contentType,
     ...corsHeaders,
@@ -109,7 +102,7 @@ function handlePortableFile(
     "X-Content-Type-Options": "nosniff",
     ...(isDownloadMediaType(contentType) ? { "Content-Disposition": "attachment" } : {}),
   });
-  res.end(file.bytes);
+  res.end(payload.bytes);
 
   return true;
 }
@@ -246,7 +239,7 @@ function createRequestHandler(watcher: Watcher, getPort: () => number, allowedOr
       return;
     }
 
-    if (req.method === "GET" && handlePortableFile(watcher, url, res, corsHeaders)) {
+    if (req.method === "GET" && handleAssetPayload(watcher, url, res, corsHeaders)) {
       return;
     }
 
@@ -270,12 +263,23 @@ export async function startDevServer(options: {
   dir: string;
   port: number;
   allowOrigin?: string;
+  sourceNamespace?: string;
 }): Promise<StartedDevServer> {
   const dir = resolve(options.dir);
   const allowedOrigin = normalizeAllowedOrigin(options.allowOrigin ?? DEFAULT_ALLOWED_ORIGIN);
 
   console.log(`Watching ${dir} for changes...`);
-  const watcher = await watch({ dir });
+  const explicitAssets = explicitAssetOptions(options.sourceNamespace);
+  let watcher: Watcher;
+  try {
+    watcher = await watch({ dir, assets: explicitAssets });
+  } catch (error) {
+    if (explicitAssets !== undefined || !requiresSourceNamespace(error)) throw error;
+    watcher = await watch({
+      dir,
+      assets: { sourceNamespace: await deriveGitSourceNamespace(dir) },
+    });
+  }
   console.log(`Compiled ${watcher.resources.size} resources`);
 
   watcher.on("error", (error: Error) => {
@@ -352,6 +356,9 @@ export const dev = command({
     allowOrigin: string("allow-origin").desc(
       `Browser origin allowed to connect (default: ${DEFAULT_ALLOWED_ORIGIN})`,
     ),
+    sourceNamespace: string("source-namespace").desc(
+      "Stable source namespace for implicit local Assets (derived from Git when omitted)",
+    ),
   },
   handler: async (options) => {
     const dir = resolve(options.dir);
@@ -361,6 +368,7 @@ export const dev = command({
       dir,
       port,
       allowOrigin: options.allowOrigin,
+      sourceNamespace: options.sourceNamespace,
     });
     console.log(`Dev server listening on http://localhost:${runningServer.port}`);
 

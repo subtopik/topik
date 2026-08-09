@@ -19,7 +19,7 @@ describe("compile", () => {
     await expect(compile({ dir })).resolves.toMatchObject({
       diagnostics: [],
       resources: [],
-      artifacts: [],
+      payloads: [],
     });
   });
 
@@ -29,7 +29,7 @@ describe("compile", () => {
 
     const result = await compile({ dir });
 
-    expect(result.resources.map((resource) => resource.type)).toEqual(["WikiPage", "Wiki"]);
+    expect(result.resources.map((resource) => resource.type)).toEqual(["Wiki", "WikiPage"]);
   });
 
   test("delegates collection directories to the guide compiler", async () => {

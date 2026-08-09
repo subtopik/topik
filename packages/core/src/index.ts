@@ -11,7 +11,7 @@ export {
   lint,
   compileWiki,
   compileGuides,
-  compilePortableResourceArtifacts,
+  compileAssetResources,
   isErrorDiagnostic,
   pagePathToName,
   type CompileOptions,
@@ -21,14 +21,13 @@ export {
   type CompileValidationOptions,
   type LinkValidationPolicy,
   type LintResult,
-  PortableAssetCompilationError,
-  TOPIK_PORTABLE_ASSET_KEY_STATE_VERSION,
-  type CompilePortableResourceArtifactsInput,
+  AssetCompilationError,
+  loadAssetDescriptors,
+  type AssetCompilationOptions,
+  type AssetCompilationResult,
+  type AssetPayload,
+  type CompileAssetResourcesInput,
   type ContentBearingResource,
-  type PortableAssetCompilationOptions,
-  type PortableAssetKeyStateV1,
-  type PortableResourceArtifact,
-  type PortableResourceCompilationResult,
 } from "./compile";
 export { CompileError } from "./compile";
 export type { Resource, ResourceType } from "./resource";
@@ -37,5 +36,5 @@ export { validateResources, type ValidationError, type ValidationResult } from "
 
 export { watch, type WatchOptions, type Watcher } from "./watch";
 
-/** Portable AssetManifest/v1 compilation and validation APIs. */
+/** Named Asset/v1 compilation, validation, identity, and migration APIs. */
 export * from "./portable";

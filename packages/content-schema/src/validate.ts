@@ -28,17 +28,24 @@ export function validateTopikContent(
     ...extractTopikAssetOccurrences(source).flatMap((occurrence): TopikContentDiagnostic[] => {
       const validation = validateTopikAssetReference(occurrence.reference);
       if (validation.valid && occurrence.kind !== "unsafe") return [];
+      const malformedName = occurrence.reference.startsWith("asset:");
       const external = validation.valid
         ? validation.kind === "external-https"
         : validation.failureKind === "external";
       return [
         {
-          id: external ? "TOPIK_EXTERNAL_REFERENCE_UNSAFE" : "TOPIK_ASSET_PATH_INVALID",
+          id: malformedName
+            ? "TOPIK_ASSET_REFERENCE_MALFORMED"
+            : external
+              ? "TOPIK_EXTERNAL_REFERENCE_UNSAFE"
+              : "TOPIK_ASSET_PATH_INVALID",
           type: occurrence.slot,
           level: "error",
-          message: external
-            ? "Asset reference requires credential-free HTTPS"
-            : "Local asset reference is not canonical topik-asset-reference-v1",
+          message: malformedName
+            ? "Named Asset reference has an invalid name"
+            : external
+              ? "Asset reference requires credential-free HTTPS"
+              : "Local asset reference is not canonical topik-asset-reference-v1",
           lines: [],
           ...(options.file === undefined ? {} : { file: options.file }),
         },

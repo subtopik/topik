@@ -229,8 +229,8 @@ navigation:
     const result = await compileWiki({ dir });
     const pages = result.resources.filter((r) => r.type === "WikiPage");
     expect(pages.map((p) => p.name)).toEqual([
-      pageName("test", "runtime/http/server"),
       pageName("test", "runtime/index"),
+      pageName("test", "runtime/http/server"),
     ]);
   });
 
@@ -288,8 +288,8 @@ navigation:
     const result = await compileWiki({ dir });
     const pages = result.resources.filter((resource) => resource.type === "WikiPage");
     expect(pages.map((page) => page.name)).toEqual([
-      pageName("test", "docs/guides/getting-started/index"),
       pageName("test", "docs/guides/getting-started/installation"),
+      pageName("test", "docs/guides/getting-started/index"),
     ]);
 
     const wiki = result.resources.find((resource) => resource.type === "Wiki")!;
@@ -483,13 +483,13 @@ navigation:
     await writeFile(join(dir, "hero.png"), png);
     await writePage("hello", "# Hello\n\n![hero](hero.png)\n");
 
-    const result = await compileWiki({ dir });
+    const result = await compileWiki({ dir, assets: { sourceNamespace: "example-wiki" } });
     const page = result.resources.find((r) => r.type === "WikiPage")!;
-    const entries = Object.entries(result.artifacts[0].manifest.assets);
+    const asset = result.resources.find((resource) => resource.type === "Asset");
 
-    expect(entries).toHaveLength(1);
-    expect(entries[0][0]).toMatch(/^ast_[0-7][0-9a-hjkmnp-tv-z]{25}$/u);
-    expect(page.spec.content.value).toContain("![hero](hero.png)");
+    expect(asset?.name).toMatch(/^auto-v1-[a-z2-7]{52}$/u);
+    expect(result.payloads).toHaveLength(1);
+    expect(page.spec.content.value).toContain(`![hero](asset:${asset?.name})`);
     expect(page.spec).not.toHaveProperty("assets");
   });
 
@@ -502,11 +502,12 @@ navigation:
     await writeFile(join(dir, "hero.png"), png);
     await writePage("hello", '# Hello\n\n{% figure src="hero.png" alt="Hero" /%}\n');
 
-    const result = await compileWiki({ dir });
+    const result = await compileWiki({ dir, assets: { sourceNamespace: "example-wiki" } });
     const page = result.resources.find((r) => r.type === "WikiPage")!;
+    const asset = result.resources.find((resource) => resource.type === "Asset");
 
-    expect(Object.values(result.artifacts[0].manifest.assets)).toHaveLength(1);
-    expect(page.spec.content.value).toContain('src="hero.png"');
+    expect(result.payloads).toHaveLength(1);
+    expect(page.spec.content.value).toContain(`src="asset:${asset?.name}"`);
     expect(page.spec).not.toHaveProperty("assets");
   });
 
@@ -640,7 +641,7 @@ navigation:
     await expect(compileWiki({ dir })).resolves.toMatchObject({
       diagnostics: [],
       resources: [],
-      artifacts: [],
+      payloads: [],
     });
   });
 

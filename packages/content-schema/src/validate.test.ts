@@ -182,6 +182,15 @@ graph TD;
     ).toMatchObject({ valid: true, errors: [] });
   });
 
+  test("reports malformed reserved generated names with a typed diagnostic", () => {
+    expect(validateTopikContent("![Hero](asset:auto-v1-short)\n")).toMatchObject({
+      valid: false,
+      errors: expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_ASSET_REFERENCE_MALFORMED", type: "image.src" }),
+      ]),
+    });
+  });
+
   test("rejects a raw non-ASCII reference-style image destination", () => {
     expect(validateTopikContent("![Hero][id]\n\n[id]: é.png\n")).toMatchObject({
       valid: false,
@@ -192,6 +201,17 @@ graph TD;
     expect(
       validateTopikContent("![Good][good]\n\n[unused]: &eacute;.png\n[good]: good.png\n"),
     ).toMatchObject({ valid: true, errors: [] });
+  });
+
+  test("does not accept exact-source proof from an unrelated Markdoc attribute", () => {
+    const source =
+      '![x][id] {% callout title="![x](%C3%A9.png)" %}foo{% /callout %}\n\n> [id]: é.png';
+    expect(validateTopikContent(source)).toMatchObject({
+      valid: false,
+      errors: expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_ASSET_PATH_INVALID", type: "image.src" }),
+      ]),
+    });
   });
 
   test.each([

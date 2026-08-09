@@ -158,7 +158,6 @@ graph TD;
     "javascript:alert(1)",
     "//example.com/a.png",
     "/absolute.png",
-    "./relative.png",
     "assets%2fhero.png",
     "é.png",
   ])("rejects unsafe or noncanonical asset reference %s", (reference) => {
@@ -180,6 +179,21 @@ graph TD;
         '{% figure src="assets/caf%C3%A9.png" darkSrc="https://example.com/dark.png?q=1#x" alt="Hero" /%}',
       ),
     ).toMatchObject({ valid: true, errors: [] });
+  });
+
+  test("rejects named Asset references in navigation-only card hrefs", () => {
+    expect(
+      validateTopikContent('{% card title="Asset" href="asset:company-logo" /%}'),
+    ).toMatchObject({
+      valid: false,
+      errors: expect.arrayContaining([
+        expect.objectContaining({ id: "link-asset-navigation-unsupported" }),
+      ]),
+    });
+    expect(validateTopikContent("[Download](asset:company-logo)\n")).toMatchObject({
+      valid: true,
+      errors: [],
+    });
   });
 
   test("reports malformed reserved generated names with a typed diagnostic", () => {

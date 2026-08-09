@@ -143,6 +143,29 @@ export function validateTopikHref(value: unknown): ValidationError[] {
   return [];
 }
 
+export function validateTopikNavigationHref(value: unknown): ValidationError[] {
+  if (typeof value === "string" && SCHEME.exec(value)?.[1].toLowerCase() === "asset") {
+    return [
+      linkError(
+        "link-asset-navigation-unsupported",
+        "Navigation-only targets cannot use named Asset references.",
+      ),
+    ];
+  }
+  return validateTopikHref(value);
+}
+
+/** Remove invalid navigation attributes before a renderer can emit a browser-facing URL. */
+export function removeInvalidTopikNavigationReferences(root: Node): void {
+  for (const node of [root, ...root.walk()]) {
+    if (node.type !== "tag" || node.tag !== "card") continue;
+    const href = node.attributes.href;
+    if (href !== undefined && validateTopikNavigationHref(href).length > 0) {
+      delete node.attributes.href;
+    }
+  }
+}
+
 function nodesOfType(ast: Node, type: string): Node[] {
   return [...ast.walk()].filter((node) => node.type === type);
 }

@@ -207,6 +207,7 @@ function isSafeJsonPointerSegment(value: string): boolean {
 }
 
 function sanitizePath(value: string): string {
+  const components = value.split("/");
   if (
     value.length === 0 ||
     value.length > 1024 ||
@@ -214,9 +215,15 @@ function sanitizePath(value: string): string {
     UNSAFE_DIAGNOSTIC_WHITESPACE.test(value) ||
     value.includes("?") ||
     value.includes("#") ||
+    value.includes(":") ||
+    value.includes("%") ||
     value.includes("\\") ||
+    value.startsWith("/") ||
+    value.startsWith("~") ||
     /^[a-z][a-z0-9+.-]*:/iu.test(value) ||
-    value.startsWith("//")
+    value.startsWith("//") ||
+    components.some((component) => component === "." || component === "..") ||
+    /[／∕⁄⧸＼⧵：꞉]/u.test(value)
   ) {
     return "[redacted]";
   }

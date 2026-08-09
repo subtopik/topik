@@ -5,7 +5,7 @@ import type { Guide } from "@topik/schema";
 import type { Resource } from "../resource";
 import { parseCollectionConfig } from "../config/collection";
 import { compileAssetResources, type AssetCompilationOptions } from "./assets";
-import { readOptionalConfigFile } from "./config";
+import { readOptionalConfigFileWithPath } from "./config";
 import {
   FileNotRegularError,
   FileOutsideCompilationRootError,
@@ -32,6 +32,7 @@ export interface CompileResourceDiscovery {
   diagnostics: CompileResult["diagnostics"];
   resources: Resource[];
   sourcePathsByResource: Record<string, string>;
+  consumedSourcePaths: string[];
 }
 
 export async function compileGuides(options: CompileGuidesOptions): Promise<CompileResult> {
@@ -46,6 +47,7 @@ export async function inspectGuides(options: CompileGuidesOptions): Promise<Comp
     rootDir: resolve(options.dir),
     resources: discovered.resources,
     sourcePathsByResource: discovered.sourcePathsByResource,
+    protectedSourcePaths: discovered.consumedSourcePaths,
     ...options.assets,
   });
   return { diagnostics: discovered.diagnostics, ...compiled };
@@ -57,16 +59,16 @@ export async function discoverGuides(
 ): Promise<CompileResourceDiscovery> {
   const dir = resolve(options.dir);
 
-  const raw = await readOptionalConfigFile(dir, [
+  const loadedConfig = await readOptionalConfigFileWithPath(dir, [
     "collection.yaml",
     "collection.yml",
     "collection.json",
   ]);
-  if (raw == null) {
-    return { diagnostics: [], resources: [], sourcePathsByResource: {} };
+  if (loadedConfig == null) {
+    return { diagnostics: [], resources: [], sourcePathsByResource: {}, consumedSourcePaths: [] };
   }
 
-  const config = parseCollectionConfig(raw);
+  const config = parseCollectionConfig(loadedConfig.value);
 
   const files = await readdir(dir);
   const markdownFiles = files.filter((f) => f.endsWith(".md") || f.endsWith(".mdx")).sort();
@@ -145,7 +147,12 @@ export async function discoverGuides(
     sourcePathsByResource[`Guide/${guide.name}`] = file;
   }
 
-  return { diagnostics, resources, sourcePathsByResource };
+  return {
+    diagnostics,
+    resources,
+    sourcePathsByResource,
+    consumedSourcePaths: [loadedConfig.path],
+  };
 }
 
 function fileToSlug(filename: string): string {

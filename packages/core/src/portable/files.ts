@@ -1,6 +1,9 @@
+import { execFile } from "node:child_process";
 import { constants } from "node:fs";
 import { lstat, open } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { promisify } from "node:util";
 import { TOPIK_ASSET_LIMITS, TOPIK_PATH_VERSION } from "./constants";
 import {
   topikAssetDiagnostic,
@@ -8,6 +11,8 @@ import {
   type TopikAssetResult,
 } from "./diagnostics";
 import { validateTopikPath, validateTopikPathSet } from "./path";
+
+const execFileAsync = promisify(execFile);
 
 export type PortableAssetFileType =
   | "regular"
@@ -151,6 +156,13 @@ async function readPortableAssetFileAnchored(
   const directoryHandles: FileHandle[] = [];
   let fileHandle: FileHandle | undefined;
   try {
+    const gitAttributesBefore = await effectiveGitAttributeFingerprint(options.root, options.path);
+    if (!gitAttributesBefore.ok) {
+      return {
+        ok: false,
+        diagnostics: [unsupportedPath(options.path, gitAttributesBefore.failure)],
+      };
+    }
     const expectedRoot = await lstat(options.root, { bigint: true });
     if (!expectedRoot.isDirectory() || expectedRoot.isSymbolicLink()) {
       return {
@@ -269,6 +281,23 @@ async function readPortableAssetFileAnchored(
         diagnostics: [unsupportedPath(options.path, "File identity changed while hashing")],
       };
     }
+    const gitAttributesAfter = await effectiveGitAttributeFingerprint(options.root, options.path);
+    if (
+      !gitAttributesAfter.ok ||
+      gitAttributesAfter.fingerprint !== gitAttributesBefore.fingerprint
+    ) {
+      return {
+        ok: false,
+        diagnostics: [
+          unsupportedPath(
+            options.path,
+            gitAttributesAfter.ok
+              ? "Effective Git attribute evidence changed while it was evaluated"
+              : gitAttributesAfter.failure,
+          ),
+        ],
+      };
+    }
     return validatePortableAssetFile({
       path: options.path,
       type: "regular",
@@ -293,6 +322,99 @@ async function readPortableAssetFileAnchored(
   } finally {
     await fileHandle?.close().catch(() => undefined);
     await Promise.all(directoryHandles.map((handle) => handle.close().catch(() => undefined)));
+  }
+}
+
+type EffectiveGitAttributeProof =
+  | { ok: true; fingerprint: string }
+  | { ok: false; failure: string };
+
+async function effectiveGitAttributeFingerprint(
+  root: string,
+  path: string,
+): Promise<EffectiveGitAttributeProof> {
+  if (!(await hasGitBoundary(root))) return { ok: true, fingerprint: "not-in-worktree" };
+  let worktree: string;
+  try {
+    const result = await execFileAsync(
+      "/usr/bin/git",
+      ["-C", root, "rev-parse", "--show-toplevel"],
+      { encoding: "utf8" },
+    );
+    worktree = result.stdout.trim();
+  } catch {
+    return { ok: false, failure: "Git worktree boundary could not be proven" };
+  }
+  const rootFromWorktree = relative(resolve(worktree), resolve(root));
+  if (
+    rootFromWorktree === ".." ||
+    rootFromWorktree.startsWith(`..${sep}`) ||
+    isAbsolute(rootFromWorktree)
+  ) {
+    return { ok: false, failure: "Compilation root is outside its Git worktree" };
+  }
+  const worktreePath = [
+    ...(rootFromWorktree === "" ? [] : rootFromWorktree.split(sep)),
+    ...path.split("/"),
+  ].join("/");
+  let stdout: string;
+  try {
+    const result = await execFileAsync(
+      "/usr/bin/git",
+      ["-C", worktree, "check-attr", "-z", "filter", "working-tree-encoding", "--", worktreePath],
+      { encoding: "utf8", maxBuffer: 64 * 1024 },
+    );
+    stdout = result.stdout;
+  } catch {
+    return { ok: false, failure: "Effective Git attributes could not be evaluated safely" };
+  }
+  const fields = stdout.split("\0");
+  if (fields.at(-1) === "") fields.pop();
+  if (fields.length !== 6) {
+    return { ok: false, failure: "Effective Git attribute output is malformed" };
+  }
+  const values = new Map<string, string>();
+  for (let index = 0; index < fields.length; index += 3) {
+    if (fields[index] !== worktreePath) {
+      return { ok: false, failure: "Effective Git attribute path binding changed" };
+    }
+    values.set(fields[index + 1], fields[index + 2]);
+  }
+  if (
+    values.get("filter") !== "unspecified" ||
+    values.get("working-tree-encoding") !== "unspecified"
+  ) {
+    return {
+      ok: false,
+      failure: "Effective Git content filters or working-tree encoding are not portable",
+    };
+  }
+  return {
+    ok: true,
+    fingerprint: `${values.get("filter")}\0${values.get("working-tree-encoding")}`,
+  };
+}
+
+async function hasGitBoundary(root: string): Promise<boolean> {
+  let current = resolve(root);
+  for (;;) {
+    try {
+      const stat = await lstat(`${current}/.git`);
+      if (stat.isFile()) return true;
+      if (stat.isDirectory()) {
+        try {
+          const head = await lstat(`${current}/.git/HEAD`);
+          if (head.isFile()) return true;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") return true;
+        }
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") return true;
+    }
+    const parent = dirname(current);
+    if (parent === current) return false;
+    current = parent;
   }
 }
 

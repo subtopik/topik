@@ -3,6 +3,7 @@ import {
   assignTopikHeadingIds,
   parseTopikContent,
   removeInvalidTopikAssetReferences,
+  removeInvalidTopikNavigationReferences,
   topikMarkdocConfig,
   validateTopikContent,
   type TopikContentDiagnostic,
@@ -50,6 +51,7 @@ export function compileTopikContent(
 
   const ast = parseTopikContent(content, { file: options.file, location: shouldValidate });
   removeInvalidTopikAssetReferences(ast, content);
+  removeInvalidTopikNavigationReferences(ast);
   assignTopikHeadingIds(ast);
   return Markdoc.transform(ast, mergeConfigs(topikMarkdocConfig, options.config));
 }

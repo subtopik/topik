@@ -84,5 +84,6 @@ export {
 export {
   migrateLegacyDigestOutput,
   type LegacyDigestMigrationResult,
+  type LegacyDigestOutputFile,
   type MigrateLegacyDigestOutputOptions,
 } from "./migration";

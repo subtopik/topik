@@ -11,6 +11,13 @@ export async function readConfigFile(dir: string, candidates: string[]): Promise
 }
 
 export async function readOptionalConfigFile(dir: string, candidates: string[]): Promise<unknown> {
+  return (await readOptionalConfigFileWithPath(dir, candidates))?.value;
+}
+
+export async function readOptionalConfigFileWithPath(
+  dir: string,
+  candidates: string[],
+): Promise<{ path: string; value: unknown } | undefined> {
   for (const name of candidates) {
     const filePath = join(dir, name);
     let raw: string;
@@ -26,7 +33,7 @@ export async function readOptionalConfigFile(dir: string, candidates: string[]):
     }
 
     try {
-      return name.endsWith(".json") ? JSON.parse(raw) : parseYaml(raw);
+      return { path: name, value: name.endsWith(".json") ? JSON.parse(raw) : parseYaml(raw) };
     } catch (error) {
       throw new Error(`Failed to parse config file ${filePath}`, { cause: error });
     }

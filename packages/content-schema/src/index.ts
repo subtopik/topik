@@ -22,6 +22,8 @@ export {
 export { assignTopikHeadingIds, type TopikHeading } from "./headings";
 export {
   analyzeTopikContent,
+  removeInvalidTopikNavigationReferences,
+  validateTopikNavigationHref,
   validateTopikHref,
   type AnalyzeTopikContentOptions,
   type AnalyzeTopikContentResult,

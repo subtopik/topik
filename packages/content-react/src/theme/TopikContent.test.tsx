@@ -46,7 +46,6 @@ describe("TopikContent", () => {
     "javascript:alert(1)",
     "//example.com/a.png",
     "/absolute.png",
-    "./relative.png",
     "assets%2fhero.png",
     "é.png",
   ])("fails closed for unsafe default-renderer asset reference %s", (reference) => {
@@ -133,6 +132,33 @@ describe("TopikContent", () => {
     expect(html).toContain('<div class="topik-card">');
     expect(html).not.toContain("javascript:");
     expect(html).not.toContain("href=");
+  });
+
+  it("never emits named Asset URLs from default or custom navigation-only cards", () => {
+    const content = '{% card title="Asset" href="asset:company-logo" /%}';
+    const diagnostics: string[] = [];
+    const defaultHtml = renderToStaticMarkup(
+      <TopikContent
+        content={content}
+        onDiagnostic={(diagnostic) => diagnostics.push(diagnostic.id)}
+      />,
+    );
+    const customHtml = renderToStaticMarkup(
+      <TopikContent
+        components={{
+          TopikCard: ({ href }) =>
+            typeof href === "string" ? <a href={href}>Asset</a> : <span>No target</span>,
+        }}
+        content={content}
+        validate={false}
+      />,
+    );
+    expect(diagnostics).toContain("link-asset-navigation-unsupported");
+    expect(defaultHtml).not.toContain("asset:company-logo");
+    expect(defaultHtml).not.toContain("href=");
+    expect(customHtml).toContain("No target");
+    expect(customHtml).not.toContain("asset:company-logo");
+    expect(customHtml).not.toContain("href=");
   });
 
   it("uses provider component overrides with portable paths", () => {

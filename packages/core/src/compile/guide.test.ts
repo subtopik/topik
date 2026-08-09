@@ -50,6 +50,18 @@ describe("compileGuides", () => {
     });
   });
 
+  test("does not turn the consumed collection config into a downloadable Asset", async () => {
+    await writeCollectionConfig("id: blog\ntitle: Blog\n");
+    await writeGuide("config", "[Configuration](collection.yaml)\n");
+    const result = await compileGuides({
+      dir,
+      validation: { links: "off" },
+      assets: { sourceNamespace: "protected-guide-config" },
+    });
+    expect(result.resources.filter((resource) => resource.type === "Asset")).toEqual([]);
+    expect(result.payloads).toEqual([]);
+  });
+
   test("extracts title from markdown heading", async () => {
     await writeCollectionConfig("id: blog\ntitle: Blog\n");
     await writeGuide("my-post", "# My Custom Title\n\nContent here.");

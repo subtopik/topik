@@ -34,7 +34,7 @@ import {
   sniffPortableMediaType,
 } from "../portable/media";
 import { validateTopikPath, validateTopikPathSet } from "../portable/path";
-import { validateResources } from "../validate";
+import { validateResources, type ValidationError } from "../validate";
 
 export type ContentBearingResource = CoursePage | Guide | WikiPage;
 
@@ -54,6 +54,8 @@ export interface CompileAssetResourcesInput extends AssetCompilationOptions {
   resources: readonly Resource[];
   /** Compilation-root-relative source paths keyed by `Type/name`. */
   sourcePathsByResource: Readonly<Record<string, string>>;
+  /** Other consumed compiler inputs that cannot be owned as Asset bytes. */
+  protectedSourcePaths?: readonly string[];
   /** Additional programmatic declarations. On-disk descriptors are still discovered. */
   assets?: readonly Asset[];
   discoverDescriptors?: boolean;
@@ -168,7 +170,13 @@ export async function compileAssetResources(
   }
   const initialValidation = validateResources([...nonAssetResources, ...declaredAssets]);
   if (!initialValidation.valid) {
-    throw new AssetCompilationError("Asset compilation received an invalid resource");
+    throw new AssetCompilationError(
+      "Asset compilation received an invalid resource",
+      resourceValidationDiagnostics(initialValidation.errors, [
+        ...nonAssetResources,
+        ...declaredAssets,
+      ]),
+    );
   }
 
   const sourcePaths = new Map<string, string>();
@@ -211,6 +219,11 @@ export async function compileAssetResources(
   const rolesByName = new Map<string, string[]>();
   const allPaths = new Set<string>(sourcePaths.values());
   const protectedPaths = new Set<string>(sourcePaths.values());
+  for (const source of input.protectedSourcePaths ?? []) {
+    const path = requirePath(source, "Protected compiler source path is not portable");
+    allPaths.add(path);
+    protectedPaths.add(path);
+  }
   const explicitLocalPaths = new Set<string>();
   for (const descriptor of descriptorResources) {
     allPaths.add(descriptor.path);
@@ -219,7 +232,7 @@ export async function compileAssetResources(
   for (const asset of declaredAssets) {
     const uri = validateAssetUri(asset.spec.uri);
     if (!uri.ok || uri.value.kind !== "local") continue;
-    if (!explicitLocalPaths.has(uri.value.uri) && protectedPaths.has(uri.value.uri)) {
+    if (protectedPaths.has(uri.value.uri)) {
       throw ambiguousReference(
         "Explicit Asset path conflicts with a resource source",
         uri.value.uri,
@@ -257,18 +270,28 @@ export async function compileAssetResources(
         );
       }
 
-      const normalizedPath = resolveOccurrencePath(sourcePath, occurrence.reference);
-      if (protectedPaths.has(normalizedPath)) {
-        if (occurrence.slot === "link.href" && !explicitlyDownloadable.has(occurrence.position)) {
-          continue;
+      const ordinaryNavigation =
+        occurrence.slot === "link.href" && !explicitlyDownloadable.has(occurrence.position);
+      let normalizedPath: string;
+      if (ordinaryNavigation) {
+        try {
+          normalizedPath = resolveOccurrencePath(sourcePath, occurrence.reference);
+        } catch (error) {
+          if (error instanceof AssetCompilationError) continue;
+          throw error;
         }
+      } else {
+        normalizedPath = resolveOccurrencePath(sourcePath, occurrence.reference);
+      }
+      if (protectedPaths.has(normalizedPath)) {
+        if (ordinaryNavigation) continue;
         throw ambiguousReference(
           "Local reference conflicts with a resource or explicit Asset path",
           normalizedPath,
           occurrence.position,
         );
       }
-      if (occurrence.slot === "link.href" && !explicitlyDownloadable.has(occurrence.position)) {
+      if (ordinaryNavigation) {
         const proof = await readPortableAssetFile({ root: input.rootDir, path: normalizedPath });
         if (!proof.ok || proof.value.bytes === undefined) continue;
         readCache.set(normalizedPath, proof.value as Awaited<ReturnType<typeof requireAssetFile>>);
@@ -348,10 +371,12 @@ export async function compileAssetResources(
   for (const asset of assetsByName.values()) {
     const uri = validateAssetUri(asset.spec.uri);
     if (!uri.ok) throw new AssetCompilationError("Asset URI is invalid", uri.diagnostics);
+    const roles = rolesByName.get(asset.name) ?? [];
     if (uri.value.kind === "remote") {
       if (isTopikActiveMediaType(asset.spec.mediaType ?? "")) {
         throw activeError(asset.name, asset.spec.uri);
       }
+      assertRoleMediaCompatibility(asset.name, asset.spec.uri, asset.spec.mediaType ?? "", roles);
       resolvedAssets.push(cloneAsset(asset));
       continue;
     }
@@ -362,7 +387,6 @@ export async function compileAssetResources(
     const integrity = `sha256:${digest}` as const;
     const mediaType = sniffPortableMediaType(file.bytes);
     verifyExactFacts(asset, integrity, file.bytes.byteLength, mediaType);
-    const roles = rolesByName.get(asset.name) ?? [];
     if (isTopikActiveMediaType(mediaType)) {
       if (
         !(
@@ -374,11 +398,7 @@ export async function compileAssetResources(
         throw activeError(asset.name, uri.value.uri);
       }
     }
-    for (const role of roles) {
-      if (role !== "download" && !isInlineMediaCompatible(mediaType, role)) {
-        throw activeError(asset.name, uri.value.uri);
-      }
-    }
+    assertRoleMediaCompatibility(asset.name, uri.value.uri, mediaType, roles);
     const payloadPath = `${TOPIK_ASSET_OUTPUT_PREFIX}/${digest}`;
     resolvedAssets.push({
       ...cloneAsset(asset),
@@ -418,7 +438,12 @@ export async function compileAssetResources(
   });
   const resources = [...rewritten, ...resolvedAssets].sort(compareResources);
   const finalValidation = validateResources(resources);
-  if (!finalValidation.valid) throw new AssetCompilationError("Compiled resources are invalid");
+  if (!finalValidation.valid) {
+    throw new AssetCompilationError(
+      "Compiled resources are invalid",
+      resourceValidationDiagnostics(finalValidation.errors, resources),
+    );
+  }
   const payloads: AssetPayload[] = [...payloadsByDigest.entries()]
     .map(([digest, payload]) => ({
       path: `${TOPIK_ASSET_OUTPUT_PREFIX}/${digest}`,
@@ -445,6 +470,82 @@ export async function compileAssetResources(
   if (!inventory.ok)
     throw new AssetCompilationError("Compiled inventory is incomplete", inventory.diagnostics);
   return { resources, payloads, semantic, materialization };
+}
+
+function assertRoleMediaCompatibility(
+  name: string,
+  path: string,
+  mediaType: string,
+  roles: readonly string[],
+): void {
+  const incompatible = roles.find(
+    (role) => role !== "download" && !isInlineMediaCompatible(mediaType, role),
+  );
+  if (incompatible === undefined) return;
+  throw new AssetCompilationError("Asset media type is incompatible with its reference role", [
+    topikAssetDiagnostic(
+      "TOPIK_ASSET_MEDIA_TYPE_MISMATCH",
+      "Asset media type is incompatible with its reference role",
+      { location: { key: name, path } },
+    ),
+  ]);
+}
+
+function resourceValidationDiagnostics(
+  errors: readonly ValidationError[],
+  resources: readonly unknown[],
+): TopikAssetDiagnostic[] {
+  return errors.map((error) => {
+    const resource = resources.find(
+      (candidate) =>
+        typeof candidate === "object" &&
+        candidate !== null &&
+        Object.hasOwn(candidate, "type") &&
+        Object.hasOwn(candidate, "name") &&
+        `${String((candidate as { type: unknown }).type)}/${String((candidate as { name: unknown }).name)}` ===
+          error.resource,
+    ) as { apiVersion?: unknown; name?: unknown; type?: unknown } | undefined;
+    const descriptorVersion = safeResourceDescriptorVersion(resource);
+    return topikAssetDiagnostic(
+      error.id === "resource-unsupported-version"
+        ? "TOPIK_ASSET_UNSUPPORTED_VERSION"
+        : "TOPIK_ASSET_SCHEMA_INVALID",
+      error.id === "resource-unsupported-version"
+        ? "Resource apiVersion is unsupported"
+        : "Resource schema validation failed",
+      {
+        descriptorVersion,
+        location: {
+          jsonPointer: error.path,
+        },
+      },
+    );
+  });
+}
+
+const KNOWN_RESOURCE_TYPES = new Set([
+  "Asset",
+  "Course",
+  "CourseModule",
+  "CoursePage",
+  "Guide",
+  "Person",
+  "Wiki",
+  "WikiPage",
+]);
+
+function safeResourceDescriptorVersion(
+  resource:
+    | {
+        apiVersion?: unknown;
+        type?: unknown;
+      }
+    | undefined,
+): string {
+  if (typeof resource?.type !== "string" || !KNOWN_RESOURCE_TYPES.has(resource.type)) {
+    return "unknown-resource";
+  }
+  return `${resource.type}/${resource.apiVersion === "v1" ? "v1" : "unsupported"}`;
 }
 
 function parseDescriptor(bytes: Uint8Array, path: string): Asset {

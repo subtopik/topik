@@ -40,4 +40,20 @@ describe("compile", () => {
 
     expect(result.resources.map((resource) => resource.type)).toEqual(["Guide"]);
   });
+
+  test("protects every consumed config source in mixed compilation", async () => {
+    await writeFile(join(dir, "wiki.yaml"), "id: docs\ntitle: Docs\nnavigation:\n  - intro\n");
+    await writeFile(join(dir, "collection.yaml"), "id: blog\ntitle: Blog\n");
+    await writeFile(
+      join(dir, "intro.md"),
+      "[Wiki configuration](wiki.yaml)\n\n[Collection configuration](collection.yaml)\n",
+    );
+    const result = await compile({
+      dir,
+      validation: { links: "off" },
+      assets: { sourceNamespace: "protected-mixed-config" },
+    });
+    expect(result.resources.filter((resource) => resource.type === "Asset")).toEqual([]);
+    expect(result.payloads).toEqual([]);
+  });
 });

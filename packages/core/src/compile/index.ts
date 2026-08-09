@@ -48,6 +48,7 @@ export async function compile(options: CompileOptions): Promise<CompileResult> {
   const resources: Resource[] = [];
   const diagnostics: CompileResult["diagnostics"] = [];
   const sourcePathsByResource: Record<string, string> = {};
+  const protectedSourcePaths: string[] = [];
 
   const wikiConfig = await findConfigFile(dir, WIKI_CONFIG_FILES);
   if (wikiConfig) {
@@ -55,6 +56,7 @@ export async function compile(options: CompileOptions): Promise<CompileResult> {
     resources.push(...result.resources);
     diagnostics.push(...result.diagnostics);
     Object.assign(sourcePathsByResource, result.sourcePathsByResource);
+    protectedSourcePaths.push(...result.consumedSourcePaths);
   }
 
   const collectionConfig = await findConfigFile(dir, COLLECTION_CONFIG_FILES);
@@ -63,6 +65,7 @@ export async function compile(options: CompileOptions): Promise<CompileResult> {
     resources.push(...result.resources);
     diagnostics.push(...result.diagnostics);
     Object.assign(sourcePathsByResource, result.sourcePathsByResource);
+    protectedSourcePaths.push(...result.consumedSourcePaths);
   }
 
   throwOnCompileErrors(diagnostics);
@@ -70,6 +73,7 @@ export async function compile(options: CompileOptions): Promise<CompileResult> {
     rootDir: dir,
     resources,
     sourcePathsByResource,
+    protectedSourcePaths,
     ...options.assets,
   });
   return { diagnostics, ...compiled };

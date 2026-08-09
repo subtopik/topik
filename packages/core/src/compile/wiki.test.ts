@@ -493,6 +493,18 @@ navigation:
     expect(page.spec).not.toHaveProperty("assets");
   });
 
+  test("does not turn the consumed wiki config into a downloadable Asset", async () => {
+    await writeWikiConfig("id: tw\ntitle: Wiki\nnavigation:\n  - hello\n");
+    await writePage("hello", "[Configuration](wiki.yaml)\n");
+    const result = await compileWiki({
+      dir,
+      validation: { links: "off" },
+      assets: { sourceNamespace: "protected-wiki-config" },
+    });
+    expect(result.resources.filter((resource) => resource.type === "Asset")).toEqual([]);
+    expect(result.payloads).toEqual([]);
+  });
+
   test("extracts local asset references from valid Topik tags", async () => {
     await writeWikiConfig("id: tw\ntitle: Wiki\nnavigation:\n  - hello\n");
     const png = Buffer.from(

@@ -2,7 +2,9 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
+import { extractTopikAssetOccurrences } from "@topik/content-schema";
 import type { Asset, Course, CourseModule, CoursePage, Guide, Wiki, WikiPage } from "@topik/schema";
+import type { Resource } from "../resource";
 import { AssetCompilationError, compileAssetResources, loadAssetDescriptors } from "./assets";
 
 const PNG_BYTES = Buffer.from(
@@ -112,6 +114,35 @@ describe("compilation-wide named Assets", () => {
     expect(result.payloads).toHaveLength(1);
   });
 
+  test("resolves safe dot segments relative to the content source and rejects escape", async () => {
+    await mkdir(join(dir, "guides"));
+    await writeFile(join(dir, "hero.png"), PNG_BYTES);
+    await writeFile(join(dir, "guides", "one.md"), "source\n");
+    for (const reference of ["../hero.png", "./../hero.png"]) {
+      const result = await compileAssetResources({
+        rootDir: dir,
+        resources: [guide("one", `![Hero](${reference})\n`)],
+        sourcePathsByResource: { "Guide/one": "guides/one.md" },
+        sourceNamespace: "relative-fixture",
+      });
+      expect(result.resources.find((resource) => resource.type === "Asset")?.spec).toMatchObject({
+        mediaType: "image/png",
+      });
+    }
+    await expect(
+      compileAssetResources({
+        rootDir: dir,
+        resources: [guide("one", "![Outside](../../outside.png)\n")],
+        sourcePathsByResource: { "Guide/one": "guides/one.md" },
+        sourceNamespace: "relative-fixture",
+      }),
+    ).rejects.toMatchObject({
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_ASSET_PATH_INVALID" }),
+      ]),
+    });
+  });
+
   test("rejects a source destination proved only by an unrelated Markdoc attribute", async () => {
     await writeFile(join(dir, "café.png"), PNG_BYTES);
     await writeFile(join(dir, "one.md"), "source\n");
@@ -127,6 +158,46 @@ describe("compilation-wide named Assets", () => {
     ).rejects.toMatchObject({
       diagnostics: expect.arrayContaining([
         expect.objectContaining({ id: "TOPIK_ASSET_REFERENCE_MALFORMED" }),
+      ]),
+    });
+  });
+
+  test("keeps out-of-root ordinary navigation but rejects Asset-capable traversal", async () => {
+    const navigation = "[Other](../../outside/index.html)\n";
+    const resource = guide("one", navigation);
+    const input = {
+      rootDir: dir,
+      resources: [resource],
+      sourcePathsByResource: { "Guide/one": "nested/one.md" },
+      sourceNamespace: "navigation-fixture",
+    } as const;
+
+    const compiled = await compileAssetResources(input);
+    expect(compiled.resources).toEqual([resource]);
+    expect(compiled.payloads).toEqual([]);
+
+    await expect(
+      compileAssetResources({
+        ...input,
+        resources: [guide("one", "![Outside](../../outside/image.png)\n")],
+      }),
+    ).rejects.toMatchObject({
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_ASSET_PATH_INVALID" }),
+      ]),
+    });
+
+    const [link] = extractTopikAssetOccurrences(navigation, {
+      includeGenericLinkCandidates: true,
+    });
+    await expect(
+      compileAssetResources({
+        ...input,
+        downloadableLinkPositionsByResource: { "Guide/one": [link.position] },
+      }),
+    ).rejects.toMatchObject({
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_ASSET_PATH_INVALID" }),
       ]),
     });
   });
@@ -178,6 +249,33 @@ describe("compilation-wide named Assets", () => {
     expect(result.payloads).toHaveLength(1);
     expect(result.semantic.references).toHaveLength(3);
     expect(result.payloads[0].assetNames).toContain("company-logo");
+  });
+
+  test("protects generic compiler inputs from explicit and implicit Asset ownership", async () => {
+    await writeFile(join(dir, "config.yaml"), "id: docs\n");
+    await writeFile(join(dir, "one.md"), "source\n");
+    const input = {
+      rootDir: dir,
+      resources: [guide("one", "![Config](config.yaml)\n")],
+      sourcePathsByResource: { "Guide/one": "one.md" },
+      protectedSourcePaths: ["config.yaml"],
+      sourceNamespace: "protected-generic-config",
+    } as const;
+    await expect(compileAssetResources(input)).rejects.toMatchObject({
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_ASSET_REFERENCE_AMBIGUOUS" }),
+      ]),
+    });
+    await expect(
+      compileAssetResources({
+        ...input,
+        resources: [guide("one", "No reference\n"), localAsset("config", "config.yaml")],
+      }),
+    ).rejects.toMatchObject({
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_ASSET_REFERENCE_AMBIGUOUS" }),
+      ]),
+    });
   });
 
   test("resolves once across mixed content and container resource kinds", async () => {
@@ -293,6 +391,48 @@ describe("compilation-wide named Assets", () => {
     expect(result.resources.find((resource) => resource.name === "remote-manual")).toEqual(remote);
   });
 
+  test("enforces declared remote media compatibility for every referenced role", async () => {
+    await writeFile(join(dir, "one.md"), "source\n");
+    const remote = (name: string, mediaType: string): Asset => ({
+      apiVersion: "v1",
+      type: "Asset",
+      name,
+      spec: {
+        uri: `https://cdn.example.com/revisions/${name}`,
+        integrity: `sha256:${"0".repeat(64)}`,
+        size: 42,
+        mediaType,
+      },
+    });
+    for (const mediaType of ["application/pdf", "application/octet-stream"]) {
+      await expect(
+        compileAssetResources({
+          rootDir: dir,
+          resources: [
+            guide("one", "![Remote](asset:remote-media)\n"),
+            remote("remote-media", mediaType),
+          ],
+          sourcePathsByResource: { "Guide/one": "one.md" },
+        }),
+      ).rejects.toMatchObject({
+        diagnostics: expect.arrayContaining([
+          expect.objectContaining({ id: "TOPIK_ASSET_MEDIA_TYPE_MISMATCH" }),
+        ]),
+      });
+    }
+    await expect(
+      compileAssetResources({
+        rootDir: dir,
+        resources: [
+          guide("one", "![Remote](asset:remote-image)\n\n[Download](asset:remote-download)\n"),
+          remote("remote-image", "image/png"),
+          remote("remote-download", "application/pdf"),
+        ],
+        sourcePathsByResource: { "Guide/one": "one.md" },
+      }),
+    ).resolves.toMatchObject({ payloads: [] });
+  });
+
   test("does not inspect non-Topik content strings", async () => {
     await writeFile(join(dir, "other.md"), "source\n");
     const other = guide("other", "arbitrary asset:missing string");
@@ -305,6 +445,79 @@ describe("compilation-wide named Assets", () => {
 
     expect(result.resources).toEqual([other]);
     expect(result.semantic.references).toEqual([]);
+  });
+
+  test.each([
+    "Asset",
+    "Course",
+    "CourseModule",
+    "CoursePage",
+    "Guide",
+    "Person",
+    "Wiki",
+    "WikiPage",
+  ] as const)("preserves a typed diagnostic for unsupported %s versions", async (type) => {
+    const future = { apiVersion: "v2", type, name: "future", spec: {} } as unknown as Resource;
+    await expect(
+      compileAssetResources({
+        rootDir: dir,
+        resources: [future],
+        sourcePathsByResource: {},
+        discoverDescriptors: false,
+      }),
+    ).rejects.toMatchObject({
+      diagnostics: [
+        expect.objectContaining({
+          id: "TOPIK_ASSET_UNSUPPORTED_VERSION",
+          descriptorVersion: `${type}/unsupported`,
+          message: "Resource apiVersion is unsupported",
+        }),
+      ],
+    });
+  });
+
+  test("never echoes hostile resource metadata through validation diagnostics", async () => {
+    const resources = [
+      {
+        apiVersion: "future-secret-version",
+        type: "Guide",
+        name: "secret-name",
+        spec: {},
+      },
+      { apiVersion: "v1", type: "secret-type", name: "secret-name", spec: {} },
+      {
+        apiVersion: "future\u0000private-version",
+        type: "Guide",
+        name: "private-name",
+        spec: {},
+      },
+    ] as unknown as Resource[];
+
+    for (const resource of resources) {
+      let diagnostics: readonly unknown[] = [];
+      try {
+        await compileAssetResources({
+          rootDir: dir,
+          resources: [resource],
+          sourcePathsByResource: {},
+          discoverDescriptors: false,
+        });
+      } catch (error) {
+        expect(error).toBeInstanceOf(AssetCompilationError);
+        diagnostics = (error as AssetCompilationError).diagnostics;
+      }
+      expect(diagnostics.length).toBeGreaterThan(0);
+      expect(JSON.stringify(diagnostics)).not.toMatch(/secret|private|future/i);
+      expect(diagnostics).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            message: expect.stringMatching(
+              /^Resource (?:apiVersion is unsupported|schema validation failed)$/u,
+            ),
+          }),
+        ]),
+      );
+    }
   });
 
   test("discovers strict JSON and YAML descriptors in canonical path order", async () => {

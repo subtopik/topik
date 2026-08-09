@@ -189,6 +189,40 @@ describe("descriptor-anchored filesystem reads", () => {
     });
   });
 
+  test("evaluates effective ancestor, info, and configured global Git attributes", async () => {
+    const repository = await mkdtemp(join(tmpdir(), "topik-effective-attributes-"));
+    roots.push(repository);
+    await createMinimalWorktree(repository);
+    const root = join(repository, "nested");
+    await mkdir(root);
+    await writeFile(join(root, "file.bin"), "bytes");
+
+    await writeFile(join(repository, ".gitattributes"), "*.bin filter=lfs\n");
+    expect(await readPortableAssetFile({ root, path: "file.bin" })).toMatchObject({ ok: false });
+
+    await writeFile(join(root, ".gitattributes"), "file.bin !filter\n");
+    expect(await readPortableAssetFile({ root, path: "file.bin" })).toMatchObject({ ok: true });
+
+    await mkdir(join(repository, ".git", "info"));
+    await writeFile(join(repository, ".git", "info", "attributes"), "*.bin filter=info\n");
+    expect(await readPortableAssetFile({ root, path: "file.bin" })).toMatchObject({ ok: false });
+
+    await writeFile(join(repository, ".git", "info", "attributes"), "");
+    await writeFile(join(repository, ".gitattributes"), "");
+    const globalAttributes = join(repository, "global-attributes");
+    const globalConfig = join(repository, "global-config");
+    await writeFile(globalAttributes, "*.bin working-tree-encoding=UTF-16\n");
+    await writeFile(globalConfig, `[core]\n\tattributesFile = ${globalAttributes}\n`);
+    const previousGlobal = process.env.GIT_CONFIG_GLOBAL;
+    process.env.GIT_CONFIG_GLOBAL = globalConfig;
+    try {
+      expect(await readPortableAssetFile({ root, path: "file.bin" })).toMatchObject({ ok: false });
+    } finally {
+      if (previousGlobal === undefined) delete process.env.GIT_CONFIG_GLOBAL;
+      else process.env.GIT_CONFIG_GLOBAL = previousGlobal;
+    }
+  });
+
   test("stays anchored when an opened directory is replaced by a symlink", async () => {
     if (process.platform !== "linux") return;
     const root = await mkdtemp(join(tmpdir(), "topik-race-root-"));
@@ -214,3 +248,13 @@ describe("descriptor-anchored filesystem reads", () => {
     if (result.ok) expect(result.value.bytes).toEqual(PNG_BYTES);
   });
 });
+
+async function createMinimalWorktree(root: string): Promise<void> {
+  await mkdir(join(root, ".git", "objects"), { recursive: true });
+  await mkdir(join(root, ".git", "refs", "heads"), { recursive: true });
+  await writeFile(join(root, ".git", "HEAD"), "ref: refs/heads/main\n");
+  await writeFile(
+    join(root, ".git", "config"),
+    "[core]\n\trepositoryformatversion = 0\n\tbare = false\n",
+  );
+}

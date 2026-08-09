@@ -54,8 +54,14 @@ The byte digest is deliberately absent from this name. Editing a file in place k
 moving it creates a new name. Equal bytes at different paths remain distinct Assets, while repeated
 references to the same namespace and path reuse one Asset.
 
+Source-relative `.` and `..` segments are resolved against the content source before the resulting
+compilation-root-relative path is validated. An in-root parent reference is therefore supported,
+while any traversal outside the root still fails.
+
 Compiler callers provide `assets.sourceNamespace` only when implicit local references occur. The
-CLI accepts `--source-namespace`. If omitted, it derives a reproducible namespace from a stable Git
+namespace is normalized to NFC before forbidden-character and 1024-byte checks, so canonically
+equivalent input produces the same generated name. The CLI accepts `--source-namespace`. If
+omitted, it derives a reproducible namespace from a stable Git
 remote identity and the compilation root's worktree-relative path. Branch, commit, checkout path,
 and machine path do not participate. When no stable Git identity exists, use the option explicitly.
 Explicit-only compilations need no namespace.
@@ -65,6 +71,10 @@ sources and declared component image/download attributes. It does not scan arbit
 frontmatter, code, captions, titles, labels, or unrelated links. A plain local link becomes a
 download only when the application declares that occurrence or compilation proves it targets a
 regular non-resource file. Ordinary navigation and external HTTPS references remain unchanged.
+Compiler configuration, resource content, and explicit Asset descriptor sources are protected and
+cannot become Asset payloads. Named Assets used by image roles must declare an image media type;
+download roles may use safe opaque and document types. Navigation-only card targets reject
+`asset:` URLs.
 
 ## Shared compilation and output
 
@@ -87,7 +97,14 @@ assets/sha256/<full-sha256>
 Compiled local Asset descriptors point to `assets/sha256/<full-sha256>`. Each unique byte payload is
 written once even when several Asset names use it. Resource and payload inventories use canonical
 ordering. Writes stage a complete replacement, prune stale output, and retain the prior tree if a
-replacement cannot complete. Dry-run output reports both resource descriptors and payloads.
+replacement cannot complete. Existing populated output is replaceable only when its identity files
+prove compiler ownership; source directories, source ancestors, and unowned populated directories
+are never replacement targets. The output path is a compiler-owned relative pointer to a complete
+sibling generation. Renaming that pointer is the one visibility transition, so concurrent readers
+observe either the complete old generation or the complete new generation without requiring an
+external atomic-exchange utility. Superseded generations are removed only after publication. A
+legacy real-directory output is left untouched and must be moved aside explicitly before adopting
+the pointer layout. Dry-run output reports both resource descriptors and payloads.
 
 Semantic identity records Asset names and their exact content-reference mappings. Exact
 materialization identity records the path, byte size, and SHA-256 of every canonical JSON resource
@@ -108,14 +125,16 @@ diagnostic and omits the browser-facing attribute instead of emitting an unresol
 
 `migrateLegacyDigestOutput` upgrades the earlier compiler output that used 16 hexadecimal Asset
 names, SRI-style base64 integrity, content references to those names, and `spec.assets` arrays. The
-caller supplies the stable source namespace and source root. Migration verifies each local file and
+caller supplies the stable source namespace and source root. Input can be the actual set of separate
+`.json`, `.jsonl`, `.yaml`, or `.yml` legacy resource files; successful migration returns an exact
+path-and-byte backup of the complete input set. Migration verifies each local file and
 old integrity, derives the new path-based name and exact facts, rewrites only declared content
 slots, and removes obsolete arrays. An absent `spec.assets` on an asset-free Guide or WikiPage is
 treated as an empty legacy list and remains absent.
 
 Migration is all-or-nothing. Missing, malformed, remote, colliding, partially referenced, or
-ambiguous input fails without producing a partial result. A successful result includes the exact
-original input bytes as a backup, and retrying with the same input is deterministic.
+ambiguous input fails without producing a partial result, and retrying with the same input is
+deterministic.
 
 ## Security and portability limits
 
@@ -126,14 +145,18 @@ component to 255 UTF-8 bytes, a path to 64 components, and a bound repository pa
 
 Local reads are anchored to open directory descriptors and reject symlinks, hard links, Git links,
 special files, executables, changed-during-read files, Git LFS pointers, filters, and working-tree
-encodings. An Asset is limited to 256 MiB; a descriptor is limited to 1 MiB; a compilation accepts
+encodings. Effective Git attributes include ancestors from the worktree boundary, repository
+`info/attributes`, and configured global/system attributes; evidence is checked before and after
+the byte read, and every effective transform fails closed. An Asset is limited to 256 MiB; a
+descriptor is limited to 1 MiB; a compilation accepts
 at most 10,000 Assets. Media inspection derives the type from bytes and recognizes active HTML,
 SVG, XML, script, WebAssembly, and executable forms behind bounded padding. Inspection completes a
 partial UTF-8 code point at the 64 KiB boundary or fails closed. Active local bytes are rejected by
 default; an explicit download-only policy may allow them, and servers must then force attachment
 delivery and `X-Content-Type-Options: nosniff`.
 
-Diagnostics expose stable IDs and safe locations without copying untrusted references or bytes.
+Diagnostics expose stable IDs and safe relative locations without copying untrusted references,
+absolute machine paths, traversal spellings, URI paths, or bytes.
 Canonical Asset JSON uses deterministic recursive key ordering, normalized JSON scalars, LF, and
 one final newline. Parsing rejects duplicate members, inherited properties, unsupported versions,
 unknown fields, invalid UTF-8, and noncanonical persisted bytes.

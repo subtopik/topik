@@ -9,6 +9,7 @@ import {
 } from "./asset";
 import { parseStrictTopikJson, serializeTopikJson } from "./json";
 import { sniffPortableMediaType, TOPIK_UNRESOLVED_ACTIVE_CONTENT_TYPE } from "./media";
+import { topikAssetDiagnostic } from "./diagnostics";
 
 const complete: Asset = {
   apiVersion: "v1",
@@ -101,7 +102,61 @@ describe("implicit Asset identity", () => {
   test("rejects unstable namespaces", () => {
     expect(validateStableSourceNamespace("")).toMatchObject({ ok: false });
     expect(validateStableSourceNamespace("branch\u0000name")).toMatchObject({ ok: false });
-    expect(validateStableSourceNamespace("e\u0301")).toMatchObject({ ok: false });
+  });
+
+  test("normalizes namespaces before validation, sizing, and hashing", () => {
+    expect(validateStableSourceNamespace("e\u0301")).toEqual({
+      ok: true,
+      value: "é",
+      diagnostics: [],
+    });
+    const composed = generateImplicitAssetName({
+      stableSourceNamespace: "é",
+      normalizedPath: "image.png",
+    });
+    const decomposed = generateImplicitAssetName({
+      stableSourceNamespace: "e\u0301",
+      normalizedPath: "image.png",
+    });
+    expect(decomposed).toEqual(composed);
+    expect(validateStableSourceNamespace("e\u0301".repeat(512))).toMatchObject({ ok: true });
+    expect(validateStableSourceNamespace("e\u0301".repeat(513))).toMatchObject({ ok: false });
+  });
+});
+
+describe("safe Asset diagnostics", () => {
+  test.each([
+    "/home/user/secret/file.bin",
+    "C:\\Users\\user\\secret.bin",
+    "\\\\server\\share\\secret.bin",
+    "file:///home/user/secret.bin",
+    "../secret.bin",
+    "safe/../../secret.bin",
+    "／home／user／secret.bin",
+    "safe\u0000/secret.bin",
+  ])("redacts private or ambiguous diagnostic path %s", (path) => {
+    expect(
+      topikAssetDiagnostic("TOPIK_ASSET_FILE_MISSING", "Asset file is missing", {
+        location: { path },
+        reason: "absolute",
+      }),
+    ).toMatchObject({
+      location: { path: "[redacted]" },
+      reason: "absolute",
+      message: "Asset file is missing",
+    });
+  });
+
+  test("preserves a canonical relative diagnostic path and stable reason", () => {
+    expect(
+      topikAssetDiagnostic("TOPIK_ASSET_FILE_MISSING", "Asset file is missing", {
+        location: { path: "assets/manual.bin" },
+        reason: "forbidden_character",
+      }),
+    ).toMatchObject({
+      location: { path: "assets/manual.bin" },
+      reason: "forbidden_character",
+    });
   });
 });
 

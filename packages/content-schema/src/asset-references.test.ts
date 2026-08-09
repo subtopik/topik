@@ -51,8 +51,6 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
     "assets%2fhero.png",
     "%2E%2E/hero.png",
     "é.png",
-    "./hero.png",
-    "../hero.png",
     "/hero.png",
     "//example.com/hero.png",
     "file:///hero.png",
@@ -69,6 +67,19 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
     expect(validateTopikAssetReference("https://example.com/a.png?q=1#hero")).toEqual({
       valid: true,
       kind: "external-https",
+    });
+  });
+
+  test("accepts exact source-relative dot segments for compiler containment resolution", () => {
+    expect(validateTopikAssetReference("./hero.png")).toEqual({
+      valid: true,
+      kind: "local",
+      decodedPath: "./hero.png",
+    });
+    expect(validateTopikAssetReference("../shared/hero.png")).toEqual({
+      valid: true,
+      kind: "local",
+      decodedPath: "../shared/hero.png",
     });
   });
 

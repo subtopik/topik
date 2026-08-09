@@ -312,7 +312,6 @@ describe("content-react core", () => {
     "javascript:alert(1)",
     "//example.com/a.png",
     "/absolute.png",
-    "./relative.png",
     "assets%2fhero.png",
     "é.png",
   ])("diagnoses and removes unsafe asset reference %s before rendering", (reference) => {

@@ -14,7 +14,7 @@ import type { Resource } from "../resource";
 import { parseWikiConfig, WIKI_PAGE_NAME_HASH_LENGTH, type WikiNavNode } from "../config/wiki";
 import { compileAssetResources, type AssetCompilationOptions } from "./assets";
 import type { CompileResourceDiscovery } from "./guide";
-import { readOptionalConfigFile } from "./config";
+import { readOptionalConfigFileWithPath } from "./config";
 import { readRegularFileWithinRoot } from "./files";
 import {
   extractMarkdownTitle,
@@ -45,6 +45,7 @@ export async function inspectWiki(options: CompileWikiOptions): Promise<CompileR
     rootDir: resolve(options.dir),
     resources: discovered.resources,
     sourcePathsByResource: discovered.sourcePathsByResource,
+    protectedSourcePaths: discovered.consumedSourcePaths,
     ...options.assets,
   });
   return { diagnostics: discovered.diagnostics, ...compiled };
@@ -54,12 +55,16 @@ export async function inspectWiki(options: CompileWikiOptions): Promise<CompileR
 export async function discoverWiki(options: CompileWikiOptions): Promise<CompileResourceDiscovery> {
   const dir = resolve(options.dir);
 
-  const raw = await readOptionalConfigFile(dir, ["wiki.yaml", "wiki.yml", "wiki.json"]);
-  if (raw == null) {
-    return { diagnostics: [], resources: [], sourcePathsByResource: {} };
+  const loadedConfig = await readOptionalConfigFileWithPath(dir, [
+    "wiki.yaml",
+    "wiki.yml",
+    "wiki.json",
+  ]);
+  if (loadedConfig == null) {
+    return { diagnostics: [], resources: [], sourcePathsByResource: {}, consumedSourcePaths: [] };
   }
 
-  const config = parseWikiConfig(raw);
+  const config = parseWikiConfig(loadedConfig.value);
   const pagePaths = config.navigation ? [...new Set(collectPagePaths(config.navigation))] : [];
   const resolvedFiles = await Promise.all(pagePaths.map((pagePath) => readPageFile(dir, pagePath)));
 
@@ -125,7 +130,12 @@ export async function discoverWiki(options: CompileWikiOptions): Promise<Compile
     diagnostics.push(...validateWikiLinks(pageAnalyses, linkValidationPolicy(options.validation)));
   }
 
-  return { diagnostics, resources, sourcePathsByResource };
+  return {
+    diagnostics,
+    resources,
+    sourcePathsByResource,
+    consumedSourcePaths: [loadedConfig.path],
+  };
 }
 
 // Keep compiled WikiPage spec.description within wikiPageSchema's 1024-character limit.

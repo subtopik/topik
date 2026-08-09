@@ -385,7 +385,8 @@ function isSafeDecodedPath(path: string): boolean {
   const components = path.split("/");
   return components.every(
     (component) =>
-      component.length > 0 && component !== "." && component !== ".." && !/[. ]$/u.test(component),
+      component.length > 0 &&
+      (component === "." || component === ".." || !/[. ]$/u.test(component)),
   );
 }
 

@@ -176,19 +176,15 @@ export function isExplicitAssetName(value: string): boolean {
 }
 
 export function validateStableSourceNamespace(value: string): TopikAssetResult<string> {
-  const bytes = encoder.encode(value);
-  if (
-    value.normalize("NFC") !== value ||
-    bytes.byteLength < 1 ||
-    bytes.byteLength > 1024 ||
-    FORBIDDEN_TEXT.test(value)
-  ) {
+  const normalized = value.normalize("NFC");
+  const bytes = encoder.encode(normalized);
+  if (bytes.byteLength < 1 || bytes.byteLength > 1024 || FORBIDDEN_TEXT.test(normalized)) {
     return failure(
       "TOPIK_ASSET_SOURCE_NAMESPACE_INVALID",
-      "Stable source namespace is not normalized portable text",
+      "Stable source namespace is not portable text after NFC normalization",
     );
   }
-  return { ok: true, value, diagnostics: [] };
+  return { ok: true, value: normalized, diagnostics: [] };
 }
 
 export interface GenerateImplicitAssetNameOptions {

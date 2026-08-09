@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { stringify as stringifyYaml } from "yaml";
 import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 import { migrateLegacyDigestOutput } from "./migration";
 
@@ -33,7 +34,9 @@ describe("legacy digest-output migration", () => {
     expect(first.ok).toBe(true);
     expect(second.ok).toBe(true);
     if (!first.ok || !second.ok) return;
-    expect(Buffer.from(first.value.backup).equals(input)).toBe(true);
+    expect(first.value.backup).toHaveLength(1);
+    expect(first.value.backup[0].path).toBe("legacy-output.json");
+    expect(Buffer.from(first.value.backup[0].bytes).equals(input)).toBe(true);
     expect(first.value.resources).toEqual(second.value.resources);
     const asset = first.value.resources.find((resource) => resource.type === "Asset");
     const guide = first.value.resources.find(
@@ -64,6 +67,50 @@ describe("legacy digest-output migration", () => {
     expect(assetFreePage).toMatchObject({
       spec: { content: { value: "Still no asset references." } },
     });
+  });
+
+  test("ingests separate JSON, JSONL, and YAML resources with exact deterministic backup", async () => {
+    const bytes = Buffer.from("portable bytes\n");
+    await writeFile(join(dir, "manual.bin"), bytes);
+    const asset = legacyAsset(bytes, "manual.bin");
+    const guide = legacyGuide(`![Manual](asset:${asset.name})`, [asset.name]);
+    const page = legacyWikiPage("No assets");
+    const files = [
+      {
+        path: `Asset/${asset.name}.json`,
+        bytes: `${JSON.stringify(asset, null, 2)}\n`,
+      },
+      { path: "Guide/guide.jsonl", bytes: `${JSON.stringify(guide)}\n` },
+      { path: "WikiPage/page.yaml", bytes: stringifyYaml(page) },
+    ];
+
+    const first = await migrateLegacyDigestOutput(files, {
+      rootDir: dir,
+      stableSourceNamespace: "migration-fixture",
+    });
+    const second = await migrateLegacyDigestOutput([...files].reverse(), {
+      rootDir: dir,
+      stableSourceNamespace: "migration-fixture",
+    });
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    if (!first.ok || !second.ok) return;
+    expect(first.value.resources).toEqual(second.value.resources);
+    expect(first.value.backup).toEqual(second.value.backup);
+    expect(first.value.backup.map((file) => file.path)).toEqual(
+      files.map((file) => file.path).sort(),
+    );
+    for (const backedUp of first.value.backup) {
+      const supplied = files.find((file) => file.path === backedUp.path);
+      expect(new TextDecoder().decode(backedUp.bytes)).toBe(supplied?.bytes);
+    }
+
+    const malformed = await migrateLegacyDigestOutput(
+      [...files, { path: "Guide/broken.yaml", bytes: "type: [" }],
+      { rootDir: dir, stableSourceNamespace: "migration-fixture" },
+    );
+    expect(malformed.ok).toBe(false);
+    expect(malformed).not.toHaveProperty("value");
   });
 
   test("treats an absent legacy Asset list as empty and rejects any hidden reference", async () => {
@@ -177,6 +224,19 @@ function legacyGuide(content: string, assets?: string[]) {
       slug: "guide",
       content: { format: "topik", value: content },
       ...(assets === undefined ? {} : { assets }),
+    },
+  };
+}
+
+function legacyWikiPage(content: string) {
+  return {
+    apiVersion: "v1",
+    type: "WikiPage",
+    name: "page",
+    spec: {
+      wiki: "docs",
+      title: "Page",
+      content: { format: "topik", value: content },
     },
   };
 }

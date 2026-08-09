@@ -5,12 +5,17 @@ import {
   type TopikAssetOccurrence,
 } from "@topik/content-schema";
 import type { Asset } from "@topik/schema";
+import { parseAllDocuments } from "yaml";
 import type { Resource } from "../resource";
 import { validateResources } from "../validate";
 import { generateImplicitAssetName, validateStableSourceNamespace } from "./asset";
-import { topikAssetDiagnostic, type TopikAssetResult } from "./diagnostics";
+import {
+  topikAssetDiagnostic,
+  type TopikAssetDiagnostic,
+  type TopikAssetResult,
+} from "./diagnostics";
 import { readPortableAssetFile } from "./files";
-import { parseStrictTopikJson } from "./json";
+import { isTopikJsonDataValue, parseStrictTopikJson } from "./json";
 import { isTopikActiveMediaType, sniffPortableMediaType } from "./media";
 import { validateTopikPathSet } from "./path";
 
@@ -21,8 +26,13 @@ export interface MigrateLegacyDigestOutputOptions {
 
 export interface LegacyDigestMigrationResult {
   resources: Resource[];
-  /** Exact caller bytes. Store this before replacing legacy output. */
-  backup: Uint8Array;
+  /** Exact caller paths and bytes. Store these before replacing legacy output. */
+  backup: LegacyDigestOutputFile[];
+}
+
+export interface LegacyDigestOutputFile {
+  path: string;
+  bytes: Uint8Array;
 }
 
 interface LegacyAsset {
@@ -35,35 +45,66 @@ interface LegacyAsset {
 
 /** Migrate the public 16-hex digest output without accepting partial or remote sets. */
 export async function migrateLegacyDigestOutput(
-  input: string | Uint8Array,
+  input: string | Uint8Array | readonly { path: string; bytes: string | Uint8Array }[],
   options: MigrateLegacyDigestOutputOptions,
 ): Promise<TopikAssetResult<LegacyDigestMigrationResult>> {
-  const backup =
-    typeof input === "string" ? new TextEncoder().encode(input) : Uint8Array.from(input);
-  let value: unknown;
+  const scalarInput = typeof input === "string" || input instanceof Uint8Array;
+  const failureSource = scalarInput
+    ? typeof input === "string"
+      ? new TextEncoder().encode(input)
+      : Uint8Array.from(input)
+    : undefined;
+  const suppliedFiles = scalarInput
+    ? [{ path: "legacy-output.json", bytes: failureSource as Uint8Array }]
+    : input.map((file) => ({
+        path: file.path,
+        bytes:
+          typeof file.bytes === "string"
+            ? new TextEncoder().encode(file.bytes)
+            : Uint8Array.from(file.bytes),
+      }));
+  const inputPaths = validateTopikPathSet(suppliedFiles.map((file) => file.path));
+  if (!inputPaths.ok) return failure(inputPaths.diagnostics, failureSource);
+  const backup = [...suppliedFiles]
+    .sort((left, right) => compareUtf8(left.path, right.path))
+    .map((file) => ({ path: file.path, bytes: Uint8Array.from(file.bytes) }));
+  let inputResources: unknown[];
   try {
-    value = parseStrictTopikJson(new TextDecoder("utf-8", { fatal: true }).decode(backup), 12);
+    inputResources = backup.flatMap(parseLegacyResourceFile);
   } catch {
-    return invalid(backup, "Legacy input is not strict UTF-8 JSON");
+    return invalid(
+      failureSource,
+      "Legacy resource files are not strict supported JSON, JSONL, or YAML",
+    );
   }
-  if (!isRecord(value) || !Array.isArray(value.resources)) {
-    return invalid(backup, "Legacy input must be an object containing resources");
+  if (inputResources.length === 0) {
+    return invalid(failureSource, "Legacy resource file set is empty");
+  }
+  const resourceKeys = new Set<string>();
+  for (const entry of inputResources) {
+    if (!isRecord(entry) || typeof entry.type !== "string" || typeof entry.name !== "string") {
+      return invalid(failureSource, "Legacy resource set contains a malformed resource");
+    }
+    const key = `${entry.type}/${entry.name}`;
+    if (resourceKeys.has(key))
+      return invalid(failureSource, "Legacy resource identity is duplicated");
+    resourceKeys.add(key);
   }
   const namespace = validateStableSourceNamespace(options.stableSourceNamespace);
   if (!namespace.ok) {
-    return { ok: false, diagnostics: namespace.diagnostics, source: backup };
+    return failure(namespace.diagnostics, failureSource);
   }
 
-  const legacyAssets = value.resources.filter(isLegacyAsset);
+  const legacyAssets = inputResources.filter(isLegacyAsset);
   if (
     legacyAssets.length !==
-    value.resources.filter((entry) => isRecord(entry) && entry.type === "Asset").length
+    inputResources.filter((entry) => isRecord(entry) && entry.type === "Asset").length
   ) {
-    return invalid(backup, "Legacy Asset set is malformed or uses unsupported remote input");
+    return invalid(failureSource, "Legacy Asset set is malformed or uses unsupported remote input");
   }
   const paths = legacyAssets.map((asset) => asset.spec.uri);
   const pathSet = validateTopikPathSet(paths);
-  if (!pathSet.ok) return { ok: false, diagnostics: pathSet.diagnostics, source: backup };
+  if (!pathSet.ok) return failure(pathSet.diagnostics, failureSource);
   const oldNames = new Set<string>();
   const newNames = new Set<string>();
   const nameMap = new Map<string, string>();
@@ -71,23 +112,24 @@ export async function migrateLegacyDigestOutput(
   const allReferenced = new Set<string>();
 
   for (const legacy of legacyAssets) {
-    if (oldNames.has(legacy.name)) return invalid(backup, "Legacy Asset name is duplicated");
+    if (oldNames.has(legacy.name)) return invalid(failureSource, "Legacy Asset name is duplicated");
     oldNames.add(legacy.name);
     const generated = generateImplicitAssetName({
       stableSourceNamespace: namespace.value,
       normalizedPath: legacy.spec.uri,
     });
-    if (!generated.ok) return { ok: false, diagnostics: generated.diagnostics, source: backup };
-    if (newNames.has(generated.value)) return invalid(backup, "Migrated Asset name collides");
+    if (!generated.ok) return failure(generated.diagnostics, failureSource);
+    if (newNames.has(generated.value))
+      return invalid(failureSource, "Migrated Asset name collides");
     newNames.add(generated.value);
     nameMap.set(legacy.name, generated.value);
     const read = await readPortableAssetFile({ root: options.rootDir, path: legacy.spec.uri });
     if (!read.ok || read.value.bytes === undefined) {
-      return { ok: false, diagnostics: read.diagnostics, source: backup };
+      return failure(read.diagnostics, failureSource);
     }
     const digest = createHash("sha256").update(read.value.bytes).digest();
     if (legacy.name !== digest.toString("hex").slice(0, 16)) {
-      return invalid(backup, "Legacy Asset name does not match its digest-prefix identity");
+      return invalid(failureSource, "Legacy Asset name does not match its digest-prefix identity");
     }
     if (`sha256-${digest.toString("base64")}` !== legacy.spec.integrity) {
       return {
@@ -102,7 +144,7 @@ export async function migrateLegacyDigestOutput(
             },
           ),
         ],
-        source: backup,
+        ...(failureSource === undefined ? {} : { source: failureSource }),
       };
     }
     const mediaType = sniffPortableMediaType(read.value.bytes);
@@ -116,7 +158,7 @@ export async function migrateLegacyDigestOutput(
             { location: { key: legacy.name, path: legacy.spec.uri } },
           ),
         ],
-        source: backup,
+        ...(failureSource === undefined ? {} : { source: failureSource }),
       };
     }
     migratedAssets.push({
@@ -134,10 +176,10 @@ export async function migrateLegacyDigestOutput(
   }
 
   const migratedResources: Resource[] = [];
-  for (const entry of value.resources) {
+  for (const entry of inputResources) {
     if (isLegacyAsset(entry)) continue;
     if (!isRecord(entry) || typeof entry.type !== "string" || typeof entry.name !== "string") {
-      return invalid(backup, "Legacy resource set contains a malformed resource");
+      return invalid(failureSource, "Legacy resource set contains a malformed resource");
     }
     if (entry.type !== "Guide" && entry.type !== "WikiPage") {
       migratedResources.push(structuredClone(entry) as Resource);
@@ -148,21 +190,24 @@ export async function migrateLegacyDigestOutput(
       !isRecord(entry.spec.content) ||
       typeof entry.spec.content.value !== "string"
     ) {
-      return invalid(backup, "Legacy content resource is malformed");
+      return invalid(failureSource, "Legacy content resource is malformed");
     }
     if (
       entry.spec.assets !== undefined &&
       (!Array.isArray(entry.spec.assets) ||
         entry.spec.assets.some((name) => typeof name !== "string" || !oldNames.has(name)))
     ) {
-      return invalid(backup, "Legacy content resource has a malformed or partial Asset list");
+      return invalid(
+        failureSource,
+        "Legacy content resource has a malformed or partial Asset list",
+      );
     }
     if (entry.spec.assets === undefined) {
       const occurrences = extractTopikAssetOccurrences(entry.spec.content.value, {
         includeGenericLinkCandidates: true,
       });
       if (occurrences.some(isUnmigratableUnsafeOccurrence)) {
-        return invalid(backup, "Legacy content contains an unsafe Asset-capable reference");
+        return invalid(failureSource, "Legacy content contains an unsafe Asset-capable reference");
       }
       if (
         occurrences.some(
@@ -172,7 +217,7 @@ export async function migrateLegacyDigestOutput(
             occurrence.parsedReference.startsWith("asset:"),
         )
       ) {
-        return invalid(backup, "Legacy content references an Asset without an Asset list");
+        return invalid(failureSource, "Legacy content references an Asset without an Asset list");
       }
       migratedResources.push(structuredClone(entry) as Resource);
       continue;
@@ -196,13 +241,16 @@ export async function migrateLegacyDigestOutput(
         { includeGenericLinkCandidates: true },
       );
     } catch {
-      return invalid(backup, "Legacy content contains an unresolved Asset reference");
+      return invalid(failureSource, "Legacy content contains an unresolved Asset reference");
     }
     if (legacyAssetList.some((name) => !referenced.has(name))) {
-      return invalid(backup, "Legacy Asset list is ambiguous or contains an unused entry");
+      return invalid(failureSource, "Legacy Asset list is ambiguous or contains an unused entry");
     }
     if ([...referenced].some((name) => !legacyAssetList.includes(name))) {
-      return invalid(backup, "Legacy content references an Asset absent from its Asset list");
+      return invalid(
+        failureSource,
+        "Legacy content references an Asset absent from its Asset list",
+      );
     }
     const spec: Record<string, unknown> = {
       ...entry.spec,
@@ -213,16 +261,21 @@ export async function migrateLegacyDigestOutput(
   }
 
   if (legacyAssets.some((asset) => !allReferenced.has(asset.name))) {
-    return invalid(backup, "Legacy Asset set is partial or ambiguous");
+    return invalid(failureSource, "Legacy Asset set is partial or ambiguous");
   }
 
   const resources = [...migratedResources, ...migratedAssets].sort((left, right) =>
     compareUtf8(`${left.type}/${left.name}`, `${right.type}/${right.name}`),
   );
   if (!validateResources(resources).valid) {
-    return invalid(backup, "Migrated resource set is invalid");
+    return invalid(failureSource, "Migrated resource set is invalid");
   }
-  return { ok: true, value: { resources, backup }, diagnostics: [], source: backup };
+  return {
+    ok: true,
+    value: { resources, backup },
+    diagnostics: [],
+    ...(failureSource === undefined ? {} : { source: failureSource }),
+  };
 }
 
 function isUnmigratableUnsafeOccurrence(occurrence: TopikAssetOccurrence): boolean {
@@ -231,6 +284,36 @@ function isUnmigratableUnsafeOccurrence(occurrence: TopikAssetOccurrence): boole
     (occurrence.slot !== "link.href" ||
       occurrence.reference.startsWith("asset:") ||
       occurrence.parsedReference.startsWith("asset:"))
+  );
+}
+
+function parseLegacyResourceFile(file: LegacyDigestOutputFile): unknown[] {
+  const source = new TextDecoder("utf-8", { fatal: true }).decode(file.bytes);
+  const extension = file.path.slice(file.path.lastIndexOf(".")).toLowerCase();
+  let values: unknown[];
+  if (extension === ".json") {
+    values = [parseStrictTopikJson(source, 12)];
+  } else if (extension === ".jsonl") {
+    const lines = source.split(/\r?\n/u).filter((line) => line.trim().length > 0);
+    if (lines.length === 0) throw new Error("Empty JSONL input");
+    values = lines.map((line) => parseStrictTopikJson(line, 12));
+  } else if (extension === ".yaml" || extension === ".yml") {
+    const documents = parseAllDocuments(source, { strict: true, uniqueKeys: true });
+    if (
+      documents.length === 0 ||
+      documents.some((document) => document.errors.length > 0 || document.contents === null)
+    ) {
+      throw new Error("Invalid YAML input");
+    }
+    values = documents.map((document) => document.toJS({ maxAliasCount: 0 }));
+  } else {
+    throw new Error("Unsupported legacy resource extension");
+  }
+  if (values.some((value) => !isTopikJsonDataValue(value))) {
+    throw new Error("Legacy resource is not prototype-safe JSON data");
+  }
+  return values.flatMap((value) =>
+    isRecord(value) && Array.isArray(value.resources) ? value.resources : [value],
   );
 }
 
@@ -264,11 +347,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function invalid<T>(source: Uint8Array, message: string): TopikAssetResult<T> {
+function invalid<T>(source: Uint8Array | undefined, message: string): TopikAssetResult<T> {
   return {
     ok: false,
     diagnostics: [topikAssetDiagnostic("TOPIK_ASSET_MIGRATION_INVALID", message)],
-    source,
+    ...(source === undefined ? {} : { source }),
+  };
+}
+
+function failure<T>(
+  diagnostics: readonly TopikAssetDiagnostic[],
+  source: Uint8Array | undefined,
+): TopikAssetResult<T> {
+  return {
+    ok: false,
+    diagnostics,
+    ...(source === undefined ? {} : { source }),
   };
 }
 

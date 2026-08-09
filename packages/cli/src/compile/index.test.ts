@@ -1,9 +1,21 @@
 import { createHash } from "node:crypto";
-import { link, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  link,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readlink,
+  readdir,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
-import { compile } from "./index";
+import { compile, replaceCompilationTree } from "./index";
 
 const PNG_BYTES = Buffer.from(
   "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000000500010d0a2db40000000049454e44ae426082",
@@ -16,7 +28,6 @@ type CompileCommand = {
     outDir?: string;
     format: "json";
     dryRun: boolean;
-    clean: boolean;
     validate: boolean;
     links: "error" | "warning" | "off";
     sourceNamespace?: string;
@@ -45,7 +56,6 @@ describe("compile command", () => {
       dir,
       format: "json",
       dryRun: true,
-      clean: false,
       validate: true,
       links: "error",
       sourceNamespace: "cli-test-source",
@@ -67,13 +77,35 @@ describe("compile command", () => {
       dir,
       format: "json",
       dryRun: true,
-      clean: false,
       validate: true,
       links: "error",
     });
 
     expect(log).toHaveBeenCalledWith("Asset/manual.json");
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/^assets\/sha256\/[0-9a-f]{64}$/u));
+  });
+
+  test("uses the same generated identity for canonically equivalent CLI namespaces", async () => {
+    await writeFile(join(dir, "hero.png"), PNG_BYTES);
+    await writeFile(join(dir, "intro.md"), "![Hero](hero.png)\n");
+    const names: string[] = [];
+    for (const [suffix, sourceNamespace] of [
+      ["composed", "é"],
+      ["decomposed", "e\u0301"],
+    ] as const) {
+      const outDir = join(dir, `out-${suffix}`);
+      await (compile as CompileCommand).handler?.({
+        dir,
+        outDir,
+        format: "json",
+        dryRun: false,
+        validate: true,
+        links: "error",
+        sourceNamespace,
+      });
+      names.push((await readdir(join(outDir, "Asset")))[0]);
+    }
+    expect(names[0]).toBe(names[1]);
   });
 
   test("atomically writes one self-contained retry-stable tree and prunes stale files", async () => {
@@ -85,12 +117,14 @@ describe("compile command", () => {
       outDir,
       format: "json" as const,
       dryRun: false,
-      clean: false,
       validate: true,
       links: "error" as const,
       sourceNamespace: "cli-test-source",
     };
     await (compile as CompileCommand).handler?.(options);
+    expect((await lstat(outDir)).isSymbolicLink()).toBe(true);
+    const firstGeneration = await readlink(outDir);
+    expect(firstGeneration).toMatch(/^\.topik-compilation-generation-/u);
     const [assetFile] = await readdir(join(outDir, "Asset"));
     const descriptor = await readFile(join(outDir, "Asset", assetFile), "utf8");
     const asset = JSON.parse(descriptor) as { spec: { uri: string } };
@@ -123,8 +157,14 @@ describe("compile command", () => {
     expect(actualOutput).toEqual(recordedOutput);
     await writeFile(join(outDir, "stale.bin"), "stale");
     await (compile as CompileCommand).handler?.(options);
+    const secondGeneration = await readlink(outDir);
+    expect(secondGeneration).not.toBe(firstGeneration);
     expect(await readFile(join(outDir, ".topik", "materialization.json"))).toEqual(firstIdentity);
     await expect(readFile(join(outDir, "stale.bin"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(lstat(join(dir, firstGeneration))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(
+      (await readdir(dir)).filter((name) => name.startsWith(".topik-compilation-generation-")),
+    ).toEqual([secondGeneration]);
   });
 
   test("rejects a symlinked output ancestor without writing outside", async () => {
@@ -136,7 +176,6 @@ describe("compile command", () => {
         outDir: join(dir, "output-link", "compiled"),
         format: "json",
         dryRun: false,
-        clean: false,
         validate: true,
         links: "error",
       }),
@@ -157,14 +196,251 @@ describe("compile command", () => {
         outDir,
         format: "json",
         dryRun: false,
-        clean: false,
         validate: true,
         links: "error",
       }),
     ).rejects.toThrow(/hard link/u);
     expect(await readFile(outside, "utf8")).toBe("outside");
   });
+
+  test("rejects source and source-ancestor output roots without mutation", async () => {
+    const originalConfig = await readFile(join(dir, "collection.yaml"));
+    const originalGuide = await readFile(join(dir, "intro.md"));
+    for (const outDir of [dir, dirname(dir)]) {
+      await expect(
+        (compile as CompileCommand).handler?.({
+          dir,
+          outDir,
+          format: "json",
+          dryRun: false,
+          validate: true,
+          links: "error",
+        }),
+      ).rejects.toThrow(/cannot equal or contain the source/u);
+      expect(await readFile(join(dir, "collection.yaml"))).toEqual(originalConfig);
+      expect(await readFile(join(dir, "intro.md"))).toEqual(originalGuide);
+    }
+  });
+
+  test("rejects a source ancestor reached through an alternate symlink spelling", async () => {
+    const realSource = join(dir, "source");
+    const aliasRoot = await mkdtemp(join(tmpdir(), "topik-cli-source-alias-"));
+    const sourceAlias = join(aliasRoot, "source");
+    await mkdir(realSource);
+    await writeFile(join(realSource, "collection.yaml"), "id: linked\ntitle: Linked\n");
+    await writeFile(join(realSource, "intro.md"), "# Linked\n");
+    await symlink(realSource, sourceAlias, "dir");
+    try {
+      await expect(
+        (compile as CompileCommand).handler?.({
+          dir: sourceAlias,
+          outDir: dir,
+          format: "json",
+          dryRun: false,
+          validate: true,
+          links: "error",
+        }),
+      ).rejects.toThrow(/cannot equal or contain the source/u);
+      expect(await readFile(join(realSource, "intro.md"), "utf8")).toBe("# Linked\n");
+    } finally {
+      await rm(aliasRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("refuses a populated unowned output directory without mutation", async () => {
+    const outDir = join(dir, "unowned");
+    await mkdir(outDir);
+    await writeFile(join(outDir, "author.txt"), "keep me");
+    await expect(
+      (compile as CompileCommand).handler?.({
+        dir,
+        outDir,
+        format: "json",
+        dryRun: false,
+        validate: true,
+        links: "error",
+      }),
+    ).rejects.toThrow(/not recognized as owned/u);
+    expect(await readFile(join(outDir, "author.txt"), "utf8")).toBe("keep me");
+  });
+
+  test("refuses an unowned output pointer without touching its target", async () => {
+    const outDir = join(dir, "unowned-pointer");
+    const outside = await mkdtemp(join(tmpdir(), "topik-cli-unowned-pointer-"));
+    await writeFile(join(outside, "author.txt"), "keep me");
+    await symlink(outside, outDir, "dir");
+    try {
+      await expect(
+        (compile as CompileCommand).handler?.({
+          dir,
+          outDir,
+          format: "json",
+          dryRun: false,
+          validate: true,
+          links: "error",
+        }),
+      ).rejects.toThrow(/not recognized as owned/u);
+      expect(await readFile(join(outside, "author.txt"), "utf8")).toBe("keep me");
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  test("fails visibly instead of non-atomically replacing a legacy real directory", async () => {
+    const outDir = join(dir, "legacy-owned");
+    await mkdir(join(outDir, ".topik"), { recursive: true });
+    for (const file of ownedFiles("legacy")) {
+      await mkdir(dirname(join(outDir, file.path)), { recursive: true });
+      await writeFile(join(outDir, file.path), file.bytes);
+    }
+
+    await expect(replaceCompilationTree(outDir, ownedFiles("new"))).rejects.toThrow(
+      /cannot be replaced atomically/u,
+    );
+    expect((await lstat(outDir)).isDirectory()).toBe(true);
+    expect(await readFile(join(outDir, "generation.txt"), "utf8")).toBe("legacy");
+  });
+
+  test("publishes through one atomic pointer rename and keeps a complete generation on failures", async () => {
+    const outDir = join(dir, "atomic");
+    await replaceCompilationTree(outDir, ownedFiles("old"));
+    const oldGeneration = await readlink(outDir);
+
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let staged: () => void = () => undefined;
+    const stagedReady = new Promise<void>((resolve) => {
+      staged = resolve;
+    });
+    const publishing = replaceCompilationTree(outDir, ownedFiles("new"), {
+      beforePublish: async () => {
+        staged();
+        await gate;
+      },
+    });
+    await stagedReady;
+    expect(await readFile(join(outDir, "generation.txt"), "utf8")).toBe("old");
+    const readerFailures: string[] = [];
+    let keepReading = true;
+    const reader = (async () => {
+      while (keepReading) {
+        try {
+          const generation = await readFile(join(outDir, "generation.txt"), "utf8");
+          if (generation !== "old" && generation !== "new") readerFailures.push(generation);
+        } catch (error) {
+          readerFailures.push((error as NodeJS.ErrnoException).code ?? "read-failed");
+        }
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+    })();
+    release();
+    await publishing;
+    keepReading = false;
+    await reader;
+    expect(readerFailures).toEqual([]);
+    expect(await readFile(join(outDir, "generation.txt"), "utf8")).toBe("new");
+    const newGeneration = await readlink(outDir);
+    expect(newGeneration).not.toBe(oldGeneration);
+    await expect(lstat(join(dir, oldGeneration))).rejects.toMatchObject({ code: "ENOENT" });
+
+    await expect(
+      replaceCompilationTree(outDir, ownedFiles("never-visible"), {
+        beforePublish: () => {
+          throw new Error("interrupted before publish");
+        },
+      }),
+    ).rejects.toThrow("interrupted before publish");
+    expect(await readFile(join(outDir, "generation.txt"), "utf8")).toBe("new");
+    expect(await readlink(outDir)).toBe(newGeneration);
+
+    await expect(
+      replaceCompilationTree(outDir, ownedFiles("published"), {
+        afterPublish: () => {
+          throw new Error("interrupted after publish");
+        },
+      }),
+    ).rejects.toThrow("interrupted after publish");
+    expect(await readFile(join(outDir, "generation.txt"), "utf8")).toBe("published");
+    expect(await readlink(outDir)).not.toBe(newGeneration);
+    await expect(lstat(join(dir, newGeneration))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  test("publishes without external commands when PATH has no mv implementation", async () => {
+    const outDir = join(dir, "node-only-atomic");
+    const previousPath = process.env.PATH;
+    process.env.PATH = "";
+    try {
+      await replaceCompilationTree(outDir, ownedFiles("old"));
+      await replaceCompilationTree(outDir, ownedFiles("new"));
+    } finally {
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+    }
+    expect(await readFile(join(outDir, "generation.txt"), "utf8")).toBe("new");
+  });
+
+  test("does not delete an unowned target swapped in after ownership proof", async () => {
+    const outDir = join(dir, "raced-output");
+    const displaced = join(dir, "displaced-owned-output");
+    await replaceCompilationTree(outDir, ownedFiles("old"));
+
+    await expect(
+      replaceCompilationTree(outDir, ownedFiles("new"), {
+        beforePublish: async () => {
+          await rename(outDir, displaced);
+          await mkdir(outDir);
+          await writeFile(join(outDir, "author.txt"), "preserve me");
+        },
+      }),
+    ).rejects.toThrow(/identity changed/u);
+
+    expect(await readFile(join(outDir, "author.txt"), "utf8")).toBe("preserve me");
+    expect(await readFile(join(displaced, "generation.txt"), "utf8")).toBe("old");
+    expect(
+      (await readdir(dir)).filter((name) => name.startsWith(".topik-compilation-publish-")),
+    ).toEqual([]);
+    expect(
+      (await readdir(dir)).filter((name) => name.startsWith(".topik-compilation-generation-")),
+    ).toHaveLength(1);
+  });
+
+  test("does not prune a stale-generation path whose identity changes after publish", async () => {
+    const outDir = join(dir, "cleanup-race-output");
+    const displaced = join(dir, "displaced-stale-generation");
+    await replaceCompilationTree(outDir, ownedFiles("old"));
+    const oldGeneration = await readlink(outDir);
+
+    await expect(
+      replaceCompilationTree(outDir, ownedFiles("new"), {
+        afterPublish: async () => {
+          await rename(join(dir, oldGeneration), displaced);
+          await mkdir(join(dir, oldGeneration));
+          await writeFile(join(dir, oldGeneration, "author.txt"), "preserve me");
+        },
+      }),
+    ).rejects.toThrow(/identity changed/u);
+
+    expect(await readFile(join(outDir, "generation.txt"), "utf8")).toBe("new");
+    expect(await readFile(join(dir, oldGeneration, "author.txt"), "utf8")).toBe("preserve me");
+    expect(await readFile(join(displaced, "generation.txt"), "utf8")).toBe("old");
+  });
 });
+
+function ownedFiles(generation: string): Array<{ path: string; bytes: string }> {
+  return [
+    { path: "generation.txt", bytes: generation },
+    {
+      path: ".topik/materialization.json",
+      bytes: '{"descriptor":"topik-materialization-v1","payloads":[],"resources":[]}\n',
+    },
+    {
+      path: ".topik/semantic.json",
+      bytes: '{"assetNames":[],"descriptor":"topik-asset-semantic-v1","references":[]}\n',
+    },
+  ];
+}
 
 function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");

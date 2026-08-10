@@ -22,7 +22,6 @@ export {
   type LinkValidationPolicy,
   type LintResult,
   AssetCompilationError,
-  loadAssetDescriptors,
   type AssetCompilationOptions,
   type AssetCompilationResult,
   type AssetPayload,
@@ -30,11 +29,11 @@ export {
   type ContentBearingResource,
 } from "./compile";
 export { CompileError } from "./compile";
-export type { Resource, ResourceType } from "./resource";
+export type { Resource, ResourceType, SourceResource } from "./resource";
 
 export { validateResources, type ValidationError, type ValidationResult } from "./validate";
 
 export { watch, type WatchOptions, type Watcher } from "./watch";
 
-/** Named Asset/v1 compilation, validation, identity, and migration APIs. */
+/** Compiler-derived Asset/v1 output, validation, identity, and safety APIs. */
 export * from "./portable";

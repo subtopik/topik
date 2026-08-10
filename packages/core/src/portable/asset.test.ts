@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 import type { Asset } from "@topik/schema";
 import {
-  generateImplicitAssetName,
+  generateAutomaticAssetName,
   parseAsset,
   serializeAsset,
   validateAssetValue,
@@ -15,15 +15,12 @@ import { TOPIK_ASSET_LIMITS } from "./constants";
 const complete: Asset = {
   apiVersion: "v1",
   type: "Asset",
-  name: "company-logo",
-  labels: { topic: "brand" },
+  name: `auto-v1-${"a".repeat(52)}`,
   spec: {
-    uri: "images/logo.png",
+    uri: "assets/sha256/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     integrity: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     size: 7,
     mediaType: "image/png",
-    license: { spdxExpression: "MIT" },
-    attribution: { text: "Logo by Example" },
   },
 };
 
@@ -47,7 +44,7 @@ describe("Asset/v1 strict JSON", () => {
     const inherited = Object.create({ type: "Asset" }) as Record<string, unknown>;
     inherited.apiVersion = "v1";
     inherited.name = "unsafe";
-    inherited.spec = { uri: "file.bin" };
+    inherited.spec = complete.spec;
     expect(validateAssetValue(inherited)).toMatchObject({ ok: false });
     expect(validateAssetValue({ ...complete, apiVersion: "v2" })).toMatchObject({
       ok: false,
@@ -55,39 +52,33 @@ describe("Asset/v1 strict JSON", () => {
     });
   });
 
-  test("requires exact facts for immutable remote URIs and rejects signed or fragmented URLs", () => {
-    expect(
-      validateAssetValue({ ...complete, spec: { uri: "https://cdn.example.com/rev.png" } }),
-    ).toMatchObject({ ok: false });
-    expect(
-      validateAssetValue({
-        ...complete,
-        spec: { ...complete.spec, uri: "https://cdn.example.com/rev.png?token=x" },
-      }),
-    ).toMatchObject({ ok: false });
-    expect(
-      validateAssetValue({
-        ...complete,
-        spec: { ...complete.spec, uri: "https://cdn.example.com/rev.png#x" },
-      }),
-    ).toMatchObject({ ok: false });
+  test("rejects incomplete output, user-selected names, user metadata, and non-payload URIs", () => {
+    expect(validateAssetValue({ ...complete, name: "company-logo" })).toMatchObject({ ok: false });
+    expect(validateAssetValue({ ...complete, labels: { topic: "brand" } })).toMatchObject({
+      ok: false,
+    });
+    expect(validateAssetValue({ ...complete, spec: { uri: "images/logo.png" } })).toMatchObject({
+      ok: false,
+    });
+    expect(validateAssetValue({ ...complete, spec: { uri: complete.spec.uri } })).toMatchObject({
+      ok: false,
+    });
   });
 
   test("enforces the portable size ceiling for runtime values and descriptors", () => {
-    const remote = {
+    const maximum = {
       ...complete,
       spec: {
         ...complete.spec,
-        uri: "https://cdn.example.com/revisions/logo.png",
         size: TOPIK_ASSET_LIMITS.maxAssetBytes,
       },
     };
-    expect(validateAssetValue(remote)).toMatchObject({ ok: true });
-    expect(parseAsset(serializeTopikJson(remote))).toMatchObject({ ok: true });
+    expect(validateAssetValue(maximum)).toMatchObject({ ok: true });
+    expect(parseAsset(serializeTopikJson(maximum))).toMatchObject({ ok: true });
 
     const oversized = {
-      ...remote,
-      spec: { ...remote.spec, size: TOPIK_ASSET_LIMITS.maxAssetBytes + 1 },
+      ...maximum,
+      spec: { ...maximum.spec, size: TOPIK_ASSET_LIMITS.maxAssetBytes + 1 },
     };
     expect(validateAssetValue(oversized)).toMatchObject({
       ok: false,
@@ -99,21 +90,21 @@ describe("Asset/v1 strict JSON", () => {
   });
 });
 
-describe("implicit Asset identity", () => {
+describe("automatic Asset identity", () => {
   test("uses namespace plus normalized path, never bytes", () => {
-    const first = generateImplicitAssetName({
+    const first = generateAutomaticAssetName({
       stableSourceNamespace: "example-source",
       normalizedPath: "images/logo.png",
     });
-    const retry = generateImplicitAssetName({
+    const retry = generateAutomaticAssetName({
       stableSourceNamespace: "example-source",
       normalizedPath: "images/logo.png",
     });
-    const moved = generateImplicitAssetName({
+    const moved = generateAutomaticAssetName({
       stableSourceNamespace: "example-source",
       normalizedPath: "branding/logo.png",
     });
-    const otherSource = generateImplicitAssetName({
+    const otherSource = generateAutomaticAssetName({
       stableSourceNamespace: "other-source",
       normalizedPath: "images/logo.png",
     });
@@ -136,11 +127,11 @@ describe("implicit Asset identity", () => {
       value: "é",
       diagnostics: [],
     });
-    const composed = generateImplicitAssetName({
+    const composed = generateAutomaticAssetName({
       stableSourceNamespace: "é",
       normalizedPath: "image.png",
     });
-    const decomposed = generateImplicitAssetName({
+    const decomposed = generateAutomaticAssetName({
       stableSourceNamespace: "e\u0301",
       normalizedPath: "image.png",
     });

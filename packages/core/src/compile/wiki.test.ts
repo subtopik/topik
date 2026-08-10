@@ -104,23 +104,13 @@ navigation:
     }
   });
 
-  test("rejects an in-root symlinked wiki config before explicit Asset ownership", async () => {
+  test("rejects an in-root symlinked wiki config before automatic Asset discovery", async () => {
     await writeFile(
       join(dir, "wiki-source.yaml"),
       "id: tw\ntitle: Test Wiki\nnavigation:\n  - hello\n",
     );
     await symlink("wiki-source.yaml", join(dir, "wiki.yaml"));
     await writePage("hello", "# Hello\n");
-    await mkdir(join(dir, "assets"));
-    await writeFile(
-      join(dir, "assets", "config.json"),
-      `${JSON.stringify({
-        apiVersion: "v1",
-        type: "Asset",
-        name: "wiki-config",
-        spec: { uri: "wiki-source.yaml" },
-      })}\n`,
-    );
 
     await expect(compileWiki({ dir })).rejects.toThrow(/not a regular file/u);
   });

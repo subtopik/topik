@@ -61,7 +61,7 @@ describe("watch", () => {
     expect(resource).toHaveProperty("spec.content.value", "# Intro\n\nUpdated content.\n");
   }, 10_000);
 
-  test("emits the named Asset update with a refreshed payload when bytes change", async () => {
+  test("emits the automatic Asset update with a refreshed payload when bytes change", async () => {
     await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](hero.png)\n");
     await writeFile(join(dir, "hero.png"), PNG_BYTES);
     watcher = await watch({ dir, assets: { sourceNamespace: "watch-fixture" } });

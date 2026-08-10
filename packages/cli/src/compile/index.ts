@@ -25,7 +25,7 @@ import { CliError } from "../errors";
 import { formatValidationFailure } from "../validation-output";
 import {
   deriveGitSourceNamespace,
-  explicitAssetOptions,
+  sourceNamespaceOptions,
   requiresSourceNamespace,
 } from "../source-namespace";
 
@@ -55,7 +55,7 @@ export const compile = command({
       .enum("error", "warning", "off")
       .default("error"),
     sourceNamespace: string("source-namespace").desc(
-      "Stable source namespace for implicit local Assets (derived from Git when omitted)",
+      "Stable source namespace for automatically discovered local Assets (derived from Git when omitted)",
     ),
   },
   handler: async (options) => {
@@ -63,12 +63,12 @@ export const compile = command({
     const links = options.links as LinkValidationPolicy;
     const outDir = options.outDir ? resolve(options.outDir) : join(dir, ".topik", "resources");
     await assertCompilationOutputScope(dir, outDir);
-    const explicitAssets = explicitAssetOptions(options.sourceNamespace);
+    const assetOptions = sourceNamespaceOptions(options.sourceNamespace);
     let result: Awaited<ReturnType<typeof compileContent>>;
     try {
-      result = await compileContent({ dir, validation: { links }, assets: explicitAssets });
+      result = await compileContent({ dir, validation: { links }, assets: assetOptions });
     } catch (error) {
-      if (explicitAssets !== undefined || !requiresSourceNamespace(error)) throw error;
+      if (assetOptions !== undefined || !requiresSourceNamespace(error)) throw error;
       result = await compileContent({
         dir,
         validation: { links },
@@ -140,8 +140,11 @@ export async function replaceCompilationTree(
   if (target.length === 0 || target === "." || target === "..") {
     throw new CliError("Compilation output root is invalid");
   }
-  const parent = await openAnchoredOutputDirectory(dirname(absolutePath), true);
-  if (parent === undefined) throw new CliError("Compilation output parent could not be created");
+  const anchoredParent = await openAnchoredOutputDirectory(dirname(absolutePath), true);
+  if (anchoredParent === undefined) {
+    throw new CliError("Compilation output parent could not be created");
+  }
+  const { bindings: parentBindings, handle: parent } = anchoredParent;
   let existing: OwnedCompilationGeneration | undefined;
   let generation: OwnedTemporaryDirectory | undefined;
   let publishStaging: OwnedTemporaryDirectory | undefined;
@@ -179,7 +182,14 @@ export async function replaceCompilationTree(
         await assertCompilationGenerationBinding(parent, target, existing);
         await hooks.afterOutputTargetProof?.(targetPath);
         try {
-          publishReplacementPointerSync(parent, target, existing, generation, stagedPointer);
+          publishReplacementPointerSync(
+            parent,
+            target,
+            existing,
+            generation,
+            stagedPointer,
+            parentBindings,
+          );
         } catch (error) {
           if (error instanceof CliError) throw error;
           throw new CliError("Compilation output pointer could not be replaced atomically");
@@ -188,7 +198,7 @@ export async function replaceCompilationTree(
         await assertOutputTargetAbsent(targetPath);
         await hooks.afterOutputTargetProof?.(targetPath);
         try {
-          publishInitialPointerSync(targetPath, generation);
+          publishInitialPointerSync(targetPath, generation, parentBindings);
         } catch (error) {
           if (error instanceof CliError) throw error;
           throw new CliError("Compilation output pointer could not be published atomically");
@@ -226,7 +236,12 @@ export async function replaceCompilationTree(
   }
 }
 
-function publishInitialPointerSync(targetPath: string, generation: OwnedTemporaryDirectory): void {
+function publishInitialPointerSync(
+  targetPath: string,
+  generation: OwnedTemporaryDirectory,
+  parentBindings: readonly CallerVisibleDirectoryBinding[],
+): void {
+  assertCallerVisibleDirectoryBindingsSync(parentBindings);
   assertDirectoryIdentitySync(generation.path, generation.identity);
   try {
     // symlink(2) is the conditional transition: an intervening target produces EEXIST and survives.
@@ -242,10 +257,12 @@ function publishReplacementPointerSync(
   existing: OwnedCompilationGeneration,
   generation: OwnedTemporaryDirectory,
   stagedPointer: OwnedStagedPointer,
+  parentBindings: readonly CallerVisibleDirectoryBinding[],
 ): void {
   // Node does not expose an inode-conditional rename. Recheck both descriptor-backed bindings and
   // perform the single atomic rename synchronously, with no promise, callback, or event-loop yield
   // in between. The deterministic seam is before these final checks.
+  assertCallerVisibleDirectoryBindingsSync(parentBindings);
   assertDirectoryIdentitySync(generation.path, generation.identity);
   assertStagedPointerBindingSync(stagedPointer);
   assertCompilationGenerationBindingSync(parent, target, existing);
@@ -290,7 +307,12 @@ function assertStagedPointerBindingSync(staged: OwnedStagedPointer): void {
 interface OwnedTemporaryDirectory {
   path: string;
   handle: FileHandle;
-  identity: { dev: bigint; ino: bigint };
+  identity: DirectoryIdentity;
+}
+
+interface DirectoryIdentity {
+  dev: bigint;
+  ino: bigint;
 }
 
 async function createOwnedTemporaryDirectory(
@@ -507,6 +529,26 @@ function assertDirectoryIdentitySync(path: string, expected: { dev: bigint; ino:
   }
 }
 
+function assertCallerVisibleDirectoryBindingsSync(
+  bindings: readonly CallerVisibleDirectoryBinding[],
+): void {
+  for (const binding of bindings) {
+    try {
+      const actual = lstatSync(binding.path, { bigint: true });
+      if (
+        !actual.isDirectory() ||
+        actual.dev !== binding.identity.dev ||
+        actual.ino !== binding.identity.ino
+      ) {
+        throw new CliError("Compilation output parent or ancestor changed during publish");
+      }
+    } catch (error) {
+      if (error instanceof CliError) throw error;
+      throw new CliError("Compilation output parent or ancestor changed during publish");
+    }
+  }
+}
+
 async function assertCompilationOutputScope(sourceDir: string, outDir: string): Promise<void> {
   let canonicalOutput = outDir;
   try {
@@ -579,7 +621,7 @@ async function readOwnedDescriptor(
 async function openAnchoredOutputDirectory(
   absolutePath: string,
   create: boolean,
-): Promise<FileHandle | undefined> {
+): Promise<AnchoredOutputDirectory | undefined> {
   if (
     process.platform !== "linux" ||
     typeof constants.O_NOFOLLOW !== "number" ||
@@ -592,22 +634,39 @@ async function openAnchoredOutputDirectory(
     throw new CliError("Compilation output root cannot be the filesystem root");
   const components = normalized.split("/").filter(Boolean);
   let current = await open("/", constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+  const bindings: CallerVisibleDirectoryBinding[] = [];
   try {
-    for (const component of components) {
+    for (let index = 0; index < components.length; index++) {
+      const component = components[index];
       const child = await openAnchoredChildDirectory(current, component, create);
       if (child === undefined) {
         await current.close();
         return undefined;
       }
+      const stat = await child.stat({ bigint: true });
+      bindings.push({
+        path: `/${components.slice(0, index + 1).join("/")}`,
+        identity: { dev: stat.dev, ino: stat.ino },
+      });
       await current.close();
       current = child;
     }
-    return current;
+    return { bindings, handle: current };
   } catch (error) {
     await current.close().catch(() => undefined);
     if (error instanceof CliError) throw error;
     throw new CliError("Compilation output has an unsafe or unresolvable ancestor");
   }
+}
+
+interface AnchoredOutputDirectory {
+  bindings: CallerVisibleDirectoryBinding[];
+  handle: FileHandle;
+}
+
+interface CallerVisibleDirectoryBinding {
+  path: string;
+  identity: DirectoryIdentity;
 }
 
 async function openAnchoredChildDirectory(

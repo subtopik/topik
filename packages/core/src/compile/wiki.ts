@@ -10,7 +10,7 @@ import {
   type WikiPage,
   type WikiSidebarNavNode,
 } from "@topik/schema";
-import type { Resource } from "../resource";
+import type { SourceResource } from "../resource";
 import { parseWikiConfig, WIKI_PAGE_NAME_HASH_LENGTH, type WikiNavNode } from "../config/wiki";
 import { compileAssetResources, type AssetCompilationOptions } from "./assets";
 import type { CompileResourceDiscovery } from "./guide";
@@ -68,7 +68,7 @@ export async function discoverWiki(options: CompileWikiOptions): Promise<Compile
   const pagePaths = config.navigation ? [...new Set(collectPagePaths(config.navigation))] : [];
   const resolvedFiles = await Promise.all(pagePaths.map((pagePath) => readPageFile(dir, pagePath)));
 
-  const resources: Resource[] = [];
+  const resources: SourceResource[] = [];
   const diagnostics: CompileResult["diagnostics"] = [];
   const pageAnalyses: WikiPageLinkAnalysis[] = [];
   const sourcePathsByResource: Record<string, string> = {};

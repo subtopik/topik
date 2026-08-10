@@ -45,7 +45,11 @@ export function compileTopikContent(
   const shouldValidate = options.validate ?? true;
 
   if (shouldValidate) {
-    const result = validateTopikContent(content, { file: options.file, config: options.config });
+    const result = validateTopikContent(content, {
+      file: options.file,
+      config: options.config,
+      allowCompiledAssetReferences: true,
+    });
     for (const diagnostic of result.errors) options.onDiagnostic?.(diagnostic);
   }
 
@@ -89,10 +93,7 @@ export function resolveTopikAssetReferences<T>(
     const reference = attributes[attribute];
     if (typeof reference !== "string" || !reference.startsWith("asset:")) continue;
     const name = reference.slice("asset:".length);
-    if (
-      !/^(?:(?!auto-v1-)[a-z0-9]+(?:-[a-z0-9]+)*|auto-v1-[a-z2-7]{52})$/u.test(name) ||
-      name.length > 63
-    ) {
+    if (!/^auto-v1-[a-z2-7]{52}$/u.test(name)) {
       delete attributes[attribute];
       options.onDiagnostic?.({
         id: "TOPIK_ASSET_REFERENCE_MALFORMED",

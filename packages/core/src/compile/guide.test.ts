@@ -62,7 +62,7 @@ describe("compileGuides", () => {
     expect(result.payloads).toEqual([]);
   });
 
-  test("rejects an in-root symlinked collection config before implicit Asset ownership", async () => {
+  test("rejects an in-root symlinked collection config before automatic Asset discovery", async () => {
     await writeFile(join(dir, "collection-source.yaml"), "id: blog\ntitle: Blog\n");
     await symlink("collection-source.yaml", join(dir, "collection.yaml"));
     await writeGuide("config", "[Configuration](collection-source.yaml)\n");
@@ -294,7 +294,7 @@ describe("compileGuides", () => {
     expect(guide.spec).not.toHaveProperty("assets");
   });
 
-  test("shares one implicit Asset and payload across guides", async () => {
+  test("shares one automatically discovered Asset and payload across guides", async () => {
     await writeCollectionConfig("id: blog\ntitle: Blog\n");
     const png = Buffer.from(
       "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000000500010d0a2db40000000049454e44ae426082",

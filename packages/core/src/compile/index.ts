@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import type { Resource } from "../resource";
+import type { SourceResource } from "../resource";
 import { findConfigFile } from "./config";
 import { discoverWiki } from "./wiki";
 import { discoverGuides } from "./guide";
@@ -17,7 +17,6 @@ export { compileGuides } from "./guide";
 export type { CompileGuidesOptions } from "./guide";
 export {
   compileAssetResources,
-  loadAssetDescriptors,
   AssetCompilationError,
   type AssetCompilationOptions,
   type AssetCompilationResult,
@@ -45,7 +44,7 @@ export interface CompileOptions {
 
 export async function compile(options: CompileOptions): Promise<CompileResult> {
   const dir = resolve(options.dir);
-  const resources: Resource[] = [];
+  const resources: SourceResource[] = [];
   const diagnostics: CompileResult["diagnostics"] = [];
   const sourcePathsByResource: Record<string, string> = {};
   const protectedSourcePaths: string[] = [];

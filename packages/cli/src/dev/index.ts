@@ -4,7 +4,7 @@ import { command, positional, string } from "@drizzle-team/brocli";
 import { watch, type Watcher } from "@topik/core";
 import {
   deriveGitSourceNamespace,
-  explicitAssetOptions,
+  sourceNamespaceOptions,
   requiresSourceNamespace,
 } from "../source-namespace";
 
@@ -269,12 +269,12 @@ export async function startDevServer(options: {
   const allowedOrigin = normalizeAllowedOrigin(options.allowOrigin ?? DEFAULT_ALLOWED_ORIGIN);
 
   console.log(`Watching ${dir} for changes...`);
-  const explicitAssets = explicitAssetOptions(options.sourceNamespace);
+  const assetOptions = sourceNamespaceOptions(options.sourceNamespace);
   let watcher: Watcher;
   try {
-    watcher = await watch({ dir, assets: explicitAssets });
+    watcher = await watch({ dir, assets: assetOptions });
   } catch (error) {
-    if (explicitAssets !== undefined || !requiresSourceNamespace(error)) throw error;
+    if (assetOptions !== undefined || !requiresSourceNamespace(error)) throw error;
     watcher = await watch({
       dir,
       assets: { sourceNamespace: await deriveGitSourceNamespace(dir) },
@@ -357,7 +357,7 @@ export const dev = command({
       `Browser origin allowed to connect (default: ${DEFAULT_ALLOWED_ORIGIN})`,
     ),
     sourceNamespace: string("source-namespace").desc(
-      "Stable source namespace for implicit local Assets (derived from Git when omitted)",
+      "Stable source namespace for automatically discovered local Assets (derived from Git when omitted)",
     ),
   },
   handler: async (options) => {

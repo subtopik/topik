@@ -39,8 +39,7 @@ export {
   TopikJsonSyntaxError,
 } from "./json";
 export {
-  generateImplicitAssetName,
-  isExplicitAssetName,
+  generateAutomaticAssetName,
   isGeneratedAssetName,
   parseAsset,
   serializeAsset,
@@ -48,7 +47,7 @@ export {
   validateAssetUri,
   validateAssetValue,
   validateStableSourceNamespace,
-  type GenerateImplicitAssetNameOptions,
+  type GenerateAutomaticAssetNameOptions,
   type ParsedAsset,
 } from "./asset";
 export {
@@ -81,9 +80,3 @@ export {
   type TopikMaterializationResourceInput,
   type TopikMaterializationResourceV1,
 } from "./identity";
-export {
-  migrateLegacyDigestOutput,
-  type LegacyDigestMigrationResult,
-  type LegacyDigestOutputFile,
-  type MigrateLegacyDigestOutputOptions,
-} from "./migration";

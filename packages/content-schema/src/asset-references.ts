@@ -71,8 +71,6 @@ export interface TopikAssetOccurrence {
 export interface ExtractTopikAssetOccurrencesOptions {
   /** Decoded regular-file paths. Enables unambiguous generic download-link occurrences. */
   provenDownloadPaths?: ReadonlySet<string> | readonly string[];
-  /** Explicit schema/application declarations for downloadable generic-link positions. */
-  downloadableLinkPositions?: ReadonlySet<string> | readonly string[];
   /** Return generic-link candidates so a compiler can prove plain-mode downloads. */
   includeGenericLinkCandidates?: boolean;
 }
@@ -89,7 +87,6 @@ export function extractTopikAssetOccurrences(
 ): TopikAssetOccurrence[] {
   const ast = parseTopikContent(source);
   const provenDownloadPaths = toSet(options.provenDownloadPaths);
-  const downloadableLinkPositions = toSet(options.downloadableLinkPositions);
   const occurrences: TopikAssetOccurrence[] = [];
   const exactReferences = exactMarkdownReferences(source);
 
@@ -107,7 +104,6 @@ export function extractTopikAssetOccurrences(
       if (
         definition.conditional === "proven-download" &&
         options.includeGenericLinkCandidates !== true &&
-        !downloadableLinkPositions.has(position) &&
         !provenDownloadsUnambiguouslyContain(reference, provenDownloadPaths) &&
         !isCanonicalAssetReference(reference)
       ) {
@@ -136,7 +132,6 @@ export function rewriteTopikAssetOccurrences(
 ): string {
   const ast = parseTopikContent(source);
   const provenDownloadPaths = toSet(options.provenDownloadPaths);
-  const downloadableLinkPositions = toSet(options.downloadableLinkPositions);
   const exactReferences = exactMarkdownReferences(source);
 
   walk(ast, [], (node, treePath) => {
@@ -153,7 +148,6 @@ export function rewriteTopikAssetOccurrences(
       if (
         definition.conditional === "proven-download" &&
         options.includeGenericLinkCandidates !== true &&
-        !downloadableLinkPositions.has(position) &&
         !provenDownloadsUnambiguouslyContain(reference, provenDownloadPaths) &&
         !isCanonicalAssetReference(reference)
       ) {
@@ -263,8 +257,7 @@ export function validateTopikAssetReference(reference: string): TopikAssetRefere
   }
   if (reference.startsWith("asset:")) {
     const name = reference.slice("asset:".length);
-    return /^(?:(?!auto-v1-)[a-z0-9]+(?:-[a-z0-9]+)*|auto-v1-[a-z2-7]{52})$/u.test(name) &&
-      name.length <= 63
+    return /^auto-v1-[a-z2-7]{52}$/u.test(name)
       ? { valid: true, kind: "asset", name }
       : { valid: false, kind: "unsafe", failureKind: "local" };
   }

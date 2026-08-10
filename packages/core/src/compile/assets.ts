@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { readdir } from "node:fs/promises";
 import { posix } from "node:path";
 import {
   extractTopikAssetOccurrences,
@@ -8,14 +7,8 @@ import {
   type TopikAssetOccurrence,
 } from "@topik/content-schema";
 import type { Asset, CoursePage, Guide, WikiPage } from "@topik/schema";
-import { parseDocument } from "yaml";
-import type { Resource } from "../resource";
-import {
-  generateImplicitAssetName,
-  isExplicitAssetName,
-  validateAssetUri,
-  validateAssetValue,
-} from "../portable/asset";
+import type { Resource, SourceResource } from "../resource";
+import { generateAutomaticAssetName } from "../portable/asset";
 import { TOPIK_ASSET_LIMITS, TOPIK_ASSET_OUTPUT_PREFIX } from "../portable/constants";
 import { topikAssetDiagnostic, type TopikAssetDiagnostic } from "../portable/diagnostics";
 import { readPortableAssetFile } from "../portable/files";
@@ -27,7 +20,7 @@ import {
   type TopikAssetSemanticRecordV1,
   type TopikMaterializationRecordV1,
 } from "../portable/identity";
-import { parseStrictTopikJson, serializeTopikJson } from "../portable/json";
+import { serializeTopikJson } from "../portable/json";
 import {
   isInlineMediaCompatible,
   isTopikActiveMediaType,
@@ -39,26 +32,17 @@ import { validateResources, type ValidationError } from "../validate";
 export type ContentBearingResource = CoursePage | Guide | WikiPage;
 
 export interface AssetCompilationOptions {
-  /** Required only when supported implicit local references occur. */
+  /** Required only when supported local references are discovered automatically. */
   sourceNamespace?: string;
-  /** Explicit generic-link download positions, keyed by `Type/name`. */
-  downloadableLinkPositionsByResource?: Readonly<Record<string, readonly string[]>>;
-  /** Active local bytes are rejected unless every occurrence is a download and this is true. */
-  allowActiveDownloads?: boolean;
-  /** Deterministic generated-name collision seam. Production callers omit it. */
-  generatedNameHash?: (bytes: Uint8Array) => Uint8Array;
 }
 
 export interface CompileAssetResourcesInput extends AssetCompilationOptions {
   rootDir: string;
-  resources: readonly Resource[];
+  resources: readonly SourceResource[];
   /** Compilation-root-relative source paths keyed by `Type/name`. */
   sourcePathsByResource: Readonly<Record<string, string>>;
   /** Other consumed compiler inputs that cannot be owned as Asset bytes. */
   protectedSourcePaths?: readonly string[];
-  /** Additional programmatic declarations. On-disk descriptors are still discovered. */
-  assets?: readonly Asset[];
-  discoverDescriptors?: boolean;
 }
 
 export interface AssetPayload {
@@ -77,11 +61,6 @@ export interface AssetCompilationResult {
   materialization: TopikMaterializationRecordV1;
 }
 
-export interface LoadedAssetDescriptor {
-  path: string;
-  asset: Asset;
-}
-
 export class AssetCompilationError extends Error {
   constructor(
     message: string,
@@ -92,90 +71,25 @@ export class AssetCompilationError extends Error {
   }
 }
 
-/** Discover closed Asset descriptors below compilation-root `assets/` in canonical path order. */
-export async function loadAssetDescriptors(rootDir: string): Promise<LoadedAssetDescriptor[]> {
-  let entries: string[];
-  try {
-    entries = (await readdir(`${rootDir}/assets`, {
-      recursive: true,
-      encoding: "utf8",
-    })) as string[];
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw error;
-  }
-  const paths = entries
-    .filter((entry) => /\.(?:json|ya?ml)$/u.test(entry))
-    .map((entry) => `assets/${entry.replaceAll("\\", "/")}`)
-    .sort(compareUtf8);
-  const pathSet = validateTopikPathSet(paths);
-  if (!pathSet.ok)
-    throw new AssetCompilationError("Asset descriptor paths collide", pathSet.diagnostics);
-
-  const loaded: LoadedAssetDescriptor[] = [];
-  for (const path of paths) {
-    const read = await readPortableAssetFile({ root: rootDir, path });
-    if (!read.ok || read.value.bytes === undefined) {
-      throw new AssetCompilationError(
-        "Asset descriptor could not be read safely",
-        read.diagnostics,
-      );
-    }
-    if (read.value.bytes.byteLength > TOPIK_ASSET_LIMITS.maxDescriptorBytes) {
-      throw new AssetCompilationError("Asset descriptor exceeds the byte limit", [
-        topikAssetDiagnostic(
-          "TOPIK_ASSET_SCHEMA_INVALID",
-          "Asset descriptor exceeds the byte limit",
-          {
-            location: { path },
-          },
-        ),
-      ]);
-    }
-    const asset = parseDescriptor(read.value.bytes, path);
-    if (!isExplicitAssetName(asset.name)) {
-      throw new AssetCompilationError("Authored Asset uses the reserved generated-name prefix", [
-        topikAssetDiagnostic("TOPIK_ASSET_NAME_INVALID", "Authored Asset name is reserved", {
-          location: { key: asset.name, path },
-        }),
-      ]);
-    }
-    loaded.push({ path, asset });
-  }
-  return loaded;
-}
-
-/** Resolve one compilation-wide named Asset set and one deduplicated payload inventory. */
+/** Discover and resolve one compilation-wide Asset set and deduplicated payload inventory. */
 export async function compileAssetResources(
   input: CompileAssetResourcesInput,
 ): Promise<AssetCompilationResult> {
-  const descriptorResources =
-    input.discoverDescriptors === false ? [] : await loadAssetDescriptors(input.rootDir);
-  const nonAssetResources = input.resources.filter((resource) => resource.type !== "Asset");
-  const declaredAssets = [
-    ...input.resources.filter((resource): resource is Asset => resource.type === "Asset"),
-    ...(input.assets ?? []),
-    ...descriptorResources.map((descriptor) => descriptor.asset),
-  ];
-  const reservedDeclaration = declaredAssets.find((asset) => !isExplicitAssetName(asset.name));
-  if (reservedDeclaration !== undefined) {
-    throw new AssetCompilationError("Explicit Asset uses the reserved generated-name prefix", [
-      topikAssetDiagnostic("TOPIK_ASSET_NAME_INVALID", "Explicit Asset name is reserved", {
-        location: { key: reservedDeclaration.name },
-      }),
+  const receivedResources = input.resources as readonly Resource[];
+  if (receivedResources.some((resource) => resource.type === "Asset")) {
+    throw new AssetCompilationError("Asset resources are compiler output and cannot be inputs", [
+      topikAssetDiagnostic(
+        "TOPIK_ASSET_SCHEMA_INVALID",
+        "Asset resources are compiler output and cannot be inputs",
+      ),
     ]);
   }
-  if (declaredAssets.length > TOPIK_ASSET_LIMITS.maxAssets) {
-    throw new AssetCompilationError("Compilation exceeds its Asset limit");
-  }
-  const initialValidation = validateResources([...nonAssetResources, ...declaredAssets]);
+  const sourceResources = receivedResources as readonly SourceResource[];
+  const initialValidation = validateResources(sourceResources);
   if (!initialValidation.valid) {
     throw new AssetCompilationError(
       "Asset compilation received an invalid resource",
-      resourceValidationDiagnostics(initialValidation.errors, [
-        ...nonAssetResources,
-        ...declaredAssets,
-      ]),
+      resourceValidationDiagnostics(initialValidation.errors, sourceResources),
     );
   }
 
@@ -186,7 +100,7 @@ export async function compileAssetResources(
       throw new AssetCompilationError("Content source binding repeats");
     sourcePaths.set(resource, path);
   }
-  const contentResources = nonAssetResources.filter(isContentBearingResource);
+  const contentResources = sourceResources.filter(isContentBearingResource);
   const topikContentResources = contentResources.filter(isTopikContentResource);
   for (const resource of contentResources) {
     if (!sourcePaths.has(resourceKey(resource))) {
@@ -199,22 +113,9 @@ export async function compileAssetResources(
     }
   }
 
-  const assetsByName = new Map<string, Asset>();
-  for (const asset of declaredAssets) {
-    if (assetsByName.has(asset.name)) {
-      throw collision("More than one explicit Asset declaration uses the same name", asset.name);
-    }
-    assetsByName.set(asset.name, cloneAsset(asset));
-  }
-
   const readCache = new Map<string, Awaited<ReturnType<typeof requireAssetFile>>>();
-  const localPathByGeneratedName = new Map<string, string>();
+  const localPathByGeneratedName = new Map<`auto-v1-${string}`, string>();
   const replacements = new Map<string, Map<string, string>>();
-  const pendingNamedReferences: Array<{
-    resource: string;
-    occurrence: TopikAssetOccurrence;
-    name: string;
-  }> = [];
   const mappings: TopikAssetReferenceMappingV1[] = [];
   const rolesByName = new Map<string, string[]>();
   const allPaths = new Set<string>(sourcePaths.values());
@@ -224,43 +125,25 @@ export async function compileAssetResources(
     allPaths.add(path);
     protectedPaths.add(path);
   }
-  const explicitLocalPaths = new Set<string>();
-  for (const descriptor of descriptorResources) {
-    allPaths.add(descriptor.path);
-    protectedPaths.add(descriptor.path);
-  }
-  for (const asset of declaredAssets) {
-    const uri = validateAssetUri(asset.spec.uri);
-    if (!uri.ok || uri.value.kind !== "local") continue;
-    if (protectedPaths.has(uri.value.uri)) {
-      throw ambiguousReference(
-        "Explicit Asset path conflicts with a resource source",
-        uri.value.uri,
-      );
-    }
-    explicitLocalPaths.add(uri.value.uri);
-    allPaths.add(uri.value.uri);
-  }
-
   for (const resource of topikContentResources) {
     const key = resourceKey(resource);
     const sourcePath = sourcePaths.get(key) as string;
-    const explicitlyDownloadable = new Set(input.downloadableLinkPositionsByResource?.[key] ?? []);
     const resourceReplacements = new Map<string, string>();
     replacements.set(key, resourceReplacements);
     const occurrences = extractTopikAssetOccurrences(resource.spec.content.value, {
       includeGenericLinkCandidates: true,
-      downloadableLinkPositions: explicitlyDownloadable,
     });
     for (const occurrence of occurrences) {
       if (occurrence.kind === "asset") {
-        const name = occurrence.reference.slice("asset:".length);
-        pendingNamedReferences.push({ resource: key, occurrence, name });
-        continue;
+        throw referenceError(
+          "Source content cannot refer to compiler-generated Asset names",
+          occurrence,
+          sourcePath,
+        );
       }
       if (occurrence.kind === "external-https") continue;
       if (occurrence.kind === "unsafe") {
-        if (occurrence.slot === "link.href" && !explicitlyDownloadable.has(occurrence.position)) {
+        if (occurrence.slot === "link.href") {
           continue;
         }
         throw referenceError(
@@ -270,8 +153,7 @@ export async function compileAssetResources(
         );
       }
 
-      const ordinaryNavigation =
-        occurrence.slot === "link.href" && !explicitlyDownloadable.has(occurrence.position);
+      const ordinaryNavigation = occurrence.slot === "link.href";
       let normalizedPath: string;
       if (ordinaryNavigation) {
         try {
@@ -286,7 +168,7 @@ export async function compileAssetResources(
       if (protectedPaths.has(normalizedPath)) {
         if (ordinaryNavigation) continue;
         throw ambiguousReference(
-          "Local reference conflicts with a resource or explicit Asset path",
+          "Local reference conflicts with a compiler input path",
           normalizedPath,
           occurrence.position,
         );
@@ -298,7 +180,7 @@ export async function compileAssetResources(
       }
       if (input.sourceNamespace === undefined) {
         throw new AssetCompilationError(
-          "Implicit Asset references require a stable source namespace",
+          "Automatic Asset discovery requires a stable source namespace",
           [
             topikAssetDiagnostic(
               "TOPIK_ASSET_SOURCE_NAMESPACE_REQUIRED",
@@ -308,54 +190,24 @@ export async function compileAssetResources(
           ],
         );
       }
-      const generated = generateImplicitAssetName({
+      const generated = generateAutomaticAssetName({
         stableSourceNamespace: input.sourceNamespace,
         normalizedPath,
-        hash: input.generatedNameHash,
       });
       if (!generated.ok)
         throw new AssetCompilationError(
-          "Implicit Asset name could not be generated",
+          "Automatic Asset name could not be generated",
           generated.diagnostics,
         );
       const name = generated.value;
-      const previousPath = localPathByGeneratedName.get(name);
-      if (previousPath !== undefined && previousPath !== normalizedPath) {
-        throw collision("Generated Asset name collides with another normalized path", name);
-      }
-      if (assetsByName.has(name) && previousPath === undefined) {
-        throw collision("Generated Asset name conflicts with an explicit Asset", name);
-      }
-      localPathByGeneratedName.set(name, normalizedPath);
-      if (!assetsByName.has(name)) {
-        if (assetsByName.size >= TOPIK_ASSET_LIMITS.maxAssets) {
-          throw new AssetCompilationError("Compilation exceeds its Asset limit");
-        }
-        assetsByName.set(name, {
-          apiVersion: "v1",
-          type: "Asset",
-          name,
-          spec: { uri: normalizedPath },
-        });
+      registerGeneratedAssetPath(localPathByGeneratedName, name, normalizedPath);
+      if (localPathByGeneratedName.size > TOPIK_ASSET_LIMITS.maxAssets) {
+        throw new AssetCompilationError("Compilation exceeds its Asset limit");
       }
       resourceReplacements.set(occurrence.position, `asset:${name}`);
       addMapping(mappings, rolesByName, key, occurrence, name);
       allPaths.add(normalizedPath);
     }
-  }
-
-  for (const pending of pendingNamedReferences) {
-    if (!assetsByName.has(pending.name)) {
-      throw new AssetCompilationError("Canonical Asset reference has no declaration", [
-        topikAssetDiagnostic("TOPIK_ASSET_REFERENCE_MISSING", "Named Asset does not exist", {
-          location: {
-            key: pending.name,
-            contentPosition: pending.occurrence.position,
-          },
-        }),
-      ]);
-    }
-    addMapping(mappings, rolesByName, pending.resource, pending.occurrence, pending.name);
   }
 
   const completePathSet = validateTopikPathSet([...allPaths]);
@@ -368,42 +220,23 @@ export async function compileAssetResources(
     string,
     { bytes: Uint8Array; mediaType: string; names: Set<string> }
   >();
-  for (const asset of assetsByName.values()) {
-    const uri = validateAssetUri(asset.spec.uri);
-    if (!uri.ok) throw new AssetCompilationError("Asset URI is invalid", uri.diagnostics);
-    const roles = rolesByName.get(asset.name) ?? [];
-    if (uri.value.kind === "remote") {
-      if (isTopikActiveMediaType(asset.spec.mediaType ?? "")) {
-        throw activeError(asset.name, asset.spec.uri);
-      }
-      assertRoleMediaCompatibility(asset.name, asset.spec.uri, asset.spec.mediaType ?? "", roles);
-      resolvedAssets.push(cloneAsset(asset));
-      continue;
-    }
-    const file =
-      readCache.get(uri.value.uri) ?? (await requireAssetFile(input.rootDir, uri.value.uri));
-    readCache.set(uri.value.uri, file);
+  for (const [name, sourcePath] of localPathByGeneratedName) {
+    const roles = rolesByName.get(name) ?? [];
+    const file = readCache.get(sourcePath) ?? (await requireAssetFile(input.rootDir, sourcePath));
+    readCache.set(sourcePath, file);
     const digest = sha256(file.bytes);
     const integrity = `sha256:${digest}` as const;
     const mediaType = sniffPortableMediaType(file.bytes);
-    verifyExactFacts(asset, integrity, file.bytes.byteLength, mediaType);
     if (isTopikActiveMediaType(mediaType)) {
-      if (
-        !(
-          input.allowActiveDownloads === true &&
-          roles.length > 0 &&
-          roles.every((role) => role === "download")
-        )
-      ) {
-        throw activeError(asset.name, uri.value.uri);
-      }
+      throw activeError(name, sourcePath);
     }
-    assertRoleMediaCompatibility(asset.name, uri.value.uri, mediaType, roles);
-    const payloadPath = `${TOPIK_ASSET_OUTPUT_PREFIX}/${digest}`;
+    assertRoleMediaCompatibility(name, sourcePath, mediaType, roles);
+    const payloadPath = `${TOPIK_ASSET_OUTPUT_PREFIX}/${digest}` as const;
     resolvedAssets.push({
-      ...cloneAsset(asset),
+      apiVersion: "v1",
+      type: "Asset",
+      name,
       spec: {
-        ...cloneAsset(asset).spec,
         uri: payloadPath,
         integrity,
         size: file.bytes.byteLength,
@@ -415,13 +248,13 @@ export async function compileAssetResources(
       if (!equalBytes(payload.bytes, file.bytes)) {
         throw new AssetCompilationError("SHA-256 payload collision was detected");
       }
-      payload.names.add(asset.name);
+      payload.names.add(name);
     } else {
-      payloadsByDigest.set(digest, { bytes: file.bytes, mediaType, names: new Set([asset.name]) });
+      payloadsByDigest.set(digest, { bytes: file.bytes, mediaType, names: new Set([name]) });
     }
   }
 
-  const rewritten = nonAssetResources.map((resource): Resource => {
+  const rewritten = sourceResources.map((resource): Resource => {
     if (!isContentBearingResource(resource)) return resource;
     const key = resourceKey(resource);
     const byPosition = replacements.get(key);
@@ -470,6 +303,19 @@ export async function compileAssetResources(
   if (!inventory.ok)
     throw new AssetCompilationError("Compiled inventory is incomplete", inventory.diagnostics);
   return { resources, payloads, semantic, materialization };
+}
+
+/** @internal Shared with the source test suite to prove generated-name collision handling. */
+export function registerGeneratedAssetPath(
+  paths: Map<`auto-v1-${string}`, string>,
+  name: `auto-v1-${string}`,
+  normalizedPath: string,
+): void {
+  const previousPath = paths.get(name);
+  if (previousPath !== undefined && previousPath !== normalizedPath) {
+    throw collision("Generated Asset name collides with another normalized path", name);
+  }
+  paths.set(name, normalizedPath);
 }
 
 function assertRoleMediaCompatibility(
@@ -548,35 +394,6 @@ function safeResourceDescriptorVersion(
   return `${resource.type}/${resource.apiVersion === "v1" ? "v1" : "unsupported"}`;
 }
 
-function parseDescriptor(bytes: Uint8Array, path: string): Asset {
-  let source: string;
-  try {
-    source = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch {
-    throw new AssetCompilationError("Asset descriptor is not strict UTF-8");
-  }
-  let value: unknown;
-  try {
-    if (path.endsWith(".json")) {
-      value = parseStrictTopikJson(source, TOPIK_ASSET_LIMITS.maxJsonDepth);
-    } else {
-      const document = parseDocument(source, { strict: true, uniqueKeys: true });
-      if (document.errors.length > 0 || document.contents === null) throw new Error("Invalid YAML");
-      value = document.toJS({ maxAliasCount: 0 });
-    }
-  } catch {
-    throw new AssetCompilationError("Asset descriptor has invalid or duplicate syntax", [
-      topikAssetDiagnostic("TOPIK_ASSET_DUPLICATE_MEMBER", "Asset descriptor syntax is invalid", {
-        location: { path },
-      }),
-    ]);
-  }
-  const validation = validateAssetValue(value);
-  if (!validation.ok)
-    throw new AssetCompilationError("Asset descriptor is invalid", validation.diagnostics);
-  return validation.value;
-}
-
 async function requireAssetFile(root: string, path: string) {
   const read = await readPortableAssetFile({ root, path });
   if (!read.ok || read.value.bytes === undefined) {
@@ -594,40 +411,6 @@ function resolveOccurrencePath(sourcePath: string, reference: string): string {
   }
   const joined = posix.join(posix.dirname(sourcePath), validation.decodedPath);
   return requirePath(joined, "Resolved Asset path is outside the compilation root");
-}
-
-function verifyExactFacts(
-  asset: Asset,
-  integrity: `sha256:${string}`,
-  size: number,
-  mediaType: string,
-): void {
-  const checks: Array<[boolean, Parameters<typeof topikAssetDiagnostic>[0], string]> = [
-    [
-      asset.spec.integrity === undefined || asset.spec.integrity === integrity,
-      "TOPIK_ASSET_DIGEST_MISMATCH",
-      "Provided integrity differs from local bytes",
-    ],
-    [
-      asset.spec.size === undefined || asset.spec.size === size,
-      "TOPIK_ASSET_SIZE_MISMATCH",
-      "Provided size differs from local bytes",
-    ],
-    [
-      asset.spec.mediaType === undefined || asset.spec.mediaType === mediaType,
-      "TOPIK_ASSET_MEDIA_TYPE_MISMATCH",
-      "Provided media type differs from local bytes",
-    ],
-  ];
-  const failed = checks.find(([ok]) => !ok);
-  if (failed !== undefined) {
-    throw new AssetCompilationError("Local Asset exact facts do not match", [
-      topikAssetDiagnostic(failed[1], failed[2], {
-        location: { key: asset.name, path: asset.spec.uri },
-        recovery: "verify-bytes",
-      }),
-    ]);
-  }
 }
 
 function addMapping(
@@ -680,10 +463,6 @@ function requirePath(path: string, message: string): string {
 
 function resourceKey(resource: { type: string; name: string }): string {
   return `${resource.type}/${resource.name}`;
-}
-
-function cloneAsset(asset: Asset): Asset {
-  return structuredClone(asset);
 }
 
 function collision(message: string, name: string): AssetCompilationError {

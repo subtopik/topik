@@ -21,7 +21,6 @@ export const TOPIK_ASSET_DIAGNOSTIC_IDS = [
   "TOPIK_ASSET_REFERENCE_ACCESSIBILITY_INVALID",
   "TOPIK_EXTERNAL_REFERENCE_UNSAFE",
   "TOPIK_ASSET_INVENTORY_INCOMPLETE",
-  "TOPIK_ASSET_MIGRATION_INVALID",
   "TOPIK_ASSET_VERSION_INCOMPARABLE",
 ] as const;
 
@@ -48,12 +47,8 @@ export type TopikAssetPathDiagnosticReason =
 export type TopikAssetRecoveryCategory =
   | "upgrade-reader"
   | "repair-source"
-  | "canonicalize-explicitly"
   | "restore-file"
   | "verify-bytes"
-  | "choose-explicit-mapping"
-  | "establish-baseline"
-  | "revalidate-or-migrate"
   | "preserve-read-only";
 
 export interface TopikAssetDiagnosticLocation {
@@ -164,9 +159,7 @@ function sanitizeDescriptorVersion(value: string): string {
 }
 
 function sanitizeKey(value: string): string {
-  return /^(?:[a-z0-9]+(?:-[a-z0-9]+)*|auto-v1-[a-z2-7]{52}|[0-9a-f]{16})$/u.test(value)
-    ? value
-    : "[redacted]";
+  return /^(?:[a-z0-9]+(?:-[a-z0-9]+)*|auto-v1-[a-z2-7]{52})$/u.test(value) ? value : "[redacted]";
 }
 
 function sanitizeCommit(value: string): string {

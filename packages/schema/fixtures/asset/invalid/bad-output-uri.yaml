@@ -1,8 +1,8 @@
 apiVersion: v1
 type: Asset
-name: remote-manual
+name: auto-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 spec:
-  uri: https://cdn.example.com/revisions/manual-7.pdf
+  uri: files/manual.pdf
   integrity: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
   size: 48123
   mediaType: application/pdf

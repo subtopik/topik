@@ -19,7 +19,7 @@ export function requiresSourceNamespace(error: unknown): error is AssetCompilati
   );
 }
 
-export function explicitAssetOptions(
+export function sourceNamespaceOptions(
   value: string | undefined,
 ): AssetCompilationOptions | undefined {
   if (value === undefined) return undefined;
@@ -28,7 +28,7 @@ export function explicitAssetOptions(
   return { sourceNamespace: validation.value };
 }
 
-/** Derive only after compilation proves an implicit Asset actually needs a namespace. */
+/** Derive only after automatic discovery proves that an Asset needs a namespace. */
 export async function deriveGitSourceNamespace(dir: string): Promise<string> {
   let worktree: string;
   let remotes: string[];
@@ -109,6 +109,6 @@ async function git(dir: string, args: string[]): Promise<string> {
 
 function namespaceRequired(): CliError {
   return new CliError(
-    "Implicit local Assets require --source-namespace because no stable Git remote identity could be derived",
+    "Automatic local Assets require --source-namespace because no stable Git remote identity could be derived",
   );
 }

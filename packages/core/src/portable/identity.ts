@@ -234,7 +234,7 @@ function expectedMaterializationRecord(
   }
   const payloads = new Map<string, TopikMaterializationPayloadV1>();
   for (const resource of resources) {
-    if (resource.type !== "Asset" || resource.spec.uri.startsWith("https://")) continue;
+    if (resource.type !== "Asset") continue;
     const { integrity, size, uri } = resource.spec;
     if (
       integrity === undefined ||
@@ -276,7 +276,7 @@ function materializationFailure(
       topikAssetDiagnostic(id, message, {
         consequence: "block-identity-and-writes",
         descriptorVersion,
-        recovery: "revalidate-or-migrate",
+        recovery: "upgrade-reader",
       }),
     ],
   };
@@ -324,8 +324,8 @@ export function compareTopikAssetIdentities(
       diagnostics: [
         topikAssetDiagnostic(
           "TOPIK_ASSET_VERSION_INCOMPARABLE",
-          "Identity descriptors differ without an explicit migration",
-          { consequence: "block-identity-and-writes", recovery: "revalidate-or-migrate" },
+          "Identity descriptor versions differ",
+          { consequence: "block-identity-and-writes", recovery: "upgrade-reader" },
         ),
       ],
     };

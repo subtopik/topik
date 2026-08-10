@@ -1,5 +1,0 @@
-apiVersion: v1
-type: Asset
-name: company-logo
-spec:
-  uri: images/logo.png

@@ -1,6 +1,0 @@
-apiVersion: v1
-type: Asset
-name: bad-media
-spec:
-  uri: file.bin
-  mediaType: Image/PNG

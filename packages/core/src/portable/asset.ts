@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import Ajv2020 from "ajv/dist/2020.js";
 import type { ErrorObject } from "ajv";
 import { assetV1Schema, type Asset } from "@topik/schema";
-import spdxExpressionParse from "spdx-expression-parse";
 import {
   ASSET_API_VERSION,
   ASSET_TYPE,
@@ -25,7 +24,6 @@ import { validateTopikPath } from "./path";
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
 const GENERATED_NAME = /^auto-v1-[a-z2-7]{52}$/u;
-const EXPLICIT_NAME = /^(?!auto-v1-)[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 const FORBIDDEN_TEXT =
   /[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Default_Ignorable_Code_Point}\p{Bidi_Control}\p{Noncharacter_Code_Point}]/u;
 
@@ -35,13 +33,6 @@ const ajv = new Ajv2020({
   allErrors: true,
   ownProperties: true,
 });
-ajv.addFormat("topik-asset-uri-v1", {
-  type: "string",
-  validate: (value: string) => validateAssetUri(value).ok,
-});
-ajv.addFormat("topik-plain-text-v1", { type: "string", validate: validateTopikPlainText });
-ajv.addFormat("topik-https-url-v1", { type: "string", validate: validatePortableHttpsUri });
-ajv.addFormat("spdx-expression-2.3", { type: "string", validate: validateSpdxExpression });
 const validateSchema = ajv.compile(assetV1Schema);
 
 export interface ParsedAsset {
@@ -97,7 +88,7 @@ export function parseAsset(input: string | Uint8Array): TopikAssetResult<ParsedA
       diagnostics: [
         topikAssetDiagnostic("TOPIK_ASSET_NON_CANONICAL", "Asset bytes are not canonical JSON", {
           location: { jsonPointer: "/" },
-          recovery: "canonicalize-explicitly",
+          recovery: "repair-source",
           consequence: "block-identity-and-writes",
         }),
       ],
@@ -164,28 +155,25 @@ export function serializeAsset(value: unknown): TopikAssetResult<Uint8Array> {
 
 export function validateAssetUri(
   value: string,
-): TopikAssetResult<{ kind: "local" | "remote"; uri: string }> {
-  if (value.startsWith("https://")) {
-    if (!validatePortableHttpsUri(value)) {
-      return failure(
-        "TOPIK_EXTERNAL_REFERENCE_UNSAFE",
-        "Remote Asset URI is not immutable and credential-free",
-        "/spec/uri",
-      );
-    }
-    return { ok: true, value: { kind: "remote", uri: value }, diagnostics: [] };
-  }
+): TopikAssetResult<{ uri: `assets/sha256/${string}` }> {
   const local = validateTopikPath(value);
   if (!local.ok) return { ok: false, diagnostics: local.diagnostics };
-  return { ok: true, value: { kind: "local", uri: local.value.path }, diagnostics: [] };
+  if (!/^assets\/sha256\/[0-9a-f]{64}$/u.test(local.value.path)) {
+    return failure(
+      "TOPIK_ASSET_SCHEMA_INVALID",
+      "Asset URI must identify a compiler-materialized payload",
+      "/spec/uri",
+    );
+  }
+  return {
+    ok: true,
+    value: { uri: local.value.path as `assets/sha256/${string}` },
+    diagnostics: [],
+  };
 }
 
 export function isGeneratedAssetName(value: string): boolean {
   return GENERATED_NAME.test(value);
-}
-
-export function isExplicitAssetName(value: string): boolean {
-  return value.length <= 63 && EXPLICIT_NAME.test(value);
 }
 
 export function validateStableSourceNamespace(value: string): TopikAssetResult<string> {
@@ -200,18 +188,16 @@ export function validateStableSourceNamespace(value: string): TopikAssetResult<s
   return { ok: true, value: normalized, diagnostics: [] };
 }
 
-export interface GenerateImplicitAssetNameOptions {
+export interface GenerateAutomaticAssetNameOptions {
   stableSourceNamespace: string;
   normalizedPath: string;
-  /** Deterministic collision seam. Production callers omit it. */
-  hash?: (bytes: Uint8Array) => Uint8Array;
 }
 
-export function generateImplicitAssetName(
-  options: GenerateImplicitAssetNameOptions,
-): TopikAssetResult<string> {
+export function generateAutomaticAssetName(
+  options: GenerateAutomaticAssetNameOptions,
+): TopikAssetResult<`auto-v1-${string}`> {
   const namespace = validateStableSourceNamespace(options.stableSourceNamespace);
-  if (!namespace.ok) return namespace;
+  if (!namespace.ok) return { ok: false, diagnostics: namespace.diagnostics };
   const path = validateTopikPath(options.normalizedPath);
   if (!path.ok) return { ok: false, diagnostics: path.diagnostics };
   const input = new Uint8Array(
@@ -222,9 +208,7 @@ export function generateImplicitAssetName(
   input.set(namespaceBytes, 0);
   input[namespaceBytes.byteLength] = 0;
   input.set(pathBytes, namespaceBytes.byteLength + 1);
-  const digest = options.hash?.(input) ?? createHash("sha256").update(input).digest();
-  if (digest.byteLength !== 32)
-    throw new TypeError("Implicit Asset name hash must return 32 bytes");
+  const digest = createHash("sha256").update(input).digest();
   return {
     ok: true,
     value: `auto-v1-${base32(digest)}`,
@@ -234,41 +218,6 @@ export function generateImplicitAssetName(
 
 export function topikAssetNameDescriptor(): { id: typeof TOPIK_ASSET_NAME_VERSION } {
   return { id: TOPIK_ASSET_NAME_VERSION };
-}
-
-function validatePortableHttpsUri(value: string): boolean {
-  if (
-    FORBIDDEN_TEXT.test(value) ||
-    /(?:x-amz-|x-goog-|signature|signed|token|expires)/iu.test(value)
-  ) {
-    return false;
-  }
-  try {
-    const url = new URL(value);
-    return (
-      url.protocol === "https:" &&
-      url.username === "" &&
-      url.password === "" &&
-      url.search === "" &&
-      url.hash === "" &&
-      url.hostname.length > 0 &&
-      url.toString() === value
-    );
-  } catch {
-    return false;
-  }
-}
-
-function validateTopikPlainText(value: string): boolean {
-  return value.normalize("NFC") === value && !FORBIDDEN_TEXT.test(value) && value.trim() === value;
-}
-
-function validateSpdxExpression(value: string): boolean {
-  try {
-    return spdxExpressionParse(value) !== null;
-  } catch {
-    return false;
-  }
 }
 
 function schemaDiagnostic(error: ErrorObject): TopikAssetDiagnostic {

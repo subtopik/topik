@@ -10,10 +10,11 @@ import { serializeTopikJson } from "./json";
 
 const bytes = new TextEncoder().encode("payload\n");
 const integrity = "sha256:d4e4877bac978b7952f0d544fc52ebff5411d351d129f1f056fa43f11da9af2b";
+const assetName = `auto-v1-${"a".repeat(52)}` as const;
 const asset: Asset = {
   apiVersion: "v1",
   type: "Asset",
-  name: "manual",
+  name: assetName,
   spec: {
     uri: "assets/sha256/d4e4877bac978b7952f0d544fc52ebff5411d351d129f1f056fa43f11da9af2b",
     integrity,
@@ -28,7 +29,7 @@ const guide: Guide = {
   spec: {
     title: "Guide",
     slug: "guide",
-    content: { format: "topik", value: "[Manual](asset:manual)\n" },
+    content: { format: "topik", value: `[Manual](asset:${assetName})\n` },
   },
 };
 const resources: Resource[] = [asset, guide];
@@ -56,7 +57,10 @@ describe("exact Asset materialization inventory", () => {
     const complete = completeRecord();
     expect(validateTopikMaterializationRecord(complete, resources)).toMatchObject({ ok: true });
     expect(complete.resources).toEqual([
-      expect.objectContaining({ resource: "Asset/manual", path: "Asset/manual.json" }),
+      expect.objectContaining({
+        resource: `Asset/${assetName}`,
+        path: `Asset/${assetName}.json`,
+      }),
       expect.objectContaining({ resource: "Guide/guide", path: "Guide/guide.json" }),
     ]);
 
@@ -151,7 +155,7 @@ describe("exact Asset materialization inventory", () => {
   test("rejects corrupt descriptor and payload facts", () => {
     const corruptions: Array<(record: ReturnType<typeof mutableRecord>) => void> = [
       (record) => {
-        record.resources[0].path = "../Asset/manual.json";
+        record.resources[0].path = `../Asset/${assetName}.json`;
       },
       (record) => {
         record.resources[0].size++;

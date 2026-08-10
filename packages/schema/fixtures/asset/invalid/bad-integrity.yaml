@@ -1,6 +1,0 @@
-apiVersion: v1
-type: Asset
-name: bad-integrity
-spec:
-  uri: file.bin
-  integrity: sha256-abc

@@ -2,7 +2,7 @@ import { readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { analyzeTopikContent, validateTopikContent } from "@topik/content-schema";
 import type { Guide } from "@topik/schema";
-import type { Resource } from "../resource";
+import type { SourceResource } from "../resource";
 import { parseCollectionConfig } from "../config/collection";
 import { compileAssetResources, type AssetCompilationOptions } from "./assets";
 import { readOptionalConfigFileWithPath } from "./config";
@@ -30,7 +30,7 @@ export interface CompileGuidesOptions {
 
 export interface CompileResourceDiscovery {
   diagnostics: CompileResult["diagnostics"];
-  resources: Resource[];
+  resources: SourceResource[];
   sourcePathsByResource: Record<string, string>;
   consumedSourcePaths: string[];
 }
@@ -73,7 +73,7 @@ export async function discoverGuides(
   const files = await readdir(dir);
   const markdownFiles = files.filter((f) => f.endsWith(".md") || f.endsWith(".mdx")).sort();
 
-  const resources: Resource[] = [];
+  const resources: SourceResource[] = [];
   const diagnostics: CompileResult["diagnostics"] = [];
   const sourcePathsByResource: Record<string, string> = {};
 

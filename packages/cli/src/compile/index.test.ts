@@ -15,7 +15,6 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
-import { TOPIK_ASSET_LIMITS } from "@topik/core";
 import { compile, replaceCompilationTree } from "./index";
 
 const PNG_BYTES = Buffer.from(
@@ -63,62 +62,6 @@ describe("compile command", () => {
     });
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/^Asset\/auto-v1-[a-z2-7]{52}\.json$/u));
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/^assets\/sha256\/[0-9a-f]{64}$/u));
-  });
-
-  test("discovers explicit descriptors without requiring a source namespace", async () => {
-    await mkdir(join(dir, "assets"));
-    await writeFile(join(dir, "manual.bin"), "manual bytes\n");
-    await writeFile(
-      join(dir, "assets", "manual.yaml"),
-      "apiVersion: v1\ntype: Asset\nname: manual\nspec:\n  uri: manual.bin\n",
-    );
-    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
-
-    await (compile as CompileCommand).handler?.({
-      dir,
-      format: "json",
-      dryRun: true,
-      validate: true,
-      links: "error",
-    });
-
-    expect(log).toHaveBeenCalledWith("Asset/manual.json");
-    expect(log).toHaveBeenCalledWith(expect.stringMatching(/^assets\/sha256\/[0-9a-f]{64}$/u));
-  });
-
-  test("enforces the remote Asset size ceiling through the CLI", async () => {
-    await mkdir(join(dir, "assets"));
-    const descriptorPath = join(dir, "assets", "remote.json");
-    const descriptor = (size: number) =>
-      `${JSON.stringify({
-        apiVersion: "v1",
-        type: "Asset",
-        name: "remote-manual",
-        spec: {
-          uri: "https://cdn.example.com/revisions/manual.pdf",
-          integrity: `sha256:${"0".repeat(64)}`,
-          size,
-          mediaType: "application/pdf",
-        },
-      })}\n`;
-    const options = {
-      dir,
-      format: "json" as const,
-      dryRun: true,
-      validate: true,
-      links: "error" as const,
-    };
-
-    await writeFile(descriptorPath, descriptor(TOPIK_ASSET_LIMITS.maxAssetBytes));
-    vi.spyOn(console, "log").mockImplementation(() => undefined);
-    await expect((compile as CompileCommand).handler?.(options)).resolves.toBeUndefined();
-
-    await writeFile(descriptorPath, descriptor(TOPIK_ASSET_LIMITS.maxAssetBytes + 1));
-    await expect((compile as CompileCommand).handler?.(options)).rejects.toMatchObject({
-      diagnostics: expect.arrayContaining([
-        expect.objectContaining({ id: "TOPIK_ASSET_SIZE_MISMATCH" }),
-      ]),
-    });
   });
 
   test("uses the same generated identity for canonically equivalent CLI namespaces", async () => {
@@ -325,10 +268,10 @@ describe("compile command", () => {
     }
   });
 
-  test("fails visibly instead of non-atomically replacing a legacy real directory", async () => {
-    const outDir = join(dir, "legacy-owned");
+  test("fails visibly instead of non-atomically replacing a real directory", async () => {
+    const outDir = join(dir, "directory-output");
     await mkdir(join(outDir, ".topik"), { recursive: true });
-    for (const file of ownedFiles("legacy")) {
+    for (const file of ownedFiles("existing")) {
       await mkdir(dirname(join(outDir, file.path)), { recursive: true });
       await writeFile(join(outDir, file.path), file.bytes);
     }
@@ -337,7 +280,7 @@ describe("compile command", () => {
       /cannot be replaced atomically/u,
     );
     expect((await lstat(outDir)).isDirectory()).toBe(true);
-    expect(await readFile(join(outDir, "generation.txt"), "utf8")).toBe("legacy");
+    expect(await readFile(join(outDir, "generation.txt"), "utf8")).toBe("existing");
   });
 
   test("publishes through one atomic pointer rename and keeps a complete generation on failures", async () => {
@@ -593,6 +536,63 @@ describe("compile command", () => {
             .map((file) => file.path)
             .sort(),
         );
+      }
+    },
+  );
+
+  test.each([
+    ["initial", "parent", "directory"],
+    ["initial", "parent", "symlink"],
+    ["initial", "ancestor", "directory"],
+    ["initial", "ancestor", "symlink"],
+    ["replacement", "parent", "directory"],
+    ["replacement", "parent", "symlink"],
+    ["replacement", "ancestor", "directory"],
+    ["replacement", "ancestor", "symlink"],
+  ] as const)(
+    "rejects %s publication after the output %s is displaced by a %s newcomer",
+    async (mode, displacedLevel, newcomerKind) => {
+      const root = join(dir, `caller-binding-${mode}-${displacedLevel}-${newcomerKind}`);
+      const parentPath = displacedLevel === "parent" ? root : join(root, "nested");
+      const outDir = join(parentPath, "output");
+      const bindingPath = displacedLevel === "parent" ? parentPath : root;
+      const displaced = join(
+        dir,
+        `displaced-caller-binding-${mode}-${displacedLevel}-${newcomerKind}`,
+      );
+      const newcomerTarget = join(
+        dir,
+        `newcomer-caller-binding-${mode}-${displacedLevel}-${newcomerKind}`,
+      );
+      await mkdir(parentPath, { recursive: true });
+      if (mode === "replacement") await replaceCompilationTree(outDir, ownedFiles("old"));
+
+      await expect(
+        replaceCompilationTree(outDir, ownedFiles("new"), {
+          afterOutputTargetProof: async () => {
+            await rename(bindingPath, displaced);
+            const newcomerRoot = newcomerKind === "directory" ? bindingPath : newcomerTarget;
+            await mkdir(displacedLevel === "parent" ? newcomerRoot : join(newcomerRoot, "nested"), {
+              recursive: true,
+            });
+            await writeFile(join(newcomerRoot, "author.txt"), "preserve me");
+            if (newcomerKind === "symlink") await symlink(newcomerTarget, bindingPath, "dir");
+          },
+        }),
+      ).rejects.toThrow(/parent or ancestor changed/u);
+
+      expect(await readFile(join(bindingPath, "author.txt"), "utf8")).toBe("preserve me");
+      if (newcomerKind === "symlink") expect(await readlink(bindingPath)).toBe(newcomerTarget);
+      await expect(lstat(outDir)).rejects.toMatchObject({ code: "ENOENT" });
+
+      const displacedOut =
+        displacedLevel === "parent"
+          ? join(displaced, "output")
+          : join(displaced, "nested", "output");
+      if (mode === "replacement") {
+        expect(await readFile(join(displacedOut, "generation.txt"), "utf8")).toBe("old");
+      } else {
+        await expect(lstat(displacedOut)).rejects.toMatchObject({ code: "ENOENT" });
       }
     },
   );

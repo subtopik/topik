@@ -135,7 +135,8 @@ describe("TopikContent", () => {
   });
 
   it("never emits named Asset URLs from default or custom navigation-only cards", () => {
-    const content = '{% card title="Asset" href="asset:company-logo" /%}';
+    const reference = `asset:auto-v1-${"a".repeat(52)}`;
+    const content = `{% card title="Asset" href="${reference}" /%}`;
     const diagnostics: string[] = [];
     const defaultHtml = renderToStaticMarkup(
       <TopikContent
@@ -154,10 +155,10 @@ describe("TopikContent", () => {
       />,
     );
     expect(diagnostics).toContain("link-asset-navigation-unsupported");
-    expect(defaultHtml).not.toContain("asset:company-logo");
+    expect(defaultHtml).not.toContain(reference);
     expect(defaultHtml).not.toContain("href=");
     expect(customHtml).toContain("No target");
-    expect(customHtml).not.toContain("asset:company-logo");
+    expect(customHtml).not.toContain(reference);
     expect(customHtml).not.toContain("href=");
   });
 

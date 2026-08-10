@@ -1,12 +1,5 @@
 export { personSchema, type Person } from "./person";
-export {
-  assetSchema,
-  assetV1Schema,
-  type Asset,
-  type AssetAttribution,
-  type AssetLicense,
-  type AssetSpec,
-} from "./asset";
+export { assetSchema, assetV1Schema, type Asset, type AssetSpec } from "./asset";
 export { guideSchema, type Guide } from "./guide";
 export {
   WIKI_EXTERNAL_HREF_PATTERN,

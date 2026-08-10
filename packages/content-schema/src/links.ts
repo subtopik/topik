@@ -102,11 +102,9 @@ export function validateTopikHref(value: unknown): ValidationError[] {
   const explicitScheme = SCHEME.exec(value)?.[1].toLowerCase();
 
   if (explicitScheme === "asset") {
-    return /^(?:(?!auto-v1-)[a-z0-9]+(?:-[a-z0-9]+)*|auto-v1-[a-z2-7]{52})$/u.test(
-      value.slice("asset:".length),
-    ) && value.length <= "asset:".length + 63
+    return /^auto-v1-[a-z2-7]{52}$/u.test(value.slice("asset:".length))
       ? []
-      : [linkError("link-asset-invalid", "Asset link must use a valid Asset name.")];
+      : [linkError("link-asset-invalid", "Asset link must use a generated Asset name.")];
   }
 
   try {

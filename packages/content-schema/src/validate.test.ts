@@ -181,16 +181,27 @@ graph TD;
     ).toMatchObject({ valid: true, errors: [] });
   });
 
-  test("rejects named Asset references in navigation-only card hrefs", () => {
+  test("rejects Asset references in authoring input and permits generated names for output consumers", () => {
+    const generated = `auto-v1-${"a".repeat(52)}`;
     expect(
-      validateTopikContent('{% card title="Asset" href="asset:company-logo" /%}'),
+      validateTopikContent(`{% card title="Asset" href="asset:${generated}" /%}`),
     ).toMatchObject({
       valid: false,
       errors: expect.arrayContaining([
         expect.objectContaining({ id: "link-asset-navigation-unsupported" }),
       ]),
     });
-    expect(validateTopikContent("[Download](asset:company-logo)\n")).toMatchObject({
+    expect(validateTopikContent(`![Compiled](asset:${generated})\n`)).toMatchObject({
+      valid: false,
+      errors: expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_ASSET_REFERENCE_MALFORMED" }),
+      ]),
+    });
+    expect(
+      validateTopikContent(`![Compiled](asset:${generated})\n`, {
+        allowCompiledAssetReferences: true,
+      }),
+    ).toMatchObject({
       valid: true,
       errors: [],
     });

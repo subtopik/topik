@@ -88,14 +88,15 @@ Because it is correct.
 
 describe("content-react core", () => {
   it("resolves names in declared slots during server rendering", () => {
+    const assetNames = ["a", "b", "c", "d"].map((character) => `auto-v1-${character.repeat(52)}`);
     const names: string[] = [];
     const html = renderToStaticMarkup(
       <>
         {renderTopikMarkdown(
           [
-            "![Logo](asset:company-logo)",
-            '{% figure src="asset:figure-light" darkSrc="asset:figure-dark" alt="Figure" /%}',
-            "[Download](asset:manual)",
+            `![Logo](asset:${assetNames[0]})`,
+            `{% figure src="asset:${assetNames[1]}" darkSrc="asset:${assetNames[2]}" alt="Figure" /%}`,
+            `[Download](asset:${assetNames[3]})`,
           ].join("\n\n"),
           {
             components: {
@@ -117,11 +118,11 @@ describe("content-react core", () => {
       </>,
     );
 
-    expect(names).toEqual(["company-logo", "figure-light", "figure-dark", "manual"]);
-    expect(html).toContain('src="/compiled/company-logo"');
-    expect(html).toContain('src="/compiled/figure-light"');
-    expect(html).toContain('srcSet="/compiled/figure-dark"');
-    expect(html).toContain('href="/compiled/manual"');
+    expect(names).toEqual(assetNames);
+    expect(html).toContain(`src="/compiled/${assetNames[0]}"`);
+    expect(html).toContain(`src="/compiled/${assetNames[1]}"`);
+    expect(html).toContain(`srcSet="/compiled/${assetNames[2]}"`);
+    expect(html).toContain(`href="/compiled/${assetNames[3]}"`);
     expect(html).not.toContain("asset:");
   });
 
@@ -139,10 +140,11 @@ describe("content-react core", () => {
   });
 
   it("fails closed for an unresolved named Asset", () => {
+    const name = `auto-v1-${"a".repeat(52)}`;
     const diagnostics: string[] = [];
     const html = renderToStaticMarkup(
       <>
-        {renderTopikMarkdown("![Logo](asset:missing)", {
+        {renderTopikMarkdown(`![Logo](asset:${name})`, {
           resolveAsset: () => undefined,
           onAssetDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id),
         })}

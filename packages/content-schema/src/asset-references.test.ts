@@ -83,12 +83,11 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
     });
   });
 
-  test("accepts exact named references and rejects malformed reserved generated names", () => {
+  test("accepts only exact compiler-generated references", () => {
     const generated = `auto-v1-${"a".repeat(52)}`;
-    expect(validateTopikAssetReference("asset:company-logo")).toEqual({
-      valid: true,
-      kind: "asset",
-      name: "company-logo",
+    expect(validateTopikAssetReference("asset:company-logo")).toMatchObject({
+      valid: false,
+      kind: "unsafe",
     });
     expect(validateTopikAssetReference(`asset:${generated}`)).toEqual({
       valid: true,
@@ -346,7 +345,7 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
     ).toMatchObject([{ reference: "good.png", kind: "local" }]);
   });
 
-  test("classifies generic links only through an explicit declaration or proven file path", () => {
+  test("classifies generic links only after a compiler proves the file path", () => {
     const source = '[download](files/manual.bin)\n\n{% card title="X" href="files/hidden.bin" /%}';
     expect(extractTopikAssetOccurrences(source)).toHaveLength(0);
     expect(

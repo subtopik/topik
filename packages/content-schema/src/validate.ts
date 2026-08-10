@@ -9,6 +9,8 @@ export interface ValidateTopikContentOptions {
   file?: string;
   /** Additional Markdoc config to merge after the Topik defaults. */
   config?: Config;
+  /** Permit compiler-produced `asset:auto-v1-*` references at an output-consumer boundary. */
+  allowCompiledAssetReferences?: boolean;
 }
 
 export interface ValidateTopikContentResult {
@@ -27,22 +29,31 @@ export function validateTopikContent(
     ...markdocErrors.map(toTopikContentDiagnostic),
     ...extractTopikAssetOccurrences(source).flatMap((occurrence): TopikContentDiagnostic[] => {
       const validation = validateTopikAssetReference(occurrence.reference);
-      if (validation.valid && occurrence.kind !== "unsafe") return [];
-      const malformedName = occurrence.reference.startsWith("asset:");
+      const compiledAsset = validation.valid && validation.kind === "asset";
+      if (
+        validation.valid &&
+        occurrence.kind !== "unsafe" &&
+        (!compiledAsset || options.allowCompiledAssetReferences === true)
+      ) {
+        return [];
+      }
+      const namedReference = occurrence.reference.startsWith("asset:");
       const external = validation.valid
         ? validation.kind === "external-https"
         : validation.failureKind === "external";
       return [
         {
-          id: malformedName
+          id: namedReference
             ? "TOPIK_ASSET_REFERENCE_MALFORMED"
             : external
               ? "TOPIK_EXTERNAL_REFERENCE_UNSAFE"
               : "TOPIK_ASSET_PATH_INVALID",
           type: occurrence.slot,
           level: "error",
-          message: malformedName
-            ? "Named Asset reference has an invalid name"
+          message: namedReference
+            ? compiledAsset
+              ? "Compiler-generated Asset references are not valid authoring input"
+              : "Asset reference has an invalid generated name"
             : external
               ? "Asset reference requires credential-free HTTPS"
               : "Local asset reference is not canonical topik-asset-reference-v1",

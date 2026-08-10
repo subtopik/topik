@@ -262,6 +262,23 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
     },
   );
 
+  test.each(["before", "after"])(
+    "retains effective link destinations when exact pairing is unavailable %s a parser node",
+    (placement) => {
+      const unavailable = "[Unavailable][id]";
+      const parsed = "[Download](https://example.com/file.pdf)";
+      const paragraph =
+        placement === "before" ? `${unavailable} ${parsed}` : `${parsed} ${unavailable}`;
+      const source = `${paragraph}\n\n> [id]: https://example.com/file.pdf`;
+      expect(
+        extractTopikAssetOccurrences(source, { includeGenericLinkCandidates: true }),
+      ).toMatchObject([
+        { reference: "", parsedReference: "https://example.com/file.pdf", kind: "unsafe" },
+        { reference: "", parsedReference: "https://example.com/file.pdf", kind: "unsafe" },
+      ]);
+    },
+  );
+
   test("keeps canonical destinations behind balanced nested labels", () => {
     const source = [
       "![Inline [canonical]](%C3%A9.png)",

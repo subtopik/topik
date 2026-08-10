@@ -187,20 +187,27 @@ async function compileAssetResourcesWithReader(
       }
       if (occurrence.kind === "external-https") continue;
       if (occurrence.kind === "unsafe") {
+        const parsedValidation = validateTopikAssetReference(occurrence.parsedReference);
+        if (
+          !parsedValidation.valid &&
+          parsedValidation.failureKind === "external" &&
+          /^https?:/iu.test(occurrence.parsedReference)
+        ) {
+          throw referenceError(
+            "Asset-capable slot contains an unsafe reference",
+            occurrence,
+            sourcePath,
+            occurrence.parsedReference,
+          );
+        }
+        if (
+          occurrence.reference.length === 0 &&
+          parsedValidation.valid &&
+          parsedValidation.kind === "external-https"
+        ) {
+          continue;
+        }
         if (occurrence.slot === "link.href") {
-          const parsedValidation = validateTopikAssetReference(occurrence.parsedReference);
-          if (
-            !parsedValidation.valid &&
-            parsedValidation.failureKind === "external" &&
-            /^https?:/iu.test(occurrence.parsedReference)
-          ) {
-            throw referenceError(
-              "Asset-capable slot contains an unsafe reference",
-              occurrence,
-              sourcePath,
-              occurrence.parsedReference,
-            );
-          }
           if (parsedValidation.valid && parsedValidation.kind === "local") {
             let parsedPath: string;
             try {

@@ -214,6 +214,23 @@ describe("compilation-wide automatic Assets", () => {
     expect(result.semantic).toMatchObject({ assetNames: [], references: [] });
   });
 
+  test("leaves an unpaired effective credential-free HTTPS image external", async () => {
+    await writeFile(join(dir, "guide.md"), "source\n");
+    const content =
+      "![Unavailable][id] ![Hero](https://example.com/hero.png)\n\n" +
+      "> [id]: https://example.com/hero.png\n";
+    const source = guide("guide", content);
+    const result = await compileAssetResources({
+      rootDir: dir,
+      resources: [source],
+      sourcePathsByResource: { "Guide/guide": "guide.md" },
+    });
+
+    expect(result.resources).toEqual([source]);
+    expect(result.payloads).toEqual([]);
+    expect(result.semantic).toMatchObject({ assetNames: [], references: [] });
+  });
+
   test.each([
     "![HTTP image](http://example.com/image.png)",
     "[HTTP file](http://example.com/file.pdf)",

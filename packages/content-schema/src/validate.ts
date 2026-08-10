@@ -2,7 +2,11 @@ import Markdoc, { type Config, type ValidateError } from "@markdoc/markdoc";
 import { topikMarkdocConfig } from "./config";
 import { parseTopikContent } from "./content";
 import { toTopikContentDiagnostic, type TopikContentDiagnostic } from "./diagnostics";
-import { extractTopikAssetOccurrences, validateTopikAssetReference } from "./asset-references";
+import {
+  extractTopikAssetOccurrences,
+  type TopikAssetOccurrence,
+  validateTopikAssetReference,
+} from "./asset-references";
 
 export interface ValidateTopikContentOptions {
   /** Source file path used in Markdoc locations and diagnostics. */
@@ -32,17 +36,18 @@ export function validateTopikContent(
     (occurrence) =>
       occurrence.slot === "link.href" &&
       occurrence.kind === "unsafe" &&
-      /^https?:/iu.test(occurrence.reference),
+      /^https?:/iu.test(occurrence.parsedReference),
   );
   const errors = [
     ...markdocErrors.map(toTopikContentDiagnostic),
     ...[...assetOccurrences, ...unsafeHttpLinkOccurrences].flatMap(
       (occurrence): TopikContentDiagnostic[] => {
-        const validation = validateTopikAssetReference(occurrence.reference);
+        const reference = effectiveExternalReference(occurrence);
+        const validation = validateTopikAssetReference(reference);
         const compiledAsset = validation.valid && validation.kind === "asset";
         if (
           validation.valid &&
-          occurrence.kind !== "unsafe" &&
+          (occurrence.kind !== "unsafe" || reference !== occurrence.reference) &&
           (!compiledAsset || options.allowCompiledAssetReferences === true)
         ) {
           return [];
@@ -81,6 +86,13 @@ export function validateTopikContent(
     errors,
     markdocErrors,
   };
+}
+
+/** Parsed HTTP(S) destinations remain policy-relevant when exact Markdown pairing is unavailable. */
+function effectiveExternalReference(occurrence: TopikAssetOccurrence): string {
+  return occurrence.reference.length === 0 && /^https?:/iu.test(occurrence.parsedReference)
+    ? occurrence.parsedReference
+    : occurrence.reference;
 }
 
 function mergeConfigs(base: Config, override: Config = {}): Config {

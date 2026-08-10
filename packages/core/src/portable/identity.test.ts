@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import type { Asset, Guide } from "@topik/schema";
+import type { Asset, CoursePage, Guide, WikiPage } from "@topik/schema";
 import type { Resource } from "../resource";
 import {
   createTopikAssetSemanticRecord,
@@ -70,6 +70,51 @@ function mutableRecord(): {
   payloads: Array<{ path: string; size: number; sha256: string; assetNames: string[] }>;
 } {
   return structuredClone(completeRecord()) as unknown as ReturnType<typeof mutableRecord>;
+}
+
+function noAssetMaterialization(
+  content: string,
+  resourceType: "Guide" | "WikiPage" | "CoursePage" = "Guide",
+): {
+  record: TopikMaterializationRecordV1;
+  resources: readonly Resource[];
+  semantic: ReturnType<typeof createTopikAssetSemanticRecord>;
+} {
+  const compiledContent = { format: "topik", value: content } as const;
+  const contentResource: Guide | WikiPage | CoursePage =
+    resourceType === "Guide"
+      ? { ...guide, spec: { ...guide.spec, content: compiledContent } }
+      : resourceType === "WikiPage"
+        ? {
+            apiVersion: "v1",
+            type: "WikiPage",
+            name: "wiki-page",
+            spec: { wiki: "wiki", title: "Wiki page", content: compiledContent },
+          }
+        : {
+            apiVersion: "v1",
+            type: "CoursePage",
+            name: "course-page",
+            spec: {
+              module: "module",
+              title: "Course page",
+              slug: "course-page",
+              order: 0,
+              content: compiledContent,
+            },
+          };
+  const contentResources: readonly Resource[] = [contentResource];
+  return {
+    record: createTopikMaterializationRecord(
+      contentResources.map((resource) => ({
+        resource,
+        bytes: new TextEncoder().encode(serializeTopikJson(resource)),
+      })),
+      [],
+    ),
+    resources: contentResources,
+    semantic: createTopikAssetSemanticRecord([], []),
+  };
 }
 
 describe("exact Asset materialization inventory", () => {
@@ -188,6 +233,69 @@ describe("exact Asset materialization inventory", () => {
     ).toMatchObject({
       ok: false,
       diagnostics: [{ id: "TOPIK_ASSET_INVENTORY_INCOMPLETE" }],
+    });
+  });
+
+  test.each([
+    ["local image", "![Local](hero.png)\n"],
+    ["local figure", '{% figure src="hero.png" alt="Hero" /%}\n'],
+    [
+      "local dark figure",
+      '{% figure src="https://example.com/hero.png" darkSrc="hero-dark.png" alt="Hero" /%}\n',
+    ],
+    ["generated Asset card navigation", `{% card title="Asset" href="asset:${assetName}" /%}\n`],
+    ["unsafe HTTP image", "![Unsafe](http://example.com/hero.png)\n"],
+    ["unsafe HTTP figure", '{% figure src="http://example.com/hero.png" alt="Hero" /%}\n'],
+    ["unclosed compiled image", `![Compiled](asset:${assetName})\n`],
+    ["unclosed compiled figure", `{% figure src="asset:${assetName}" alt="Hero" /%}\n`],
+  ])("rejects incomplete compiled content semantics for %s", (_name, content) => {
+    const state = noAssetMaterialization(content);
+    expect(
+      validateMaterializationRecord(state.record, state.resources, state.semantic),
+    ).toMatchObject({
+      ok: false,
+      diagnostics: [{ id: "TOPIK_ASSET_INVENTORY_INCOMPLETE" }],
+    });
+  });
+
+  test.each(["Guide", "WikiPage", "CoursePage"] as const)(
+    "enforces compiled Asset-slot and navigation semantics for %s resources",
+    (resourceType) => {
+      for (const content of [
+        "![Local](hero.png)\n",
+        `{% card title="Asset" href="asset:${assetName}" /%}\n`,
+      ]) {
+        const state = noAssetMaterialization(content, resourceType);
+        expect(
+          validateMaterializationRecord(state.record, state.resources, state.semantic),
+        ).toMatchObject({
+          ok: false,
+          diagnostics: [{ id: "TOPIK_ASSET_INVENTORY_INCOMPLETE" }],
+        });
+      }
+    },
+  );
+
+  test.each([
+    ["plain content", "No Asset references.\n"],
+    ["ordinary navigation", "[Next](next-page)\n"],
+    ["card navigation", '{% card title="Next" href="next-page" /%}\n'],
+    ["external image", "![External](https://example.com/hero.png)\n"],
+    [
+      "external figure",
+      '{% figure src="https://example.com/hero.png" darkSrc="https://example.com/hero-dark.png" alt="Hero" /%}\n',
+    ],
+    [
+      "unpaired effective external image",
+      "![Unavailable][id] ![Hero](https://example.com/hero.png)\n\n> [id]: https://example.com/hero.png\n",
+    ],
+  ])("accepts complete no-Asset compiled content for %s", (_name, content) => {
+    const state = noAssetMaterialization(content);
+    expect(
+      validateMaterializationRecord(state.record, state.resources, state.semantic),
+    ).toMatchObject({
+      ok: true,
+      diagnostics: [],
     });
   });
 

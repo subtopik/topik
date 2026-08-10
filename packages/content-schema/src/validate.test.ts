@@ -209,6 +209,67 @@ graph TD;
     });
   });
 
+  test.each([
+    ["http://example.com/file.pdf", "before"],
+    ["http://example.com/file.pdf", "after"],
+    ["https://user:secret@example.com/file.pdf", "before"],
+    ["https://user:secret@example.com/file.pdf", "after"],
+  ])(
+    "rejects effective unsafe destination %s when a reference link appears %s",
+    (reference, placement) => {
+      const unavailable = "[Unavailable][id]";
+      const parsed = `[Download](${reference})`;
+      const paragraph =
+        placement === "before" ? `${unavailable} ${parsed}` : `${parsed} ${unavailable}`;
+      expect(validateTopikContent(`${paragraph}\n\n> [id]: ${reference}`)).toMatchObject({
+        valid: false,
+        errors: expect.arrayContaining([
+          expect.objectContaining({ id: "TOPIK_EXTERNAL_REFERENCE_UNSAFE", type: "link.href" }),
+        ]),
+      });
+    },
+  );
+
+  test.each(["before", "after"])(
+    "accepts effective credential-free HTTPS destinations when a reference link appears %s",
+    (placement) => {
+      const reference = "https://example.com/file.pdf";
+      const unavailable = "[Unavailable][id]";
+      const parsed = `[Download](${reference})`;
+      const paragraph =
+        placement === "before" ? `${unavailable} ${parsed}` : `${parsed} ${unavailable}`;
+      expect(validateTopikContent(`${paragraph}\n\n> [id]: ${reference}`)).toMatchObject({
+        valid: true,
+        errors: [],
+      });
+    },
+  );
+
+  test.each([
+    ["http://example.com/hero.png", false, "TOPIK_EXTERNAL_REFERENCE_UNSAFE"],
+    ["https://user:secret@example.com/hero.png", false, "TOPIK_EXTERNAL_REFERENCE_UNSAFE"],
+    ["https://example.com/hero.png", true, undefined],
+    ["hero.png", false, "TOPIK_ASSET_PATH_INVALID"],
+  ])(
+    "applies exact-source and external policy to an unpaired effective image destination %s",
+    (reference, valid, diagnosticId) => {
+      const source = `![Unavailable][id] ![Hero](${reference})\n\n> [id]: ${reference}`;
+      expect(validateTopikContent(source)).toMatchObject(
+        valid
+          ? { valid: true, errors: [] }
+          : {
+              valid: false,
+              errors: expect.arrayContaining([
+                expect.objectContaining({
+                  id: diagnosticId,
+                  type: "image.src",
+                }),
+              ]),
+            },
+      );
+    },
+  );
+
   test("rejects Asset references in authoring input and permits generated names for output consumers", () => {
     const generated = `auto-v1-${"a".repeat(52)}`;
     expect(

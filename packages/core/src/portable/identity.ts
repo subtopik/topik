@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
-import { extractTopikAssetOccurrences } from "@topik/content-schema";
+import {
+  extractTopikAssetOccurrences,
+  validateTopikAssetReference,
+  validateTopikContent,
+} from "@topik/content-schema";
 import type { Asset } from "@topik/schema";
 import type { Resource } from "../resource";
 import { validateResources } from "../validate";
@@ -223,9 +227,21 @@ function expectedSemanticRecord(
     ) {
       continue;
     }
-    for (const occurrence of extractTopikAssetOccurrences(resource.spec.content.value)) {
-      if (occurrence.kind === "reserved-asset") return undefined;
-      if (occurrence.kind !== "asset") continue;
+    const content = resource.spec.content.value;
+    if (!validateTopikContent(content, { allowCompiledAssetReferences: true }).valid) {
+      return undefined;
+    }
+    for (const occurrence of extractTopikAssetOccurrences(content)) {
+      const parsedValidation = validateTopikAssetReference(occurrence.parsedReference);
+      if (
+        occurrence.kind === "external-https" ||
+        (occurrence.reference.length === 0 &&
+          parsedValidation.valid &&
+          parsedValidation.kind === "external-https")
+      ) {
+        continue;
+      }
+      if (occurrence.kind !== "asset") return undefined;
       const name = occurrence.reference.slice("asset:".length);
       if (!assetNames.has(name)) return undefined;
       references.push({

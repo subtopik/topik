@@ -34,6 +34,29 @@ function wikiPage(name: string, content: string): WikiPage {
   };
 }
 
+function coursePage(name: string, content: string): CoursePage {
+  return {
+    apiVersion: "v1",
+    type: "CoursePage",
+    name,
+    spec: {
+      module: "module",
+      title: name,
+      slug: name,
+      order: 0,
+      content: { format: "topik", value: content },
+    },
+  };
+}
+
+type ContentResourceFactory = (name: string, content: string) => Guide | WikiPage | CoursePage;
+
+const CONTENT_RESOURCE_FACTORIES: readonly (readonly [string, ContentResourceFactory])[] = [
+  ["Guide", guide],
+  ["WikiPage", wikiPage],
+  ["CoursePage", coursePage],
+];
+
 function compiledAsset(): Asset {
   const digest = "0".repeat(64);
   return {
@@ -190,6 +213,55 @@ describe("compilation-wide automatic Assets", () => {
     expect(result.payloads).toEqual([]);
     expect(result.semantic.references).toEqual([]);
   });
+
+  test.each(
+    CONTENT_RESOURCE_FACTORIES.flatMap(([resourceType, createResource]) =>
+      [
+        ["user-selected", "asset:company-logo"],
+        ["malformed-generated", "asset:auto-v1-short"],
+        ["full-generated", `asset:${compiledAsset().name}`],
+        ["case-aliased", "ASSET:company-logo"],
+      ].map(([targetKind, target]) => [resourceType, targetKind, createResource, target] as const),
+    ),
+  )(
+    "rejects %s card with %s reserved Asset target at the direct boundary",
+    async (_resourceType, _targetKind, createResource, target) => {
+      await writeFile(join(dir, "page.md"), "source\n");
+      const resource = createResource("page", `{% card title="Download" href="${target}" /%}\n`);
+
+      await expect(
+        compileAssetResources({
+          rootDir: dir,
+          resources: [resource],
+          sourcePathsByResource: { [`${resource.type}/${resource.name}`]: "page.md" },
+        }),
+      ).rejects.toMatchObject({
+        diagnostics: [
+          expect.objectContaining({
+            id: "TOPIK_ASSET_REFERENCE_MALFORMED",
+            location: expect.objectContaining({ path: "page.md" }),
+          }),
+        ],
+      });
+    },
+  );
+
+  test.each(CONTENT_RESOURCE_FACTORIES)(
+    "preserves ordinary card navigation in %s",
+    async (_resourceType, createResource) => {
+      await writeFile(join(dir, "page.md"), "source\n");
+      const resource = createResource("page", '{% card title="Next" href="next-page" /%}\n');
+      const result = await compileAssetResources({
+        rootDir: dir,
+        resources: [resource],
+        sourcePathsByResource: { [`${resource.type}/${resource.name}`]: "page.md" },
+      });
+
+      expect(result.resources).toEqual([resource]);
+      expect(result.payloads).toEqual([]);
+      expect(result.semantic.references).toEqual([]);
+    },
+  );
 
   test("keeps identity across byte edits and changes identity when the path moves", async () => {
     await writeFile(join(dir, "one.png"), PNG_BYTES);

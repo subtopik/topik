@@ -3,8 +3,10 @@ import { posix } from "node:path";
 import {
   extractTopikAssetOccurrences,
   rewriteTopikAssetOccurrences,
+  validateTopikContent,
   validateTopikAssetReference,
   type TopikAssetOccurrence,
+  type TopikContentDiagnostic,
 } from "@topik/content-schema";
 import type { Asset, CoursePage, Guide, WikiPage } from "@topik/schema";
 import type { Resource, SourceResource } from "../resource";
@@ -115,6 +117,24 @@ export async function compileAssetResources(
   for (const key of sourcePaths.keys()) {
     if (!contentResources.some((resource) => resourceKey(resource) === key)) {
       throw new AssetCompilationError("Source-path binding names a non-content resource");
+    }
+  }
+  for (const resource of topikContentResources) {
+    const sourcePath = sourcePaths.get(resourceKey(resource)) as string;
+    const navigationDiagnostics = validateTopikContent(resource.spec.content.value, {
+      file: sourcePath,
+    }).errors.filter(isUnsupportedAssetNavigationDiagnostic);
+    if (navigationDiagnostics.length > 0) {
+      throw new AssetCompilationError(
+        "Source content cannot use Asset locators for navigation-only targets",
+        navigationDiagnostics.map((diagnostic) =>
+          topikAssetDiagnostic(
+            "TOPIK_ASSET_REFERENCE_MALFORMED",
+            "Navigation-only targets cannot use Asset locators",
+            { location: { path: diagnostic.file ?? sourcePath } },
+          ),
+        ),
+      );
     }
   }
 
@@ -465,6 +485,10 @@ function isContentBearingResource(resource: Resource): resource is ContentBearin
 
 function isTopikContentResource(resource: ContentBearingResource): boolean {
   return resource.spec.content.format === "topik";
+}
+
+function isUnsupportedAssetNavigationDiagnostic(diagnostic: TopikContentDiagnostic): boolean {
+  return diagnostic.id === "link-asset-navigation-unsupported";
 }
 
 function requirePath(path: string, message: string): string {

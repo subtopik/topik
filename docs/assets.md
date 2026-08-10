@@ -73,7 +73,9 @@ assets/sha256/<full-lowercase-sha256>
 
 The semantic inventory records generated names and their schema-declared content occurrences. The
 materialization inventory records every resource descriptor and payload path with its exact size and
-SHA-256 digest.
+SHA-256 digest. Materialization validation requires both inventories together and proves exact
+closure: every compiled reference names one emitted Asset and payload, every semantic mapping
+matches a declared content slot, and no automatically generated Asset is orphaned.
 
 ## Rendering
 

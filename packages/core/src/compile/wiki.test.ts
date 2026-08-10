@@ -75,6 +75,17 @@ navigation:
     });
   });
 
+  test("reports only compilation-relative WikiPage diagnostic paths", async () => {
+    await writeWikiConfig("id: tw\ntitle: Test Wiki\nnavigation:\n  - nested/unsafe\n");
+    await mkdir(join(dir, "nested"));
+    await writePage("nested/unsafe", "<http://example.com/file.pdf>\n");
+
+    await expect(compileWiki({ dir })).rejects.toMatchObject({
+      diagnostics: [expect.objectContaining({ file: "nested/unsafe.md" })],
+      message: expect.not.stringContaining(dir),
+    });
+  });
+
   test("only compiles pages referenced in navigation", async () => {
     await writeWikiConfig(`
 id: tw

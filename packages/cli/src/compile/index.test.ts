@@ -64,6 +64,33 @@ describe("compile command", () => {
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/^assets\/sha256\/[0-9a-f]{64}$/u));
   });
 
+  test("never exposes absolute Guide or WikiPage paths in CLI compile failures", async () => {
+    await writeFile(join(dir, "intro.md"), "<http://example.com/guide.pdf>\n");
+    await writeFile(join(dir, "wiki.yaml"), "id: wiki\ntitle: Wiki\nnavigation:\n  - unsafe\n");
+    await writeFile(join(dir, "unsafe.md"), "<http://example.com/wiki.pdf>\n");
+
+    let failure: unknown;
+    try {
+      await (compile as CompileCommand).handler?.({
+        dir,
+        format: "json",
+        dryRun: true,
+        validate: true,
+        links: "error",
+      });
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toMatchObject({
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ file: "intro.md" }),
+        expect.objectContaining({ file: "unsafe.md" }),
+      ]),
+    });
+    expect(`${String(failure)}\n${JSON.stringify(failure)}`).not.toContain(dir);
+    expect(`${String(failure)}\n${JSON.stringify(failure)}`).not.toContain(tmpdir());
+  });
+
   test("uses the same generated identity for canonically equivalent CLI namespaces", async () => {
     await writeFile(join(dir, "hero.png"), PNG_BYTES);
     await writeFile(join(dir, "intro.md"), "![Hero](hero.png)\n");

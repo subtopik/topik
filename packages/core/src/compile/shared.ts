@@ -1,4 +1,5 @@
 import type { TopikContentDiagnostic } from "@topik/content-schema";
+import { isAbsolute, win32 } from "node:path";
 import { parse as parseYaml } from "yaml";
 import type { Resource } from "../resource";
 import type {
@@ -23,9 +24,13 @@ export interface CompileValidationOptions {
 }
 
 export class CompileError extends Error {
-  constructor(public readonly diagnostics: TopikContentDiagnostic[]) {
-    super(formatContentDiagnostics(diagnostics));
+  public readonly diagnostics: TopikContentDiagnostic[];
+
+  constructor(diagnostics: TopikContentDiagnostic[]) {
+    const sanitized = diagnostics.map(sanitizeContentDiagnostic);
+    super(formatContentDiagnostics(sanitized));
     this.name = "CompileError";
+    this.diagnostics = sanitized;
   }
 }
 
@@ -94,11 +99,22 @@ export function formatContentDiagnostics(diagnostics: TopikContentDiagnostic[]):
   return diagnostics
     .filter(isErrorDiagnostic)
     .map((diagnostic) => {
-      const file = diagnostic.file ?? "content";
+      const file = sanitizeDiagnosticFile(diagnostic.file);
       const location = diagnostic.lines.length > 0 ? `:${diagnostic.lines.join(",")}` : "";
       return `${file}${location} ${diagnostic.level} ${diagnostic.id}: ${diagnostic.message}`;
     })
     .join("\n");
+}
+
+function sanitizeContentDiagnostic(diagnostic: TopikContentDiagnostic): TopikContentDiagnostic {
+  const file = sanitizeDiagnosticFile(diagnostic.file);
+  return diagnostic.file === undefined ? diagnostic : { ...diagnostic, file };
+}
+
+function sanitizeDiagnosticFile(file: string | undefined): string {
+  if (file === undefined) return "content";
+  if (!isAbsolute(file) && !win32.isAbsolute(file)) return file;
+  return file.replaceAll("\\", "/").split("/").at(-1) || "content";
 }
 
 export function parseReferenceList(

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 import type { TopikContentDiagnostic } from "@topik/content-schema";
 import {
+  CompileError,
   extractMarkdownTitle,
   hasCompileErrors,
   isErrorDiagnostic,
@@ -25,6 +26,15 @@ describe("compile error diagnostics", () => {
   test.each(["warning", "info", "debug"] as const)("does not treat %s as an error", (level) => {
     expect(isErrorDiagnostic(diagnostic(level))).toBe(false);
     expect(hasCompileErrors([diagnostic(level)])).toBe(false);
+  });
+
+  test("sanitizes absolute diagnostic paths in public CompileError state and text", () => {
+    const error = new CompileError([
+      { ...diagnostic("error"), file: "/var/redacted/docs/page.md" },
+    ]);
+
+    expect(error.diagnostics).toEqual([expect.objectContaining({ file: "page.md" })]);
+    expect(`${error.message}\n${JSON.stringify(error)}`).not.toContain("/var/redacted");
   });
 });
 

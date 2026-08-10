@@ -50,6 +50,16 @@ describe("compileGuides", () => {
     });
   });
 
+  test("reports only compilation-relative Guide diagnostic paths", async () => {
+    await writeCollectionConfig("id: blog\ntitle: Blog\n");
+    await writeGuide("unsafe", "<http://example.com/file.pdf>\n");
+
+    await expect(compileGuides({ dir })).rejects.toMatchObject({
+      diagnostics: [expect.objectContaining({ file: "unsafe.md" })],
+      message: expect.not.stringContaining(dir),
+    });
+  });
+
   test("does not turn the consumed collection config into a downloadable Asset", async () => {
     await writeCollectionConfig("id: blog\ntitle: Blog\n");
     await writeGuide("config", "[Configuration](collection.yaml)\n");

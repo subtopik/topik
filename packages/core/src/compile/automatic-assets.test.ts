@@ -1,12 +1,27 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import {
+  chmod,
+  link,
+  lstat,
+  mkdir,
+  mkdtemp,
+  rm,
+  symlink,
+  truncate,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 import type { Asset, Course, CourseModule, CoursePage, Guide, Wiki, WikiPage } from "@topik/schema";
 import type { SourceResource } from "../resource";
+import { TOPIK_ASSET_LIMITS } from "../portable/constants";
 import {
   AssetCompilationError,
   compileAssetResources,
+  compileAssetResourcesWithReadHookForTest,
   registerGeneratedAssetPath,
   type CompileAssetResourcesInput,
 } from "./assets";
@@ -15,6 +30,58 @@ const PNG_BYTES = Buffer.from(
   "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000000500010d0a2db40000000049454e44ae426082",
   "hex",
 );
+const execFileAsync = promisify(execFile);
+
+const UNSAFE_GENERIC_LINK_CASES: readonly (readonly [
+  string,
+  (root: string, target: string) => Promise<void>,
+])[] = [
+  [
+    "symlink",
+    async (root, target) => {
+      await writeFile(join(root, "symlink-source.bin"), "bytes\n");
+      await symlink("symlink-source.bin", target);
+    },
+  ],
+  [
+    "executable",
+    async (_root, target) => {
+      await writeFile(target, "#!/bin/sh\n");
+      await chmod(target, 0o755);
+    },
+  ],
+  [
+    "hardlink",
+    async (root, target) => {
+      const source = join(root, "hardlink-source.bin");
+      await writeFile(source, "bytes\n");
+      await link(source, target);
+    },
+  ],
+  [
+    "Git LFS pointer",
+    async (_root, target) => {
+      await writeFile(
+        target,
+        `version https://git-lfs.github.com/spec/v1\noid sha256:${"a".repeat(64)}\nsize 1\n`,
+      );
+    },
+  ],
+  [
+    "Git content filter",
+    async (root, target) => {
+      await writeFile(join(root, ".gitattributes"), "unsafe.bin filter=custom\n");
+      await writeFile(target, "bytes\n");
+    },
+  ],
+  [
+    "oversized file",
+    async (_root, target) => {
+      await writeFile(target, "");
+      await truncate(target, TOPIK_ASSET_LIMITS.maxAssetBytes + 1);
+    },
+  ],
+];
 
 function guide(name: string, content: string): Guide {
   return {
@@ -133,9 +200,26 @@ describe("compilation-wide automatic Assets", () => {
     expect(result.semantic).toMatchObject({ assetNames: [], references: [] });
   });
 
+  test("leaves a credential-free HTTPS autolink unchanged without creating an Asset", async () => {
+    await writeFile(join(dir, "guide.md"), "source\n");
+    const source = guide("guide", "<https://example.com/file.pdf>\n");
+    const result = await compileAssetResources({
+      rootDir: dir,
+      resources: [source],
+      sourcePathsByResource: { "Guide/guide": "guide.md" },
+    });
+
+    expect(result.resources).toEqual([source]);
+    expect(result.payloads).toEqual([]);
+    expect(result.semantic).toMatchObject({ assetNames: [], references: [] });
+  });
+
   test.each([
     "![HTTP image](http://example.com/image.png)",
     "[HTTP file](http://example.com/file.pdf)",
+    "<http://example.com/file.pdf>",
+    "<https://user:secret@example.com/file.pdf>",
+    "<person@example.com> <http://example.com/file.pdf>",
     '{% figure src="https://user:secret@example.com/image.png" alt="Unsafe HTTPS" /%}',
   ])("rejects HTTP or unsafe HTTPS source reference: %s", async (content) => {
     await writeFile(join(dir, "guide.md"), "source\n");
@@ -202,7 +286,10 @@ describe("compilation-wide automatic Assets", () => {
   test("preserves ordinary relative navigation without synthesizing an Asset", async () => {
     await writeFile(join(dir, "one.md"), "source\n");
     await writeFile(join(dir, "two.md"), "source\n");
-    const resources = [guide("one", "[Next](two.md)\n"), guide("two", "Next page\n")];
+    const resources = [
+      guide("one", "[Next](two.md) [Absent route](missing.md)\n"),
+      guide("two", "Next page\n"),
+    ];
     const result = await compileAssetResources({
       rootDir: dir,
       resources,
@@ -453,6 +540,89 @@ describe("compilation-wide automatic Assets", () => {
     expect(compiledGuide?.spec.content.value).toContain("https://example.com/manual.bin");
   });
 
+  test.each(UNSAFE_GENERIC_LINK_CASES)(
+    "rejects an existing unsafe %s generic-link target",
+    async (_kind, setup) => {
+      const target = join(dir, "unsafe.bin");
+      await setup(dir, target);
+      await writeFile(join(dir, "guide.md"), "source\n");
+
+      await expect(
+        compileAssetResources({
+          rootDir: dir,
+          resources: [guide("guide", "[Download](unsafe.bin)\n")],
+          sourcePathsByResource: { "Guide/guide": "guide.md" },
+          sourceNamespace: "unsafe-generic-link",
+        }),
+      ).rejects.toMatchObject({
+        diagnostics: [expect.objectContaining({ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" })],
+      });
+    },
+  );
+
+  test.each(["unsafe\\.bin", "unsafe&#46;bin"])(
+    "rejects an unsafe existing target behind effective generic-link destination %s",
+    async (reference) => {
+      await writeFile(join(dir, "symlink-source.bin"), "bytes\n");
+      await symlink("symlink-source.bin", join(dir, "unsafe.bin"));
+      await writeFile(join(dir, "guide.md"), "source\n");
+
+      await expect(
+        compileAssetResources({
+          rootDir: dir,
+          resources: [guide("guide", `[Download](${reference})\n`)],
+          sourcePathsByResource: { "Guide/guide": "guide.md" },
+          sourceNamespace: "effective-unsafe-generic-link",
+        }),
+      ).rejects.toMatchObject({
+        diagnostics: [expect.objectContaining({ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" })],
+      });
+    },
+  );
+
+  test.each(["manual\\.bin", "manual&#46;bin"])(
+    "rejects a noncanonical proven download destination %s",
+    async (reference) => {
+      await writeFile(join(dir, "manual.bin"), "bytes\n");
+      await writeFile(join(dir, "guide.md"), "source\n");
+
+      await expect(
+        compileAssetResources({
+          rootDir: dir,
+          resources: [guide("guide", `[Download](${reference})\n`)],
+          sourcePathsByResource: { "Guide/guide": "guide.md" },
+          sourceNamespace: "noncanonical-download",
+        }),
+      ).rejects.toMatchObject({
+        diagnostics: [expect.objectContaining({ id: "TOPIK_ASSET_REFERENCE_MALFORMED" })],
+      });
+    },
+  );
+
+  test("surfaces a generic-link target changed during its deterministic read", async () => {
+    const target = join(dir, "unsafe.bin");
+    await writeFile(target, "original bytes\n");
+    await writeFile(join(dir, "guide.md"), "source\n");
+    const original = await lstat(target);
+
+    await expect(
+      compileAssetResourcesWithReadHookForTest(
+        {
+          rootDir: dir,
+          resources: [guide("guide", "[Download](unsafe.bin)\n")],
+          sourcePathsByResource: { "Guide/guide": "guide.md" },
+          sourceNamespace: "changed-generic-link",
+        },
+        async () => {
+          await writeFile(target, "modified bytes\n");
+          await utimes(target, original.atime, original.mtime);
+        },
+      ),
+    ).rejects.toMatchObject({
+      diagnostics: [expect.objectContaining({ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" })],
+    });
+  });
+
   test("rejects active bytes and media that is incompatible with its content role", async () => {
     await writeFile(join(dir, "guide.md"), "source\n");
     await writeFile(join(dir, "active.html"), "<!doctype html><title>Unsafe</title>\n");
@@ -478,6 +648,42 @@ describe("compilation-wide automatic Assets", () => {
       }),
     ).rejects.toMatchObject({
       diagnostics: [expect.objectContaining({ id: "TOPIK_ASSET_MEDIA_TYPE_MISMATCH" })],
+    });
+  });
+
+  test.each([
+    ["image", "![Nested](vendor/module/hero.png)"],
+    ["proven download", "[Nested](vendor/module/hero.png)"],
+  ])("rejects a real checked-out Git submodule %s target", async (_kind, content) => {
+    if (process.platform !== "linux") return;
+    const origin = join(dir, "origin");
+    const root = join(dir, "root");
+    await createGitRepository(origin);
+    await writeFile(join(origin, "hero.png"), PNG_BYTES);
+    await git(origin, "add", "hero.png");
+    await git(origin, "commit", "-qm", "fixture");
+    await createGitRepository(root);
+    await git(
+      root,
+      "-c",
+      "protocol.file.allow=always",
+      "submodule",
+      "add",
+      "-q",
+      origin,
+      "vendor/module",
+    );
+    await writeFile(join(root, "guide.md"), "source\n");
+
+    await expect(
+      compileAssetResources({
+        rootDir: root,
+        resources: [guide("guide", content)],
+        sourcePathsByResource: { "Guide/guide": "guide.md" },
+        sourceNamespace: "real-submodule",
+      }),
+    ).rejects.toMatchObject({
+      diagnostics: [expect.objectContaining({ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" })],
     });
   });
 
@@ -552,3 +758,14 @@ describe("compilation-wide automatic Assets", () => {
     expect(JSON.stringify(diagnostics)).not.toMatch(/secret|future/i);
   });
 });
+
+async function createGitRepository(root: string): Promise<void> {
+  await mkdir(root, { recursive: true });
+  await git(root, "init", "-q");
+  await git(root, "config", "user.email", "fixture@example.invalid");
+  await git(root, "config", "user.name", "Fixture");
+}
+
+async function git(root: string, ...args: string[]): Promise<void> {
+  await execFileAsync("/usr/bin/git", ["-C", root, ...args], { encoding: "utf8" });
+}

@@ -1,3 +1,4 @@
+import { execFile } from "node:child_process";
 import {
   link,
   lstat,
@@ -11,6 +12,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, test } from "vite-plus/test";
 import {
   TOPIK_PATH_V1_DESCRIPTOR,
@@ -30,6 +32,7 @@ const PNG_BYTES = Buffer.from(
   "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000000500010d0a2db40000000049454e44ae426082",
   "hex",
 );
+const execFileAsync = promisify(execFile);
 
 function file(overrides: Partial<PortableAssetFileDescriptor> = {}): PortableAssetFileDescriptor {
   return {
@@ -164,6 +167,53 @@ describe("descriptor-anchored filesystem reads", () => {
     expect(
       await readPortableAssetFile({ root: join(parent, "root-link"), path: "assets/hero.png" }),
     ).toMatchObject({ ok: false });
+  });
+
+  test("rejects a real Gitlink index ancestor without relying on nested descriptor type", async () => {
+    if (process.platform !== "linux") return;
+    const parent = await mkdtemp(join(tmpdir(), "topik-real-submodule-"));
+    roots.push(parent);
+    const origin = join(parent, "origin");
+    const root = join(parent, "root");
+    await createGitRepository(origin);
+    await writeFile(join(origin, "hero.png"), PNG_BYTES);
+    await git(origin, "add", "hero.png");
+    await git(origin, "commit", "-qm", "fixture");
+    await createGitRepository(root);
+    await git(
+      root,
+      "-c",
+      "protocol.file.allow=always",
+      "submodule",
+      "add",
+      "-q",
+      origin,
+      "vendor/module",
+    );
+    const index = await gitOutput(root, "ls-files", "--stage", "--", "vendor/module");
+    expect(index).toMatch(/^160000 /u);
+    await rm(join(root, "vendor", "module", ".git"), { recursive: true, force: true });
+
+    expect(await readPortableAssetFile({ root, path: "vendor/module/hero.png" })).toMatchObject({
+      ok: false,
+      diagnostics: [{ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" }],
+    });
+  });
+
+  test("rejects an unindexed nested Git worktree boundary", async () => {
+    if (process.platform !== "linux") return;
+    const parent = await mkdtemp(join(tmpdir(), "topik-nested-worktree-"));
+    roots.push(parent);
+    const root = join(parent, "root");
+    const nested = join(root, "vendor", "module");
+    await createGitRepository(root);
+    await createGitRepository(nested);
+    await writeFile(join(nested, "hero.png"), PNG_BYTES);
+
+    expect(await readPortableAssetFile({ root, path: "vendor/module/hero.png" })).toMatchObject({
+      ok: false,
+      diagnostics: [{ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" }],
+    });
   });
 
   test.each([
@@ -307,6 +357,51 @@ describe("descriptor-anchored filesystem reads", () => {
       diagnostics: [{ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" }],
     });
   });
+
+  test("rejects a nested Git boundary introduced after the bytes are read", async () => {
+    if (process.platform !== "linux") return;
+    const root = await mkdtemp(join(tmpdir(), "topik-git-boundary-race-"));
+    roots.push(root);
+    await mkdir(join(root, "assets"));
+    await writeFile(join(root, "assets", "hero.png"), PNG_BYTES);
+
+    const result = await readPortableAssetFileWithReadHookForTest(
+      { root, path: "assets/hero.png" },
+      async () => {
+        await mkdir(join(root, "assets", ".git"));
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      diagnostics: [{ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" }],
+    });
+  });
+
+  test("rejects a Gitlink index mode introduced after the bytes are read", async () => {
+    if (process.platform !== "linux") return;
+    const root = await mkdtemp(join(tmpdir(), "topik-gitlink-race-"));
+    roots.push(root);
+    await createGitRepository(root);
+    await mkdir(join(root, "assets"));
+    await writeFile(join(root, "assets", "hero.png"), PNG_BYTES);
+    await git(root, "add", "assets/hero.png");
+    await git(root, "commit", "-qm", "fixture");
+    const commit = (await gitOutput(root, "rev-parse", "HEAD")).trim();
+
+    const result = await readPortableAssetFileWithReadHookForTest(
+      { root, path: "assets/hero.png" },
+      async () => {
+        await git(root, "rm", "--cached", "-qr", "assets");
+        await git(root, "update-index", "--add", "--cacheinfo", `160000,${commit},assets`);
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      diagnostics: [{ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" }],
+    });
+  });
 });
 
 async function createMinimalWorktree(root: string): Promise<void> {
@@ -317,4 +412,22 @@ async function createMinimalWorktree(root: string): Promise<void> {
     join(root, ".git", "config"),
     "[core]\n\trepositoryformatversion = 0\n\tbare = false\n",
   );
+}
+
+async function createGitRepository(root: string): Promise<void> {
+  await mkdir(root, { recursive: true });
+  await git(root, "init", "-q");
+  await git(root, "config", "user.email", "fixture@example.invalid");
+  await git(root, "config", "user.name", "Fixture");
+}
+
+async function git(root: string, ...args: string[]): Promise<void> {
+  await execFileAsync("/usr/bin/git", ["-C", root, ...args], { encoding: "utf8" });
+}
+
+async function gitOutput(root: string, ...args: string[]): Promise<string> {
+  const result = await execFileAsync("/usr/bin/git", ["-C", root, ...args], {
+    encoding: "utf8",
+  });
+  return result.stdout;
 }

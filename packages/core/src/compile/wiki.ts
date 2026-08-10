@@ -76,8 +76,9 @@ export async function discoverWiki(options: CompileWikiOptions): Promise<Compile
   for (let i = 0; i < pagePaths.length; i++) {
     const pagePath = pagePaths[i];
     const { filePath, raw } = resolvedFiles[i];
+    const sourcePath = `${pagePath}${filePath.endsWith(".mdx") ? ".mdx" : ".md"}`;
     const { frontmatter, content } = parseMarkdownFrontmatter(raw, pagePath);
-    const validation = validateTopikContent(content, { file: filePath });
+    const validation = validateTopikContent(content, { file: sourcePath });
     diagnostics.push(...validation.errors);
     if (!validation.valid) continue;
     const name = pagePathToName(config.id, pagePath);
@@ -86,7 +87,7 @@ export async function discoverWiki(options: CompileWikiOptions): Promise<Compile
         ? frontmatter.title
         : extractMarkdownTitle(content, pagePathToTitleFallback(pagePath));
     const description = normalizeWikiPageDescription(frontmatter.description);
-    const analysis = analyzeTopikContent(content, { file: filePath });
+    const analysis = analyzeTopikContent(content, { file: sourcePath });
     diagnostics.push(...analysis.diagnostics);
     pageAnalyses.push({ analysis, slug: pagePathToSlug(pagePath), sourcePath: pagePath });
 
@@ -106,8 +107,7 @@ export async function discoverWiki(options: CompileWikiOptions): Promise<Compile
     };
 
     resources.push(pageResource);
-    sourcePathsByResource[`WikiPage/${pageResource.name}`] =
-      `${pagePath}${filePath.endsWith(".mdx") ? ".mdx" : ".md"}`;
+    sourcePathsByResource[`WikiPage/${pageResource.name}`] = sourcePath;
   }
 
   const wikiResource: Wiki = {

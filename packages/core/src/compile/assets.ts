@@ -18,7 +18,7 @@ import {
   type TopikAssetDiagnostic,
   type TopikAssetDiagnosticId,
 } from "../portable/diagnostics";
-import { readPortableAssetFile } from "../portable/files";
+import { readPortableAssetFile, readPortableAssetFileWithReadHookForTest } from "../portable/files";
 import {
   createTopikAssetSemanticRecord,
   createTopikMaterializationRecord,
@@ -81,6 +81,25 @@ export class AssetCompilationError extends Error {
 /** Discover and resolve one compilation-wide Asset set and deduplicated payload inventory. */
 export async function compileAssetResources(
   input: CompileAssetResourcesInput,
+): Promise<AssetCompilationResult> {
+  return compileAssetResourcesWithReader(input, readPortableAssetFile);
+}
+
+/** @internal Deterministic file-read race seam; not re-exported from the package root. */
+export async function compileAssetResourcesWithReadHookForTest(
+  input: CompileAssetResourcesInput,
+  afterFileRead: () => void | Promise<void>,
+): Promise<AssetCompilationResult> {
+  return compileAssetResourcesWithReader(input, (options) =>
+    readPortableAssetFileWithReadHookForTest(options, afterFileRead),
+  );
+}
+
+type PortableAssetReader = typeof readPortableAssetFile;
+
+async function compileAssetResourcesWithReader(
+  input: CompileAssetResourcesInput,
+  readAssetFile: PortableAssetReader,
 ): Promise<AssetCompilationResult> {
   const receivedResources = input.resources as readonly Resource[];
   if (receivedResources.some((resource) => resource.type === "Asset")) {
@@ -168,8 +187,44 @@ export async function compileAssetResources(
       }
       if (occurrence.kind === "external-https") continue;
       if (occurrence.kind === "unsafe") {
-        if (occurrence.slot === "link.href" && !/^https?:/iu.test(occurrence.reference)) {
-          continue;
+        if (occurrence.slot === "link.href") {
+          const parsedValidation = validateTopikAssetReference(occurrence.parsedReference);
+          if (
+            !parsedValidation.valid &&
+            parsedValidation.failureKind === "external" &&
+            /^https?:/iu.test(occurrence.parsedReference)
+          ) {
+            throw referenceError(
+              "Asset-capable slot contains an unsafe reference",
+              occurrence,
+              sourcePath,
+              occurrence.parsedReference,
+            );
+          }
+          if (parsedValidation.valid && parsedValidation.kind === "local") {
+            let parsedPath: string;
+            try {
+              parsedPath = resolveOccurrencePath(sourcePath, occurrence.parsedReference);
+            } catch (error) {
+              if (error instanceof AssetCompilationError) continue;
+              throw error;
+            }
+            if (protectedPaths.has(parsedPath)) continue;
+            const proof = await readGenericNavigationCandidate(
+              readAssetFile,
+              input.rootDir,
+              parsedPath,
+            );
+            if (proof !== undefined) {
+              throw referenceError(
+                "Proven download reference is not canonical",
+                occurrence,
+                sourcePath,
+              );
+            }
+            continue;
+          }
+          if (!/^https?:/iu.test(occurrence.reference)) continue;
         }
         throw referenceError(
           "Asset-capable slot contains an unsafe reference",
@@ -199,9 +254,13 @@ export async function compileAssetResources(
         );
       }
       if (ordinaryNavigation) {
-        const proof = await readPortableAssetFile({ root: input.rootDir, path: normalizedPath });
-        if (!proof.ok || proof.value.bytes === undefined) continue;
-        readCache.set(normalizedPath, proof.value as Awaited<ReturnType<typeof requireAssetFile>>);
+        const proof = await readGenericNavigationCandidate(
+          readAssetFile,
+          input.rootDir,
+          normalizedPath,
+        );
+        if (proof === undefined) continue;
+        readCache.set(normalizedPath, proof);
       }
       if (input.sourceNamespace === undefined) {
         throw new AssetCompilationError(
@@ -247,7 +306,9 @@ export async function compileAssetResources(
   >();
   for (const [name, sourcePath] of localPathByGeneratedName) {
     const roles = rolesByName.get(name) ?? [];
-    const file = readCache.get(sourcePath) ?? (await requireAssetFile(input.rootDir, sourcePath));
+    const file =
+      readCache.get(sourcePath) ??
+      (await requireAssetFile(input.rootDir, sourcePath, readAssetFile));
     readCache.set(sourcePath, file);
     const digest = sha256(file.bytes);
     const integrity = `sha256:${digest}` as const;
@@ -324,7 +385,7 @@ export async function compileAssetResources(
       assetNames: payload.assetNames,
     })),
   );
-  const inventory = validateTopikMaterializationRecord(materialization, resources);
+  const inventory = validateTopikMaterializationRecord(materialization, resources, semantic);
   if (!inventory.ok)
     throw new AssetCompilationError("Compiled inventory is incomplete", inventory.diagnostics);
   return { resources, payloads, semantic, materialization };
@@ -426,12 +487,32 @@ function safeResourceDescriptorVersion(
   return `${resource.type}/${resource.apiVersion === "v1" ? "v1" : "unsupported"}`;
 }
 
-async function requireAssetFile(root: string, path: string) {
-  const read = await readPortableAssetFile({ root, path });
+async function requireAssetFile(root: string, path: string, readAssetFile: PortableAssetReader) {
+  const read = await readAssetFile({ root, path });
   if (!read.ok || read.value.bytes === undefined) {
     throw new AssetCompilationError("Local Asset bytes could not be proven", read.diagnostics);
   }
   return read.value as typeof read.value & { bytes: Uint8Array };
+}
+
+async function readGenericNavigationCandidate(
+  readAssetFile: PortableAssetReader,
+  root: string,
+  path: string,
+): Promise<Awaited<ReturnType<typeof requireAssetFile>> | undefined> {
+  const proof = await readAssetFile({ root, path });
+  if (!proof.ok) {
+    if (proof.diagnostics.every((diagnostic) => diagnostic.id === "TOPIK_ASSET_FILE_MISSING")) {
+      return undefined;
+    }
+    throw new AssetCompilationError(
+      "Existing generic-link target failed portable Asset proof",
+      proof.diagnostics,
+    );
+  }
+  return proof.value.bytes === undefined
+    ? undefined
+    : (proof.value as Awaited<ReturnType<typeof requireAssetFile>>);
 }
 
 function resolveOccurrencePath(sourcePath: string, reference: string): string {
@@ -511,8 +592,9 @@ function referenceError(
   message: string,
   occurrence: TopikAssetOccurrence,
   path: string,
+  effectiveReference: string = occurrence.reference,
 ): AssetCompilationError {
-  const validation = validateTopikAssetReference(occurrence.reference);
+  const validation = validateTopikAssetReference(effectiveReference);
   const diagnosticId =
     occurrence.kind === "asset" || occurrence.kind === "reserved-asset"
       ? "TOPIK_ASSET_REFERENCE_MALFORMED"

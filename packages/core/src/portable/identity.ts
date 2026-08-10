@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { extractTopikAssetOccurrences } from "@topik/content-schema";
 import type { Asset } from "@topik/schema";
 import type { Resource } from "../resource";
 import { validateResources } from "../validate";
@@ -114,6 +115,7 @@ export function createTopikMaterializationRecord(
 export function validateTopikMaterializationRecord(
   record: unknown,
   resources: readonly Resource[],
+  semantic: unknown,
 ): TopikAssetResult<TopikMaterializationRecordV1> {
   if (
     !isTopikJsonDataValue(record) ||
@@ -153,6 +155,27 @@ export function validateTopikMaterializationRecord(
     );
   }
 
+  if (!isTopikJsonDataValue(semantic) || !isRecord(semantic) || !isSemanticRecordV1(semantic)) {
+    return materializationFailure("TOPIK_ASSET_SCHEMA_INVALID", "Semantic record is malformed");
+  }
+  if (semantic.descriptor !== "topik-asset-semantic-v1") {
+    return materializationFailure(
+      "TOPIK_ASSET_UNSUPPORTED_VERSION",
+      "Semantic descriptor version is unsupported",
+      "topik-asset-semantic-unknown",
+    );
+  }
+  const expectedSemantic = expectedSemanticRecord(resources);
+  if (
+    expectedSemantic === undefined ||
+    serializeTopikJson(semantic) !== serializeTopikJson(expectedSemantic)
+  ) {
+    return materializationFailure(
+      "TOPIK_ASSET_INVENTORY_INCOMPLETE",
+      "Semantic mappings do not close over the compiled Asset set",
+    );
+  }
+
   const expected = expectedMaterializationRecord(resources);
   if (expected === undefined || serializeTopikJson(record) !== serializeTopikJson(expected)) {
     return materializationFailure(
@@ -161,6 +184,61 @@ export function validateTopikMaterializationRecord(
     );
   }
   return { ok: true, value: record, diagnostics: [] };
+}
+
+function isSemanticRecordV1(
+  value: Record<string, unknown>,
+): value is Record<string, unknown> & TopikAssetSemanticRecordV1 {
+  return (
+    hasExactKeys(value, ["assetNames", "descriptor", "references"]) &&
+    typeof value.descriptor === "string" &&
+    Array.isArray(value.assetNames) &&
+    value.assetNames.every((name) => typeof name === "string") &&
+    Array.isArray(value.references) &&
+    value.references.every(
+      (reference) =>
+        isRecord(reference) &&
+        hasExactKeys(reference, ["name", "position", "resource", "slot"]) &&
+        typeof reference.name === "string" &&
+        typeof reference.position === "string" &&
+        typeof reference.resource === "string" &&
+        typeof reference.slot === "string",
+    )
+  );
+}
+
+function expectedSemanticRecord(
+  resources: readonly Resource[],
+): TopikAssetSemanticRecordV1 | undefined {
+  const assets = resources.filter((resource): resource is Asset => resource.type === "Asset");
+  const assetNames = new Set<string>(assets.map((asset) => asset.name));
+  if (assetNames.size !== assets.length) return undefined;
+  const references: TopikAssetReferenceMappingV1[] = [];
+  for (const resource of resources) {
+    if (
+      (resource.type !== "Guide" &&
+        resource.type !== "WikiPage" &&
+        resource.type !== "CoursePage") ||
+      resource.spec.content.format !== "topik"
+    ) {
+      continue;
+    }
+    for (const occurrence of extractTopikAssetOccurrences(resource.spec.content.value)) {
+      if (occurrence.kind === "reserved-asset") return undefined;
+      if (occurrence.kind !== "asset") continue;
+      const name = occurrence.reference.slice("asset:".length);
+      if (!assetNames.has(name)) return undefined;
+      references.push({
+        resource: `${resource.type}/${resource.name}`,
+        position: occurrence.position,
+        slot: occurrence.slot,
+        name,
+      });
+    }
+  }
+  const referencedNames = new Set(references.map((reference) => reference.name));
+  if (assets.some((asset) => !referencedNames.has(asset.name))) return undefined;
+  return createTopikAssetSemanticRecord(assets, references);
 }
 
 function isMaterializationRecordV1(

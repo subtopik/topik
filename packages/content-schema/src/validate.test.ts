@@ -190,12 +190,22 @@ graph TD;
   test.each([
     "[HTTP file](http://example.com/file.pdf)",
     "[Credentialed HTTPS file](https://user:secret@example.com/file.pdf)",
+    "<http://example.com/file.pdf>",
+    "<https://user:secret@example.com/file.pdf>",
+    "<person@example.com> <http://example.com/file.pdf>",
   ])("rejects unsafe HTTP policy in a possible download link: %s", (source) => {
     expect(validateTopikContent(source)).toMatchObject({
       valid: false,
       errors: expect.arrayContaining([
         expect.objectContaining({ id: "TOPIK_EXTERNAL_REFERENCE_UNSAFE", type: "link.href" }),
       ]),
+    });
+  });
+
+  test("accepts a credential-free HTTPS autolink", () => {
+    expect(validateTopikContent("<https://example.com/file.pdf>")).toMatchObject({
+      valid: true,
+      errors: [],
     });
   });
 

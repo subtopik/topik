@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, open } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
@@ -163,8 +164,16 @@ async function readPortableAssetFileAnchored(
   }
 
   const directoryHandles: FileHandle[] = [];
+  const gitBoundaryFingerprints: string[] = [];
   let fileHandle: FileHandle | undefined;
   try {
+    const repositoryBefore = await repositoryEvidenceFingerprint(options.root, options.path);
+    if (!repositoryBefore.ok) {
+      return {
+        ok: false,
+        diagnostics: [unsupportedPath(options.path, repositoryBefore.failure)],
+      };
+    }
     const gitAttributesBefore = await effectiveGitAttributeFingerprint(options.root, options.path);
     if (!gitAttributesBefore.ok) {
       return {
@@ -196,6 +205,14 @@ async function readPortableAssetFileAnchored(
         diagnostics: [unsupportedPath(options.path, "Resource root identity changed before open")],
       };
     }
+    const rootGitBoundary = await anchoredGitBoundaryFingerprint(rootHandle);
+    if (!rootGitBoundary.ok) {
+      return {
+        ok: false,
+        diagnostics: [unsupportedPath(options.path, rootGitBoundary.failure)],
+      };
+    }
+    gitBoundaryFingerprints.push(rootGitBoundary.fingerprint);
 
     const components = options.path.split("/");
     const attributes: EffectiveGitAttributes = {};
@@ -225,6 +242,21 @@ async function readPortableAssetFileAnchored(
           diagnostics: [unsupportedPath(options.path, "Non-directory traversal is unsupported")],
         };
       }
+      const gitBoundary = await anchoredGitBoundaryFingerprint(child);
+      if (!gitBoundary.ok || gitBoundary.present) {
+        return {
+          ok: false,
+          diagnostics: [
+            unsupportedPath(
+              options.path,
+              gitBoundary.ok
+                ? "Nested Git worktree or submodule traversal is unsupported"
+                : gitBoundary.failure,
+            ),
+          ],
+        };
+      }
+      gitBoundaryFingerprints.push(gitBoundary.fingerprint);
       const attributeFailure = await applyGitAttributes(
         child,
         components.slice(index + 1).join("/"),
@@ -293,6 +325,40 @@ async function readPortableAssetFileAnchored(
         diagnostics: [unsupportedPath(options.path, "File identity changed while hashing")],
       };
     }
+    for (let index = 0; index < directoryHandles.length; index++) {
+      const gitBoundary = await anchoredGitBoundaryFingerprint(directoryHandles[index]);
+      if (
+        !gitBoundary.ok ||
+        gitBoundary.fingerprint !== gitBoundaryFingerprints[index] ||
+        (index > 0 && gitBoundary.present)
+      ) {
+        return {
+          ok: false,
+          diagnostics: [
+            unsupportedPath(
+              options.path,
+              gitBoundary.ok
+                ? "Git worktree boundary evidence changed while the file was read"
+                : gitBoundary.failure,
+            ),
+          ],
+        };
+      }
+    }
+    const repositoryAfter = await repositoryEvidenceFingerprint(options.root, options.path);
+    if (!repositoryAfter.ok || repositoryAfter.fingerprint !== repositoryBefore.fingerprint) {
+      return {
+        ok: false,
+        diagnostics: [
+          unsupportedPath(
+            options.path,
+            repositoryAfter.ok
+              ? "Git repository evidence changed while the file was read"
+              : repositoryAfter.failure,
+          ),
+        ],
+      };
+    }
     const gitAttributesAfter = await effectiveGitAttributeFingerprint(options.root, options.path);
     if (
       !gitAttributesAfter.ok ||
@@ -334,6 +400,130 @@ async function readPortableAssetFileAnchored(
   } finally {
     await fileHandle?.close().catch(() => undefined);
     await Promise.all(directoryHandles.map((handle) => handle.close().catch(() => undefined)));
+  }
+}
+
+type RepositoryEvidenceProof = { ok: true; fingerprint: string } | { ok: false; failure: string };
+
+async function repositoryEvidenceFingerprint(
+  root: string,
+  path: string,
+): Promise<RepositoryEvidenceProof> {
+  if (!(await hasGitBoundary(root))) return { ok: true, fingerprint: "not-in-worktree" };
+  try {
+    const worktreeResult = await execFileAsync(
+      "/usr/bin/git",
+      ["-C", root, "rev-parse", "--show-toplevel"],
+      { encoding: "utf8", maxBuffer: 64 * 1024 },
+    );
+    const superprojectResult = await execFileAsync(
+      "/usr/bin/git",
+      ["-C", root, "rev-parse", "--show-superproject-working-tree"],
+      { encoding: "utf8", maxBuffer: 64 * 1024 },
+    );
+    if (superprojectResult.stdout.trim().length > 0) {
+      return { ok: false, failure: "Compilation root traverses a checked-out Git submodule" };
+    }
+    const worktree = worktreeResult.stdout.trim();
+    const rootFromWorktree = relative(resolve(worktree), resolve(root));
+    if (
+      rootFromWorktree === ".." ||
+      rootFromWorktree.startsWith(`..${sep}`) ||
+      isAbsolute(rootFromWorktree)
+    ) {
+      return { ok: false, failure: "Compilation root is outside its Git worktree" };
+    }
+    const worktreePath = [
+      ...(rootFromWorktree === "" ? [] : rootFromWorktree.split(sep)),
+      ...path.split("/"),
+    ].join("/");
+    const indexResult = await execFileAsync(
+      "/usr/bin/git",
+      ["-C", worktree, "ls-files", "--stage", "-z"],
+      { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+    );
+    for (const entry of indexResult.stdout.split("\0")) {
+      if (entry.length === 0) continue;
+      const separator = entry.indexOf("\t");
+      if (separator === -1) {
+        return { ok: false, failure: "Git index evidence is malformed" };
+      }
+      const [mode] = entry.slice(0, separator).split(" ");
+      const entryPath = entry.slice(separator + 1);
+      if (mode === "160000" && isPathAtOrBelow(worktreePath, entryPath)) {
+        return { ok: false, failure: "Asset path traverses a Gitlink index entry" };
+      }
+    }
+    return {
+      ok: true,
+      fingerprint: createHash("sha256")
+        .update(worktree)
+        .update("\0")
+        .update(rootFromWorktree)
+        .update("\0")
+        .update(indexResult.stdout)
+        .digest("hex"),
+    };
+  } catch {
+    return { ok: false, failure: "Git repository boundary could not be proven" };
+  }
+}
+
+function isPathAtOrBelow(path: string, ancestor: string): boolean {
+  return path === ancestor || path.startsWith(`${ancestor}/`);
+}
+
+type AnchoredGitBoundaryProof =
+  | { ok: true; fingerprint: string; present: boolean }
+  | { ok: false; failure: string };
+
+async function anchoredGitBoundaryFingerprint(
+  directory: FileHandle,
+): Promise<AnchoredGitBoundaryProof> {
+  let handle: FileHandle | undefined;
+  try {
+    handle = await open(
+      procFdChild(directory.fd, ".git"),
+      constants.O_RDONLY |
+        constants.O_NOFOLLOW |
+        (typeof constants.O_NONBLOCK === "number" ? constants.O_NONBLOCK : 0),
+    );
+    const before = await handle.stat({ bigint: true });
+    if (!before.isFile() && !before.isDirectory()) {
+      return { ok: false, failure: "Git boundary is not a regular file or directory" };
+    }
+    const after = await handle.stat({ bigint: true });
+    if (
+      before.dev !== after.dev ||
+      before.ino !== after.ino ||
+      before.mode !== after.mode ||
+      before.nlink !== after.nlink ||
+      before.size !== after.size ||
+      before.ctimeNs !== after.ctimeNs ||
+      before.mtimeNs !== after.mtimeNs
+    ) {
+      return { ok: false, failure: "Git boundary identity changed while it was inspected" };
+    }
+    return {
+      ok: true,
+      present: true,
+      fingerprint: [
+        "present",
+        after.dev,
+        after.ino,
+        after.mode,
+        after.nlink,
+        after.size,
+        after.ctimeNs,
+        after.mtimeNs,
+      ].join(":"),
+    };
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT"
+      ? { ok: true, present: false, fingerprint: "absent" }
+      : { ok: false, failure: "Git boundary could not be inspected without following links" };
+  } finally {
+    await handle?.close().catch(() => undefined);
   }
 }
 

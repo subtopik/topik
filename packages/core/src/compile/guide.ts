@@ -90,7 +90,7 @@ export async function discoverGuides(
           level: "error",
           message: "Guide files must resolve within the compilation directory",
           lines: [],
-          file: filePath,
+          file,
         });
         continue;
       }
@@ -101,14 +101,14 @@ export async function discoverGuides(
           level: "error",
           message: "Guide entries must be regular files",
           lines: [],
-          file: filePath,
+          file,
         });
         continue;
       }
       throw error;
     }
     const { frontmatter, content } = parseMarkdownFrontmatter(rawContent, file);
-    const validation = validateTopikContent(content, { file: filePath });
+    const validation = validateTopikContent(content, { file });
     diagnostics.push(...validation.errors);
     if (!validation.valid) continue;
     const slug = fileToSlug(file);
@@ -122,7 +122,7 @@ export async function discoverGuides(
     const authors = parseReferenceList(frontmatter.authors, "authors", file);
     const description =
       typeof frontmatter.description === "string" ? frontmatter.description : undefined;
-    const analysis = analyzeTopikContent(content, { file: filePath });
+    const analysis = analyzeTopikContent(content, { file });
     diagnostics.push(...analysis.diagnostics);
     diagnostics.push(...validateLocalFragments(analysis, linkValidationPolicy(options.validation)));
 

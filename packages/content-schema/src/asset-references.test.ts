@@ -47,6 +47,29 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
   });
 
   test.each([
+    ["http://example.com/file.pdf", "unsafe"],
+    ["https://user:secret@example.com/file.pdf", "unsafe"],
+    ["https://example.com/file.pdf", "external-https"],
+  ])("retains the effective destination for autolink %s", (reference, kind) => {
+    expect(
+      extractTopikAssetOccurrences(`<${reference}>`, { includeGenericLinkCandidates: true }),
+    ).toMatchObject([{ reference, parsedReference: reference, kind, slot: "link.href" }]);
+  });
+
+  test("keeps every effective autolink destination paired in a mixed paragraph", () => {
+    expect(
+      extractTopikAssetOccurrences(
+        "<person@example.com> <http://example.com/file.pdf> <https://example.com/file.pdf>",
+        { includeGenericLinkCandidates: true },
+      ).map(({ kind, reference }) => ({ kind, reference })),
+    ).toEqual([
+      { kind: "unsafe", reference: "mailto:person@example.com" },
+      { kind: "unsafe", reference: "http://example.com/file.pdf" },
+      { kind: "external-https", reference: "https://example.com/file.pdf" },
+    ]);
+  });
+
+  test.each([
     "assets%2Fhero.png",
     "assets%2fhero.png",
     "%2E%2E/hero.png",

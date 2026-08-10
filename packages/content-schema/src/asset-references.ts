@@ -444,6 +444,7 @@ function containsNonAscii(value: string): boolean {
 }
 
 interface MarkdownDestination {
+  autolink?: boolean;
   kind: "image" | "link";
   label: string;
   reference: string;
@@ -451,6 +452,7 @@ interface MarkdownDestination {
 }
 
 interface ParsedMarkdownDestination {
+  autolink: boolean;
   kind: "image" | "link";
   labelProof: string;
   parsedReference: string;
@@ -566,6 +568,7 @@ function parsedMarkdownDestinations(
       const parsedReference = child.attrs?.find(([name]) => name === "src")?.[1];
       if (parsedReference !== undefined) {
         destinations.push({
+          autolink: false,
           kind: "image",
           labelProof: child.content ?? "",
           parsedReference,
@@ -578,10 +581,16 @@ function parsedMarkdownDestinations(
     if (parsedReference === undefined) continue;
     const closing = findMatchingLinkClose(children, index + 1);
     if (closing === -1) {
-      destinations.push({ kind: "link", labelProof: "", parsedReference });
+      destinations.push({
+        autolink: child.markup === "autolink",
+        kind: "link",
+        labelProof: "",
+        parsedReference,
+      });
       continue;
     }
     destinations.push({
+      autolink: child.markup === "autolink",
       kind: "link",
       labelProof: markdownInlineTokenSignature(children.slice(index + 1, closing)),
       parsedReference,
@@ -617,9 +626,11 @@ function pairMarkdownDestinations(
       kind === "image"
         ? candidate.label
         : markdownLabelTokenSignature(candidate.label, definitions);
-    return sameMarkdownDestination(candidate.reference, destination.parsedReference) &&
+    return markdownDestinationsMatch(candidate, destination) &&
       labelProof === destination.labelProof
-      ? candidate.reference
+      ? destination.autolink
+        ? destination.parsedReference
+        : candidate.reference
       : undefined;
   });
   return pairs.some((reference) => reference === undefined)
@@ -651,10 +662,22 @@ function markdownDestinationParsesInOwnSpan(
     destination.kind === "image"
       ? destination.label
       : markdownLabelTokenSignature(destination.label, definitions);
-  return (
-    ownKind[0].labelProof === labelProof &&
-    sameMarkdownDestination(destination.reference, ownKind[0].parsedReference)
-  );
+  return ownKind[0].labelProof === labelProof && markdownDestinationsMatch(destination, ownKind[0]);
+}
+
+function markdownDestinationsMatch(
+  scanned: MarkdownDestination,
+  parsed: ParsedMarkdownDestination,
+): boolean {
+  if (scanned.autolink === true || parsed.autolink) {
+    return (
+      scanned.autolink === true &&
+      parsed.autolink &&
+      (scanned.reference === parsed.parsedReference ||
+        `mailto:${scanned.reference}` === parsed.parsedReference)
+    );
+  }
+  return sameMarkdownDestination(scanned.reference, parsed.parsedReference);
 }
 
 function markdownLabelTokenSignature(
@@ -701,6 +724,23 @@ function scanMarkdownDestinations(
       const closing = findClosingBacktickRun(source, index + width, width);
       if (closing !== -1) index = closing + width - 1;
       continue;
+    }
+    if (source[index] === "<" && !isEscaped(source, index)) {
+      const closing = findUnescaped(source, ">", index + 1);
+      if (closing !== -1) {
+        const reference = source.slice(index + 1, closing);
+        if (reference.length > 0) {
+          destinations.push({
+            autolink: true,
+            kind: "link",
+            label: reference,
+            reference,
+            source: source.slice(index, closing + 1),
+          });
+          index = closing;
+          continue;
+        }
+      }
     }
     const image = source[index] === "!" && source[index + 1] === "[" && !isEscaped(source, index);
     if (source[index] === "[" && source[index - 1] === "!" && isEscaped(source, index - 1)) {

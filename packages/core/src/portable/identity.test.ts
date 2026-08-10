@@ -2,9 +2,10 @@ import { describe, expect, test } from "vite-plus/test";
 import type { Asset, Guide } from "@topik/schema";
 import type { Resource } from "../resource";
 import {
+  createTopikAssetSemanticRecord,
   createTopikMaterializationRecord,
   type TopikMaterializationRecordV1,
-  validateTopikMaterializationRecord,
+  validateTopikMaterializationRecord as validateMaterializationRecord,
 } from "./identity";
 import { serializeTopikJson } from "./json";
 
@@ -33,6 +34,25 @@ const guide: Guide = {
   },
 };
 const resources: Resource[] = [asset, guide];
+const semantic = createTopikAssetSemanticRecord(
+  [asset],
+  [
+    {
+      resource: "Guide/guide",
+      position: "/children/0/children/0/children/0/attributes/href",
+      slot: "link.href",
+      name: assetName,
+    },
+  ],
+);
+
+function validateTopikMaterializationRecord(
+  record: unknown,
+  resourceSet: readonly Resource[] = resources,
+  semanticRecord: unknown = semantic,
+) {
+  return validateMaterializationRecord(record, resourceSet, semanticRecord);
+}
 
 function completeRecord(): TopikMaterializationRecordV1 {
   return createTopikMaterializationRecord(
@@ -81,6 +101,91 @@ describe("exact Asset materialization inventory", () => {
     const noPayload = mutableRecord();
     noPayload.payloads = [];
     expect(validateTopikMaterializationRecord(noPayload, resources)).toMatchObject({
+      ok: false,
+      diagnostics: [{ id: "TOPIK_ASSET_INVENTORY_INCOMPLETE" }],
+    });
+
+    const regeneratedWithoutPayload = createTopikMaterializationRecord(
+      resources.map((resource) => ({
+        resource,
+        bytes: new TextEncoder().encode(serializeTopikJson(resource)),
+      })),
+      [],
+    );
+    expect(validateTopikMaterializationRecord(regeneratedWithoutPayload)).toMatchObject({
+      ok: false,
+      diagnostics: [{ id: "TOPIK_ASSET_INVENTORY_INCOMPLETE" }],
+    });
+
+    const onlyGuide: Resource[] = [guide];
+    const regeneratedWithoutAsset = createTopikMaterializationRecord(
+      onlyGuide.map((resource) => ({
+        resource,
+        bytes: new TextEncoder().encode(serializeTopikJson(resource)),
+      })),
+      [],
+    );
+    expect(validateTopikMaterializationRecord(regeneratedWithoutAsset, onlyGuide)).toMatchObject({
+      ok: false,
+      diagnostics: [{ id: "TOPIK_ASSET_INVENTORY_INCOMPLETE" }],
+    });
+  });
+
+  test("requires complete canonical semantic mappings without orphaned Assets", () => {
+    expect(validateMaterializationRecord(completeRecord(), resources, undefined)).toMatchObject({
+      ok: false,
+      diagnostics: [{ id: "TOPIK_ASSET_SCHEMA_INVALID" }],
+    });
+    expect(
+      validateMaterializationRecord(completeRecord(), resources, {
+        ...semantic,
+        references: {},
+      }),
+    ).toMatchObject({
+      ok: false,
+      diagnostics: [{ id: "TOPIK_ASSET_SCHEMA_INVALID" }],
+    });
+    expect(
+      validateMaterializationRecord(completeRecord(), resources, {
+        ...semantic,
+        references: [],
+      }),
+    ).toMatchObject({
+      ok: false,
+      diagnostics: [{ id: "TOPIK_ASSET_INVENTORY_INCOMPLETE" }],
+    });
+    expect(
+      validateMaterializationRecord(completeRecord(), resources, {
+        ...semantic,
+        references: [{ ...semantic.references[0], name: `auto-v1-${"b".repeat(52)}` }],
+      }),
+    ).toMatchObject({
+      ok: false,
+      diagnostics: [{ id: "TOPIK_ASSET_INVENTORY_INCOMPLETE" }],
+    });
+
+    const unreferencedGuide: Guide = {
+      ...guide,
+      spec: {
+        ...guide.spec,
+        content: { format: "topik", value: "No Asset reference\n" },
+      },
+    };
+    const orphanResources: Resource[] = [asset, unreferencedGuide];
+    const orphanRecord = createTopikMaterializationRecord(
+      orphanResources.map((resource) => ({
+        resource,
+        bytes: new TextEncoder().encode(serializeTopikJson(resource)),
+      })),
+      [{ path: asset.spec.uri, bytes, assetNames: [asset.name] }],
+    );
+    expect(
+      validateMaterializationRecord(
+        orphanRecord,
+        orphanResources,
+        createTopikAssetSemanticRecord([asset], []),
+      ),
+    ).toMatchObject({
       ok: false,
       diagnostics: [{ id: "TOPIK_ASSET_INVENTORY_INCOMPLETE" }],
     });

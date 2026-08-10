@@ -25,43 +25,54 @@ export function validateTopikContent(
 ): ValidateTopikContentResult {
   const ast = parseTopikContent(source, { file: options.file, location: true });
   const markdocErrors = Markdoc.validate(ast, mergeConfigs(topikMarkdocConfig, options.config));
+  const assetOccurrences = extractTopikAssetOccurrences(source);
+  const unsafeHttpLinkOccurrences = extractTopikAssetOccurrences(source, {
+    includeGenericLinkCandidates: true,
+  }).filter(
+    (occurrence) =>
+      occurrence.slot === "link.href" &&
+      occurrence.kind === "unsafe" &&
+      /^https?:/iu.test(occurrence.reference),
+  );
   const errors = [
     ...markdocErrors.map(toTopikContentDiagnostic),
-    ...extractTopikAssetOccurrences(source).flatMap((occurrence): TopikContentDiagnostic[] => {
-      const validation = validateTopikAssetReference(occurrence.reference);
-      const compiledAsset = validation.valid && validation.kind === "asset";
-      if (
-        validation.valid &&
-        occurrence.kind !== "unsafe" &&
-        (!compiledAsset || options.allowCompiledAssetReferences === true)
-      ) {
-        return [];
-      }
-      const namedReference = occurrence.reference.startsWith("asset:");
-      const external = validation.valid
-        ? validation.kind === "external-https"
-        : validation.failureKind === "external";
-      return [
-        {
-          id: namedReference
-            ? "TOPIK_ASSET_REFERENCE_MALFORMED"
-            : external
-              ? "TOPIK_EXTERNAL_REFERENCE_UNSAFE"
-              : "TOPIK_ASSET_PATH_INVALID",
-          type: occurrence.slot,
-          level: "error",
-          message: namedReference
-            ? compiledAsset
-              ? "Compiler-generated Asset references are not valid authoring input"
-              : "Asset reference has an invalid generated name"
-            : external
-              ? "Asset reference requires credential-free HTTPS"
-              : "Local asset reference is not canonical topik-asset-reference-v1",
-          lines: [],
-          ...(options.file === undefined ? {} : { file: options.file }),
-        },
-      ];
-    }),
+    ...[...assetOccurrences, ...unsafeHttpLinkOccurrences].flatMap(
+      (occurrence): TopikContentDiagnostic[] => {
+        const validation = validateTopikAssetReference(occurrence.reference);
+        const compiledAsset = validation.valid && validation.kind === "asset";
+        if (
+          validation.valid &&
+          occurrence.kind !== "unsafe" &&
+          (!compiledAsset || options.allowCompiledAssetReferences === true)
+        ) {
+          return [];
+        }
+        const namedReference = occurrence.reference.startsWith("asset:");
+        const external = validation.valid
+          ? validation.kind === "external-https"
+          : validation.failureKind === "external";
+        return [
+          {
+            id: namedReference
+              ? "TOPIK_ASSET_REFERENCE_MALFORMED"
+              : external
+                ? "TOPIK_EXTERNAL_REFERENCE_UNSAFE"
+                : "TOPIK_ASSET_PATH_INVALID",
+            type: occurrence.slot,
+            level: "error",
+            message: namedReference
+              ? compiledAsset
+                ? "Compiler-generated Asset references are not valid authoring input"
+                : "Asset reference has an invalid generated name"
+              : external
+                ? "Asset reference requires credential-free HTTPS"
+                : "Local asset reference is not canonical topik-asset-reference-v1",
+            lines: [],
+            ...(options.file === undefined ? {} : { file: options.file }),
+          },
+        ];
+      },
+    ),
   ];
   return {
     valid: errors.every(

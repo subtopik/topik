@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import Ajv2020 from "ajv/dist/2020.js";
 import type { ErrorObject } from "ajv";
-import { assetV1Schema, type Asset } from "@topik/schema";
+import { assetV1Schema, hasMatchingAssetDigests, type Asset } from "@topik/schema";
 import {
   ASSET_API_VERSION,
   ASSET_TYPE,
@@ -135,6 +135,22 @@ export function validateAssetValue(value: unknown): TopikAssetResult<Asset> {
   const asset = value as unknown as Asset;
   const uri = validateAssetUri(asset.spec.uri);
   if (!uri.ok) return { ok: false, diagnostics: uri.diagnostics };
+  if (!hasMatchingAssetDigests(asset)) {
+    return {
+      ok: false,
+      diagnostics: [
+        topikAssetDiagnostic(
+          "TOPIK_ASSET_DIGEST_MISMATCH",
+          "Asset payload URI and integrity must identify the same digest",
+          {
+            consequence: "block-identity-and-writes",
+            location: { jsonPointer: "/spec/integrity" },
+            recovery: "verify-bytes",
+          },
+        ),
+      ],
+    };
+  }
   return { ok: true, value: asset, diagnostics: [] };
 }
 

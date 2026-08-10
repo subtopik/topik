@@ -15,7 +15,9 @@ The compiler inspects only schema-declared locations:
 - local Markdown links that resolve to a safe regular file and are therefore proven downloads
 
 It does not scan arbitrary strings, frontmatter, captions, labels, unknown attributes, or
-navigation-only links. External HTTPS references stay unchanged and are not downloaded.
+navigation-only links. Credential-free external HTTPS references stay unchanged: the compiler does
+not download them, rewrite them, or synthesize Asset resources for them. HTTP references and unsafe
+HTTPS forms, including URLs with credentials, fail visibly.
 
 ## Generated identity
 
@@ -58,7 +60,7 @@ spec:
 
 The published schema is `https://topik.dev/schemas/asset/v1.json`. It is closed and requires the
 generated name, canonical payload path, full SHA-256 integrity, verified size, and byte-sniffed media
-type.
+type. The digest in the payload path and the integrity value must be identical.
 
 Discovery runs once after the complete content resource set is known. Multiple Guides, all pages in
 a Wiki, CoursePages, and mixed resource kinds therefore share one Asset set. Descriptors remain

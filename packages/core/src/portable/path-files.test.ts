@@ -1,4 +1,14 @@
-import { link, mkdir, mkdtemp, rename, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  link,
+  lstat,
+  mkdir,
+  mkdtemp,
+  rename,
+  rm,
+  symlink,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vite-plus/test";
@@ -11,7 +21,10 @@ import {
   validateTopikPathSet,
   type PortableAssetFileDescriptor,
 } from "./index";
-import { readPortableAssetFileWithTraversalHookForTest } from "./files";
+import {
+  readPortableAssetFileWithReadHookForTest,
+  readPortableAssetFileWithTraversalHookForTest,
+} from "./files";
 
 const PNG_BYTES = Buffer.from(
   "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000000500010d0a2db40000000049454e44ae426082",
@@ -246,6 +259,53 @@ describe("descriptor-anchored filesystem reads", () => {
     expect(swapped).toBe(true);
     expect(result).toMatchObject({ ok: true });
     if (result.ok) expect(result.value.bytes).toEqual(PNG_BYTES);
+  });
+
+  test("rejects a hardlink created and removed after the file bytes are read", async () => {
+    if (process.platform !== "linux") return;
+    const root = await mkdtemp(join(tmpdir(), "topik-hardlink-race-"));
+    roots.push(root);
+    const source = join(root, "hero.png");
+    const hardlink = join(root, "transient-hardlink.png");
+    await writeFile(source, PNG_BYTES);
+
+    const result = await readPortableAssetFileWithReadHookForTest(
+      { root, path: "hero.png" },
+      async () => {
+        await link(source, hardlink);
+        await rm(hardlink);
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      diagnostics: [{ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" }],
+    });
+    await expect(lstat(hardlink)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  test("rejects byte mutation even when the original mtime is restored", async () => {
+    if (process.platform !== "linux") return;
+    const root = await mkdtemp(join(tmpdir(), "topik-byte-race-"));
+    roots.push(root);
+    const source = join(root, "hero.png");
+    await writeFile(source, PNG_BYTES);
+    const original = await lstat(source);
+    const changed = Buffer.from(PNG_BYTES);
+    changed[changed.byteLength - 1] ^= 0xff;
+
+    const result = await readPortableAssetFileWithReadHookForTest(
+      { root, path: "hero.png" },
+      async () => {
+        await writeFile(source, changed);
+        await utimes(source, original.atime, original.mtime);
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      diagnostics: [{ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" }],
+    });
   });
 });
 

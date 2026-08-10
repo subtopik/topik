@@ -1,6 +1,7 @@
 {
   "$id": "https://topik.dev/schemas/asset/v1.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "The digest in spec.uri must equal the digest suffix in spec.integrity; use hasMatchingAssetDigests after structural validation.",
   "additionalProperties": false,
   "properties": {
     "apiVersion": { "const": "v1" },

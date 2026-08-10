@@ -152,6 +152,7 @@ graph TD;
 
   test.each([
     "http://example.com/a.png",
+    "https://user:secret@example.com/a.png",
     "file:///tmp/a.png",
     "data:image/png;base64,AA==",
     "blob:https://example.com/id",
@@ -179,6 +180,23 @@ graph TD;
         '{% figure src="assets/caf%C3%A9.png" darkSrc="https://example.com/dark.png?q=1#x" alt="Hero" /%}',
       ),
     ).toMatchObject({ valid: true, errors: [] });
+    expect(
+      validateTopikContent(
+        "![External image](https://example.com/image.png)\n\n[External file](https://example.com/file.pdf)\n",
+      ),
+    ).toMatchObject({ valid: true, errors: [] });
+  });
+
+  test.each([
+    "[HTTP file](http://example.com/file.pdf)",
+    "[Credentialed HTTPS file](https://user:secret@example.com/file.pdf)",
+  ])("rejects unsafe HTTP policy in a possible download link: %s", (source) => {
+    expect(validateTopikContent(source)).toMatchObject({
+      valid: false,
+      errors: expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_EXTERNAL_REFERENCE_UNSAFE", type: "link.href" }),
+      ]),
+    });
   });
 
   test("rejects Asset references in authoring input and permits generated names for output consumers", () => {

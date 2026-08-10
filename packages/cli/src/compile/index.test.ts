@@ -13,7 +13,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { compile, replaceCompilationTree } from "./index";
 
@@ -653,6 +653,79 @@ describe("compile command", () => {
     ).toHaveLength(2);
   });
 
+  test.each([
+    ["initial", "file replacement"],
+    ["initial", "unlisted file addition"],
+    ["replacement", "file replacement"],
+    ["replacement", "unlisted file addition"],
+  ] as const)(
+    "rejects %s publication after staged %s and preserves the changed staging tree",
+    async (mode, mutation) => {
+      const outDir = join(dir, `staged-content-race-${mode}-${mutation.replaceAll(" ", "-")}`);
+      const displacedFile = join(
+        dir,
+        `displaced-staged-file-${mode}-${mutation.replaceAll(" ", "-")}`,
+      );
+      if (mode === "replacement") await replaceCompilationTree(outDir, ownedFiles("old"));
+      let retainedStagedPath = "";
+
+      await expect(
+        replaceCompilationTree(outDir, ownedFiles("new"), {
+          afterStagedGenerationProof: async (path) => {
+            retainedStagedPath = join(dir, basename(path));
+            if (mutation === "file replacement") {
+              await rename(join(path, "generation.txt"), displacedFile);
+              await writeFile(join(path, "generation.txt"), "newcomer");
+            } else {
+              await writeFile(join(path, "unlisted.txt"), "newcomer");
+            }
+          },
+        }),
+      ).rejects.toThrow(/generation contents changed/u);
+
+      if (mode === "replacement") {
+        expect(await readFile(join(outDir, "generation.txt"), "utf8")).toBe("old");
+      } else {
+        await expect(lstat(outDir)).rejects.toMatchObject({ code: "ENOENT" });
+      }
+      const newcomerPath =
+        mutation === "file replacement"
+          ? join(retainedStagedPath, "generation.txt")
+          : join(retainedStagedPath, "unlisted.txt");
+      expect(await readFile(newcomerPath, "utf8")).toBe("newcomer");
+      if (mutation === "file replacement") {
+        expect(await readFile(displacedFile, "utf8")).toBe("new");
+      }
+    },
+  );
+
+  test.each(["descriptor", "payload"] as const)(
+    "rejects replacement after prior %s mutation and preserves the prior generation",
+    async (mutation) => {
+      const outDir = join(dir, `prior-content-race-${mutation}`);
+      await replaceCompilationTree(outDir, ownedFiles("old"));
+      const oldGeneration = await readlink(outDir);
+      const oldFiles = ownedFiles("old");
+      const mutatedPath =
+        mutation === "descriptor"
+          ? ".topik/materialization.json"
+          : (oldFiles.find((file) => file.path.startsWith("assets/sha256/"))?.path ?? "");
+      expect(mutatedPath).not.toBe("");
+
+      await expect(
+        replaceCompilationTree(outDir, ownedFiles("new"), {
+          afterPriorGenerationProof: async (path) => {
+            await writeFile(join(path, mutatedPath), `changed ${mutation}`);
+          },
+        }),
+      ).rejects.toThrow(/generation contents changed/u);
+
+      expect(await readlink(outDir)).toBe(oldGeneration);
+      expect(await readFile(join(outDir, "generation.txt"), "utf8")).toBe("old");
+      expect(await readFile(join(outDir, mutatedPath), "utf8")).toBe(`changed ${mutation}`);
+    },
+  );
+
   test("retains unrelated content swapped in immediately after stale-generation proof", async () => {
     const outDir = join(dir, "cleanup-race-output");
     const displaced = join(dir, "displaced-stale-generation");
@@ -674,16 +747,30 @@ describe("compile command", () => {
 });
 
 function ownedFiles(generation: string): Array<{ path: string; bytes: string }> {
+  const payload = `payload-${generation}`;
+  const payloadDigest = sha256(Buffer.from(payload));
   return [
     { path: "generation.txt", bytes: generation },
     {
       path: ".topik/materialization.json",
-      bytes: '{"descriptor":"topik-materialization-v1","payloads":[],"resources":[]}\n',
+      bytes: `${JSON.stringify({
+        descriptor: "topik-materialization-v1",
+        payloads: [
+          {
+            assetNames: [],
+            path: `assets/sha256/${payloadDigest}`,
+            sha256: payloadDigest,
+            size: Buffer.byteLength(payload),
+          },
+        ],
+        resources: [],
+      })}\n`,
     },
     {
       path: ".topik/semantic.json",
       bytes: '{"assetNames":[],"descriptor":"topik-asset-semantic-v1","references":[]}\n',
     },
+    { path: `assets/sha256/${payloadDigest}`, bytes: payload },
   ];
 }
 

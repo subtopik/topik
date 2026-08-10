@@ -20,3 +20,16 @@ export interface Asset {
   name: `auto-v1-${string}`;
   spec: AssetSpec;
 }
+
+/** Check the cross-field digest invariant that JSON Schema cannot express. */
+export function hasMatchingAssetDigests(value: unknown): boolean {
+  if (typeof value !== "object" || value === null || !("spec" in value)) return false;
+  const { spec } = value;
+  if (typeof spec !== "object" || spec === null || !("uri" in spec) || !("integrity" in spec)) {
+    return false;
+  }
+  if (typeof spec.uri !== "string" || typeof spec.integrity !== "string") return false;
+  const uri = /^assets\/sha256\/([0-9a-f]{64})$/u.exec(spec.uri);
+  const integrity = /^sha256:([0-9a-f]{64})$/u.exec(spec.integrity);
+  return uri !== null && integrity !== null && uri[1] === integrity[1];
+}

@@ -105,4 +105,33 @@ describe("validateResources", () => {
       valid: false,
     });
   });
+
+  test("preserves the typed diagnostic for contradictory Asset payload digests", () => {
+    const digest = "0".repeat(64);
+    const result = validateResources([
+      {
+        apiVersion: "v1",
+        type: "Asset",
+        name: `auto-v1-${"a".repeat(52)}`,
+        spec: {
+          uri: `assets/sha256/${digest}`,
+          integrity: `sha256:${"f".repeat(64)}`,
+          size: 7,
+          mediaType: "image/png",
+        },
+      },
+    ]);
+
+    expect(result).toEqual({
+      valid: false,
+      errors: [
+        {
+          id: "TOPIK_ASSET_DIGEST_MISMATCH",
+          resource: `Asset/auto-v1-${"a".repeat(52)}`,
+          path: "/spec/integrity",
+          message: "Asset payload URI and integrity must identify the same digest",
+        },
+      ],
+    });
+  });
 });

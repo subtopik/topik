@@ -1,0 +1,8 @@
+apiVersion: v1
+type: Asset
+name: auto-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+spec:
+  uri: assets/sha256/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  integrity: sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+  size: 48123
+  mediaType: application/pdf

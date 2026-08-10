@@ -10,6 +10,7 @@ import {
   wikiSchema,
 } from "@topik/schema";
 import { validateAssetValue } from "./portable/asset";
+import type { TopikAssetDiagnosticId } from "./portable/diagnostics";
 
 const ajv = new Ajv2020({ strict: true, discriminator: true, ownProperties: true });
 addFormats(ajv);
@@ -25,7 +26,11 @@ const validators = new Map<string, ReturnType<typeof ajv.compile>>([
 ]);
 
 export interface ValidationError {
-  id?: "resource-invalid" | "resource-unsupported-type" | "resource-unsupported-version";
+  id?:
+    | "resource-invalid"
+    | "resource-unsupported-type"
+    | "resource-unsupported-version"
+    | TopikAssetDiagnosticId;
   resource: string;
   path: string;
   message: string;
@@ -108,9 +113,7 @@ export function validateResources(resources: readonly unknown[]): ValidationResu
       if (!validation.ok) {
         for (const diagnostic of validation.diagnostics) {
           errors.push({
-            ...(diagnostic.id === "TOPIK_ASSET_UNSUPPORTED_VERSION"
-              ? { id: "resource-unsupported-version" as const }
-              : {}),
+            id: diagnostic.id,
             resource: getResourceLabel(resource),
             path: diagnostic.location.jsonPointer ?? "/",
             message: diagnostic.message,

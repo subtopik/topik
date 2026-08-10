@@ -65,6 +65,29 @@ describe("Asset/v1 strict JSON", () => {
     });
   });
 
+  test("rejects contradictory payload digests at value, serialization, and raw parse boundaries", () => {
+    const mismatched = {
+      ...complete,
+      spec: {
+        ...complete.spec,
+        integrity: `sha256:${"f".repeat(64)}`,
+      },
+    };
+    const expected = {
+      ok: false,
+      diagnostics: [
+        expect.objectContaining({
+          id: "TOPIK_ASSET_DIGEST_MISMATCH",
+          location: { jsonPointer: "/spec/integrity" },
+        }),
+      ],
+    };
+
+    expect(validateAssetValue(mismatched)).toMatchObject(expected);
+    expect(serializeAsset(mismatched)).toMatchObject(expected);
+    expect(parseAsset(serializeTopikJson(mismatched))).toMatchObject(expected);
+  });
+
   test("enforces the portable size ceiling for runtime values and descriptors", () => {
     const maximum = {
       ...complete,

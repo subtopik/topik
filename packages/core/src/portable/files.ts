@@ -130,9 +130,18 @@ export async function readPortableAssetFileWithTraversalHookForTest(
   return readPortableAssetFileAnchored(options, afterDirectoryOpened);
 }
 
+/** @internal Deterministic same-handle race seam; not re-exported from the package root. */
+export async function readPortableAssetFileWithReadHookForTest(
+  options: ReadPortableAssetFileOptions,
+  afterFileRead: () => void | Promise<void>,
+): Promise<TopikAssetResult<PortableAssetFileDescriptor>> {
+  return readPortableAssetFileAnchored(options, undefined, afterFileRead);
+}
+
 async function readPortableAssetFileAnchored(
   options: ReadPortableAssetFileOptions,
   afterDirectoryOpened?: (components: readonly string[]) => void | Promise<void>,
+  afterFileRead?: () => void | Promise<void>,
 ): Promise<TopikAssetResult<PortableAssetFileDescriptor>> {
   const pathValidation = validateTopikPath(options.path);
   if (!pathValidation.ok) return { ok: false, diagnostics: pathValidation.diagnostics };
@@ -268,12 +277,15 @@ async function readPortableAssetFileAnchored(
       };
     }
     const bytes = await fileHandle.readFile();
+    await afterFileRead?.();
     const after = await fileHandle.stat({ bigint: true });
     if (
       before.dev !== after.dev ||
       before.ino !== after.ino ||
       before.mode !== after.mode ||
+      before.nlink !== after.nlink ||
       before.size !== after.size ||
+      before.ctimeNs !== after.ctimeNs ||
       before.mtimeNs !== after.mtimeNs
     ) {
       return {
@@ -304,7 +316,7 @@ async function readPortableAssetFileAnchored(
       source: "filesystem",
       mode: "100644",
       bytes,
-      linkCount: 1,
+      linkCount: Number(after.nlink),
     });
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
@@ -446,7 +458,9 @@ async function applyGitAttributes(
       before.dev !== after.dev ||
       before.ino !== after.ino ||
       before.mode !== after.mode ||
+      before.nlink !== after.nlink ||
       before.size !== after.size ||
+      before.ctimeNs !== after.ctimeNs ||
       before.mtimeNs !== after.mtimeNs
     ) {
       return "Git attribute evidence changed while it was evaluated";

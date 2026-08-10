@@ -1,6 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { TopikContent } from "../theme/TopikContent";
 
+const diagramAssetName = "auto-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const heroAssetName = "auto-v1-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+const darkHeroAssetName = "auto-v1-cccccccccccccccccccccccccccccccccccccccccccccccccccc";
+
 const learningPage = `
 # Building A Topic
 
@@ -40,7 +44,7 @@ Create your first lesson.
 {% /step %}
 {% /steps %}
 
-{% figure src="asset:diagram" alt="Lesson diagram" caption="Named Asset resolved by the host." /%}
+{% figure src="asset:${diagramAssetName}" alt="Lesson diagram" caption="Compiled Asset resolved by the host." /%}
 
 {% quiz %}
 {% question type="single-choice" %}
@@ -81,7 +85,7 @@ export const InvalidDiagnostics: Story = {
 
 export const AssetResolution: Story = {
   args: {
-    content: '{% figure src="asset:hero" darkSrc="asset:hero-dark" alt="Named Asset" /%}',
+    content: `{% figure src="asset:${heroAssetName}" darkSrc="asset:${darkHeroAssetName}" alt="Compiled Asset" /%}`,
     resolveAsset: (name: string) => `https://placehold.co/960x420?text=${encodeURIComponent(name)}`,
   },
 };

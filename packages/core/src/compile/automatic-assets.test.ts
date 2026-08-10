@@ -89,9 +89,16 @@ describe("compilation-wide automatic Assets", () => {
     expect(result.payloads).toHaveLength(1);
   });
 
-  test("emits no Asset or payload when supported content has no local occurrence", async () => {
+  test("leaves credential-free HTTPS external without synthesizing or downloading Assets", async () => {
     await writeFile(join(dir, "guide.md"), "source\n");
-    const source = guide("guide", "# Guide\n\n[Website](https://example.com/file.pdf)\n");
+    const source = guide(
+      "guide",
+      [
+        "![External image](https://example.com/image.png)",
+        "[External file](https://example.com/file.pdf)",
+        '{% figure src="https://example.com/light.png" darkSrc="https://example.com/dark.png" alt="External" /%}',
+      ].join("\n\n"),
+    );
     const result = await compileAssetResources({
       rootDir: dir,
       resources: [source],
@@ -101,6 +108,23 @@ describe("compilation-wide automatic Assets", () => {
     expect(result.resources).toEqual([source]);
     expect(result.payloads).toEqual([]);
     expect(result.semantic).toMatchObject({ assetNames: [], references: [] });
+  });
+
+  test.each([
+    "![HTTP image](http://example.com/image.png)",
+    "[HTTP file](http://example.com/file.pdf)",
+    '{% figure src="https://user:secret@example.com/image.png" alt="Unsafe HTTPS" /%}',
+  ])("rejects HTTP or unsafe HTTPS source reference: %s", async (content) => {
+    await writeFile(join(dir, "guide.md"), "source\n");
+    await expect(
+      compileAssetResources({
+        rootDir: dir,
+        resources: [guide("guide", content)],
+        sourcePathsByResource: { "Guide/guide": "guide.md" },
+      }),
+    ).rejects.toMatchObject({
+      diagnostics: [expect.objectContaining({ id: "TOPIK_EXTERNAL_REFERENCE_UNSAFE" })],
+    });
   });
 
   test("excludes programmatic Asset declarations from the public input type and rejects injection", async () => {

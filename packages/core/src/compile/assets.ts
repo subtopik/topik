@@ -10,7 +10,12 @@ import type { Asset, CoursePage, Guide, WikiPage } from "@topik/schema";
 import type { Resource, SourceResource } from "../resource";
 import { generateAutomaticAssetName } from "../portable/asset";
 import { TOPIK_ASSET_LIMITS, TOPIK_ASSET_OUTPUT_PREFIX } from "../portable/constants";
-import { topikAssetDiagnostic, type TopikAssetDiagnostic } from "../portable/diagnostics";
+import {
+  TOPIK_ASSET_DIAGNOSTIC_IDS,
+  topikAssetDiagnostic,
+  type TopikAssetDiagnostic,
+  type TopikAssetDiagnosticId,
+} from "../portable/diagnostics";
 import { readPortableAssetFile } from "../portable/files";
 import {
   createTopikAssetSemanticRecord,
@@ -143,7 +148,7 @@ export async function compileAssetResources(
       }
       if (occurrence.kind === "external-https") continue;
       if (occurrence.kind === "unsafe") {
-        if (occurrence.slot === "link.href") {
+        if (occurrence.slot === "link.href" && !/^https?:/iu.test(occurrence.reference)) {
           continue;
         }
         throw referenceError(
@@ -352,10 +357,13 @@ function resourceValidationDiagnostics(
           error.resource,
     ) as { apiVersion?: unknown; name?: unknown; type?: unknown } | undefined;
     const descriptorVersion = safeResourceDescriptorVersion(resource);
-    return topikAssetDiagnostic(
-      error.id === "resource-unsupported-version"
+    const diagnosticId = isTopikAssetDiagnosticId(error.id)
+      ? error.id
+      : error.id === "resource-unsupported-version"
         ? "TOPIK_ASSET_UNSUPPORTED_VERSION"
-        : "TOPIK_ASSET_SCHEMA_INVALID",
+        : "TOPIK_ASSET_SCHEMA_INVALID";
+    return topikAssetDiagnostic(
+      diagnosticId,
       error.id === "resource-unsupported-version"
         ? "Resource apiVersion is unsupported"
         : "Resource schema validation failed",
@@ -367,6 +375,10 @@ function resourceValidationDiagnostics(
       },
     );
   });
+}
+
+function isTopikAssetDiagnosticId(value: ValidationError["id"]): value is TopikAssetDiagnosticId {
+  return TOPIK_ASSET_DIAGNOSTIC_IDS.some((id) => id === value);
 }
 
 const KNOWN_RESOURCE_TYPES = new Set([
@@ -476,8 +488,13 @@ function referenceError(
   occurrence: TopikAssetOccurrence,
   path: string,
 ): AssetCompilationError {
+  const validation = validateTopikAssetReference(occurrence.reference);
+  const diagnosticId =
+    !validation.valid && validation.failureKind === "external"
+      ? "TOPIK_EXTERNAL_REFERENCE_UNSAFE"
+      : "TOPIK_ASSET_REFERENCE_MALFORMED";
   return new AssetCompilationError(message, [
-    topikAssetDiagnostic("TOPIK_ASSET_REFERENCE_MALFORMED", message, {
+    topikAssetDiagnostic(diagnosticId, message, {
       location: { path, contentPosition: occurrence.position },
     }),
   ]);

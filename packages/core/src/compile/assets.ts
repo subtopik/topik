@@ -139,9 +139,9 @@ export async function compileAssetResources(
       includeGenericLinkCandidates: true,
     });
     for (const occurrence of occurrences) {
-      if (occurrence.kind === "asset") {
+      if (occurrence.kind === "asset" || occurrence.kind === "reserved-asset") {
         throw referenceError(
-          "Source content cannot refer to compiler-generated Asset names",
+          "Source content cannot use the reserved Asset locator scheme",
           occurrence,
           sourcePath,
         );
@@ -490,9 +490,11 @@ function referenceError(
 ): AssetCompilationError {
   const validation = validateTopikAssetReference(occurrence.reference);
   const diagnosticId =
-    !validation.valid && validation.failureKind === "external"
-      ? "TOPIK_EXTERNAL_REFERENCE_UNSAFE"
-      : "TOPIK_ASSET_REFERENCE_MALFORMED";
+    occurrence.kind === "asset" || occurrence.kind === "reserved-asset"
+      ? "TOPIK_ASSET_REFERENCE_MALFORMED"
+      : !validation.valid && validation.failureKind === "external"
+        ? "TOPIK_EXTERNAL_REFERENCE_UNSAFE"
+        : "TOPIK_ASSET_REFERENCE_MALFORMED";
   return new AssetCompilationError(message, [
     topikAssetDiagnostic(diagnosticId, message, {
       location: { path, contentPosition: occurrence.position },

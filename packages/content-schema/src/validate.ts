@@ -47,7 +47,7 @@ export function validateTopikContent(
         ) {
           return [];
         }
-        const namedReference = occurrence.reference.startsWith("asset:");
+        const namedReference = occurrence.kind === "asset" || occurrence.kind === "reserved-asset";
         const external = validation.valid
           ? validation.kind === "external-https"
           : validation.failureKind === "external";

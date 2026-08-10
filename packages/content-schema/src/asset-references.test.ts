@@ -100,6 +100,20 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
     });
   });
 
+  test.each([
+    "asset:company-logo",
+    "asset:auto-v1-short",
+    "ASSET:company-logo",
+    "asset%3Acompany-logo",
+    "%61sset%3Acompany-logo",
+    "asset%3Acompany%ZZ",
+    "asset&#58;company-logo",
+  ])("classifies reserved scheme spelling %s before generic-link fallback", (reference) => {
+    expect(extractTopikAssetOccurrences(`[Download](${reference})\n`)).toMatchObject([
+      { slot: "link.href", kind: "reserved-asset" },
+    ]);
+  });
+
   test("retains original Markdown destination bytes before parser normalization", () => {
     expect(extractTopikAssetOccurrences("![raw](é.png)\n")[0]).toMatchObject({
       reference: "é.png",

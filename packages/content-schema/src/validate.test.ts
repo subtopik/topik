@@ -234,6 +234,26 @@ graph TD;
     });
   });
 
+  test.each([
+    "asset:company-logo",
+    "asset:auto-v1-short",
+    "ASSET:company-logo",
+    "asset%3Acompany-logo",
+    "%61sset%3Acompany-logo",
+    "asset%3Acompany%ZZ",
+    "asset&#58;company-logo",
+  ])("rejects reserved Asset link spelling %s with a typed diagnostic", (reference) => {
+    expect(validateTopikContent(`[Download](${reference})\n`)).toMatchObject({
+      valid: false,
+      errors: expect.arrayContaining([
+        expect.objectContaining({
+          id: "TOPIK_ASSET_REFERENCE_MALFORMED",
+          type: "link.href",
+        }),
+      ]),
+    });
+  });
+
   test("rejects a raw non-ASCII reference-style image destination", () => {
     expect(validateTopikContent("![Hero][id]\n\n[id]: é.png\n")).toMatchObject({
       valid: false,

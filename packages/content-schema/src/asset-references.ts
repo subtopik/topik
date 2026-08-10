@@ -44,7 +44,12 @@ export const topikAssetReferenceSlots = [
   },
 ] as const satisfies readonly TopikAssetReferenceSlot[];
 
-export type TopikAssetOccurrenceKind = "asset" | "local" | "external-https" | "unsafe";
+export type TopikAssetOccurrenceKind =
+  | "asset"
+  | "reserved-asset"
+  | "local"
+  | "external-https"
+  | "unsafe";
 
 export interface TopikAssetOccurrenceSemantics {
   alt?: string;
@@ -105,7 +110,8 @@ export function extractTopikAssetOccurrences(
         definition.conditional === "proven-download" &&
         options.includeGenericLinkCandidates !== true &&
         !provenDownloadsUnambiguouslyContain(reference, provenDownloadPaths) &&
-        !isCanonicalAssetReference(reference)
+        !isCanonicalAssetReference(reference) &&
+        !usesReservedAssetScheme(reference, parsedReference)
       ) {
         continue;
       }
@@ -149,7 +155,8 @@ export function rewriteTopikAssetOccurrences(
         definition.conditional === "proven-download" &&
         options.includeGenericLinkCandidates !== true &&
         !provenDownloadsUnambiguouslyContain(reference, provenDownloadPaths) &&
-        !isCanonicalAssetReference(reference)
+        !isCanonicalAssetReference(reference) &&
+        !usesReservedAssetScheme(reference, parsedReference)
       ) {
         continue;
       }
@@ -233,7 +240,30 @@ function classifyExactReference(
   reference: string,
   parsedReference: string,
 ): TopikAssetOccurrenceKind {
+  if (usesReservedAssetScheme(reference, parsedReference)) {
+    const validation = validateTopikAssetReference(reference);
+    return reference === parsedReference && validation.valid && validation.kind === "asset"
+      ? "asset"
+      : "reserved-asset";
+  }
   return reference === parsedReference ? classifyReference(reference) : "unsafe";
+}
+
+function usesReservedAssetScheme(reference: string, parsedReference: string): boolean {
+  return hasReservedAssetScheme(reference) || hasReservedAssetScheme(parsedReference);
+}
+
+function hasReservedAssetScheme(value: string): boolean {
+  let prefix = "";
+  for (let index = 0; index < value.length && prefix.length < "asset:".length; index++) {
+    if (value[index] === "%" && /^[0-9a-f]{2}$/iu.test(value.slice(index + 1, index + 3))) {
+      prefix += String.fromCharCode(Number.parseInt(value.slice(index + 1, index + 3), 16));
+      index += 2;
+    } else {
+      prefix += value[index];
+    }
+  }
+  return /^asset:/iu.test(prefix);
 }
 
 function provenDownloadsUnambiguouslyContain(
@@ -334,7 +364,9 @@ export function removeInvalidTopikAssetReferences(root: TopikContentNode, source
       ? undefined
       : new Set(
           extractTopikAssetOccurrences(source)
-            .filter((occurrence) => occurrence.kind === "unsafe")
+            .filter(
+              (occurrence) => occurrence.kind === "unsafe" || occurrence.kind === "reserved-asset",
+            )
             .map((occurrence) => occurrence.position),
         );
   walk(root, [], (node, treePath) => {

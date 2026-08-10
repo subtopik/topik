@@ -142,17 +142,53 @@ describe("compilation-wide automatic Assets", () => {
     });
   });
 
-  test("rejects source Asset references even when the generated name is well formed", async () => {
+  test.each([
+    ["link with user-selected name", "[Download](asset:company-logo)"],
+    ["link with malformed generated name", "[Download](asset:auto-v1-short)"],
+    ["link with full generated name", `[Download](asset:${compiledAsset().name})`],
+    ["image with user-selected name", "![Image](asset:company-logo)"],
+    ["image with malformed generated name", "![Image](asset:auto-v1-short)"],
+    ["image with full generated name", `![Image](asset:${compiledAsset().name})`],
+    ["figure with user-selected name", '{% figure src="asset:company-logo" alt="Figure" /%}'],
+    [
+      "figure with malformed generated name",
+      '{% figure src="asset:auto-v1-short" alt="Figure" /%}',
+    ],
+    [
+      "figure with full generated name",
+      `{% figure src="asset:${compiledAsset().name}" alt="Figure" /%}`,
+    ],
+    ["case-aliased scheme", "[Download](ASSET:company-logo)"],
+    ["percent-encoded scheme delimiter", "[Download](asset%3Acompany-logo)"],
+    ["percent-encoded scheme letter", "[Download](%61sset%3Acompany-logo)"],
+    ["encoded scheme with malformed suffix", "[Download](asset%3Acompany%ZZ)"],
+    ["entity-encoded scheme delimiter", "[Download](asset&#58;company-logo)"],
+  ])("rejects reserved source Asset locator in %s", async (_name, content) => {
     await writeFile(join(dir, "guide.md"), "source\n");
     await expect(
       compileAssetResources({
         rootDir: dir,
-        resources: [guide("guide", `![Hero](asset:${compiledAsset().name})\n`)],
+        resources: [guide("guide", content)],
         sourcePathsByResource: { "Guide/guide": "guide.md" },
       }),
     ).rejects.toMatchObject({
       diagnostics: [expect.objectContaining({ id: "TOPIK_ASSET_REFERENCE_MALFORMED" })],
     });
+  });
+
+  test("preserves ordinary relative navigation without synthesizing an Asset", async () => {
+    await writeFile(join(dir, "one.md"), "source\n");
+    await writeFile(join(dir, "two.md"), "source\n");
+    const resources = [guide("one", "[Next](two.md)\n"), guide("two", "Next page\n")];
+    const result = await compileAssetResources({
+      rootDir: dir,
+      resources,
+      sourcePathsByResource: { "Guide/one": "one.md", "Guide/two": "two.md" },
+    });
+
+    expect(result.resources).toEqual(resources);
+    expect(result.payloads).toEqual([]);
+    expect(result.semantic.references).toEqual([]);
   });
 
   test("keeps identity across byte edits and changes identity when the path moves", async () => {

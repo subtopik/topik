@@ -93,7 +93,7 @@ a typed diagnostic and omit the browser-facing attribute instead of emitting an 
 
 Astro loaders require an explicit stable namespace and retain the independent descriptors and
 deduplicated payloads from their current completed load. Pass those same loader instances to the
-integration; it serves only canonical digest URLs from the in-memory compiler snapshot:
+integration; it delivers only canonical digest URLs from the current complete compiler snapshot:
 
 ```ts
 import { topik, topikGuidesLoader, topikWikiLoader } from "@topik/astro";
@@ -111,9 +111,15 @@ export const integration = topik({ loaders: [guides, wiki] });
 ```
 
 `loader.getAssets()` returns the current emitted descriptors, and `loader.resolveAsset(name)` maps a
-compiled name to its canonical `/assets/sha256/<digest>` URL for the renderer. Source-relative URLs
-are never delivery routes. A reload replaces the whole loader snapshot, so removed payload digests
-and failed compilations cannot fall back to source files or a prior snapshot.
+compiled name to its canonical `/assets/sha256/<digest>` URL for the renderer. During a static build,
+the integration writes the exact deduplicated payload bytes into Astro's client output. Production
+server builds embed the same snapshot in an Astro middleware route with the compiler-proven media
+type, byte length, and `nosniff` response headers. The resolver mapping is installed with that
+snapshot, so rendered `asset:` names resolve during static prerendering and production requests.
+
+Source-relative URLs are never delivery routes. Each build or reload replaces the whole owned
+digest snapshot; removed payloads and failed compilations cannot fall back to source files or a
+prior snapshot.
 
 ## Safety
 

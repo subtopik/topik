@@ -490,6 +490,31 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
     ]);
   });
 
+  test("derives download meaning from every visible schema-supported inline label form", () => {
+    const source = [
+      "[`Manual`](manual.bin)",
+      "[**API `Manual`**](manual.bin)",
+      "[Reference `Manual`][manual]",
+      "[![Manual icon](icon.png)](manual.bin)",
+      "",
+      "[manual]: manual.bin",
+    ].join("\n");
+    const labels = extractTopikAssetOccurrences(source, {
+      provenDownloadPaths: ["manual.bin"],
+    })
+      .filter((occurrence) => occurrence.role === "download")
+      .map((occurrence) => occurrence.semantics.linkLabel);
+
+    expect(labels).toEqual(["Manual", "API Manual", "Reference Manual", "Manual icon"]);
+  });
+
+  test("does not invent visible download meaning from a decorative nested image", () => {
+    const download = extractTopikAssetOccurrences("[![](icon.png)](manual.bin)", {
+      provenDownloadPaths: ["manual.bin"],
+    }).find((occurrence) => occurrence.role === "download");
+    expect(download?.semantics.linkLabel).toBe("");
+  });
+
   test("retains an exact image destination nested inside a link label", () => {
     expect(
       extractTopikAssetOccurrences("[![Nested image](é.png)](manual.bin)", {

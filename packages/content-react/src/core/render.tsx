@@ -6,7 +6,9 @@ import {
   removeInvalidTopikAssetReferences,
   removeInvalidTopikNavigationReferences,
   topikMarkdocConfig,
+  validateTopikAssetReference,
   validateTopikContent,
+  validateTopikHref,
   type TopikContentDiagnostic,
 } from "@topik/content-schema";
 import * as React from "react";
@@ -107,24 +109,23 @@ export function resolveTopikAssetReferences<T>(
   const slots = renderedAssetSlots(value.name);
   for (const [attribute, slot] of slots) {
     const reference = attributes[attribute];
-    if (typeof reference !== "string" || !usesReservedAssetScheme(reference)) continue;
+    if (typeof reference !== "string") continue;
+    if (!usesReservedAssetScheme(reference)) {
+      if (!isSafeRenderedReference(reference, slot)) {
+        delete attributes[attribute];
+        malformedReference(options, slot);
+      }
+      continue;
+    }
     if (!reference.startsWith("asset:")) {
       delete attributes[attribute];
-      options.onDiagnostic?.({
-        id: "TOPIK_ASSET_REFERENCE_MALFORMED",
-        message: "Asset reference has an invalid name",
-        slot,
-      });
+      malformedReference(options, slot);
       continue;
     }
     const name = reference.slice("asset:".length);
     if (!/^auto-v1-[a-z2-7]{52}$/u.test(name)) {
       delete attributes[attribute];
-      options.onDiagnostic?.({
-        id: "TOPIK_ASSET_REFERENCE_MALFORMED",
-        message: "Asset reference has an invalid name",
-        slot,
-      });
+      malformedReference(options, slot);
       continue;
     }
     let resolved: string | undefined;
@@ -133,7 +134,11 @@ export function resolveTopikAssetReferences<T>(
     } catch {
       resolved = undefined;
     }
-    if (resolved === undefined || usesReservedAssetScheme(resolved)) {
+    if (
+      resolved === undefined ||
+      usesReservedAssetScheme(resolved) ||
+      !isSafeResolvedAssetReference(resolved)
+    ) {
       delete attributes[attribute];
       options.onDiagnostic?.({
         id: "TOPIK_ASSET_REFERENCE_MISSING",
@@ -150,6 +155,36 @@ export function resolveTopikAssetReferences<T>(
     attributes,
     value.children.map((child) => resolveTopikAssetReferences(child, resolveAsset, options)),
   ) as T;
+}
+
+function malformedReference(
+  options: ResolveTopikAssetReferencesOptions,
+  slot: TopikAssetResolutionDiagnostic["slot"],
+): void {
+  options.onDiagnostic?.({
+    id: "TOPIK_ASSET_REFERENCE_MALFORMED",
+    message: "Asset reference has an invalid name or unsafe location",
+    slot,
+  });
+}
+
+function isSafeRenderedReference(
+  reference: string,
+  slot: TopikAssetResolutionDiagnostic["slot"],
+): boolean {
+  const validation = validateTopikAssetReference(reference);
+  if (validation.valid) return true;
+  if (slot !== "link.href") return false;
+  const scheme = /^([a-z][a-z0-9+.-]*):/iu.exec(reference)?.[1].toLowerCase();
+  if (scheme !== undefined && scheme !== "mailto" && scheme !== "tel") return false;
+  return validateTopikHref(reference).length === 0;
+}
+
+function isSafeResolvedAssetReference(reference: string): boolean {
+  const validation = validateTopikAssetReference(reference);
+  if (validation.valid && validation.kind !== "asset") return true;
+  if (reference.startsWith("//") || /^[a-z][a-z0-9+.-]*:/iu.test(reference)) return false;
+  return validateTopikHref(reference).length === 0;
 }
 
 function usesReservedAssetScheme(value: string): boolean {

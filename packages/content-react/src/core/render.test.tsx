@@ -219,6 +219,133 @@ describe("content-react core", () => {
   });
 
   it.each([
+    "http://example.com/file.png",
+    "HtTp://example.com/file.png",
+    "https://user:secret@example.com/file.png",
+    "//example.com/file.png",
+    "javascript:alert(1)",
+    "data:image/png;base64,AA==",
+    "file:///tmp/file.png",
+    "asset:auto-v1-short",
+    `ASSET:auto-v1-${"a".repeat(52)}`,
+  ])("removes unsafe post-transform value %s from every Asset slot", (reference) => {
+    const diagnostics: string[] = [];
+    const resolved = resolveTopikAssetReferences(
+      [
+        new Markdoc.Tag("TopikImage", { src: reference }),
+        new Markdoc.Tag("TopikFigure", { src: reference, darkSrc: reference }),
+        new Markdoc.Tag("TopikLink", { href: reference }),
+      ],
+      undefined,
+      { onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id) },
+    );
+
+    expect(resolved.map((tag) => tag.attributes)).toEqual([{}, {}, {}]);
+    expect(diagnostics).toEqual(Array(4).fill("TOPIK_ASSET_REFERENCE_MALFORMED"));
+  });
+
+  it.each([true, false])(
+    "sanitizes variable and function results before custom renderers with validation %s",
+    (validate) => {
+      const diagnostics: string[] = [];
+      const html = renderToStaticMarkup(
+        <>
+          {renderTopikMarkdown(
+            [
+              '{% evaluatedImage src=$unsafe alt="Image" /%}',
+              '{% figure src=unsafe() darkSrc=$allowed alt="Figure" /%}',
+              "{% evaluatedLink href=$unsafe %}Download{% /evaluatedLink %}",
+            ].join("\n\n"),
+            {
+              components: {
+                TopikFigure: ({ darkSrc, src }) => (
+                  <span data-dark={String(darkSrc)} data-src={String(src)} />
+                ),
+                TopikImage: ({ src }) => <span data-src={String(src)} />,
+                TopikLink: ({ children, href }) =>
+                  typeof href === "string" ? (
+                    <a data-custom href={href}>
+                      {children}
+                    </a>
+                  ) : (
+                    <span data-no-target>{children}</span>
+                  ),
+              },
+              config: {
+                functions: { unsafe: { transform: () => "javascript:alert(1)" } },
+                tags: {
+                  evaluatedImage: {
+                    render: "TopikImage",
+                    attributes: { alt: { type: String }, src: { type: String } },
+                  },
+                  evaluatedLink: {
+                    render: "TopikLink",
+                    attributes: { href: { type: String } },
+                  },
+                },
+                variables: {
+                  allowed: "HtTpS://example.com/dark.png",
+                  unsafe: "http://example.com/file.png",
+                },
+              },
+              onAssetDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id),
+              validate,
+            },
+          )}
+        </>,
+      );
+
+      expect(diagnostics).toEqual(Array(3).fill("TOPIK_ASSET_REFERENCE_MALFORMED"));
+      expect(html).toContain('data-dark="HtTpS://example.com/dark.png"');
+      expect(html).not.toContain("http://");
+      expect(html).not.toContain("javascript:");
+      expect(html).not.toContain("href=");
+      expect(html).toContain("data-no-target");
+    },
+  );
+
+  it("preserves safe evaluated navigation and Asset values", () => {
+    const references = [
+      "guide?tab=api#install",
+      "#install",
+      "/guide?tab=api#install",
+      "mailto:docs@example.com",
+      "HtTpS://example.com/file.pdf",
+    ];
+    const resolved = resolveTopikAssetReferences(
+      references.map((href) => new Markdoc.Tag("TopikLink", { href })),
+    );
+    expect(resolved.map((tag) => tag.attributes.href)).toEqual(references);
+    expect(
+      resolveTopikAssetReferences(
+        new Markdoc.Tag("TopikFigure", {
+          darkSrc: "HtTpS://example.com/dark.png",
+          src: "images/light.png",
+        }),
+      ).attributes,
+    ).toEqual({ darkSrc: "HtTpS://example.com/dark.png", src: "images/light.png" });
+  });
+
+  it.each([
+    "http://example.com/file.png",
+    "https://user:secret@example.com/file.png",
+    "//example.com/file.png",
+    "javascript:alert(1)",
+    `ASSET:auto-v1-${"b".repeat(52)}`,
+  ])("does not emit unsafe Asset resolver result %s", (resolvedReference) => {
+    const name = `auto-v1-${"a".repeat(52)}`;
+    const diagnostics: string[] = [];
+    const resolved = resolveTopikAssetReferences(
+      new Markdoc.Tag("TopikImage", { src: `asset:${name}` }),
+      () => resolvedReference,
+      { onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id) },
+    );
+
+    expect(resolved.attributes).not.toHaveProperty("src");
+    expect(diagnostics).toEqual(["TOPIK_ASSET_REFERENCE_MISSING"]);
+  });
+
+  it.each([
     `ASSET:auto-v1-${"b".repeat(52)}`,
     `asset%3Aauto-v1-${"b".repeat(52)}`,
     `asset&#58;auto-v1-${"b".repeat(52)}`,

@@ -68,6 +68,47 @@ describe("TopikContent", () => {
     },
   );
 
+  it.each([true, false])(
+    "removes unsafe evaluated Asset-slot values in the default renderer with validation=%s",
+    (validate) => {
+      const diagnostics: string[] = [];
+      const html = renderToStaticMarkup(
+        <TopikContent
+          config={{
+            functions: { unsafe: { transform: () => "javascript:alert(1)" } },
+            tags: {
+              evaluatedImage: {
+                render: "TopikImage",
+                attributes: { alt: { type: String }, src: { type: String } },
+              },
+              evaluatedLink: {
+                render: "TopikLink",
+                attributes: { href: { type: String } },
+              },
+            },
+            variables: {
+              allowed: "HtTpS://example.com/dark.png",
+              unsafe: "https://user:secret@example.com/file.png",
+            },
+          }}
+          content={[
+            '{% evaluatedImage src=$unsafe alt="Image" /%}',
+            '{% figure src=$allowed darkSrc=unsafe() alt="Figure" /%}',
+            "{% evaluatedLink href=$unsafe %}Download{% /evaluatedLink %}",
+          ].join("\n\n")}
+          onAssetDiagnostic={(diagnostic) => diagnostics.push(diagnostic.id)}
+          validate={validate}
+        />,
+      );
+
+      expect(diagnostics).toEqual(Array(3).fill("TOPIK_ASSET_REFERENCE_MALFORMED"));
+      expect(html).toContain("HtTpS://example.com/dark.png");
+      expect(html).not.toContain("user:secret");
+      expect(html).not.toContain("javascript:");
+      expect(html).not.toContain("href=");
+    },
+  );
+
   it("passes an explicit color scheme to figures", () => {
     const html = renderToStaticMarkup(
       <TopikContent

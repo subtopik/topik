@@ -598,6 +598,55 @@ describe("compilation-wide automatic Assets", () => {
     expect(compiledGuide?.spec.content.value).toContain("https://example.com/manual.bin");
   });
 
+  test("discovers and rewrites downloads with accessible code, mixed, reference, and image labels", async () => {
+    await writeFile(join(dir, "manual.bin"), "manual bytes\n");
+    await writeFile(join(dir, "icon.png"), PNG_BYTES);
+    await writeFile(join(dir, "guide.md"), "source\n");
+    const content = [
+      "[`Manual`](manual.bin)",
+      "[**API `Manual`**](manual.bin)",
+      "[Reference `Manual`][manual]",
+      "[![Manual icon](icon.png)](manual.bin)",
+      "",
+      "[manual]: manual.bin",
+    ].join("\n");
+
+    const result = await compileAssetResources({
+      rootDir: dir,
+      resources: [guide("guide", content)],
+      sourcePathsByResource: { "Guide/guide": "guide.md" },
+      sourceNamespace: "accessible-download-labels",
+    });
+    const compiledGuide = result.resources.find(
+      (resource): resource is Guide => resource.type === "Guide",
+    );
+
+    expect(result.resources.filter((resource) => resource.type === "Asset")).toHaveLength(2);
+    expect(
+      result.semantic.references.filter((reference) => reference.slot === "link.href"),
+    ).toHaveLength(4);
+    expect(
+      compiledGuide?.spec.content.value.match(/\]\(asset:auto-v1-[a-z2-7]{52}/gu),
+    ).toHaveLength(5);
+  });
+
+  test("rejects a download labeled only by a decorative nested image", async () => {
+    await writeFile(join(dir, "manual.bin"), "manual bytes\n");
+    await writeFile(join(dir, "icon.png"), PNG_BYTES);
+    await writeFile(join(dir, "guide.md"), "source\n");
+
+    await expect(
+      compileAssetResources({
+        rootDir: dir,
+        resources: [guide("guide", "[![](icon.png)](manual.bin)")],
+        sourcePathsByResource: { "Guide/guide": "guide.md" },
+        sourceNamespace: "empty-download-label",
+      }),
+    ).rejects.toMatchObject({
+      diagnostics: [expect.objectContaining({ id: "TOPIK_ASSET_REFERENCE_ACCESSIBILITY_INVALID" })],
+    });
+  });
+
   test.each(['"title (detail)"', "'title (detail)'", "(title detail)"])(
     "discovers and rewrites image and download references with inline title form %s",
     async (title) => {

@@ -239,9 +239,13 @@ function occurrenceSemantics(
 }
 
 function plainText(node: TopikContentNode): string {
-  if (node.type === "text") {
+  if (node.type === "text" || node.type === "code") {
     const content = node.attributes?.content;
     return typeof content === "string" ? content : "";
+  }
+  if (node.type === "image") {
+    const alt = node.attributes?.alt;
+    return typeof alt === "string" ? alt : "";
   }
   return node.children.map(plainText).join("");
 }

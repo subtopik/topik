@@ -33,6 +33,16 @@ const PNG_BYTES = Buffer.from(
   "hex",
 );
 const execFileAsync = promisify(execFile);
+const UNICODE_17_NEW_MARKS = [
+  ...codePointRange(0x1acf, 0x1add),
+  ...codePointRange(0x1ae0, 0x1aeb),
+  ...codePointRange(0x10efa, 0x10efb),
+  ...codePointRange(0x11b60, 0x11b67),
+  0x1e6e3,
+  0x1e6e6,
+  ...codePointRange(0x1e6ee, 0x1e6ef),
+  0x1e6f5,
+];
 
 function file(overrides: Partial<PortableAssetFileDescriptor> = {}): PortableAssetFileDescriptor {
   return {
@@ -46,6 +56,51 @@ function file(overrides: Partial<PortableAssetFileDescriptor> = {}): PortableAss
 }
 
 describe("topik-path-v1 boundaries", () => {
+  test("uses deterministic Unicode 17 semantics on every supported Node runtime", () => {
+    expect(validateTopikPath("docs/readme.md")).toMatchObject({ ok: true });
+    expect(validateTopikPath("caf\u00e9.md")).toMatchObject({ ok: true });
+    expect(validateTopikPath("cafe\u0301.md")).toMatchObject({
+      ok: false,
+      diagnostics: [{ reason: "not_nfc" }],
+    });
+
+    // U+10940 SIDETIC LETTER N01 was assigned in Unicode 17 and is Cn in Unicode 16.
+    expect(validateTopikPath("\u{10940}.md")).toMatchObject({ ok: true });
+    // U+A7F1 MODIFIER LETTER CAPITAL S was assigned in Unicode 17 with NFKC_CF=s.
+    expect(computeTopikPathCollisionKey("\ua7f1.md")).toMatchObject({
+      ok: true,
+      value: "s.md",
+    });
+    expect(validateTopikPath("\u{1095a}.md")).toMatchObject({
+      ok: false,
+      diagnostics: [{ reason: "forbidden_character" }],
+    });
+  });
+
+  test("rejects every Unicode 17 normalization-sensitive mark on every runtime", () => {
+    expect(UNICODE_17_NEW_MARKS).toHaveLength(42);
+    for (const codePoint of UNICODE_17_NEW_MARKS) {
+      const mark = String.fromCodePoint(codePoint);
+      for (const path of [`a${mark}\u0315.png`, `a\u0315${mark}.png`, `${mark}.png`]) {
+        expect(validateTopikPath(path), `U+${codePoint.toString(16)}`).toMatchObject({
+          ok: false,
+          diagnostics: [{ reason: "forbidden_character" }],
+        });
+      }
+    }
+  });
+
+  test("rejects both orderings at the Unicode 16/17 NFC boundary", () => {
+    expect(validateTopikPath("a\u{1acf}\u0315.png")).toMatchObject({
+      ok: false,
+      diagnostics: [{ reason: "forbidden_character" }],
+    });
+    expect(validateTopikPath("a\u0315\u{1acf}.png")).toMatchObject({
+      ok: false,
+      diagnostics: [{ reason: "forbidden_character" }],
+    });
+  });
+
   test("pins Unicode collision semantics while preserving accepted NFC spelling", () => {
     expect(TOPIK_PATH_V1_DESCRIPTOR.unicodeVersion).toBe("17.0.0");
     expect(validateTopikPath("Café/Photo.png")).toMatchObject({
@@ -100,6 +155,10 @@ describe("topik-path-v1 boundaries", () => {
     ).toMatchObject({ ok: false });
   });
 });
+
+function codePointRange(start: number, end: number): number[] {
+  return Array.from({ length: end - start + 1 }, (_, index) => start + index);
+}
 
 describe("portable file descriptor boundaries", () => {
   test.each([

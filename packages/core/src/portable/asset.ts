@@ -4,6 +4,8 @@ import type { ErrorObject } from "ajv";
 import {
   assetV1Schema,
   hasMatchingAssetDigests,
+  isGeneratedAssetName as isSchemaGeneratedAssetName,
+  parseGeneratedAssetName,
   type Asset,
   type GeneratedAssetName,
 } from "@topik/schema";
@@ -25,13 +27,13 @@ import {
   TopikJsonSyntaxError,
 } from "./json";
 import { validateTopikPath } from "./path";
+import {
+  isTopikPathCodePointForbiddenV17,
+  isTopikPathNormalizationSensitiveV17,
+} from "./path-unicode-v17";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
-const GENERATED_NAME = /^auto-v1-[a-z2-7]{51}[aq]$/u;
-const FORBIDDEN_TEXT =
-  /[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Default_Ignorable_Code_Point}\p{Bidi_Control}\p{Noncharacter_Code_Point}]/u;
-
 const ajv = new Ajv2020({
   strict: true,
   strictRequired: false,
@@ -194,19 +196,42 @@ export function validateAssetUri(
 }
 
 export function isGeneratedAssetName(value: string): value is GeneratedAssetName {
-  return GENERATED_NAME.test(value);
+  return isSchemaGeneratedAssetName(value);
 }
 
 export function validateStableSourceNamespace(value: string): TopikAssetResult<string> {
+  if (containsForbiddenPortableText(value)) {
+    return failure(
+      "TOPIK_ASSET_SOURCE_NAMESPACE_INVALID",
+      "Stable source namespace is not portable text after NFC normalization",
+    );
+  }
   const normalized = value.normalize("NFC");
   const bytes = encoder.encode(normalized);
-  if (bytes.byteLength < 1 || bytes.byteLength > 1024 || FORBIDDEN_TEXT.test(normalized)) {
+  if (
+    bytes.byteLength < 1 ||
+    bytes.byteLength > 1024 ||
+    containsForbiddenPortableText(normalized)
+  ) {
     return failure(
       "TOPIK_ASSET_SOURCE_NAMESPACE_INVALID",
       "Stable source namespace is not portable text after NFC normalization",
     );
   }
   return { ok: true, value: normalized, diagnostics: [] };
+}
+
+function containsForbiddenPortableText(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    if (
+      isTopikPathCodePointForbiddenV17(codePoint) ||
+      isTopikPathNormalizationSensitiveV17(codePoint)
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export interface GenerateAutomaticAssetNameOptions {
@@ -232,7 +257,7 @@ export function generateAutomaticAssetName(
   const digest = createHash("sha256").update(input).digest();
   return {
     ok: true,
-    value: `auto-v1-${base32(digest)}` as GeneratedAssetName,
+    value: parseGeneratedAssetName(`auto-v1-${base32(digest)}`),
     diagnostics: [],
   };
 }

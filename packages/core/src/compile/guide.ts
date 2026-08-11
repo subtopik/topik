@@ -11,6 +11,7 @@ import {
   FileOutsideCompilationRootError,
   readRegularFileWithinRoot,
 } from "./files";
+import { PublicCompileError } from "./public-errors";
 import {
   extractMarkdownTitle,
   linkValidationPolicy,
@@ -68,7 +69,12 @@ export async function discoverGuides(
     return { diagnostics: [], resources: [], sourcePathsByResource: {}, consumedSourcePaths: [] };
   }
 
-  const config = parseCollectionConfig(loadedConfig.value);
+  let config;
+  try {
+    config = parseCollectionConfig(loadedConfig.value);
+  } catch {
+    throw new PublicCompileError("config-invalid", loadedConfig.path);
+  }
 
   const files = await readdir(dir);
   const markdownFiles = files.filter((f) => f.endsWith(".md") || f.endsWith(".mdx")).sort();

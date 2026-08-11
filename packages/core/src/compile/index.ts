@@ -32,6 +32,11 @@ export {
   type CompileValidationOptions,
   type LinkValidationPolicy,
 } from "./shared";
+export {
+  publicCompileErrorMessage,
+  PublicCompileError,
+  type PublicCompileErrorId,
+} from "./public-errors";
 
 const WIKI_CONFIG_FILES = ["wiki.yaml", "wiki.yml", "wiki.json"];
 const COLLECTION_CONFIG_FILES = ["collection.yaml", "collection.yml", "collection.json"];

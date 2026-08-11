@@ -15,6 +15,7 @@ export const TOPIK_PATH_V1_DESCRIPTOR = {
   maxComponentUtf8Bytes: 255,
   maxComponents: 64,
   maxRepositoryPathUtf8Bytes: 768,
+  normalizationSensitiveExclusion: "unicode-17-new-marks",
   storageNormalization: "NFC",
   unicodeVersion: "17.0.0",
 } as const;

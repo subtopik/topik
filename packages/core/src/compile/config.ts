@@ -1,13 +1,14 @@
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { assertRegularFileWithinRoot, readRegularFileWithinRoot } from "./files";
+import { PublicCompileError } from "./public-errors";
 
 export async function readConfigFile(dir: string, candidates: string[]): Promise<unknown> {
   const config = await readOptionalConfigFile(dir, candidates);
   if (config != null) {
     return config;
   }
-  throw new Error(`Config file not found in ${dir} (tried ${candidates.join(", ")})`);
+  throw new PublicCompileError("config-not-found");
 }
 
 export async function readOptionalConfigFile(dir: string, candidates: string[]): Promise<unknown> {
@@ -28,14 +29,13 @@ export async function readOptionalConfigFileWithPath(
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         continue;
       }
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`Failed to read config file ${filePath}: ${message}`, { cause: error });
+      throw new PublicCompileError("config-read-failed", name);
     }
 
     try {
       return { path: name, value: name.endsWith(".json") ? JSON.parse(raw) : parseYaml(raw) };
-    } catch (error) {
-      throw new Error(`Failed to parse config file ${filePath}`, { cause: error });
+    } catch {
+      throw new PublicCompileError("config-parse-failed", name);
     }
   }
   return undefined;
@@ -50,10 +50,7 @@ export async function findConfigFile(dir: string, candidates: string[]): Promise
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         continue;
       }
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`Failed to access config file ${join(dir, name)}: ${message}`, {
-        cause: error,
-      });
+      throw new PublicCompileError("config-access-failed", name);
     }
   }
   return null;

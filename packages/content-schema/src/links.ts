@@ -1,8 +1,8 @@
 import type { Node, ValidationError } from "@markdoc/markdoc";
+import { isGeneratedAssetName } from "@topik/schema";
 import { assignTopikHeadingIds, type TopikHeading } from "./headings";
 import { parseTopikContent } from "./content";
-import type { TopikContentDiagnostic } from "./diagnostics";
-import { TOPIK_GENERATED_ASSET_NAME_PATTERN } from "./asset-references";
+import { topikLinkDiagnosticMessage, type TopikContentDiagnostic } from "./diagnostics";
 
 const ALLOWED_SCHEMES = new Set(["asset", "http", "https", "mailto", "tel"]);
 const UNSAFE_SCHEMES = new Set(["data", "javascript", "vbscript"]);
@@ -83,60 +83,49 @@ export function analyzeTopikContent(
 export function validateTopikHref(value: unknown): ValidationError[] {
   if (typeof value !== "string") return [];
   if (value.length === 0) {
-    return [linkError("link-href-empty", "Link target must not be empty.")];
+    return [linkError("link-href-empty")];
   }
   if (value !== value.trim()) {
-    return [linkError("link-url-invalid", "Link target must not have surrounding whitespace.")];
+    return [linkError("link-url-invalid")];
   }
   if (hasAsciiControl(value)) {
-    return [linkError("link-url-invalid", "Link target must not contain control characters.")];
+    return [linkError("link-url-invalid")];
   }
   if (isNetworkPathReference(value)) {
-    return [
-      linkError(
-        "link-url-protocol-relative",
-        "Protocol-relative links are not supported; use an explicit http or https URL.",
-      ),
-    ];
+    return [linkError("link-url-protocol-relative")];
   }
 
   const explicitScheme = SCHEME.exec(value)?.[1].toLowerCase();
 
   if (explicitScheme === "asset") {
-    return TOPIK_GENERATED_ASSET_NAME_PATTERN.test(value.slice("asset:".length))
+    return isGeneratedAssetName(value.slice("asset:".length))
       ? []
-      : [linkError("link-asset-invalid", "Asset link must use a generated Asset name.")];
+      : [linkError("link-asset-invalid")];
   }
 
   try {
     const parsed = new URL(value, TOPIK_BASE_URL);
     const scheme = parsed.protocol.slice(0, -1).toLowerCase();
     if (!ALLOWED_SCHEMES.has(scheme)) {
-      const unsafe = UNSAFE_SCHEMES.has(scheme);
       return [
-        linkError(
-          unsafe ? "link-scheme-unsafe" : "link-scheme-unsupported",
-          `${unsafe ? "Unsafe" : "Unsupported"} link scheme '${scheme}:'.`,
-        ),
+        linkError(UNSAFE_SCHEMES.has(scheme) ? "link-scheme-unsafe" : "link-scheme-unsupported"),
       ];
     }
     if (!explicitScheme && parsed.origin !== TOPIK_BASE_URL.origin) {
-      return [
-        linkError(
-          "link-url-protocol-relative",
-          "Protocol-relative links are not supported; use an explicit http or https URL.",
-        ),
-      ];
+      return [linkError("link-url-protocol-relative")];
+    }
+    if (parsed.username !== "" || parsed.password !== "") {
+      return [linkError("link-url-credentials")];
     }
     if ((scheme === "http" || scheme === "https") && !parsed.hostname) {
-      return [linkError("link-url-invalid", `Invalid ${scheme} URL.`)];
+      return [linkError("link-url-invalid")];
     }
     if ((scheme === "mailto" || scheme === "tel") && !parsed.pathname) {
-      return [linkError("link-url-invalid", `Invalid ${scheme} link.`)];
+      return [linkError("link-url-invalid")];
     }
     if (parsed.hash) decodeURIComponent(parsed.hash.slice(1));
   } catch {
-    return [linkError("link-url-invalid", "Link target is not a valid URL reference.")];
+    return [linkError("link-url-invalid")];
   }
 
   return [];
@@ -144,12 +133,7 @@ export function validateTopikHref(value: unknown): ValidationError[] {
 
 export function validateTopikNavigationHref(value: unknown): ValidationError[] {
   if (typeof value === "string" && SCHEME.exec(value)?.[1].toLowerCase() === "asset") {
-    return [
-      linkError(
-        "link-asset-navigation-unsupported",
-        "Navigation-only targets cannot use named Asset references.",
-      ),
-    ];
+    return [linkError("link-asset-navigation-unsupported")];
   }
   return validateTopikHref(value);
 }
@@ -182,7 +166,9 @@ function locationFields(node: Node, fallbackFile?: string): { file?: string; lin
   return { ...(file ? { file } : {}), lines };
 }
 
-function linkError(id: string, message: string): ValidationError {
+function linkError(id: string): ValidationError {
+  const message = topikLinkDiagnosticMessage(id);
+  if (message === undefined) throw new TypeError("Unknown link diagnostic identifier");
   return { id, level: "error", message };
 }
 

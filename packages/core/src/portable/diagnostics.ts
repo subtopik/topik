@@ -1,3 +1,8 @@
+import {
+  isTopikPathCodePointForbiddenV17,
+  isTopikPathNormalizationSensitiveV17,
+} from "./path-unicode-v17";
+
 export const TOPIK_ASSET_DIAGNOSTIC_IDS = [
   "TOPIK_ASSET_UNSUPPORTED_VERSION",
   "TOPIK_ASSET_DUPLICATE_MEMBER",
@@ -141,9 +146,6 @@ export function relocateTopikAssetDiagnostic(
   });
 }
 
-const UNSAFE_DIAGNOSTIC_UNICODE =
-  /[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Default_Ignorable_Code_Point}\p{Bidi_Control}\p{Noncharacter_Code_Point}]/u;
-const UNSAFE_DIAGNOSTIC_WHITESPACE = /[\p{White_Space}&&[^ ]]/v;
 const SAFE_ASCII_FIELD = /^[\x20-\x7e]{1,1024}$/u;
 
 function sanitizeMessage(value: string): string {
@@ -206,8 +208,7 @@ function sanitizePath(value: string): string {
   if (
     value.length === 0 ||
     value.length > 1024 ||
-    UNSAFE_DIAGNOSTIC_UNICODE.test(value) ||
-    UNSAFE_DIAGNOSTIC_WHITESPACE.test(value) ||
+    containsUnsafeDiagnosticUnicode(value) ||
     value.includes("?") ||
     value.includes("#") ||
     value.includes(":") ||
@@ -223,4 +224,17 @@ function sanitizePath(value: string): string {
     return "[redacted]";
   }
   return value;
+}
+
+function containsUnsafeDiagnosticUnicode(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    if (
+      isTopikPathCodePointForbiddenV17(codePoint) ||
+      isTopikPathNormalizationSensitiveV17(codePoint)
+    ) {
+      return true;
+    }
+  }
+  return false;
 }

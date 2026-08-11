@@ -327,7 +327,9 @@ async function readOwnedDescriptor(
     }
     handle = await open(
       procFdChild(parent.fd, components.at(-1) ?? ""),
-      constants.O_RDONLY | constants.O_NOFOLLOW,
+      constants.O_RDONLY |
+        constants.O_NOFOLLOW |
+        (typeof constants.O_NONBLOCK === "number" ? constants.O_NONBLOCK : 0),
     );
     const stat = await handle.stat({ bigint: true });
     if (!stat.isFile() || stat.nlink !== 1n) return undefined;

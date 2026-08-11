@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import type { Asset, GeneratedAssetName } from "@topik/schema";
+import { parseGeneratedAssetName, type Asset } from "@topik/schema";
 import {
   generateAutomaticAssetName,
   isGeneratedAssetName,
@@ -16,7 +16,7 @@ import { TOPIK_ASSET_LIMITS } from "./constants";
 const complete: Asset = {
   apiVersion: "v1",
   type: "Asset",
-  name: `auto-v1-${"a".repeat(52)}` as GeneratedAssetName,
+  name: parseGeneratedAssetName(`auto-v1-${"a".repeat(52)}`),
   spec: {
     uri: "assets/sha256/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     integrity: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -183,6 +183,15 @@ describe("automatic Asset identity", () => {
     expect(decomposed).toEqual(composed);
     expect(validateStableSourceNamespace("e\u0301".repeat(512))).toMatchObject({ ok: true });
     expect(validateStableSourceNamespace("e\u0301".repeat(513))).toMatchObject({ ok: false });
+  });
+
+  test("rejects Unicode 17 marks that the Node 22.12 normalizer cannot order", () => {
+    expect(validateStableSourceNamespace("a\u{1acf}\u0315")).toMatchObject({ ok: false });
+    expect(validateStableSourceNamespace("a\u0315\u{1acf}")).toMatchObject({ ok: false });
+    expect(validateStableSourceNamespace("\u{10940}")).toMatchObject({
+      ok: true,
+      value: "\u{10940}",
+    });
   });
 });
 

@@ -10,3 +10,9 @@ path = "packages/core/src/portable/nfkc-casefold-v17.ts"
 precedence = "override"
 SPDX-FileCopyrightText = "2025 Unicode, Inc."
 SPDX-License-Identifier = "Unicode-3.0"
+
+[[annotations]]
+path = "packages/core/src/portable/path-unicode-v17.ts"
+precedence = "override"
+SPDX-FileCopyrightText = "2025 Unicode, Inc."
+SPDX-License-Identifier = "Unicode-3.0"

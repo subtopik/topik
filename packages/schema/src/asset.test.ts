@@ -2,7 +2,13 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import Ajv2020 from "ajv/dist/2020";
 import { describe, expect, test } from "vite-plus/test";
-import { assetV1Schema, hasMatchingAssetDigests } from "./asset";
+import {
+  assetV1Schema,
+  GENERATED_ASSET_NAME_PATTERN,
+  hasMatchingAssetDigests,
+  isGeneratedAssetName,
+  parseGeneratedAssetName,
+} from "./asset";
 import { testSchema } from "./test-utils";
 
 const ajv = new Ajv2020({ strict: true, strictRequired: false });
@@ -61,6 +67,29 @@ describe("Asset/v1 raw schema", () => {
       `AUTO-v1-${"a".repeat(52)}`,
     ]) {
       expect(validateAsset(assetWithName(name)), name).toBe(false);
+    }
+  });
+
+  test("brands generated names only through runtime validation", () => {
+    const canonical = `auto-v1-${"a".repeat(52)}`;
+    expect(isGeneratedAssetName(canonical)).toBe(true);
+    expect(parseGeneratedAssetName(canonical)).toBe(canonical);
+    expect(isGeneratedAssetName("auto-v1-q")).toBe(false);
+    expect(() => parseGeneratedAssetName("auto-v1-q")).toThrow(
+      "Generated Asset name is not canonical",
+    );
+  });
+
+  test("isolates opaque admission from mutation of the public pattern descriptor", () => {
+    const originalTest = GENERATED_ASSET_NAME_PATTERN.test.bind(GENERATED_ASSET_NAME_PATTERN);
+    GENERATED_ASSET_NAME_PATTERN.test = () => true;
+    try {
+      expect(isGeneratedAssetName("auto-v1-q")).toBe(false);
+      expect(() => parseGeneratedAssetName("auto-v1-q")).toThrow(
+        "Generated Asset name is not canonical",
+      );
+    } finally {
+      GENERATED_ASSET_NAME_PATTERN.test = originalTest;
     }
   });
 });

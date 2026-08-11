@@ -109,7 +109,10 @@ navigation:
       await writeFile(join(external, "secret.md"), "# Secret\n\nTOPIK_SECRET=outside-root\n");
       await symlink(join(external, "secret.md"), join(dir, "leak.md"));
 
-      await expect(compileWiki({ dir })).rejects.toThrow(/outside the compilation directory/);
+      await expect(compileWiki({ dir })).rejects.toMatchObject({
+        id: "file-outside-compilation-root",
+        location: "leak.md",
+      });
     } finally {
       await rm(external, { recursive: true, force: true });
     }
@@ -123,7 +126,10 @@ navigation:
     await symlink("wiki-source.yaml", join(dir, "wiki.yaml"));
     await writePage("hello", "# Hello\n");
 
-    await expect(compileWiki({ dir })).rejects.toThrow(/not a regular file/u);
+    await expect(compileWiki({ dir })).rejects.toMatchObject({
+      id: "config-read-failed",
+      location: "wiki.yaml",
+    });
   });
 
   test("rejects an in-root symlinked wiki page source", async () => {
@@ -131,7 +137,10 @@ navigation:
     await writeFile(join(dir, "linked-source.txt"), "# Linked page\n");
     await symlink("linked-source.txt", join(dir, "linked.md"));
 
-    await expect(compileWiki({ dir })).rejects.toThrow(/not a regular file/u);
+    await expect(compileWiki({ dir })).rejects.toMatchObject({
+      id: "file-not-regular",
+      location: "linked.md",
+    });
   });
 
   test("collapses index pages in slug", async () => {
@@ -645,6 +654,40 @@ navigation:
     await expect(compileWiki({ dir })).rejects.toThrow(/link-fragment-not-found/);
   });
 
+  test("keeps authored and derived missing-link targets out of every public surface", async () => {
+    const sentinel = "PRIVATE_VALUE";
+    await writeWikiConfig("id: tw\ntitle: Wiki\nnavigation:\n  - intro\n  - setup\n");
+    await writePage(
+      "intro",
+      `# Introduction\n\n[Missing page](/private-value?token=${sentinel}#%50RIVATE_VALUE)\n\n[Missing heading](/setup#${sentinel})\n`,
+    );
+    await writePage("setup", "# Setup\n");
+
+    const warning = await compileWiki({ dir, validation: { links: "warning" } });
+    expect(warning.diagnostics.map((diagnostic) => diagnostic.id)).toEqual([
+      "link-page-not-found",
+      "link-fragment-not-found",
+    ]);
+    expect(JSON.stringify(warning.diagnostics)).not.toContain(sentinel);
+    expect(JSON.stringify(warning.diagnostics)).not.toContain("private-value");
+
+    let failure: unknown;
+    try {
+      await compileWiki({ dir });
+    } catch (error) {
+      failure = error;
+    }
+    const surfaces = [
+      String(failure),
+      failure instanceof Error ? failure.message : "",
+      JSON.stringify(failure),
+      typeof failure === "object" && failure !== null ? JSON.stringify(Object.values(failure)) : "",
+      failure instanceof Error && failure.cause instanceof Error ? String(failure.cause) : "",
+    ].join("\n");
+    expect(surfaces).not.toContain(sentinel);
+    expect(surfaces).not.toContain("private-value");
+  });
+
   test("can downgrade unresolved internal links to warnings", async () => {
     await writeWikiConfig("id: tw\ntitle: Wiki\nnavigation:\n  - intro\n");
     await writePage("intro", "# Introduction\n\n[Missing](/absent#heading)\n");
@@ -694,7 +737,7 @@ navigation:
   - nonexistent
 `);
 
-    await expect(compileWiki({ dir })).rejects.toThrow("Page not found: nonexistent");
+    await expect(compileWiki({ dir })).rejects.toMatchObject({ id: "wiki-page-not-found" });
   });
 
   test("returns no resources when the wiki config is missing", async () => {
@@ -710,9 +753,10 @@ navigation:
   test("rejects navigation page paths that cannot become wiki page names", async () => {
     await writeWikiConfig("id: test\ntitle: Wiki\nnavigation:\n  - Runtime/Hello_World\n");
 
-    await expect(compileWiki({ dir })).rejects.toThrow(
-      "Wiki page paths must use lowercase DNS-style segments separated by '/'",
-    );
+    await expect(compileWiki({ dir })).rejects.toMatchObject({
+      id: "config-invalid",
+      location: "wiki.yaml",
+    });
   });
 
   test("throws when the wiki id is too long for hashed page names", async () => {
@@ -721,7 +765,10 @@ navigation:
     );
     await writePage("intro", "# Intro\n");
 
-    await expect(compileWiki({ dir })).rejects.toThrow("Wiki id must be 46 characters or fewer");
+    await expect(compileWiki({ dir })).rejects.toMatchObject({
+      id: "config-invalid",
+      location: "wiki.yaml",
+    });
   });
 });
 

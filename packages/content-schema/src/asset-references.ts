@@ -1,12 +1,17 @@
 import Markdoc from "@markdoc/markdoc";
 import { decodeHTMLStrict } from "entities";
+import {
+  GENERATED_ASSET_NAME_PATTERN,
+  isGeneratedAssetName,
+  type GeneratedAssetName,
+} from "@topik/schema";
 import type { TopikContentNode } from "./content";
 import { formatTopikContent, parseTopikContent } from "./content";
 import type { TopikAssetReferenceRole } from "./components";
 
 export const TOPIK_ASSET_REFERENCE_VERSION = "topik-asset-reference-v1" as const;
-export const TOPIK_GENERATED_ASSET_NAME_PATTERN = /^auto-v1-[a-z2-7]{51}[aq]$/u;
-export type TopikGeneratedAssetName = `auto-v1-${string}${"a" | "q"}`;
+export const TOPIK_GENERATED_ASSET_NAME_PATTERN = GENERATED_ASSET_NAME_PATTERN;
+export type TopikGeneratedAssetName = GeneratedAssetName;
 
 export interface TopikAssetReferenceSlot {
   node: "image" | "tag" | "link";
@@ -307,8 +312,8 @@ export function validateTopikAssetReference(reference: string): TopikAssetRefere
   }
   if (reference.startsWith("asset:")) {
     const name = reference.slice("asset:".length);
-    return TOPIK_GENERATED_ASSET_NAME_PATTERN.test(name)
-      ? { valid: true, kind: "asset", name: name as TopikGeneratedAssetName }
+    return isGeneratedAssetName(name)
+      ? { valid: true, kind: "asset", name }
       : { valid: false, kind: "unsafe", failureKind: "local" };
   }
   if (/^https:\/\//iu.test(reference)) {

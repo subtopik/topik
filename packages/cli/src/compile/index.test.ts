@@ -1,24 +1,31 @@
 import { createHash } from "node:crypto";
+import { execFile } from "node:child_process";
+import { constants } from "node:fs";
 import {
   link,
   lstat,
   mkdir,
   mkdtemp,
+  open,
   readFile,
   readdir,
   rm,
   symlink,
   writeFile,
 } from "node:fs/promises";
+import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { compile, replaceCompilationTree } from "./index";
+import { formatPublicCliError } from "../errors";
 
 const PNG_BYTES = Buffer.from(
   "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000000500010d0a2db40000000049454e44ae426082",
   "hex",
 );
+const execFileAsync = promisify(execFile);
 
 type CompileCommand = {
   handler?: (options: {
@@ -89,6 +96,38 @@ describe("compile command", () => {
     });
     expect(`${String(failure)}\n${JSON.stringify(failure)}`).not.toContain(dir);
     expect(`${String(failure)}\n${JSON.stringify(failure)}`).not.toContain(tmpdir());
+  });
+
+  test("keeps invalid config bytes and machine paths out of CLI compile error output", async () => {
+    const sentinel = "PRIVATE_VALUE";
+    await writeFile(join(dir, "wiki.yaml"), `id: docs\ntitle: [${sentinel}\n`);
+
+    let failure: unknown;
+    try {
+      await (compile as CompileCommand).handler?.({
+        dir,
+        format: "json",
+        dryRun: true,
+        validate: true,
+        links: "error",
+        sourceNamespace: "cli-test-source",
+      });
+    } catch (error) {
+      failure = error;
+    }
+    const output = formatPublicCliError(failure);
+    const surfaces = [
+      output,
+      String(failure),
+      failure instanceof Error ? failure.message : "",
+      JSON.stringify(failure),
+      typeof failure === "object" && failure !== null ? JSON.stringify(Object.values(failure)) : "",
+      failure instanceof Error && failure.cause instanceof Error ? String(failure.cause) : "",
+    ].join("\n");
+    expect(output).toBe("Configuration file could not be parsed.");
+    expect(surfaces).not.toContain(sentinel);
+    expect(surfaces).not.toContain(dir);
+    expect(surfaces).not.toContain(tmpdir());
   });
 
   test("uses the same generated identity for canonically equivalent CLI namespaces", async () => {
@@ -317,6 +356,60 @@ describe("compile command", () => {
     await expect(lstat(outDir)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  test.each([
+    ["FIFO", ".topik/materialization.json"],
+    ["FIFO", ".topik/semantic.json"],
+    ["Unix socket", ".topik/materialization.json"],
+    ["Unix socket", ".topik/semantic.json"],
+  ] as const)(
+    "promptly rejects a %s ownership marker at %s without mutation",
+    async (nodeKind, marker) => {
+      const outDir = join(dir, `special-marker-${nodeKind.replaceAll(" ", "-")}-${marker}`);
+      const outside = join(dir, "outside-marker-peer.txt");
+      await writeFile(outside, "unchanged");
+      await writeOwnedTree(outDir, "existing");
+      const markerPath = join(outDir, marker);
+      await rm(markerPath);
+
+      let server: Server | undefined;
+      if (nodeKind === "FIFO") {
+        await execFileAsync("mkfifo", [markerPath]);
+      } else {
+        server = createServer();
+        await new Promise<void>((resolve, reject) => {
+          server?.once("error", reject);
+          server?.listen(markerPath, resolve);
+        });
+      }
+
+      try {
+        const beforeFiles = await listFiles(outDir);
+        const outcome = await replaceCompilationTreeBounded(outDir, markerPath);
+        expect(outcome.timedOut).toBe(false);
+        expect(outcome.result).toBe("rejected");
+        expect(outcome.error).toBeInstanceOf(Error);
+        expect(await readFile(join(outDir, "generation.txt"), "utf8")).toBe("existing");
+        expect(await listFiles(outDir)).toEqual(beforeFiles);
+        expect(await readFile(outside, "utf8")).toBe("unchanged");
+        expect(
+          (await readdir(dir)).filter(
+            (name) =>
+              name.startsWith(".topik-compilation-generation-") ||
+              name.startsWith(".topik-compilation-prior-"),
+          ),
+        ).toEqual([]);
+      } finally {
+        await new Promise<void>((resolve, reject) => {
+          if (server === undefined) {
+            resolve();
+            return;
+          }
+          server.close((error) => (error === undefined ? resolve() : reject(error)));
+        });
+      }
+    },
+  );
+
   test("publishes without external commands when PATH has no move implementation", async () => {
     const outDir = join(dir, "node-only-publication");
     const previousPath = process.env.PATH;
@@ -379,4 +472,31 @@ async function listFiles(root: string, prefix = ""): Promise<string[]> {
     else files.push(path);
   }
   return files;
+}
+
+async function replaceCompilationTreeBounded(
+  outDir: string,
+  fifoPath: string,
+): Promise<{ error?: unknown; result: "resolved" | "rejected"; timedOut: boolean }> {
+  const operation = replaceCompilationTree(outDir, ownedFiles("replacement")).then(
+    () => ({ result: "resolved" as const }),
+    (error: unknown) => ({ error, result: "rejected" as const }),
+  );
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const first = await Promise.race([
+    operation,
+    new Promise<{ result: "timeout" }>((resolve) => {
+      timer = setTimeout(() => resolve({ result: "timeout" }), 750);
+    }),
+  ]);
+  if (timer !== undefined) clearTimeout(timer);
+  if (first.result !== "timeout") return { ...first, timedOut: false };
+
+  // Release a blocking FIFO reader so a broken implementation cannot leave the test process hung.
+  const descriptor = await open(fifoPath, constants.O_RDWR | constants.O_NONBLOCK).catch(
+    () => undefined,
+  );
+  await descriptor?.close();
+  const settled = await operation;
+  return { ...settled, timedOut: true };
 }

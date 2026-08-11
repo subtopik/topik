@@ -2,7 +2,10 @@ export { personSchema, type Person } from "./person";
 export {
   assetSchema,
   assetV1Schema,
+  GENERATED_ASSET_NAME_PATTERN,
   hasMatchingAssetDigests,
+  isGeneratedAssetName,
+  parseGeneratedAssetName,
   type Asset,
   type AssetSpec,
   type GeneratedAssetName,

@@ -7,8 +7,29 @@ export const assetV1Schema: JSONSchema = rawAssetV1Schema as JSONSchema;
 /** Current compiler-output schema. */
 export const assetSchema = assetV1Schema;
 
-/** Canonical unpadded base32 encoding of a full SHA-256 with the versioned prefix. */
-export type GeneratedAssetName = `auto-v1-${string}${"a" | "q"}`;
+const GENERATED_ASSET_NAME_VALIDATOR = /^auto-v1-[a-z2-7]{51}[aq]$/u;
+
+/** Public grammar descriptor. Runtime admission uses an isolated boundary. */
+export const GENERATED_ASSET_NAME_PATTERN = /^auto-v1-[a-z2-7]{51}[aq]$/u;
+
+declare const generatedAssetNameBrand: unique symbol;
+
+/** Opaque canonical unpadded base32 encoding of a full SHA-256 with the versioned prefix. */
+export type GeneratedAssetName = string & {
+  readonly [generatedAssetNameBrand]: "GeneratedAssetName";
+};
+
+export function isGeneratedAssetName(value: unknown): value is GeneratedAssetName {
+  return typeof value === "string" && GENERATED_ASSET_NAME_VALIDATOR.test(value);
+}
+
+/** Validate an external string before admitting it to the generated-name type boundary. */
+export function parseGeneratedAssetName(value: string): GeneratedAssetName {
+  if (!isGeneratedAssetName(value)) {
+    throw new TypeError("Generated Asset name is not canonical");
+  }
+  return value;
+}
 
 export interface AssetSpec {
   uri: `assets/sha256/${string}`;

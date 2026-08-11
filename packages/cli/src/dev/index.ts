@@ -7,6 +7,7 @@ import {
   sourceNamespaceOptions,
   requiresSourceNamespace,
 } from "../source-namespace";
+import { formatPublicCliError, PublicCliError } from "../errors";
 
 const DEV_HOST = "127.0.0.1";
 const DEFAULT_ALLOWED_ORIGIN = "https://write.subtopik.com";
@@ -125,7 +126,7 @@ function normalizeAllowedOrigin(value: string): string {
   try {
     url = new URL(value);
   } catch {
-    throw new Error(`Invalid browser origin: ${value}`);
+    throw new PublicCliError("browser-origin-invalid");
   }
 
   if (
@@ -137,7 +138,7 @@ function normalizeAllowedOrigin(value: string): string {
     url.search !== "" ||
     url.hash !== ""
   ) {
-    throw new Error(`Invalid browser origin: ${value}`);
+    throw new PublicCliError("browser-origin-invalid");
   }
 
   return url.origin;
@@ -268,7 +269,7 @@ export async function startDevServer(options: {
   const dir = resolve(options.dir);
   const allowedOrigin = normalizeAllowedOrigin(options.allowOrigin ?? DEFAULT_ALLOWED_ORIGIN);
 
-  console.log(`Watching ${dir} for changes...`);
+  console.log("Watching content for changes...");
   const assetOptions = sourceNamespaceOptions(options.sourceNamespace);
   let watcher: Watcher;
   try {
@@ -283,7 +284,7 @@ export async function startDevServer(options: {
   console.log(`Compiled ${watcher.resources.size} resources`);
 
   watcher.on("error", (error: Error) => {
-    console.error("Compile error:", error.message);
+    console.error("Compile error:", formatPublicCliError(error));
   });
 
   watcher.on("update", (key: string) => {

@@ -102,7 +102,7 @@ describe("compileGuides", () => {
         validation: { links: "off" },
         assets: { sourceNamespace: "symlinked-guide-config" },
       }),
-    ).rejects.toThrow(/not a regular file/u);
+    ).rejects.toMatchObject({ id: "config-read-failed", location: "collection.yaml" });
   });
 
   test("rejects an in-root symlinked guide source", async () => {
@@ -209,9 +209,10 @@ describe("compileGuides", () => {
       "---\ntitle: Post\nauthors:\n  - John Doe\n---\n\nContent.",
     );
 
-    await expect(compileGuides({ dir })).rejects.toThrow(
-      "authors[0] in post.md must be a DNS-1123 resource name",
-    );
+    await expect(compileGuides({ dir })).rejects.toMatchObject({
+      id: "reference-list-invalid",
+      location: "post.md",
+    });
   });
 
   test("compiles multiple guides sorted by filename", async () => {
@@ -358,6 +359,23 @@ describe("compileGuides", () => {
 
     const off = await compileGuides({ dir, validation: { links: "off" } });
     expect(off.diagnostics).toEqual([]);
+  });
+
+  test("does not disclose a missing local fragment through compile diagnostics", async () => {
+    const sentinel = "PRIVATE_VALUE";
+    await writeCollectionConfig("id: docs\ntitle: Docs\n");
+    await writeGuide("post", `# Post\n\n[Missing](#${sentinel})\n`);
+
+    const warning = await compileGuides({ dir, validation: { links: "warning" } });
+    expect(warning.diagnostics).toEqual([
+      expect.objectContaining({
+        id: "link-fragment-not-found",
+        message: "Link target heading was not found.",
+      }),
+    ]);
+    expect(JSON.stringify(warning.diagnostics)).not.toContain(sentinel);
+
+    await expect(compileGuides({ dir })).rejects.not.toThrow(sentinel);
   });
 
   test("compiled Guide resources validate against schema", async () => {

@@ -5,13 +5,11 @@ import {
   parseTopikContent,
   removeInvalidTopikAssetReferences,
   removeInvalidTopikNavigationReferences,
-  TOPIK_GENERATED_ASSET_NAME_PATTERN,
   topikMarkdocConfig,
   validateTopikAssetReference,
   validateTopikContent,
   validateTopikHref,
   type TopikContentDiagnostic,
-  type TopikGeneratedAssetName,
 } from "@topik/content-schema";
 import * as React from "react";
 import {
@@ -129,13 +127,13 @@ export function resolveTopikAssetReferences<T>(
       malformedReference(options, slot);
       continue;
     }
-    const name = reference.slice("asset:".length);
-    if (!TOPIK_GENERATED_ASSET_NAME_PATTERN.test(name)) {
+    const validation = validateTopikAssetReference(reference);
+    if (!validation.valid || validation.kind !== "asset") {
       delete attributes[attribute];
       malformedReference(options, slot);
       continue;
     }
-    const generatedName = name as TopikGeneratedAssetName;
+    const generatedName = validation.name;
     let resolved: string | undefined;
     try {
       resolved = resolveAsset?.(generatedName);

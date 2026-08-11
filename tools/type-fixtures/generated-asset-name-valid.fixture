@@ -1,0 +1,28 @@
+import {
+  isGeneratedAssetName,
+  parseGeneratedAssetName,
+  type GeneratedAssetName,
+} from "@topik/schema";
+import {
+  validateTopikAssetReference,
+  type TopikGeneratedAssetName,
+} from "@topik/content-schema";
+
+const parsed: GeneratedAssetName = parseGeneratedAssetName(
+  "auto-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+);
+const alias: TopikGeneratedAssetName = parsed;
+
+const candidate: unknown = parsed;
+if (isGeneratedAssetName(candidate)) {
+  const narrowed: GeneratedAssetName = candidate;
+  void narrowed;
+}
+
+const reference = validateTopikAssetReference(`asset:${parsed}`);
+if (reference.valid && reference.kind === "asset") {
+  const validated: TopikGeneratedAssetName = reference.name;
+  void validated;
+}
+
+void alias;

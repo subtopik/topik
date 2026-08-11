@@ -1,6 +1,10 @@
 import { TOPIK_PATH_V1_DESCRIPTOR, TOPIK_PATH_VERSION } from "./constants";
 import { NFKC_CASEFOLD_V17_DATA } from "./nfkc-casefold-v17";
 import {
+  isTopikPathCodePointForbiddenV17,
+  isTopikPathNormalizationSensitiveV17,
+} from "./path-unicode-v17";
+import {
   topikAssetDiagnostic,
   type TopikAssetDiagnostic,
   type TopikAssetPathDiagnosticReason,
@@ -10,11 +14,6 @@ import {
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
 const FORBIDDEN_ASCII = /[\\%<>:"|?*]/u;
-const FORBIDDEN_CATEGORY = /[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}]/u;
-const FORBIDDEN_WHITESPACE = /[\p{White_Space}&&[^ ]]/v;
-const DEFAULT_IGNORABLE = /\p{Default_Ignorable_Code_Point}/u;
-const BIDI_CONTROL = /\p{Bidi_Control}/u;
-const NONCHARACTER = /\p{Noncharacter_Code_Point}/u;
 const SEPARATOR_ALIASES = /[\u2044\u2215\u29f5\u29f8\u29f9\ufe68\uff0f\uff3c]/u;
 const DOS_STEM = /^(?:con|prn|aux|nul|clock\$|conin\$|conout\$|com[1-9]|lpt[1-9])$/u;
 const NFKC_CASEFOLD_V17 = parseNfkcCasefoldData(NFKC_CASEFOLD_V17_DATA);
@@ -53,16 +52,6 @@ export function validateTopikPath(
     );
   }
 
-  if (
-    normalizeUnicodeVersion(process.versions.unicode ?? "") !==
-    TOPIK_PATH_V1_DESCRIPTOR.unicodeVersion
-  ) {
-    return pathFailure(
-      path,
-      "unicode_version_unsupported",
-      `topik-path-v1 requires Unicode ${TOPIK_PATH_V1_DESCRIPTOR.unicodeVersion}`,
-    );
-  }
   if (path.length === 0 || path.includes("\u0000") || path.includes("\ufeff")) {
     return pathFailure(path, "forbidden_character", "Path is empty or contains a forbidden value");
   }
@@ -81,13 +70,7 @@ export function validateTopikPath(
   if (SEPARATOR_ALIASES.test(path)) {
     return pathFailure(path, "separator_alias", "Path contains a separator-confusable character");
   }
-  if (
-    FORBIDDEN_CATEGORY.test(path) ||
-    FORBIDDEN_WHITESPACE.test(path) ||
-    DEFAULT_IGNORABLE.test(path) ||
-    BIDI_CONTROL.test(path) ||
-    NONCHARACTER.test(path)
-  ) {
+  if (containsTopikPathForbiddenCodePoint(path)) {
     return pathFailure(path, "forbidden_character", "Path contains a forbidden Unicode value");
   }
   if (path.normalize("NFC") !== path) {
@@ -157,6 +140,19 @@ export function validateTopikPath(
     },
     diagnostics: [],
   };
+}
+
+function containsTopikPathForbiddenCodePoint(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    if (
+      isTopikPathCodePointForbiddenV17(codePoint) ||
+      isTopikPathNormalizationSensitiveV17(codePoint)
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function validPathCapabilities(capabilities: ValidateTopikPathOptions["capabilities"]): boolean {
@@ -236,7 +232,7 @@ export function validateTopikPathSet(
     : { ok: false, value: byCollision, diagnostics };
 }
 
-/** Unicode 17 NFKC casefold. The runtime version is guarded before this is used. */
+/** Unicode 17 NFKC casefold for topik-path-v1-admitted input. */
 export function toNfkcCasefold(value: string): string {
   let mapped = "";
   for (const character of value) {
@@ -264,13 +260,6 @@ function pathFailure(
 
 function safePath(path: string): string {
   return JSON.stringify(path).slice(1, -1);
-}
-
-function normalizeUnicodeVersion(version: string): string {
-  const parts = version.split(".");
-  return [...parts, ...Array.from({ length: Math.max(0, 3 - parts.length) }, () => "0")]
-    .slice(0, 3)
-    .join(".");
 }
 
 function parseNfkcCasefoldData(source: string): ReadonlyMap<number, string> {

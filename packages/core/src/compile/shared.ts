@@ -1,4 +1,4 @@
-import type { TopikContentDiagnostic } from "@topik/content-schema";
+import { sanitizeTopikContentDiagnostic, type TopikContentDiagnostic } from "@topik/content-schema";
 import { isAbsolute, win32 } from "node:path";
 import { parse as parseYaml } from "yaml";
 import type { Resource } from "../resource";
@@ -7,6 +7,7 @@ import type {
   TopikMaterializationRecordV1,
 } from "../portable/identity";
 import type { AssetPayload } from "./assets";
+import { PublicCompileError } from "./public-errors";
 
 export interface CompileResult {
   diagnostics: TopikContentDiagnostic[];
@@ -78,9 +79,8 @@ export function parseMarkdownFrontmatter(
       throw new Error("Frontmatter title must be a string");
     }
     return { frontmatter, content: match[2] };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Invalid frontmatter in ${filePath}: ${message}`, { cause: error });
+  } catch {
+    throw new PublicCompileError("frontmatter-invalid", filePath);
   }
 }
 
@@ -108,7 +108,9 @@ export function formatContentDiagnostics(diagnostics: TopikContentDiagnostic[]):
 
 function sanitizeContentDiagnostic(diagnostic: TopikContentDiagnostic): TopikContentDiagnostic {
   const file = sanitizeDiagnosticFile(diagnostic.file);
-  return diagnostic.file === undefined ? diagnostic : { ...diagnostic, file };
+  return sanitizeTopikContentDiagnostic(
+    diagnostic.file === undefined ? diagnostic : { ...diagnostic, file },
+  );
 }
 
 function sanitizeDiagnosticFile(file: string | undefined): string {
@@ -119,22 +121,22 @@ function sanitizeDiagnosticFile(file: string | undefined): string {
 
 export function parseReferenceList(
   value: unknown,
-  fieldName: string,
+  _fieldName: string,
   filePath: string,
 ): string[] | undefined {
   if (value == null) {
     return undefined;
   }
   if (!Array.isArray(value)) {
-    throw new Error(`${fieldName} in ${filePath} must be an array of resource names`);
+    throw new PublicCompileError("reference-list-invalid", filePath);
   }
 
-  const references = value.map((entry, index) => {
+  const references = value.map((entry) => {
     if (typeof entry !== "string") {
-      throw new Error(`${fieldName}[${index}] in ${filePath} must be a string`);
+      throw new PublicCompileError("reference-list-invalid", filePath);
     }
     if (entry.length > 63 || !DNS_LABEL_PATTERN.test(entry)) {
-      throw new Error(`${fieldName}[${index}] in ${filePath} must be a DNS-1123 resource name`);
+      throw new PublicCompileError("reference-list-invalid", filePath);
     }
     return entry;
   });

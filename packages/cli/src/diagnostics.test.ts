@@ -15,6 +15,24 @@ describe("CLI diagnostic serialization", () => {
     expect(output).not.toContain("https://user:");
   });
 
+  test("re-applies stable link wording before CLI presentation", () => {
+    const sentinel = "PRIVATE_VALUE";
+    const output = formatDiagnostic({
+      id: "link-page-not-found",
+      type: "link",
+      level: "error",
+      message: `Missing /private-value?token=${sentinel}#${sentinel}`,
+      lines: [2],
+      file: "intro.md",
+    });
+
+    expect(output).toBe(
+      "intro.md:2 error link-page-not-found: Internal link target page was not found.",
+    );
+    expect(output).not.toContain(sentinel);
+    expect(output).not.toContain("private-value");
+  });
+
   test.each(["/var/redacted/docs/page.md", String.raw`C:\redacted\docs\page.md`])(
     "sanitizes absolute path %s",
     (file) => {

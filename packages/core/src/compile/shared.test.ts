@@ -48,7 +48,7 @@ describe("parseMarkdownFrontmatter", () => {
 
   test("rejects non-object frontmatter", () => {
     expect(() => parseMarkdownFrontmatter("---\n- invalid\n---\nbody", "guide.md")).toThrow(
-      "Invalid frontmatter in guide.md: Frontmatter must parse to an object",
+      "Document frontmatter is invalid.",
     );
   });
 });
@@ -77,7 +77,7 @@ describe("parseReferenceList", () => {
 
   test("rejects invalid references", () => {
     expect(() => parseReferenceList(["John Doe"], "authors", "guide.md")).toThrow(
-      "authors[0] in guide.md must be a DNS-1123 resource name",
+      "Document resource references are invalid.",
     );
   });
 });

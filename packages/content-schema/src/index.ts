@@ -48,6 +48,8 @@ export {
   type TopikComponentName,
 } from "./components";
 export {
+  sanitizeTopikContentDiagnostic,
+  topikLinkDiagnosticMessage,
   toTopikContentDiagnostic,
   type TopikContentDiagnostic,
   type TopikContentDiagnosticLevel,

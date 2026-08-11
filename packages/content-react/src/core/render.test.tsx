@@ -651,16 +651,31 @@ describe("content-react core", () => {
     expect(diagnostics.some((message) => message.includes("'quiz' requires"))).toBe(true);
   });
 
-  it("does not expose malformed link text through renderer diagnostic callbacks", () => {
+  it("does not expose untrusted link structure through renderer diagnostic callbacks", () => {
     const sentinel = "PRIVATE_VALUE";
-    const diagnostics: unknown[] = [];
-    void renderTopikMarkdown(`{% card title="Unsafe" href="https://user:${sentinel}@[" /%}`, {
-      onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
-    });
+    for (const href of [
+      `https://user:${sentinel}@[`,
+      `https://user:%50RIVATE_VALUE@example.invalid/path`,
+      `PrivateValue:${sentinel}`,
+      `https://example.invalid/?token=${sentinel}#%zz`,
+    ]) {
+      const diagnostics: unknown[] = [];
+      void renderTopikMarkdown(`{% card title="Unsafe" href="${href}" /%}`, {
+        file: `/tmp/${sentinel}/lesson.md`,
+        onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+      });
 
-    expect(diagnostics).not.toHaveLength(0);
-    expect(JSON.stringify(diagnostics)).not.toContain(sentinel);
-    expect(JSON.stringify(diagnostics)).not.toContain("https://user:");
+      expect(diagnostics, href).not.toHaveLength(0);
+      const surfaces = [
+        String(diagnostics),
+        JSON.stringify(diagnostics),
+        JSON.stringify(diagnostics.map((diagnostic) => Object.keys(diagnostic as object))),
+        JSON.stringify(diagnostics.map((diagnostic) => Object.values(diagnostic as object))),
+      ].join("\n");
+      expect(surfaces.toLowerCase()).not.toContain("privatevalue");
+      expect(surfaces).not.toContain(sentinel);
+      expect(surfaces).not.toContain(href);
+    }
   });
 
   it.each([

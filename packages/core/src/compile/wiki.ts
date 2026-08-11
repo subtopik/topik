@@ -21,6 +21,7 @@ import { compileAssetResources, type AssetCompilationOptions } from "./assets";
 import type { CompileResourceDiscovery } from "./guide";
 import { readOptionalConfigFileWithPath } from "./config";
 import { readRegularFileWithinRoot } from "./files";
+import { PublicCompileError } from "./public-errors";
 import { classifyPortableNavigationPath, readPortableAssetFile } from "../portable/files";
 import { validateTopikPath } from "../portable/path";
 import {
@@ -71,7 +72,12 @@ export async function discoverWiki(options: CompileWikiOptions): Promise<Compile
     return { diagnostics: [], resources: [], sourcePathsByResource: {}, consumedSourcePaths: [] };
   }
 
-  const config = parseWikiConfig(loadedConfig.value);
+  let config;
+  try {
+    config = parseWikiConfig(loadedConfig.value);
+  } catch {
+    throw new PublicCompileError("config-invalid", loadedConfig.path);
+  }
   const pagePaths = config.navigation ? [...new Set(collectPagePaths(config.navigation))] : [];
   const resolvedFiles = await Promise.all(pagePaths.map((pagePath) => readPageFile(dir, pagePath)));
 
@@ -216,7 +222,7 @@ async function readPageFile(
       throw error;
     }
   }
-  throw new Error(`Page not found: ${pagePath} (tried .md and .mdx in ${dir})`);
+  throw new PublicCompileError("wiki-page-not-found");
 }
 
 function pagePathToSlug(pagePath: string): string {

@@ -66,6 +66,37 @@ describe("Topik links", () => {
     }
   });
 
+  test("never copies authored link structure into public diagnostics", () => {
+    const cases = [
+      ["PrivateValue:opaque", "link-scheme-unsupported", "privatevalue"],
+      ["JaVaScRiPt:PRIVATE_VALUE", "link-scheme-unsafe", "javascript"],
+      ["https://user:PRIVATE_VALUE@example.invalid/path", "link-url-credentials", "PRIVATE_VALUE"],
+      [
+        "hTtPs://user:%50RIVATE_VALUE@example.invalid/path",
+        "link-url-credentials",
+        "%50RIVATE_VALUE",
+      ],
+      ["https://example.invalid/?token=PRIVATE_VALUE#%zz", "link-url-invalid", "PRIVATE_VALUE"],
+      ["hTtPs://[?token=PRIVATE_VALUE#fragment", "link-url-invalid", "PRIVATE_VALUE"],
+    ] as const;
+
+    for (const [href, id, sentinel] of cases) {
+      const result = validateTopikHref(href);
+      expect(result).toEqual([
+        expect.objectContaining({ id, level: "error", message: expect.any(String) }),
+      ]);
+      const surfaces = [
+        result.map(String).join("\n"),
+        result.map((error) => error.message).join("\n"),
+        JSON.stringify(result.map((error) => Object.keys(error))),
+        JSON.stringify(result.map((error) => Object.values(error))),
+        JSON.stringify(result),
+      ].join("\n");
+      expect(surfaces.toLowerCase()).not.toContain(sentinel.toLowerCase());
+      expect(surfaces).not.toContain(href);
+    }
+  });
+
   test("enforces the canonical generated-name grammar in Asset hrefs", () => {
     const alphabet = "abcdefghijklmnopqrstuvwxyz234567";
     for (const finalSymbol of alphabet) {

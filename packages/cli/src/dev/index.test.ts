@@ -4,7 +4,8 @@ import { request } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
+import { formatPublicCliError } from "../errors";
 import { startDevServer, type StartedDevServer } from "./index";
 
 const WRITE_ORIGIN = "https://write.subtopik.com";
@@ -85,6 +86,7 @@ describe("dev command", () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await runningServer?.close();
     runningServer = undefined;
     await rm(dir, { recursive: true, force: true });
@@ -168,11 +170,41 @@ describe("dev command", () => {
 
   test("rejects invalid browser origin configuration", async () => {
     await expect(startDevServer({ dir, port: 0, allowOrigin: "*" })).rejects.toThrow(
-      "Invalid browser origin",
+      "Browser origin configuration is invalid",
     );
     await expect(
       startDevServer({ dir, port: 0, allowOrigin: "https://write.example.com/path" }),
-    ).rejects.toThrow("Invalid browser origin");
+    ).rejects.toThrow("Browser origin configuration is invalid");
+  });
+
+  test("keeps config bytes and machine paths out of CLI dev output", async () => {
+    const sentinel = "PRIVATE_VALUE";
+    await writeFile(join(dir, "wiki.yaml"), `id: docs\ntitle: [${sentinel}\n`);
+    const logs: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((...values) => {
+      logs.push(values.map(String).join(" "));
+    });
+
+    let failure: unknown;
+    try {
+      await startDevServer({ dir, port: 0, sourceNamespace: "dev-test-source" });
+    } catch (error) {
+      failure = error;
+    }
+    const output = [formatPublicCliError(failure), ...logs].join("\n");
+    const surfaces = [
+      output,
+      String(failure),
+      failure instanceof Error ? failure.message : "",
+      JSON.stringify(failure),
+      typeof failure === "object" && failure !== null ? JSON.stringify(Object.values(failure)) : "",
+      failure instanceof Error && failure.cause instanceof Error ? String(failure.cause) : "",
+    ].join("\n");
+    expect(formatPublicCliError(failure)).toBe("Configuration file could not be parsed.");
+    expect(output).toContain("Watching content for changes...");
+    expect(surfaces).not.toContain(sentinel);
+    expect(surfaces).not.toContain(dir);
+    expect(surfaces).not.toContain(tmpdir());
   });
 
   test("handles preflight only for the trusted browser origin", async () => {

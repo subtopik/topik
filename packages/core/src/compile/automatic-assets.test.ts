@@ -16,6 +16,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 import { extractTopikAssetOccurrences } from "@topik/content-schema";
+import { parseGeneratedAssetName } from "@topik/schema";
 import type {
   Asset,
   Course,
@@ -152,7 +153,7 @@ function compiledAsset(): Asset {
   return {
     apiVersion: "v1",
     type: "Asset",
-    name: `auto-v1-${"a".repeat(52)}` as GeneratedAssetName,
+    name: parseGeneratedAssetName(`auto-v1-${"a".repeat(52)}`),
     spec: {
       uri: `assets/sha256/${digest}`,
       integrity: `sha256:${digest}`,
@@ -944,7 +945,7 @@ describe("compilation-wide automatic Assets", () => {
       diagnostics: [expect.objectContaining({ id: "TOPIK_ASSET_REFERENCE_AMBIGUOUS" })],
     });
     const paths = new Map<GeneratedAssetName, string>();
-    const collidingName = `auto-v1-${"a".repeat(52)}` as GeneratedAssetName;
+    const collidingName = parseGeneratedAssetName(`auto-v1-${"a".repeat(52)}`);
     registerGeneratedAssetPath(paths, collidingName, "a.png");
     expect(() => registerGeneratedAssetPath(paths, collidingName, "b.png")).toThrowError(
       expect.objectContaining({

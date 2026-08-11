@@ -1,25 +1,23 @@
 import { constants } from "node:fs";
 import { lstat, open, realpath, type FileHandle } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
+import { PublicCompileError } from "./public-errors";
 
 const SAFE_READ_FLAGS =
   constants.O_RDONLY |
   (typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0) |
   (typeof constants.O_NONBLOCK === "number" ? constants.O_NONBLOCK : 0);
 
-export class FileOutsideCompilationRootError extends Error {
-  constructor(
-    public readonly filePath: string,
-    public readonly rootDir: string,
-  ) {
-    super(`File ${filePath} resolves outside the compilation directory ${rootDir}`);
+export class FileOutsideCompilationRootError extends PublicCompileError {
+  constructor(filePath: string, rootDir: string) {
+    super("file-outside-compilation-root", safeRelativePath(filePath, rootDir));
     this.name = "FileOutsideCompilationRootError";
   }
 }
 
-export class FileNotRegularError extends Error {
-  constructor(public readonly filePath: string) {
-    super(`File ${filePath} is not a regular file`);
+export class FileNotRegularError extends PublicCompileError {
+  constructor(filePath: string, rootDir: string) {
+    super("file-not-regular", safeRelativePath(filePath, rootDir));
     this.name = "FileNotRegularError";
   }
 }
@@ -59,14 +57,14 @@ async function openRegularFileWithinRoot(filePath: string, rootDir: string): Pro
     throw new FileOutsideCompilationRootError(filePath, rootDir);
   }
   if (authoredRoot !== canonicalRoot || authoredFile !== canonicalFile) {
-    throw new FileNotRegularError(filePath);
+    throw new FileNotRegularError(filePath, rootDir);
   }
 
   // Check before opening so directories and special files (notably FIFOs) cannot block or
   // produce platform-specific read errors. The handle is checked again after opening.
   const initialStat = await lstat(canonicalFile);
   if (!initialStat.isFile()) {
-    throw new FileNotRegularError(filePath);
+    throw new FileNotRegularError(filePath, rootDir);
   }
 
   // On platforms that expose O_NOFOLLOW, reject a replacement final-component symlink.
@@ -75,7 +73,7 @@ async function openRegularFileWithinRoot(filePath: string, rootDir: string): Pro
   try {
     const stat = await handle.stat();
     if (!stat.isFile()) {
-      throw new FileNotRegularError(filePath);
+      throw new FileNotRegularError(filePath, rootDir);
     }
     return handle;
   } catch (error) {
@@ -87,4 +85,11 @@ async function openRegularFileWithinRoot(filePath: string, rootDir: string): Pro
 function isWithinRoot(rootDir: string, filePath: string): boolean {
   const rel = relative(rootDir, filePath);
   return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+}
+
+function safeRelativePath(filePath: string, rootDir: string): string | undefined {
+  const location = relative(resolve(rootDir), resolve(filePath)).split(sep).join("/");
+  return location.length > 0 && !location.startsWith("../") && location !== ".."
+    ? location
+    : undefined;
 }

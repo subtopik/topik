@@ -128,7 +128,9 @@ prior snapshot.
 
 Local references must use canonical compilation-relative POSIX paths. The compiler rejects escapes,
 absolute paths, separator aliases, unsafe Unicode, normalization or case collisions, parent/file
-collisions, and protected compiler inputs.
+collisions, and protected compiler inputs. To keep NFC decisions identical at the Node 22.12 floor,
+`topik-path-v1` also rejects marks first assigned in Unicode 17; later Unicode 17 letters and the
+versioned NFKC casefold table remain supported.
 
 Reads are anchored to proven directory and file identities. Symlinks, hard links, Git links and
 submodules, special files, executables, changed-during-read bytes, unsupported Git LFS pointers,

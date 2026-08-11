@@ -1,10 +1,11 @@
-import type { TopikContentDiagnostic } from "@topik/content-schema";
+import { sanitizeTopikContentDiagnostic, type TopikContentDiagnostic } from "@topik/content-schema";
 import { isAbsolute, win32 } from "node:path";
 
 export function formatDiagnostic(diagnostic: TopikContentDiagnostic): string {
-  const file = sanitizeDiagnosticFile(diagnostic.file);
-  const lines = diagnostic.lines.length > 0 ? `:${diagnostic.lines.join(",")}` : "";
-  return `${file}${lines} ${diagnostic.level} ${diagnostic.id}: ${diagnostic.message}`;
+  const sanitized = sanitizeTopikContentDiagnostic(diagnostic);
+  const file = sanitizeDiagnosticFile(sanitized.file);
+  const lines = sanitized.lines.length > 0 ? `:${sanitized.lines.join(",")}` : "";
+  return `${file}${lines} ${sanitized.level} ${sanitized.id}: ${sanitized.message}`;
 }
 
 function sanitizeDiagnosticFile(file: string | undefined): string {

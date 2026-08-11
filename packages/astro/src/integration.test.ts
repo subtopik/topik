@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process";
-import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import type { LoaderContext } from "astro/loaders";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
@@ -244,5 +245,29 @@ describe("topik integration", () => {
     expect(
       (await dispatch(middleware, `/assets/sha256/${"a".repeat(64)}`, "POST")).next,
     ).toHaveBeenCalledTimes(1);
+  });
+
+  test("never follows a displaced static Asset parent during build cleanup", async () => {
+    const output = join(tempDir, "dist");
+    const outsider = join(tempDir, "outsider");
+    const codegen = join(tempDir, "codegen");
+    await mkdir(output);
+    await mkdir(join(outsider, "sha256"), { recursive: true });
+    await mkdir(codegen);
+    await writeFile(join(outsider, "sha256", "author.txt"), "preserve me");
+    await symlink(outsider, join(output, "assets"), "dir");
+
+    const integration = topik({ loaders: [] });
+    await expect(
+      integration.hooks["astro:config:setup"]?.({
+        addMiddleware: () => undefined,
+        command: "build",
+        config: { outDir: pathToFileURL(`${output}/`), output: "static" },
+        createCodegenDir: () => pathToFileURL(`${codegen}/`),
+        updateConfig: () => undefined,
+      } as never),
+    ).rejects.toBeDefined();
+
+    expect(await readFile(join(outsider, "sha256", "author.txt"), "utf8")).toBe("preserve me");
   });
 });

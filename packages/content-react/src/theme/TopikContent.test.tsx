@@ -109,6 +109,58 @@ describe("TopikContent", () => {
     },
   );
 
+  it.each([true, false])(
+    "omits non-string evaluated Asset-slot values in the themed renderer with validation=%s",
+    (validate) => {
+      const unsafe = "https://user:secret@example.com/file.png";
+      const diagnostics: string[] = [];
+      const html = renderToStaticMarkup(
+        <TopikContent
+          config={{
+            functions: {
+              boxed: { transform: () => Object(unsafe) },
+              nil: { transform: () => null },
+              number: { transform: () => 42 },
+            },
+            tags: {
+              evaluatedImage: {
+                render: "TopikImage",
+                attributes: { alt: { type: String }, src: { type: Object } },
+              },
+              evaluatedLink: {
+                render: "TopikLink",
+                attributes: { href: { type: Object } },
+              },
+            },
+            variables: {
+              allowed: "images/allowed.png",
+              array: [unsafe],
+              boolean: true,
+              object: { toString: () => unsafe },
+            },
+          }}
+          content={[
+            '{% evaluatedImage src=$object alt="Object" /%}',
+            '{% figure src=boxed() darkSrc=$array alt="Figure" /%}',
+            "{% evaluatedLink href=number() %}Number{% /evaluatedLink %}",
+            '{% evaluatedImage src=$boolean alt="Boolean" /%}',
+            "{% evaluatedLink href=nil() %}Null{% /evaluatedLink %}",
+            '{% evaluatedImage src=$allowed alt="Allowed" /%}',
+          ].join("\n\n")}
+          onAssetDiagnostic={(diagnostic) => diagnostics.push(diagnostic.id)}
+          validate={validate}
+        />,
+      );
+
+      expect(diagnostics).toEqual(Array(6).fill("TOPIK_ASSET_REFERENCE_MALFORMED"));
+      expect(html).toContain('src="images/allowed.png"');
+      expect(html).not.toContain("user:secret");
+      expect(html).not.toContain('href="42"');
+      expect(html).not.toContain('href="null"');
+      expect(html).not.toContain('src="true"');
+    },
+  );
+
   it("passes an explicit color scheme to figures", () => {
     const html = renderToStaticMarkup(
       <TopikContent

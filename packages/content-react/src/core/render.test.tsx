@@ -244,6 +244,48 @@ describe("content-react core", () => {
     expect(diagnostics).toEqual(Array(4).fill("TOPIK_ASSET_REFERENCE_MALFORMED"));
   });
 
+  it.each([
+    ["coercible object", { toString: () => "https://user:secret@example.com/file.png" }],
+    ["boxed string", Object("https://user:secret@example.com/file.png")],
+    ["array", ["https://user:secret@example.com/file.png"]],
+    ["number", 42],
+    ["boolean", true],
+    ["null", null],
+  ])("omits and diagnoses a transformed %s in every Asset slot", (_kind, value) => {
+    const diagnostics: string[] = [];
+    const resolved = resolveTopikAssetReferences(
+      [
+        new Markdoc.Tag("TopikImage", { src: value }),
+        new Markdoc.Tag("TopikFigure", { src: value, darkSrc: value }),
+        new Markdoc.Tag("TopikLink", { href: value }),
+      ],
+      undefined,
+      { onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id) },
+    );
+
+    expect(resolved.map((tag) => tag.attributes)).toEqual([{}, {}, {}]);
+    expect(diagnostics).toEqual(Array(4).fill("TOPIK_ASSET_REFERENCE_MALFORMED"));
+  });
+
+  it("omits non-string values before the fallback renderer receives them", () => {
+    const diagnostics: string[] = [];
+    expect(() =>
+      renderToStaticMarkup(
+        <>
+          {renderTopikContent(
+            new Markdoc.Tag("article", {}, [
+              new Markdoc.Tag("TopikImage", { src: { toString: () => "unsafe-image" } }),
+              new Markdoc.Tag("TopikFigure", { darkSrc: Object("unsafe-dark"), src: 1 }),
+              new Markdoc.Tag("TopikLink", { href: null }, ["Download"]),
+            ]),
+            { onAssetDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id) },
+          )}
+        </>,
+      ),
+    ).not.toThrow();
+    expect(diagnostics).toEqual(Array(4).fill("TOPIK_ASSET_REFERENCE_MALFORMED"));
+  });
+
   it.each([true, false])(
     "sanitizes variable and function results before custom renderers with validation %s",
     (validate) => {
@@ -304,6 +346,73 @@ describe("content-react core", () => {
     },
   );
 
+  it.each([true, false])(
+    "omits coercible non-string variable and function results before custom renderers with validation %s",
+    (validate) => {
+      const unsafe = "https://user:secret@example.com/file.png";
+      const diagnostics: string[] = [];
+      const html = renderToStaticMarkup(
+        <>
+          {renderTopikMarkdown(
+            [
+              '{% evaluatedImage src=$object alt="Object" /%}',
+              '{% figure src=boxed() darkSrc=$array alt="Figure" /%}',
+              "{% evaluatedLink href=number() %}Number{% /evaluatedLink %}",
+              '{% evaluatedImage src=$boolean alt="Boolean" /%}',
+              "{% evaluatedLink href=nil() %}Null{% /evaluatedLink %}",
+              '{% evaluatedImage src=$allowed alt="Allowed" /%}',
+            ].join("\n\n"),
+            {
+              components: {
+                TopikFigure: ({ darkSrc, src }) => (
+                  <span data-dark={String(darkSrc)} data-src={String(src)} />
+                ),
+                TopikImage: ({ src }) => <span data-src={String(src)} />,
+                TopikLink: ({ children, href }) => (
+                  <a data-custom href={String(href)}>
+                    {children}
+                  </a>
+                ),
+              },
+              config: {
+                functions: {
+                  boxed: { transform: () => Object(unsafe) },
+                  nil: { transform: () => null },
+                  number: { transform: () => 42 },
+                },
+                tags: {
+                  evaluatedImage: {
+                    render: "TopikImage",
+                    attributes: { alt: { type: String }, src: { type: Object } },
+                  },
+                  evaluatedLink: {
+                    render: "TopikLink",
+                    attributes: { href: { type: Object } },
+                  },
+                },
+                variables: {
+                  allowed: "images/allowed.png",
+                  array: [unsafe],
+                  boolean: true,
+                  object: { toString: () => unsafe },
+                },
+              },
+              onAssetDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id),
+              validate,
+            },
+          )}
+        </>,
+      );
+
+      expect(diagnostics).toEqual(Array(6).fill("TOPIK_ASSET_REFERENCE_MALFORMED"));
+      expect(html).toContain('data-src="images/allowed.png"');
+      expect(html).not.toContain("user:secret");
+      expect(html).not.toContain('href="42"');
+      expect(html).not.toContain('href="null"');
+      expect(html).not.toContain('data-src="true"');
+    },
+  );
+
   it("preserves safe evaluated navigation and Asset values", () => {
     const references = [
       "guide?tab=api#install",
@@ -360,6 +469,26 @@ describe("content-react core", () => {
 
     expect(diagnostics).toEqual(["TOPIK_ASSET_REFERENCE_MISSING"]);
     expect(resolved.attributes).not.toHaveProperty("href");
+  });
+
+  it("fails closed when a runtime Asset resolver returns a non-string value", () => {
+    const name = `auto-v1-${"a".repeat(52)}`;
+    const diagnostics: string[] = [];
+    const resolved = resolveTopikAssetReferences(
+      [
+        new Markdoc.Tag("TopikImage", { src: `asset:${name}` }),
+        new Markdoc.Tag("TopikFigure", {
+          darkSrc: `asset:${name}`,
+          src: `asset:${name}`,
+        }),
+        new Markdoc.Tag("TopikLink", { href: `asset:${name}` }),
+      ],
+      () => Object("https://user:secret@example.com/file.png") as string,
+      { onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id) },
+    );
+
+    expect(resolved.map((tag) => tag.attributes)).toEqual([{}, {}, {}]);
+    expect(diagnostics).toEqual(Array(4).fill("TOPIK_ASSET_REFERENCE_MISSING"));
   });
 
   it("renders basic markdown nodes", () => {

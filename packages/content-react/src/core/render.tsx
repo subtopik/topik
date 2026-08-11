@@ -108,8 +108,13 @@ export function resolveTopikAssetReferences<T>(
   const attributes = { ...value.attributes };
   const slots = renderedAssetSlots(value.name);
   for (const [attribute, slot] of slots) {
+    if (!Object.hasOwn(attributes, attribute)) continue;
     const reference = attributes[attribute];
-    if (typeof reference !== "string") continue;
+    if (typeof reference !== "string") {
+      delete attributes[attribute];
+      malformedReference(options, slot);
+      continue;
+    }
     if (!usesReservedAssetScheme(reference)) {
       if (!isSafeRenderedReference(reference, slot)) {
         delete attributes[attribute];
@@ -135,7 +140,7 @@ export function resolveTopikAssetReferences<T>(
       resolved = undefined;
     }
     if (
-      resolved === undefined ||
+      typeof resolved !== "string" ||
       usesReservedAssetScheme(resolved) ||
       !isSafeResolvedAssetReference(resolved)
     ) {

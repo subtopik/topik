@@ -1,7 +1,4 @@
-import { randomUUID } from "node:crypto";
-import { lstat, mkdir, mkdtemp, open, rename, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { writeFile } from "node:fs/promises";
 import type { AstroIntegration } from "astro";
 import {
   assertTopikAssetLoaders,
@@ -11,6 +8,7 @@ import {
   refreshTopikAssetSnapshots,
   type TopikAssetLoader,
 } from "./assets";
+import { publishDigestSnapshot, removeDigestSnapshot } from "./publication";
 
 export type { TopikAssetLoader } from "./assets";
 
@@ -127,87 +125,20 @@ async function publishStaticSnapshot(
   outputDirectory: URL,
 ): Promise<void> {
   const payloads = collectTopikAssetPayloads(loaders);
-  const output = fileURLToPath(outputDirectory);
-  const assetsDirectory = join(output, "assets");
-  await requireDirectoryOrCreate(assetsDirectory);
-  const target = join(assetsDirectory, "sha256");
-  const stage = await mkdtemp(join(assetsDirectory, ".topik-sha256-stage-"));
-  let stageExists = true;
-  let backup: string | undefined;
-  try {
-    for (const payload of payloads) {
+  await publishDigestSnapshot(
+    outputDirectory,
+    payloads.map((payload) => {
       if (!PAYLOAD_RELATIVE_PATTERN.test(payload.path)) {
         throw new TypeError("Topik compiler payload path is not canonical");
       }
-      const digest = payload.path.slice("assets/sha256/".length);
-      const handle = await open(join(stage, digest), "wx", 0o444);
-      try {
-        await handle.writeFile(payload.bytes);
-        await handle.sync();
-      } finally {
-        await handle.close();
-      }
-    }
-
-    const prior = await lstat(target).catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return undefined;
-      throw error;
-    });
-    if (prior !== undefined && !prior.isDirectory()) {
-      throw new TypeError("Topik Asset output path must be an owned directory");
-    }
-    if (prior !== undefined) {
-      backup = join(assetsDirectory, `.topik-sha256-prior-${randomUUID()}`);
-      await rename(target, backup);
-    }
-    try {
-      if (payloads.length === 0) {
-        await rm(stage, { recursive: true });
-        stageExists = false;
-      } else {
-        await rename(stage, target);
-        stageExists = false;
-      }
-    } catch (error) {
-      if (backup !== undefined) {
-        await rename(backup, target);
-        backup = undefined;
-      }
-      throw error;
-    }
-    if (backup !== undefined) {
-      await rm(backup, { recursive: true });
-      backup = undefined;
-    }
-  } finally {
-    if (stageExists) await rm(stage, { recursive: true, force: true });
-  }
-}
-
-async function requireDirectoryOrCreate(path: string): Promise<void> {
-  const current = await lstat(path).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") return undefined;
-    throw error;
-  });
-  if (current === undefined) {
-    await mkdir(path);
-    return;
-  }
-  if (!current.isDirectory()) throw new TypeError("Topik Asset output parent must be a directory");
+      return {
+        bytes: payload.bytes,
+        digest: payload.path.slice("assets/sha256/".length),
+      };
+    }),
+  );
 }
 
 async function removePublishedSnapshot(outputDirectory: URL): Promise<void> {
-  const assetsDirectory = join(fileURLToPath(outputDirectory), "assets");
-  const target = join(assetsDirectory, "sha256");
-  const current = await lstat(target).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") return undefined;
-    throw error;
-  });
-  if (current === undefined) return;
-  if (!current.isDirectory()) {
-    throw new TypeError("Topik Asset output path must be an owned directory");
-  }
-  const hidden = join(assetsDirectory, `.topik-sha256-removed-${randomUUID()}`);
-  await rename(target, hidden);
-  await rm(hidden, { recursive: true });
+  await removeDigestSnapshot(outputDirectory);
 }

@@ -187,6 +187,15 @@ graph TD;
     ).toMatchObject({ valid: true, errors: [] });
   });
 
+  test.each(['"title (detail)"', "'title (detail)'", "(title detail)"])(
+    "accepts image and possible-download references with Markdoc inline title form %s",
+    (title) => {
+      expect(
+        validateTopikContent(`![Hero](hero.png ${title})\n\n[Manual](manual.bin ${title})\n`),
+      ).toMatchObject({ valid: true, errors: [] });
+    },
+  );
+
   test.each([
     "[HTTP file](http://example.com/file.pdf)",
     "[Credentialed HTTPS file](https://user:secret@example.com/file.pdf)",

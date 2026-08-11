@@ -1,6 +1,7 @@
 import Markdoc, { type Config, type RenderableTreeNode } from "@markdoc/markdoc";
 import {
   assignTopikHeadingIds,
+  extractTopikAssetOccurrences,
   parseTopikContent,
   removeInvalidTopikAssetReferences,
   removeInvalidTopikNavigationReferences,
@@ -42,6 +43,13 @@ export function compileTopikContent(
   content: string,
   options: CompileTopikContentOptions = {},
 ): RenderableTreeNode {
+  return compileTopikContentInternal(content, options);
+}
+
+function compileTopikContentInternal(
+  content: string,
+  options: CompileTopikContentOptions & Pick<RenderTopikContentOptions, "onAssetDiagnostic">,
+): RenderableTreeNode {
   const shouldValidate = options.validate ?? true;
 
   if (shouldValidate) {
@@ -54,6 +62,14 @@ export function compileTopikContent(
   }
 
   const ast = parseTopikContent(content, { file: options.file, location: shouldValidate });
+  for (const occurrence of extractTopikAssetOccurrences(content)) {
+    if (occurrence.kind !== "reserved-asset") continue;
+    options.onAssetDiagnostic?.({
+      id: "TOPIK_ASSET_REFERENCE_MALFORMED",
+      message: "Asset reference has an invalid name",
+      slot: occurrence.slot,
+    });
+  }
   removeInvalidTopikAssetReferences(ast, content);
   removeInvalidTopikNavigationReferences(ast);
   assignTopikHeadingIds(ast);
@@ -91,7 +107,16 @@ export function resolveTopikAssetReferences<T>(
   const slots = renderedAssetSlots(value.name);
   for (const [attribute, slot] of slots) {
     const reference = attributes[attribute];
-    if (typeof reference !== "string" || !reference.startsWith("asset:")) continue;
+    if (typeof reference !== "string" || !usesReservedAssetScheme(reference)) continue;
+    if (!reference.startsWith("asset:")) {
+      delete attributes[attribute];
+      options.onDiagnostic?.({
+        id: "TOPIK_ASSET_REFERENCE_MALFORMED",
+        message: "Asset reference has an invalid name",
+        slot,
+      });
+      continue;
+    }
     const name = reference.slice("asset:".length);
     if (!/^auto-v1-[a-z2-7]{52}$/u.test(name)) {
       delete attributes[attribute];
@@ -108,7 +133,7 @@ export function resolveTopikAssetReferences<T>(
     } catch {
       resolved = undefined;
     }
-    if (resolved === undefined || resolved.startsWith("asset:")) {
+    if (resolved === undefined || usesReservedAssetScheme(resolved)) {
       delete attributes[attribute];
       options.onDiagnostic?.({
         id: "TOPIK_ASSET_REFERENCE_MISSING",
@@ -125,6 +150,27 @@ export function resolveTopikAssetReferences<T>(
     attributes,
     value.children.map((child) => resolveTopikAssetReferences(child, resolveAsset, options)),
   ) as T;
+}
+
+function usesReservedAssetScheme(value: string): boolean {
+  let prefix = "";
+  for (let index = 0; index < value.length && prefix.length < "asset:".length; index++) {
+    if (value[index] === "%" && /^[0-9a-f]{2}$/iu.test(value.slice(index + 1, index + 3))) {
+      prefix += String.fromCharCode(Number.parseInt(value.slice(index + 1, index + 3), 16));
+      index += 2;
+      continue;
+    }
+    if (value[index] === "&") {
+      const entity = /^(?:&#0*58;|&#x0*3a;|&colon;)/iu.exec(value.slice(index));
+      if (entity !== null) {
+        prefix += ":";
+        index += entity[0].length - 1;
+        continue;
+      }
+    }
+    prefix += value[index];
+  }
+  return /^asset:/iu.test(prefix);
 }
 
 function renderedAssetSlots(
@@ -145,7 +191,7 @@ export function renderTopikMarkdown(
   content: string,
   options: RenderTopikMarkdownOptions = {},
 ): React.ReactNode {
-  return renderTopikContent(compileTopikContent(content, options), options);
+  return renderTopikContent(compileTopikContentInternal(content, options), options);
 }
 
 function mergeConfigs(base: Config, override: Config = {}): Config {

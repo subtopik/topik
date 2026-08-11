@@ -357,7 +357,7 @@ function isCanonicalAssetReference(reference: string): boolean {
   return validation.valid && validation.kind === "asset";
 }
 
-/** Remove invalid unconditional asset attributes before renderer transformation. */
+/** Remove invalid Asset-capable attributes before renderer transformation. */
 export function removeInvalidTopikAssetReferences(root: TopikContentNode, source?: string): void {
   const invalidSourcePositions =
     source === undefined
@@ -371,11 +371,14 @@ export function removeInvalidTopikAssetReferences(root: TopikContentNode, source
         );
   walk(root, [], (node, treePath) => {
     for (const definition of matchingSlots(node)) {
-      if (definition.conditional === "proven-download") continue;
       const reference = stringAttribute(node, definition.attribute);
       const sourceWasInvalid = invalidSourcePositions?.has(
         formatPosition(treePath, definition.attribute),
       );
+      if (definition.conditional === "proven-download") {
+        if (sourceWasInvalid === true) delete node.attributes[definition.attribute];
+        continue;
+      }
       if (
         reference !== undefined &&
         (sourceWasInvalid === true || !validateTopikAssetReference(reference).valid)
@@ -812,8 +815,24 @@ function scanInlineMarkdownDestination(
     }
     reference = source.slice(destinationStart, cursor);
   }
-  const closing = findUnescaped(source, ")", cursor);
-  return reference.length === 0 || closing === -1 ? undefined : { reference, end: closing };
+  if (reference.length === 0) return undefined;
+  while (/[\t\n\r ]/u.test(source[cursor] ?? "")) cursor++;
+  if (source[cursor] === ")") return { reference, end: cursor };
+
+  const titleClosing =
+    source[cursor] === '"'
+      ? '"'
+      : source[cursor] === "'"
+        ? "'"
+        : source[cursor] === "("
+          ? ")"
+          : undefined;
+  if (titleClosing === undefined) return undefined;
+  const titleEnd = findUnescaped(source, titleClosing, cursor + 1);
+  if (titleEnd === -1) return undefined;
+  cursor = titleEnd + 1;
+  while (/[\t\n\r ]/u.test(source[cursor] ?? "")) cursor++;
+  return source[cursor] === ")" ? { reference, end: cursor } : undefined;
 }
 
 function parseMarkdownReferenceDefinitions(source: string): ReadonlyMap<string, string> {

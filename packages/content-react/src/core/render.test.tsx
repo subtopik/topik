@@ -179,6 +179,62 @@ describe("content-react core", () => {
     expect(html).not.toMatch(/\bsrc=/u);
   });
 
+  it.each([
+    `ASSET:auto-v1-${"a".repeat(52)}`,
+    `asset%3Aauto-v1-${"a".repeat(52)}`,
+    `%61sset%3Aauto-v1-${"a".repeat(52)}`,
+    `asset&#58;auto-v1-${"a".repeat(52)}`,
+    "asset:auto-v1-short",
+  ])("fails closed for reserved Asset alias %s in a transformed download slot", (reference) => {
+    const resolver = vi.fn(() => "/must-not-resolve");
+    const diagnostics: string[] = [];
+    const resolved = resolveTopikAssetReferences(
+      new Markdoc.Tag("TopikLink", { href: reference }),
+      resolver,
+      { onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id) },
+    );
+
+    expect(resolver).not.toHaveBeenCalled();
+    expect(diagnostics).toEqual(["TOPIK_ASSET_REFERENCE_MALFORMED"]);
+    expect(resolved.attributes).not.toHaveProperty("href");
+  });
+
+  it("sanitizes reserved aliases in every rendered Asset-capable slot", () => {
+    const reference = `ASSET:auto-v1-${"a".repeat(52)}`;
+    const resolver = vi.fn(() => "/must-not-resolve");
+    const diagnostics: string[] = [];
+    const resolved = resolveTopikAssetReferences(
+      [
+        new Markdoc.Tag("TopikImage", { src: reference }),
+        new Markdoc.Tag("TopikFigure", { src: reference, darkSrc: reference }),
+        new Markdoc.Tag("TopikLink", { href: reference }),
+      ],
+      resolver,
+      { onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id) },
+    );
+
+    expect(resolver).not.toHaveBeenCalled();
+    expect(diagnostics).toEqual(Array(4).fill("TOPIK_ASSET_REFERENCE_MALFORMED"));
+    expect(resolved.map((tag) => tag.attributes)).toEqual([{}, {}, {}]);
+  });
+
+  it.each([
+    `ASSET:auto-v1-${"b".repeat(52)}`,
+    `asset%3Aauto-v1-${"b".repeat(52)}`,
+    `asset&#58;auto-v1-${"b".repeat(52)}`,
+  ])("does not emit reserved alias %s returned by an Asset resolver", (resolvedReference) => {
+    const name = `auto-v1-${"a".repeat(52)}`;
+    const diagnostics: string[] = [];
+    const resolved = resolveTopikAssetReferences(
+      new Markdoc.Tag("TopikLink", { href: `asset:${name}` }),
+      () => resolvedReference,
+      { onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id) },
+    );
+
+    expect(diagnostics).toEqual(["TOPIK_ASSET_REFERENCE_MISSING"]);
+    expect(resolved.attributes).not.toHaveProperty("href");
+  });
+
   it("renders basic markdown nodes", () => {
     const html = renderToStaticMarkup(<>{renderTopikMarkdown("# Hello\n\nParagraph.")}</>);
 

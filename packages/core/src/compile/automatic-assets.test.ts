@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
+import { extractTopikAssetOccurrences } from "@topik/content-schema";
 import type { Asset, Course, CourseModule, CoursePage, Guide, Wiki, WikiPage } from "@topik/schema";
 import type { SourceResource } from "../resource";
 import { TOPIK_ASSET_LIMITS } from "../portable/constants";
@@ -556,6 +557,43 @@ describe("compilation-wide automatic Assets", () => {
     expect(compiledGuide?.spec.content.value).toContain("[Next](two.md)");
     expect(compiledGuide?.spec.content.value).toContain("https://example.com/manual.bin");
   });
+
+  test.each(['"title (detail)"', "'title (detail)'", "(title detail)"])(
+    "discovers and rewrites image and download references with inline title form %s",
+    async (title) => {
+      await writeFile(join(dir, "hero.png"), PNG_BYTES);
+      await writeFile(join(dir, "manual.bin"), "manual bytes\n");
+      await writeFile(join(dir, "guide.md"), "source\n");
+      const content = `![Hero](hero.png ${title})\n\n[Manual](manual.bin ${title})\n`;
+      expect(
+        extractTopikAssetOccurrences(content, { includeGenericLinkCandidates: true }),
+      ).toMatchObject([
+        { slot: "image.src", reference: "hero.png", kind: "local" },
+        { slot: "link.href", reference: "manual.bin", kind: "local" },
+      ]);
+      const result = await compileAssetResources({
+        rootDir: dir,
+        resources: [guide("guide", content)],
+        sourcePathsByResource: { "Guide/guide": "guide.md" },
+        sourceNamespace: "inline-titles",
+      });
+      const compiledGuide = result.resources.find(
+        (resource): resource is Guide => resource.type === "Guide",
+      );
+
+      expect(result.resources.filter((resource) => resource.type === "Asset")).toHaveLength(2);
+      expect(result.semantic.references.map((reference) => reference.slot).sort()).toEqual([
+        "image.src",
+        "link.href",
+      ]);
+      expect(compiledGuide?.spec.content.value).toMatch(
+        /!\[Hero\]\(asset:auto-v1-[a-z2-7]{52} "title(?: \(detail\)| detail)"\)/u,
+      );
+      expect(compiledGuide?.spec.content.value).toMatch(
+        /\[Manual\]\(asset:auto-v1-[a-z2-7]{52} "title(?: \(detail\)| detail)"\)/u,
+      );
+    },
+  );
 
   test.each(UNSAFE_GENERIC_LINK_CASES)(
     "rejects an existing unsafe %s generic-link target",

@@ -30,6 +30,49 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
     expect(occurrences[3].semantics.lightDarkRole).toBe("dark");
   });
 
+  test.each([
+    ['"title (detail)"', "title (detail)"],
+    ["'title (detail)'", "title (detail)"],
+    ["(title detail)", "title detail"],
+  ])("pairs and rewrites Markdoc inline title form %s", (titleSource, title) => {
+    const source = [`![Hero](hero.png ${titleSource})`, `[Manual](manual.bin ${titleSource})`].join(
+      "\n\n",
+    );
+    const options = { provenDownloadPaths: ["manual.bin"] } as const;
+    expect(extractTopikAssetOccurrences(source, options)).toMatchObject([
+      {
+        slot: "image.src",
+        reference: "hero.png",
+        parsedReference: "hero.png",
+        kind: "local",
+        semantics: { title },
+      },
+      {
+        slot: "link.href",
+        reference: "manual.bin",
+        parsedReference: "manual.bin",
+        kind: "local",
+        semantics: { title, linkLabel: "Manual" },
+      },
+    ]);
+
+    const rewritten = rewriteTopikAssetOccurrences(
+      source,
+      (occurrence) =>
+        occurrence.slot === "image.src" ? "compiled-hero.png" : "compiled-manual.bin",
+      options,
+    );
+    expect(rewritten).toContain(`![Hero](compiled-hero.png "${title}")`);
+    expect(rewritten).toContain(`[Manual](compiled-manual.bin "${title}")`);
+  });
+
+  test("does not borrow exact-source proof from an unsupported nested parenthesized title", () => {
+    const source = "![unsupported](hero.png (title (detail))) ![real](%C3%A9.png)";
+    expect(extractTopikAssetOccurrences(source)).toMatchObject([
+      { reference: "%C3%A9.png", parsedReference: "%C3%A9.png", kind: "local" },
+    ]);
+  });
+
   test("keeps external HTTPS exact and marks unsafe schemes", () => {
     const occurrences = extractTopikAssetOccurrences(
       [

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { TopikContentProvider } from "../core/context";
 import type { TopikLinkRenderProps } from "../core/components";
@@ -161,6 +161,97 @@ describe("TopikContent", () => {
     expect(customHtml).not.toContain(reference);
     expect(customHtml).not.toContain("href=");
   });
+
+  it.each([
+    `ASSET:auto-v1-${"a".repeat(52)}`,
+    `asset%3Aauto-v1-${"a".repeat(52)}`,
+    `%61sset%3Aauto-v1-${"a".repeat(52)}`,
+    `asset&#58;auto-v1-${"a".repeat(52)}`,
+    "asset:auto-v1-short",
+  ])("never passes reserved download alias %s to default or custom renderers", (reference) => {
+    for (const validate of [true, false]) {
+      const resolver = vi.fn(() => "/must-not-resolve");
+      const diagnostics: string[] = [];
+      const content = `[Download](${reference})`;
+      const defaultHtml = renderToStaticMarkup(
+        <TopikContent
+          content={content}
+          onAssetDiagnostic={(diagnostic) => diagnostics.push(diagnostic.id)}
+          resolveAsset={resolver}
+          validate={validate}
+        />,
+      );
+      const customHtml = renderToStaticMarkup(
+        <TopikContent
+          components={{
+            TopikLink: ({ children, href }) =>
+              typeof href === "string" ? (
+                <a data-custom href={href}>
+                  {children}
+                </a>
+              ) : (
+                <span data-no-target>{children}</span>
+              ),
+          }}
+          content={content}
+          onAssetDiagnostic={(diagnostic) => diagnostics.push(diagnostic.id)}
+          resolveAsset={resolver}
+          validate={validate}
+        />,
+      );
+
+      expect(resolver).not.toHaveBeenCalled();
+      expect(diagnostics).toEqual([
+        "TOPIK_ASSET_REFERENCE_MALFORMED",
+        "TOPIK_ASSET_REFERENCE_MALFORMED",
+      ]);
+      expect(defaultHtml).not.toContain("href=");
+      expect(defaultHtml).not.toContain(reference);
+      expect(customHtml).toContain("data-no-target");
+      expect(customHtml).not.toContain("href=");
+      expect(customHtml).not.toContain(reference);
+    }
+  });
+
+  it.each([true, false])(
+    "resolves a canonical compiled download for default and custom renderers with validation %s",
+    (validate) => {
+      const name = `auto-v1-${"a".repeat(52)}`;
+      const resolver = vi.fn(() => `/compiled/${name}`);
+      const diagnostics: string[] = [];
+      const content = `[Download](asset:${name})`;
+      const defaultHtml = renderToStaticMarkup(
+        <TopikContent
+          content={content}
+          onAssetDiagnostic={(diagnostic) => diagnostics.push(diagnostic.id)}
+          resolveAsset={resolver}
+          validate={validate}
+        />,
+      );
+      const customHtml = renderToStaticMarkup(
+        <TopikContent
+          components={{
+            TopikLink: ({ children, href }) => (
+              <a data-custom href={String(href)}>
+                {children}
+              </a>
+            ),
+          }}
+          content={content}
+          onAssetDiagnostic={(diagnostic) => diagnostics.push(diagnostic.id)}
+          resolveAsset={resolver}
+          validate={validate}
+        />,
+      );
+
+      expect(resolver).toHaveBeenCalledTimes(2);
+      expect(resolver).toHaveBeenNthCalledWith(1, name);
+      expect(resolver).toHaveBeenNthCalledWith(2, name);
+      expect(diagnostics).toEqual([]);
+      expect(defaultHtml).toContain(`href="/compiled/${name}"`);
+      expect(customHtml).toContain(`href="/compiled/${name}"`);
+    },
+  );
 
   it("uses provider component overrides with portable paths", () => {
     const html = renderToStaticMarkup(

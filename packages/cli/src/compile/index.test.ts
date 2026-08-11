@@ -364,11 +364,14 @@ describe("compile command", () => {
   ] as const)(
     "promptly rejects a %s ownership marker at %s without mutation",
     async (nodeKind, marker) => {
-      const outDir = join(dir, `special-marker-${nodeKind.replaceAll(" ", "-")}-${marker}`);
-      const outside = join(dir, "outside-marker-peer.txt");
+      const markerRoot = join(dir, "m");
+      const outDir = join(markerRoot, "o");
+      const outside = join(markerRoot, "x");
+      await mkdir(markerRoot);
       await writeFile(outside, "unchanged");
       await writeOwnedTree(outDir, "existing");
       const markerPath = join(outDir, marker);
+      expect(Buffer.byteLength(markerPath)).toBeLessThan(100);
       await rm(markerPath);
 
       let server: Server | undefined;
@@ -392,7 +395,7 @@ describe("compile command", () => {
         expect(await listFiles(outDir)).toEqual(beforeFiles);
         expect(await readFile(outside, "utf8")).toBe("unchanged");
         expect(
-          (await readdir(dir)).filter(
+          (await readdir(markerRoot)).filter(
             (name) =>
               name.startsWith(".topik-compilation-generation-") ||
               name.startsWith(".topik-compilation-prior-"),

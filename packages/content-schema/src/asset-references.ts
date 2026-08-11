@@ -305,7 +305,7 @@ export function validateTopikAssetReference(reference: string): TopikAssetRefere
       ? { valid: true, kind: "asset", name }
       : { valid: false, kind: "unsafe", failureKind: "local" };
   }
-  if (reference.startsWith("https://")) {
+  if (/^https:\/\//iu.test(reference)) {
     try {
       const url = new URL(reference);
       return url.protocol === "https:" && url.username === "" && url.password === ""
@@ -377,10 +377,8 @@ export function removeInvalidTopikAssetReferences(root: TopikContentNode, source
     source === undefined
       ? undefined
       : new Set(
-          extractTopikAssetOccurrences(source)
-            .filter(
-              (occurrence) => occurrence.kind === "unsafe" || occurrence.kind === "reserved-asset",
-            )
+          extractTopikAssetOccurrences(source, { includeGenericLinkCandidates: true })
+            .filter(isInvalidRenderedAssetOccurrence)
             .map((occurrence) => occurrence.position),
         );
   walk(root, [], (node, treePath) => {
@@ -401,6 +399,16 @@ export function removeInvalidTopikAssetReferences(root: TopikContentNode, source
       }
     }
   });
+}
+
+function isInvalidRenderedAssetOccurrence(occurrence: TopikAssetOccurrence): boolean {
+  if (occurrence.kind === "reserved-asset") return true;
+  if (occurrence.kind !== "unsafe") return false;
+  if (occurrence.slot !== "link.href") return true;
+  const reference =
+    occurrence.reference.length === 0 ? occurrence.parsedReference : occurrence.reference;
+  const validation = validateTopikAssetReference(reference);
+  return !validation.valid && validation.failureKind === "external";
 }
 
 function unsafe(reference: string): TopikAssetReferenceValidation {

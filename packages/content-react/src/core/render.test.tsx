@@ -636,6 +636,99 @@ describe("content-react core", () => {
     expect(html).toContain('srcSet="https://example.com/dark.png?q=1#x"');
   });
 
+  it.each([true, false])(
+    "preserves mixed-case HTTPS through custom renderers with validation=%s",
+    (validate) => {
+      const content = [
+        "![Image](HtTpS://example.com/image.png)",
+        "[Download](hTTps://example.com/manual.pdf)",
+        "<HTTPS://example.com/autolink.pdf>",
+        '{% figure src="HTtPs://example.com/light.png" darkSrc="htTPs://example.com/dark.png" alt="Theme" /%}',
+      ].join("\n\n");
+      const customHtml = renderToStaticMarkup(
+        <>
+          {renderTopikMarkdown(content, {
+            validate,
+            components: {
+              TopikImage: ({ src }) => <span data-image={String(src)} />,
+              TopikLink: ({ href }) => <span data-link={String(href)} />,
+              TopikFigure: ({ darkSrc, src }) => (
+                <span data-dark={String(darkSrc)} data-light={String(src)} />
+              ),
+            },
+          })}
+        </>,
+      );
+
+      for (const reference of [
+        "HtTpS://example.com/image.png",
+        "hTTps://example.com/manual.pdf",
+        "HTTPS://example.com/autolink.pdf",
+        "HTtPs://example.com/light.png",
+        "htTPs://example.com/dark.png",
+      ]) {
+        expect(customHtml).toContain(reference);
+      }
+    },
+  );
+
+  it.each([true, false])(
+    "removes mixed-case HTTP and credential-bearing HTTPS with validation=%s",
+    (validate) => {
+      const diagnostics: string[] = [];
+      const html = renderToStaticMarkup(
+        <>
+          {renderTopikMarkdown(
+            [
+              "![HTTP](HtTp://example.com/image.png)",
+              "[HTTP](hTtP://example.com/manual.pdf)",
+              "<HTtp://example.com/autolink.pdf>",
+              '{% figure src="hTtPs://user:secret@example.com/image.png" alt="Unsafe" /%}',
+              "![Protocol relative](//example.com/image.png)",
+              '{% figure src="HtTpS://[invalid" alt="Malformed" /%}',
+            ].join("\n\n"),
+            {
+              validate,
+              components: {
+                TopikImage: ({ src }) => <span data-image={String(src)} />,
+                TopikFigure: ({ src }) => <span data-figure={String(src)} />,
+              },
+              onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id),
+            },
+          )}
+        </>,
+      );
+
+      expect(html).not.toContain('data-image="HtTp:');
+      expect(html).not.toContain('data-link="hTtP:');
+      expect(html).not.toContain('data-link="HTtp:');
+      expect(html).not.toContain("user:secret");
+      expect(html).not.toContain('data-image="//example.com');
+      expect(html).not.toContain('data-figure="HtTpS://[invalid');
+      expect(html).not.toMatch(/\b(?:src|href)="/iu);
+      if (validate) expect(diagnostics).toContain("TOPIK_EXTERNAL_REFERENCE_UNSAFE");
+    },
+  );
+
+  it.each([true, false])(
+    "preserves ordinary navigation with query and fragment when validation=%s",
+    (validate) => {
+      const href = "guide?tab=assets#delivery";
+      const html = renderToStaticMarkup(
+        <>
+          {renderTopikMarkdown(`[Guide](${href})`, {
+            validate,
+            components: {
+              TopikLink: ({ children, href: target }) => <a href={String(target)}>{children}</a>,
+            },
+          })}
+        </>,
+      );
+
+      expect(html).toContain(`href="${href}"`);
+    },
+  );
+
   it("server-renders compiled content without crashing", () => {
     const tree = compileTopikContent('{% callout title="SSR" %}Works.{% /callout %}');
     const html = renderToString(<>{renderTopikContent(tree)}</>);

@@ -523,6 +523,26 @@ navigation:
     expect(page.spec).not.toHaveProperty("assets");
   });
 
+  test("compiles a proven local download without weakening missing-page validation", async () => {
+    await writeWikiConfig("id: tw\ntitle: Wiki\nnavigation:\n  - hello\n");
+    await writeFile(join(dir, "manual.pdf"), "%PDF-1.7\nmanual\n");
+    await writePage("hello", "# Hello\n\n[Manual](manual.pdf)\n");
+
+    const result = await compileWiki({
+      dir,
+      assets: { sourceNamespace: "example-wiki-download" },
+    });
+    const page = result.resources.find((resource) => resource.type === "WikiPage");
+    const asset = result.resources.find((resource) => resource.type === "Asset");
+    expect(asset?.spec.mediaType).toBe("application/pdf");
+    expect(page?.spec.content.value).toContain(`[Manual](asset:${asset?.name})`);
+
+    await writePage("hello", "# Hello\n\n[Missing](missing.pdf)\n");
+    await expect(
+      compileWiki({ dir, assets: { sourceNamespace: "example-wiki-download" } }),
+    ).rejects.toThrow(/link-page-not-found/u);
+  });
+
   test("does not turn the consumed wiki config into a downloadable Asset", async () => {
     await writeWikiConfig("id: tw\ntitle: Wiki\nnavigation:\n  - hello\n");
     await writePage("hello", "[Configuration](wiki.yaml)\n");

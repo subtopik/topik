@@ -116,6 +116,62 @@ export interface ReadPortableAssetFileOptions {
   path: string;
 }
 
+export type PortableNavigationPathKind = "directory" | "missing" | "other";
+
+/** @internal Classify directory navigation through anchored no-follow handles. */
+export async function classifyPortableNavigationPath(
+  options: ReadPortableAssetFileOptions,
+): Promise<PortableNavigationPathKind> {
+  const pathValidation = validateTopikPath(options.path);
+  if (!pathValidation.ok) return "other";
+  if (
+    process.platform !== "linux" ||
+    typeof constants.O_NOFOLLOW !== "number" ||
+    typeof constants.O_DIRECTORY !== "number"
+  ) {
+    return "other";
+  }
+
+  const handles: FileHandle[] = [];
+  try {
+    const expectedRoot = await lstat(options.root, { bigint: true });
+    if (!expectedRoot.isDirectory() || expectedRoot.isSymbolicLink()) return "other";
+    const root = await open(
+      options.root,
+      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+    );
+    handles.push(root);
+    const openedRoot = await root.stat({ bigint: true });
+    if (
+      !openedRoot.isDirectory() ||
+      expectedRoot.dev !== openedRoot.dev ||
+      expectedRoot.ino !== openedRoot.ino
+    ) {
+      return "other";
+    }
+
+    for (const component of pathValidation.value.path.split("/")) {
+      const parent = handles.at(-1);
+      if (parent === undefined) return "other";
+      const child = await open(
+        procFdChild(parent.fd, component),
+        constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+      );
+      handles.push(child);
+      if (!(await child.stat({ bigint: true })).isDirectory()) return "other";
+    }
+    return "directory";
+  } catch (error) {
+    return isMissingFilesystemError(error) ? "missing" : "other";
+  } finally {
+    for (const handle of handles.reverse()) await handle.close().catch(() => undefined);
+  }
+}
+
+function isMissingFilesystemError(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
+}
+
 /** Filesystem reader using no-follow traversal and stable same-handle identity checks. */
 export async function readPortableAssetFile(
   options: ReadPortableAssetFileOptions,

@@ -45,6 +45,13 @@ const UNSAFE_GENERIC_LINK_CASES: readonly (readonly [
     },
   ],
   [
+    "directory symlink",
+    async (root, target) => {
+      await mkdir(join(root, "symlink-directory"));
+      await symlink("symlink-directory", target, "dir");
+    },
+  ],
+  [
     "executable",
     async (_root, target) => {
       await writeFile(target, "#!/bin/sh\n");
@@ -80,6 +87,12 @@ const UNSAFE_GENERIC_LINK_CASES: readonly (readonly [
     async (_root, target) => {
       await writeFile(target, "");
       await truncate(target, TOPIK_ASSET_LIMITS.maxAssetBytes + 1);
+    },
+  ],
+  [
+    "special file",
+    async (_root, target) => {
+      await execFileAsync("mkfifo", [target]);
     },
   ],
 ];
@@ -201,6 +214,27 @@ describe("compilation-wide automatic Assets", () => {
     expect(result.semantic).toMatchObject({ assetNames: [], references: [] });
   });
 
+  test("preserves mixed-case credential-free HTTPS across every supported form", async () => {
+    const content = [
+      "![Image](HtTpS://example.com/image.png)",
+      "[Download](hTTps://example.com/manual.pdf)",
+      "<HTTPS://example.com/autolink.pdf>",
+      '{% figure src="HTtPs://example.com/light.png" darkSrc="htTPs://example.com/dark.png" alt="Theme" /%}',
+    ].join("\n\n");
+    const source = guide("guide", content);
+
+    const result = await compileAssetResources({
+      rootDir: dir,
+      resources: [source],
+      sourcePathsByResource: { "Guide/guide": "guide.md" },
+    });
+
+    expect(result.resources).toEqual([source]);
+    expect((result.resources[0] as Guide).spec.content.value).toBe(content);
+    expect(result.payloads).toEqual([]);
+    expect(result.semantic).toMatchObject({ assetNames: [], references: [] });
+  });
+
   test("leaves a credential-free HTTPS autolink unchanged without creating an Asset", async () => {
     await writeFile(join(dir, "guide.md"), "source\n");
     const source = guide("guide", "<https://example.com/file.pdf>\n");
@@ -234,10 +268,16 @@ describe("compilation-wide automatic Assets", () => {
 
   test.each([
     "![HTTP image](http://example.com/image.png)",
+    "![Mixed HTTP image](HtTp://example.com/image.png)",
     "[HTTP file](http://example.com/file.pdf)",
+    "[Mixed HTTP file](hTtP://example.com/file.pdf)",
     "<http://example.com/file.pdf>",
+    "<HTtp://example.com/file.pdf>",
     "<https://user:secret@example.com/file.pdf>",
+    "<hTtPs://user:secret@example.com/file.pdf>",
     "<person@example.com> <http://example.com/file.pdf>",
+    "![Protocol relative](//example.com/image.png)",
+    '{% figure src="HtTpS://[invalid" alt="Malformed HTTPS" /%}',
     '{% figure src="https://user:secret@example.com/image.png" alt="Unsafe HTTPS" /%}',
   ])("rejects HTTP or unsafe HTTPS source reference: %s", async (content) => {
     await writeFile(join(dir, "guide.md"), "source\n");
@@ -638,6 +678,31 @@ describe("compilation-wide automatic Assets", () => {
     );
     expect(occurrences.every((occurrence) => occurrence.kind === "asset")).toBe(true);
   });
+
+  test.each(CONTENT_RESOURCE_FACTORIES)(
+    "preserves existing directory navigation across %s content with and without trailing slashes",
+    async (type, createResource) => {
+      await mkdir(join(dir, "packages"));
+      await mkdir(join(dir, "docs", "routes"), { recursive: true });
+      const content = [
+        "[Packages](../packages)",
+        "[Packages slash](../packages/)",
+        "[Nested routes](routes)",
+        "[Nested routes slash](routes/)",
+      ].join("\n\n");
+      const resource = createResource("page", content);
+
+      const result = await compileAssetResources({
+        rootDir: dir,
+        resources: [resource],
+        sourcePathsByResource: { [`${type}/page`]: "docs/page.md" },
+      });
+
+      expect(result.resources).toEqual([resource]);
+      expect(result.payloads).toEqual([]);
+      expect(result.semantic.references).toEqual([]);
+    },
+  );
 
   test.each(UNSAFE_GENERIC_LINK_CASES)(
     "rejects an existing unsafe %s generic-link target",

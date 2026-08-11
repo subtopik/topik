@@ -89,6 +89,32 @@ Resolution is limited to declared Asset-capable fields. Missing or malformed gen
 a typed diagnostic and omit the browser-facing attribute instead of emitting an unresolved
 `asset:` URL.
 
+### Astro delivery
+
+Astro loaders require an explicit stable namespace and retain the independent descriptors and
+deduplicated payloads from their current completed load. Pass those same loader instances to the
+integration; it serves only canonical digest URLs from the in-memory compiler snapshot:
+
+```ts
+import { topik, topikGuidesLoader, topikWikiLoader } from "@topik/astro";
+
+export const guides = topikGuidesLoader({
+  dir: "content/guides",
+  sourceNamespace: "example-guides-v1",
+});
+export const wiki = topikWikiLoader({
+  dir: "content/wiki",
+  sourceNamespace: "example-wiki-v1",
+});
+
+export const integration = topik({ loaders: [guides, wiki] });
+```
+
+`loader.getAssets()` returns the current emitted descriptors, and `loader.resolveAsset(name)` maps a
+compiled name to its canonical `/assets/sha256/<digest>` URL for the renderer. Source-relative URLs
+are never delivery routes. A reload replaces the whole loader snapshot, so removed payload digests
+and failed compilations cannot fall back to source files or a prior snapshot.
+
 ## Safety
 
 Local references must use canonical compilation-relative POSIX paths. The compiler rejects escapes,

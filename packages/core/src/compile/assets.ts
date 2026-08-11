@@ -18,7 +18,11 @@ import {
   type TopikAssetDiagnostic,
   type TopikAssetDiagnosticId,
 } from "../portable/diagnostics";
-import { readPortableAssetFile, readPortableAssetFileWithReadHookForTest } from "../portable/files";
+import {
+  classifyPortableNavigationPath,
+  readPortableAssetFile,
+  readPortableAssetFileWithReadHookForTest,
+} from "../portable/files";
 import {
   createTopikAssetSemanticRecord,
   createTopikMaterializationRecord,
@@ -507,6 +511,7 @@ async function readGenericNavigationCandidate(
   root: string,
   path: string,
 ): Promise<Awaited<ReturnType<typeof requireAssetFile>> | undefined> {
+  if ((await classifyPortableNavigationPath({ root, path })) === "directory") return undefined;
   const proof = await readAssetFile({ root, path });
   if (!proof.ok) {
     if (proof.diagnostics.every((diagnostic) => diagnostic.id === "TOPIK_ASSET_FILE_MISSING")) {

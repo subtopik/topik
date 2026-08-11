@@ -15,6 +15,59 @@ describe("TopikContent", () => {
     expect(html).toContain('src="assets/hero.webp"');
   });
 
+  it.each([true, false])(
+    "preserves mixed-case credential-free HTTPS in the default renderer with validation=%s",
+    (validate) => {
+      const references = [
+        "HtTpS://example.com/image.png",
+        "hTTps://example.com/manual.pdf",
+        "HTTPS://example.com/autolink.pdf",
+        "HTtPs://example.com/light.png",
+        "htTPs://example.com/dark.png",
+      ];
+      const html = renderToStaticMarkup(
+        <TopikContent
+          content={[
+            `![Image](${references[0]})`,
+            `[Download](${references[1]})`,
+            `<${references[2]}>`,
+            `{% figure src="${references[3]}" darkSrc="${references[4]}" alt="Theme" /%}`,
+          ].join("\n\n")}
+          validate={validate}
+        />,
+      );
+
+      for (const reference of references) expect(html).toContain(reference);
+    },
+  );
+
+  it.each([true, false])(
+    "removes mixed-case unsafe external media in the default renderer with validation=%s",
+    (validate) => {
+      const html = renderToStaticMarkup(
+        <TopikContent
+          content={[
+            "![HTTP](HtTp://example.com/image.png)",
+            "[HTTP](hTtP://example.com/manual.pdf)",
+            "<HTtp://example.com/autolink.pdf>",
+            '{% figure src="hTtPs://user:secret@example.com/image.png" alt="Unsafe" /%}',
+            "![Protocol relative](//example.com/image.png)",
+            '{% figure src="HtTpS://[invalid" alt="Malformed" /%}',
+          ].join("\n\n")}
+          validate={validate}
+        />,
+      );
+
+      expect(html).not.toContain('src="HtTp:');
+      expect(html).not.toContain('href="hTtP:');
+      expect(html).not.toContain('href="HTtp:');
+      expect(html).not.toContain("user:secret");
+      expect(html).not.toContain('src="//example.com');
+      expect(html).not.toContain('src="HtTpS://[invalid');
+      expect(html).not.toMatch(/\b(?:src|href)="/iu);
+    },
+  );
+
   it("passes an explicit color scheme to figures", () => {
     const html = renderToStaticMarkup(
       <TopikContent

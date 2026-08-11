@@ -17,6 +17,7 @@ export interface WikiPageLinkAnalysis {
 export function validateWikiLinks(
   pages: WikiPageLinkAnalysis[],
   policy: LinkValidationPolicy,
+  nonPageLinks: ReadonlySet<TopikContentLink> = new Set(),
 ): TopikContentDiagnostic[] {
   if (policy === "off") return [];
 
@@ -32,6 +33,7 @@ export function validateWikiLinks(
       if (!target) continue;
       const targetPage = pagesBySlug.get(target.slug);
       if (!targetPage) {
+        if (nonPageLinks.has(link)) continue;
         diagnostics.push(
           linkDiagnostic(
             "link-page-not-found",

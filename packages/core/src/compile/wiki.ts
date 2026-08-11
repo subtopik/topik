@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
-import { join, resolve } from "node:path";
-import { analyzeTopikContent, validateTopikContent } from "@topik/content-schema";
+import { join, posix, resolve } from "node:path";
+import {
+  analyzeTopikContent,
+  validateTopikAssetReference,
+  validateTopikContent,
+  type TopikContentLink,
+} from "@topik/content-schema";
 import {
   joinWikiPath,
   type Wiki,
@@ -16,6 +21,8 @@ import { compileAssetResources, type AssetCompilationOptions } from "./assets";
 import type { CompileResourceDiscovery } from "./guide";
 import { readOptionalConfigFileWithPath } from "./config";
 import { readRegularFileWithinRoot } from "./files";
+import { classifyPortableNavigationPath, readPortableAssetFile } from "../portable/files";
+import { validateTopikPath } from "../portable/path";
 import {
   extractMarkdownTitle,
   hasCompileErrors,
@@ -127,7 +134,10 @@ export async function discoverWiki(options: CompileWikiOptions): Promise<Compile
   resources.push(wikiResource);
 
   if (!hasCompileErrors(diagnostics)) {
-    diagnostics.push(...validateWikiLinks(pageAnalyses, linkValidationPolicy(options.validation)));
+    const nonPageLinks = await classifyWikiNonPageLinks(dir, pageAnalyses);
+    diagnostics.push(
+      ...validateWikiLinks(pageAnalyses, linkValidationPolicy(options.validation), nonPageLinks),
+    );
   }
 
   return {
@@ -136,6 +146,41 @@ export async function discoverWiki(options: CompileWikiOptions): Promise<Compile
     sourcePathsByResource,
     consumedSourcePaths: [loadedConfig.path],
   };
+}
+
+async function classifyWikiNonPageLinks(
+  root: string,
+  pages: readonly WikiPageLinkAnalysis[],
+): Promise<ReadonlySet<TopikContentLink>> {
+  const nonPageLinks = new Set<TopikContentLink>();
+  const existingByPath = new Map<string, boolean>();
+  for (const page of pages) {
+    for (const link of page.analysis.links) {
+      if (link.kind !== "link") continue;
+      const reference = validateTopikAssetReference(link.href);
+      if (!reference.valid || reference.kind !== "local") continue;
+      const path = validateTopikPath(
+        posix.join(posix.dirname(page.sourcePath), reference.decodedPath),
+      );
+      if (!path.ok) continue;
+
+      let existing = existingByPath.get(path.value.path);
+      if (existing === undefined) {
+        const kind = await classifyPortableNavigationPath({ root, path: path.value.path });
+        if (kind === "directory") {
+          existing = true;
+        } else {
+          const proof = await readPortableAssetFile({ root, path: path.value.path });
+          existing =
+            proof.ok ||
+            proof.diagnostics.some((diagnostic) => diagnostic.id !== "TOPIK_ASSET_FILE_MISSING");
+        }
+        existingByPath.set(path.value.path, existing);
+      }
+      if (existing) nonPageLinks.add(link);
+    }
+  }
+  return nonPageLinks;
 }
 
 // Keep compiled WikiPage spec.description within wikiPageSchema's 1024-character limit.

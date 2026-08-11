@@ -187,6 +187,19 @@ graph TD;
     ).toMatchObject({ valid: true, errors: [] });
   });
 
+  test("accepts mixed-case credential-free HTTPS in every Asset-capable Markdown form", () => {
+    expect(
+      validateTopikContent(
+        [
+          "![Image](HtTpS://example.com/image.png)",
+          "[Download](hTTps://example.com/manual.pdf)",
+          "<HTTPS://example.com/autolink.pdf>",
+          '{% figure src="HTtPs://example.com/light.png" darkSrc="htTPs://example.com/dark.png" alt="Theme" /%}',
+        ].join("\n\n"),
+      ),
+    ).toMatchObject({ valid: true, errors: [] });
+  });
+
   test.each(['"title (detail)"', "'title (detail)'", "(title detail)"])(
     "accepts image and possible-download references with Markdoc inline title form %s",
     (title) => {
@@ -214,6 +227,8 @@ graph TD;
 
   test.each([
     "[HTTP file](http://example.com/file.pdf)",
+    "[Mixed HTTP](hTtP://example.com/file.pdf)",
+    "<HTtp://example.com/file.pdf>",
     "[Credentialed HTTPS file](https://user:secret@example.com/file.pdf)",
     "<http://example.com/file.pdf>",
     "<https://user:secret@example.com/file.pdf>",
@@ -223,6 +238,20 @@ graph TD;
       valid: false,
       errors: expect.arrayContaining([
         expect.objectContaining({ id: "TOPIK_EXTERNAL_REFERENCE_UNSAFE", type: "link.href" }),
+      ]),
+    });
+  });
+
+  test.each([
+    "![Mixed HTTP](HtTp://example.com/image.png)",
+    "![Mixed credentialed HTTPS](hTtPs://user:secret@example.com/image.png)",
+    '{% figure src="HTtp://example.com/image.png" alt="Unsafe" /%}',
+    '{% figure src="https://example.com/light.png" darkSrc="hTtPs://user:secret@example.com/dark.png" alt="Unsafe" /%}',
+  ])("rejects unsafe mixed-case external media reference: %s", (source) => {
+    expect(validateTopikContent(source)).toMatchObject({
+      valid: false,
+      errors: expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_EXTERNAL_REFERENCE_UNSAFE" }),
       ]),
     });
   });

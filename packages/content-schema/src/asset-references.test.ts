@@ -208,6 +208,58 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
     });
   });
 
+  test("accepts credential-free mixed-case HTTPS and preserves occurrence spelling", () => {
+    expect(validateTopikAssetReference("HtTpS://example.com/a.png?q=1#hero")).toEqual({
+      valid: true,
+      kind: "external-https",
+    });
+    const source = [
+      "![Image](HtTpS://example.com/image.png)",
+      "[Download](hTTps://example.com/manual.pdf)",
+      "<HTTPS://example.com/autolink.pdf>",
+      '{% figure src="HTtPs://example.com/light.png" darkSrc="htTPs://example.com/dark.png" alt="Theme" /%}',
+    ].join("\n\n");
+
+    expect(
+      extractTopikAssetOccurrences(source, { includeGenericLinkCandidates: true }),
+    ).toMatchObject([
+      { slot: "image.src", reference: "HtTpS://example.com/image.png", kind: "external-https" },
+      {
+        slot: "link.href",
+        reference: "hTTps://example.com/manual.pdf",
+        kind: "external-https",
+      },
+      {
+        slot: "link.href",
+        reference: "HTTPS://example.com/autolink.pdf",
+        kind: "external-https",
+      },
+      {
+        slot: "figure.src",
+        reference: "HTtPs://example.com/light.png",
+        kind: "external-https",
+      },
+      {
+        slot: "figure.darkSrc",
+        reference: "htTPs://example.com/dark.png",
+        kind: "external-https",
+      },
+    ]);
+  });
+
+  test.each([
+    "HtTp://example.com/file.pdf",
+    "hTtPs://user:secret@example.com/file.pdf",
+    "//example.com/file.pdf",
+    "HtTpS://[invalid",
+  ])("rejects unsafe mixed-case external form %s", (reference) => {
+    expect(validateTopikAssetReference(reference)).toMatchObject({
+      valid: false,
+      kind: "unsafe",
+      failureKind: "external",
+    });
+  });
+
   test("accepts exact source-relative dot segments for compiler containment resolution", () => {
     expect(validateTopikAssetReference("./hero.png")).toEqual({
       valid: true,

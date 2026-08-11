@@ -175,7 +175,21 @@ export function rewriteTopikAssetOccurrences(
     }
   });
 
+  escapeMarkdownInlineTitlesForFormatting(ast);
   return formatTopikContent(ast);
+}
+
+function escapeMarkdownInlineTitlesForFormatting(root: TopikContentNode): void {
+  walk(root, [], (node) => {
+    if (node.type !== "image" && node.type !== "link") return;
+    const title = stringAttribute(node, "title");
+    if (title === undefined) return;
+    node.attributes.title = title.replace(/[&"\\]/gu, (character) => {
+      if (character === "&") return "&amp;";
+      if (character === '"') return "&quot;";
+      return "&#92;";
+    });
+  });
 }
 
 function matchingSlots(node: TopikContentNode): readonly TopikAssetReferenceSlot[] {

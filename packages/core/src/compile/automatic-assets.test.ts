@@ -595,6 +595,50 @@ describe("compilation-wide automatic Assets", () => {
     },
   );
 
+  test("preserves every supported decoded title form through automatic rewrite and closure", async () => {
+    const titleCases = [
+      ['"title \\"double\\" (v1)"', 'title "double" (v1)'],
+      [`'title "single" (v1)'`, 'title "single" (v1)'],
+      [`(title "parenthesized" v1)`, 'title "parenthesized" v1'],
+      [`'title \\'escaped-single\\' "quote"'`, `title 'escaped-single' "quote"`],
+      [`(title \\) escaped-parenthesized "quote")`, `title ) escaped-parenthesized "quote"`],
+      ['"title &quot;entity&quot; (v1)"', 'title "entity" (v1)'],
+      ['"title\n&quot;multiline&quot; (v1)"', 'title\n"multiline" (v1)'],
+      ['"title \\\\ path"', "title \\ path"],
+      ['"title &amp;quot; literal"', "title &quot; literal"],
+    ] as const;
+    await writeFile(join(dir, "hero.png"), PNG_BYTES);
+    await writeFile(join(dir, "manual.bin"), "manual bytes\n");
+    await writeFile(join(dir, "guide.md"), "source\n");
+    const content = titleCases
+      .flatMap(([titleSource], index) => [
+        `![Hero ${index}](hero.png ${titleSource})`,
+        `[Manual ${index}](manual.bin ${titleSource})`,
+      ])
+      .join("\n\n");
+
+    const result = await compileAssetResources({
+      rootDir: dir,
+      resources: [guide("guide", content)],
+      sourcePathsByResource: { "Guide/guide": "guide.md" },
+      sourceNamespace: "decoded-inline-titles",
+    });
+    const compiledGuide = result.resources.find(
+      (resource): resource is Guide => resource.type === "Guide",
+    );
+    const rewritten = compiledGuide?.spec.content.value ?? "";
+    const occurrences = extractTopikAssetOccurrences(rewritten, {
+      includeGenericLinkCandidates: true,
+    });
+
+    expect(result.resources.filter((resource) => resource.type === "Asset")).toHaveLength(2);
+    expect(result.semantic.references).toHaveLength(titleCases.length * 2);
+    expect(occurrences.map((occurrence) => occurrence.semantics.title)).toEqual(
+      titleCases.flatMap(([, title]) => [title, title]),
+    );
+    expect(occurrences.every((occurrence) => occurrence.kind === "asset")).toBe(true);
+  });
+
   test.each(UNSAFE_GENERIC_LINK_CASES)(
     "rejects an existing unsafe %s generic-link target",
     async (_kind, setup) => {

@@ -66,8 +66,80 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
     expect(rewritten).toContain(`[Manual](compiled-manual.bin "${title}")`);
   });
 
+  test.each([
+    ['"title \\"detail\\" (v1)"', 'title "detail" (v1)'],
+    [`'title "detail" (v1)'`, 'title "detail" (v1)'],
+    [`(title "detail" v1)`, 'title "detail" v1'],
+    [`'title \\'detail\\' "quote"'`, `title 'detail' "quote"`],
+    [`(title \\) detail "quote")`, `title ) detail "quote"`],
+    ['"title &quot;detail&quot; (v1)"', 'title "detail" (v1)'],
+    ['"title\n&quot;detail&quot; (v1)"', 'title\n"detail" (v1)'],
+    ['"title \\\\ path"', "title \\ path"],
+    ['"title &amp;quot; literal"', "title &quot; literal"],
+  ])("preserves decoded inline title semantics while rewriting %s", (titleSource, title) => {
+    const source = [`![Hero](hero.png ${titleSource})`, `[Manual](manual.bin ${titleSource})`].join(
+      "\n\n",
+    );
+    const before = extractTopikAssetOccurrences(source, {
+      provenDownloadPaths: ["manual.bin"],
+    });
+    expect(before.map((occurrence) => occurrence.semantics.title)).toEqual([title, title]);
+
+    const rewritten = rewriteTopikAssetOccurrences(
+      source,
+      (occurrence) =>
+        occurrence.slot === "image.src" ? "compiled-hero.png" : "compiled-manual.bin",
+      { provenDownloadPaths: ["manual.bin"] },
+    );
+    const after = extractTopikAssetOccurrences(rewritten, {
+      provenDownloadPaths: ["compiled-manual.bin"],
+    });
+    expect(after).toMatchObject([
+      { slot: "image.src", reference: "compiled-hero.png", kind: "local" },
+      { slot: "link.href", reference: "compiled-manual.bin", kind: "local" },
+    ]);
+    expect(after.map((occurrence) => occurrence.semantics.title)).toEqual([title, title]);
+  });
+
+  test("preserves unrelated navigation title semantics when rewriting an Asset destination", () => {
+    const source =
+      '[Guide](guide.md "navigation \\"title\\"")\n\n![Hero](hero.png "image \\"title\\"")';
+    const before = extractTopikAssetOccurrences(source, {
+      includeGenericLinkCandidates: true,
+    });
+    const rewritten = rewriteTopikAssetOccurrences(
+      source,
+      (occurrence) =>
+        occurrence.slot === "image.src" ? "compiled-hero.png" : occurrence.reference,
+      { includeGenericLinkCandidates: true },
+    );
+    const after = extractTopikAssetOccurrences(rewritten, {
+      includeGenericLinkCandidates: true,
+    });
+
+    expect(before.map((occurrence) => occurrence.semantics.title)).toEqual([
+      'navigation "title"',
+      'image "title"',
+    ]);
+    expect(after).toMatchObject([
+      { slot: "link.href", reference: "guide.md", semantics: { title: 'navigation "title"' } },
+      {
+        slot: "image.src",
+        reference: "compiled-hero.png",
+        semantics: { title: 'image "title"' },
+      },
+    ]);
+  });
+
   test("does not borrow exact-source proof from an unsupported nested parenthesized title", () => {
     const source = "![unsupported](hero.png (title (detail))) ![real](%C3%A9.png)";
+    expect(extractTopikAssetOccurrences(source)).toMatchObject([
+      { reference: "%C3%A9.png", parsedReference: "%C3%A9.png", kind: "local" },
+    ]);
+  });
+
+  test("does not borrow exact-source proof across an unterminated escaped-quote title", () => {
+    const source = '![unsupported](hero.png "title \\"detail\\" (v1)) ![real](%C3%A9.png)';
     expect(extractTopikAssetOccurrences(source)).toMatchObject([
       { reference: "%C3%A9.png", parsedReference: "%C3%A9.png", kind: "local" },
     ]);

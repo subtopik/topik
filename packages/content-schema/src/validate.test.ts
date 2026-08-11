@@ -197,6 +197,22 @@ graph TD;
   );
 
   test.each([
+    '"title \\"detail\\" (v1)"',
+    `'title "detail" (v1)'`,
+    `(title "detail" v1)`,
+    `'title \\'detail\\' "quote"'`,
+    `(title \\) detail "quote")`,
+    '"title &quot;detail&quot; (v1)"',
+    '"title\n&quot;detail&quot; (v1)"',
+    '"title \\\\ path"',
+    '"title &amp;quot; literal"',
+  ])("accepts decoded quotation semantics in inline title form %s", (title) => {
+    expect(
+      validateTopikContent(`![Hero](hero.png ${title})\n\n[Manual](manual.bin ${title})\n`),
+    ).toMatchObject({ valid: true, errors: [] });
+  });
+
+  test.each([
     "[HTTP file](http://example.com/file.pdf)",
     "[Credentialed HTTPS file](https://user:secret@example.com/file.pdf)",
     "<http://example.com/file.pdf>",

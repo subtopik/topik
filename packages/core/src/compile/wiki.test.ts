@@ -517,7 +517,7 @@ navigation:
     const page = result.resources.find((r) => r.type === "WikiPage")!;
     const asset = result.resources.find((resource) => resource.type === "Asset");
 
-    expect(asset?.name).toMatch(/^auto-v1-[a-z2-7]{52}$/u);
+    expect(asset?.name).toMatch(/^auto-v1-[a-z2-7]{51}[aq]$/u);
     expect(result.payloads).toHaveLength(1);
     expect(page.spec.content.value).toContain(`![hero](asset:${asset?.name})`);
     expect(page.spec).not.toHaveProperty("assets");

@@ -1,4 +1,5 @@
 import type { ComponentPropsWithoutRef, ComponentType, MouseEvent, ReactNode } from "react";
+import type { TopikGeneratedAssetName } from "@topik/content-schema";
 
 export const topikComponentNames = [
   "TopikAccordion",
@@ -42,7 +43,7 @@ export type TopikComponent = ComponentType<TopikComponentProps>;
 export type TopikComponentMap = Record<TopikComponentName, TopikComponent>;
 export type TopikComponentOverrides = Partial<TopikComponentMap>;
 export type TopikColorScheme = "light" | "dark";
-export type TopikAssetResolver = (name: string) => string | undefined;
+export type TopikAssetResolver = (name: TopikGeneratedAssetName) => string | undefined;
 export type TopikLinkResolver = (href: string) => string;
 export type TopikLinkRenderProps = Omit<ComponentPropsWithoutRef<"a">, "href"> & {
   href: string;

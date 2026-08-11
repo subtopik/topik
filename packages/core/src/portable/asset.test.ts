@@ -1,7 +1,8 @@
 import { describe, expect, test } from "vite-plus/test";
-import type { Asset } from "@topik/schema";
+import type { Asset, GeneratedAssetName } from "@topik/schema";
 import {
   generateAutomaticAssetName,
+  isGeneratedAssetName,
   parseAsset,
   serializeAsset,
   validateAssetValue,
@@ -15,7 +16,7 @@ import { TOPIK_ASSET_LIMITS } from "./constants";
 const complete: Asset = {
   apiVersion: "v1",
   type: "Asset",
-  name: `auto-v1-${"a".repeat(52)}`,
+  name: `auto-v1-${"a".repeat(52)}` as GeneratedAssetName,
   spec: {
     uri: "assets/sha256/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     integrity: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -23,6 +24,7 @@ const complete: Asset = {
     mediaType: "image/png",
   },
 };
+const BASE32_ALPHABET = "abcdefghijklmnopqrstuvwxyz234567";
 
 describe("Asset/v1 strict JSON", () => {
   test("serializes recursively ordered UTF-8 JSON with one final LF and strict reparses", () => {
@@ -114,6 +116,26 @@ describe("Asset/v1 strict JSON", () => {
 });
 
 describe("automatic Asset identity", () => {
+  test("accepts only canonical full-SHA-256 base32 generated names", () => {
+    for (const finalSymbol of BASE32_ALPHABET) {
+      const name = `auto-v1-${"a".repeat(51)}${finalSymbol}`;
+      const expected = finalSymbol === "a" || finalSymbol === "q";
+      expect(isGeneratedAssetName(name), name).toBe(expected);
+      expect(validateAssetValue({ ...complete, name }).ok, name).toBe(expected);
+    }
+    for (const name of [
+      `auto-v1-${"a".repeat(51)}`,
+      `auto-v1-${"a".repeat(53)}`,
+      `auto-v1-${"a".repeat(51)}0`,
+      `auto-v1-${"a".repeat(51)}A`,
+      `auto-v1-${"a".repeat(52)}=`,
+      `AUTO-v1-${"a".repeat(52)}`,
+    ]) {
+      expect(isGeneratedAssetName(name), name).toBe(false);
+      expect(validateAssetValue({ ...complete, name }).ok, name).toBe(false);
+    }
+  });
+
   test("uses namespace plus normalized path, never bytes", () => {
     const first = generateAutomaticAssetName({
       stableSourceNamespace: "example-source",

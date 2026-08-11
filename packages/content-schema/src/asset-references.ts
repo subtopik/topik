@@ -5,6 +5,8 @@ import { formatTopikContent, parseTopikContent } from "./content";
 import type { TopikAssetReferenceRole } from "./components";
 
 export const TOPIK_ASSET_REFERENCE_VERSION = "topik-asset-reference-v1" as const;
+export const TOPIK_GENERATED_ASSET_NAME_PATTERN = /^auto-v1-[a-z2-7]{51}[aq]$/u;
+export type TopikGeneratedAssetName = `auto-v1-${string}${"a" | "q"}`;
 
 export interface TopikAssetReferenceSlot {
   node: "image" | "tag" | "link";
@@ -81,7 +83,7 @@ export interface ExtractTopikAssetOccurrencesOptions {
 }
 
 export type TopikAssetReferenceValidation =
-  | { valid: true; kind: "asset"; name: string }
+  | { valid: true; kind: "asset"; name: TopikGeneratedAssetName }
   | { valid: true; kind: "local"; decodedPath: string }
   | { valid: true; kind: "external-https" }
   | { valid: false; kind: "unsafe"; failureKind: "local" | "external" };
@@ -305,8 +307,8 @@ export function validateTopikAssetReference(reference: string): TopikAssetRefere
   }
   if (reference.startsWith("asset:")) {
     const name = reference.slice("asset:".length);
-    return /^auto-v1-[a-z2-7]{52}$/u.test(name)
-      ? { valid: true, kind: "asset", name }
+    return TOPIK_GENERATED_ASSET_NAME_PATTERN.test(name)
+      ? { valid: true, kind: "asset", name: name as TopikGeneratedAssetName }
       : { valid: false, kind: "unsafe", failureKind: "local" };
   }
   if (/^https:\/\//iu.test(reference)) {

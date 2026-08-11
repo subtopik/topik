@@ -5,6 +5,7 @@ export {
   hasMatchingAssetDigests,
   type Asset,
   type AssetSpec,
+  type GeneratedAssetName,
 } from "./asset";
 export { guideSchema, type Guide } from "./guide";
 export {

@@ -1,6 +1,7 @@
 export { topikMarkdocConfig } from "./config";
 export {
   TOPIK_ASSET_REFERENCE_VERSION,
+  TOPIK_GENERATED_ASSET_NAME_PATTERN,
   extractTopikAssetOccurrences,
   removeInvalidTopikAssetReferences,
   rewriteTopikAssetOccurrences,
@@ -12,6 +13,7 @@ export {
   type TopikAssetOccurrenceSemantics,
   type TopikAssetReferenceSlot,
   type TopikAssetReferenceValidation,
+  type TopikGeneratedAssetName,
 } from "./asset-references";
 export {
   formatTopikContent,

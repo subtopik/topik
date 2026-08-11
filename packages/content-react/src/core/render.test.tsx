@@ -88,7 +88,9 @@ Because it is correct.
 
 describe("content-react core", () => {
   it("resolves names in declared slots during server rendering", () => {
-    const assetNames = ["a", "b", "c", "d"].map((character) => `auto-v1-${character.repeat(52)}`);
+    const assetNames = ["a", "b", "c", "d"].map(
+      (character, index) => `auto-v1-${character.repeat(51)}${index % 2 === 0 ? "a" : "q"}`,
+    );
     const names: string[] = [];
     const html = renderToStaticMarkup(
       <>
@@ -154,6 +156,37 @@ describe("content-react core", () => {
     expect(diagnostics).toContain("TOPIK_ASSET_REFERENCE_MISSING");
     expect(html).not.toContain("asset:");
     expect(html).not.toMatch(/\bsrc=/u);
+  });
+
+  it("enforces canonical full-SHA-256 base32 names at the renderer boundary", () => {
+    const alphabet = "abcdefghijklmnopqrstuvwxyz234567";
+    for (const finalSymbol of alphabet) {
+      const name = `auto-v1-${"a".repeat(51)}${finalSymbol}`;
+      const resolver = vi.fn(() => "/compiled/asset");
+      const resolved = resolveTopikAssetReferences(
+        new Markdoc.Tag("TopikImage", { src: `asset:${name}` }),
+        resolver,
+      );
+      const expected = finalSymbol === "a" || finalSymbol === "q";
+      expect(resolver.mock.calls.length > 0, name).toBe(expected);
+      expect(resolved.attributes.src, name).toBe(expected ? "/compiled/asset" : undefined);
+    }
+    for (const name of [
+      `auto-v1-${"a".repeat(51)}`,
+      `auto-v1-${"a".repeat(53)}`,
+      `auto-v1-${"a".repeat(51)}0`,
+      `auto-v1-${"a".repeat(51)}A`,
+      `auto-v1-${"a".repeat(52)}=`,
+      `AUTO-v1-${"a".repeat(52)}`,
+    ]) {
+      const resolver = vi.fn(() => "/must-not-resolve");
+      const resolved = resolveTopikAssetReferences(
+        new Markdoc.Tag("TopikImage", { src: `asset:${name}` }),
+        resolver,
+      );
+      expect(resolver, name).not.toHaveBeenCalled();
+      expect(resolved.attributes, name).not.toHaveProperty("src");
+    }
   });
 
   it("fails closed for a malformed named Asset in source and transformed trees", () => {
@@ -616,6 +649,18 @@ describe("content-react core", () => {
 
     expect(rendered).toBeDefined();
     expect(diagnostics.some((message) => message.includes("'quiz' requires"))).toBe(true);
+  });
+
+  it("does not expose malformed link text through renderer diagnostic callbacks", () => {
+    const sentinel = "PRIVATE_VALUE";
+    const diagnostics: unknown[] = [];
+    void renderTopikMarkdown(`{% card title="Unsafe" href="https://user:${sentinel}@[" /%}`, {
+      onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+    });
+
+    expect(diagnostics).not.toHaveLength(0);
+    expect(JSON.stringify(diagnostics)).not.toContain(sentinel);
+    expect(JSON.stringify(diagnostics)).not.toContain("https://user:");
   });
 
   it.each([

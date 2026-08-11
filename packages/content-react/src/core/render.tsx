@@ -5,11 +5,13 @@ import {
   parseTopikContent,
   removeInvalidTopikAssetReferences,
   removeInvalidTopikNavigationReferences,
+  TOPIK_GENERATED_ASSET_NAME_PATTERN,
   topikMarkdocConfig,
   validateTopikAssetReference,
   validateTopikContent,
   validateTopikHref,
   type TopikContentDiagnostic,
+  type TopikGeneratedAssetName,
 } from "@topik/content-schema";
 import * as React from "react";
 import {
@@ -128,14 +130,15 @@ export function resolveTopikAssetReferences<T>(
       continue;
     }
     const name = reference.slice("asset:".length);
-    if (!/^auto-v1-[a-z2-7]{52}$/u.test(name)) {
+    if (!TOPIK_GENERATED_ASSET_NAME_PATTERN.test(name)) {
       delete attributes[attribute];
       malformedReference(options, slot);
       continue;
     }
+    const generatedName = name as TopikGeneratedAssetName;
     let resolved: string | undefined;
     try {
-      resolved = resolveAsset?.(name);
+      resolved = resolveAsset?.(generatedName);
     } catch {
       resolved = undefined;
     }
@@ -148,7 +151,7 @@ export function resolveTopikAssetReferences<T>(
       options.onDiagnostic?.({
         id: "TOPIK_ASSET_REFERENCE_MISSING",
         message: "Asset name could not be resolved",
-        name,
+        name: generatedName,
         slot,
       });
     } else {

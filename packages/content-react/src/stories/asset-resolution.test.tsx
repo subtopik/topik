@@ -4,7 +4,7 @@ import { TopikContent } from "../theme/TopikContent";
 import { FigureAndBadge, TableAndImage } from "./Components.stories";
 import topikContentMeta, { AssetResolution } from "./TopikContent.stories";
 
-const generatedAssetNamePattern = /^auto-v1-[a-z2-7]{52}$/u;
+const generatedAssetNamePattern = /^auto-v1-[a-z2-7]{51}[aq]$/u;
 
 interface AssetStoryArgs {
   content: string;

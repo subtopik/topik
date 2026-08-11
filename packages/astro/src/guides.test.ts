@@ -111,7 +111,7 @@ describe("topikGuidesLoader", () => {
       const body = context.entries.get("guides-intro")?.body ?? "";
       const assets = loader.getAssets();
       expect(assets).toHaveLength(2);
-      expect(body.match(/asset:auto-v1-[a-z2-7]{52}/gu)).toHaveLength(2);
+      expect(body.match(/asset:auto-v1-[a-z2-7]{51}[aq]/gu)).toHaveLength(2);
       expect(assets.map((asset) => asset.spec.mediaType).sort()).toEqual([
         "application/pdf",
         "image/png",

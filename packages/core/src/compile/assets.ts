@@ -8,7 +8,7 @@ import {
   type TopikAssetOccurrence,
   type TopikContentDiagnostic,
 } from "@topik/content-schema";
-import type { Asset, CoursePage, Guide, WikiPage } from "@topik/schema";
+import type { Asset, CoursePage, GeneratedAssetName, Guide, WikiPage } from "@topik/schema";
 import type { Resource, SourceResource } from "../resource";
 import { generateAutomaticAssetName } from "../portable/asset";
 import { TOPIK_ASSET_LIMITS, TOPIK_ASSET_OUTPUT_PREFIX } from "../portable/constants";
@@ -162,7 +162,7 @@ async function compileAssetResourcesWithReader(
   }
 
   const readCache = new Map<string, Awaited<ReturnType<typeof requireAssetFile>>>();
-  const localPathByGeneratedName = new Map<`auto-v1-${string}`, string>();
+  const localPathByGeneratedName = new Map<GeneratedAssetName, string>();
   const replacements = new Map<string, Map<string, string>>();
   const mappings: TopikAssetReferenceMappingV1[] = [];
   const rolesByName = new Map<string, string[]>();
@@ -404,8 +404,8 @@ async function compileAssetResourcesWithReader(
 
 /** @internal Shared with the source test suite to prove generated-name collision handling. */
 export function registerGeneratedAssetPath(
-  paths: Map<`auto-v1-${string}`, string>,
-  name: `auto-v1-${string}`,
+  paths: Map<GeneratedAssetName, string>,
+  name: GeneratedAssetName,
   normalizedPath: string,
 ): void {
   const previousPath = paths.get(name);

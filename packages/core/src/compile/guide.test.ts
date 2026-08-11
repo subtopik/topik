@@ -60,6 +60,25 @@ describe("compileGuides", () => {
     });
   });
 
+  test("does not expose malformed external reference text in compile errors", async () => {
+    const sentinel = "PRIVATE_VALUE";
+    await writeCollectionConfig("id: blog\ntitle: Blog\n");
+    await writeGuide(
+      "unsafe-reference",
+      `{% card title="Unsafe" href="hTtPs://user:${sentinel}@[" /%}\n`,
+    );
+
+    let failure: unknown;
+    try {
+      await compileGuides({ dir });
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toBeDefined();
+    expect(`${String(failure)}\n${JSON.stringify(failure)}`).not.toContain(sentinel);
+    expect(`${String(failure)}\n${JSON.stringify(failure)}`).not.toContain("hTtPs://user:");
+  });
+
   test("does not turn the consumed collection config into a downloadable Asset", async () => {
     await writeCollectionConfig("id: blog\ntitle: Blog\n");
     await writeGuide("config", "[Configuration](collection.yaml)\n");
@@ -288,7 +307,7 @@ describe("compileGuides", () => {
     const guide = result.resources.find((r) => r.type === "Guide") as Guide;
     const asset = result.resources.find((resource) => resource.type === "Asset");
 
-    expect(asset?.name).toMatch(/^auto-v1-[a-z2-7]{52}$/u);
+    expect(asset?.name).toMatch(/^auto-v1-[a-z2-7]{51}[aq]$/u);
     expect(asset?.spec).toMatchObject({ mediaType: "image/png", size: png.byteLength });
     expect(result.payloads).toHaveLength(1);
     expect(guide.spec.content.value).toContain(`![hero](asset:${asset?.name})`);

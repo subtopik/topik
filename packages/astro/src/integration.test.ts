@@ -101,7 +101,7 @@ describe("topik integration", () => {
     await loader.load(context);
     const middleware = createMiddleware([loader]);
 
-    expect(context.entries.get("guides-intro")?.body).toMatch(/asset:auto-v1-[a-z2-7]{52}/u);
+    expect(context.entries.get("guides-intro")?.body).toMatch(/asset:auto-v1-[a-z2-7]{51}[aq]/u);
     const expectedBytes = new Map([
       ["image/png", PNG_BYTES],
       ["application/pdf", PDF_BYTES],
@@ -135,7 +135,7 @@ describe("topik integration", () => {
     await loader.load(context);
     const middleware = createMiddleware([loader]);
 
-    expect([...context.entries.values()][0]?.body).toMatch(/asset:auto-v1-[a-z2-7]{52}/u);
+    expect([...context.entries.values()][0]?.body).toMatch(/asset:auto-v1-[a-z2-7]{51}[aq]/u);
     const expectedBytes = new Map([
       ["image/png", PNG_BYTES],
       ["application/pdf", PDF_BYTES],

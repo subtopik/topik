@@ -204,7 +204,7 @@ async function createFixture(options: { server?: boolean } = {}): Promise<string
   }
   await writeFile(
     join(root, "src/pages/index.astro"),
-    `---\nimport { getCollection } from "astro:content";\nimport { guidesLoader, wikiLoader } from "../../topik-loaders.mjs";\nconst entries = [...await getCollection("guides"), ...await getCollection("wiki")];\nconst urls = entries.flatMap((entry) => [...entry.body.matchAll(/asset:(auto-v1-[a-z2-7]{52})/g)].map((match) => (entry.collection === "guides" ? guidesLoader : wikiLoader).resolveAsset(match[1])));\n---\n{entries.map((entry) => <pre>{entry.body}</pre>)}\n{urls.map((url) => <a href={url}>{url}</a>)}\n`,
+    `---\nimport { getCollection } from "astro:content";\nimport { guidesLoader, wikiLoader } from "../../topik-loaders.mjs";\nconst entries = [...await getCollection("guides"), ...await getCollection("wiki")];\nconst urls = entries.flatMap((entry) => [...entry.body.matchAll(/asset:(auto-v1-[a-z2-7]{51}[aq])/g)].map((match) => (entry.collection === "guides" ? guidesLoader : wikiLoader).resolveAsset(match[1])));\n---\n{entries.map((entry) => <pre>{entry.body}</pre>)}\n{urls.map((url) => <a href={url}>{url}</a>)}\n`,
   );
   return root;
 }

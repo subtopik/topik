@@ -290,6 +290,26 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
     });
   });
 
+  test("accepts only canonical full-SHA-256 base32 Asset references", () => {
+    const alphabet = "abcdefghijklmnopqrstuvwxyz234567";
+    for (const finalSymbol of alphabet) {
+      const reference = `asset:auto-v1-${"a".repeat(51)}${finalSymbol}`;
+      expect(validateTopikAssetReference(reference).valid, reference).toBe(
+        finalSymbol === "a" || finalSymbol === "q",
+      );
+    }
+    for (const reference of [
+      `asset:auto-v1-${"a".repeat(51)}`,
+      `asset:auto-v1-${"a".repeat(53)}`,
+      `asset:auto-v1-${"a".repeat(51)}0`,
+      `asset:auto-v1-${"a".repeat(51)}A`,
+      `asset:auto-v1-${"a".repeat(52)}=`,
+      `ASSET:auto-v1-${"a".repeat(52)}`,
+    ]) {
+      expect(validateTopikAssetReference(reference).valid, reference).toBe(false);
+    }
+  });
+
   test.each([
     "asset:company-logo",
     "asset:auto-v1-short",

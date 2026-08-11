@@ -9,6 +9,21 @@ function idsFor(source: string): string[] {
 }
 
 describe("topik content schema", () => {
+  test("keeps malformed external reference text out of serialized diagnostics", () => {
+    const sentinel = "PRIVATE_VALUE";
+    for (const reference of [
+      `https://user:${sentinel}@[`,
+      `https://user:%50RIVATE_VALUE@[`,
+      `hTtPs://user:${sentinel}@[`,
+      `https://example.com/?token=${sentinel}#%zz`,
+    ]) {
+      const result = validateTopikContent(`{% card title="Unsafe" href="${reference}" /%}`);
+      expect(result.valid).toBe(false);
+      expect(JSON.stringify(result.errors)).not.toContain(sentinel);
+      expect(JSON.stringify(result.errors)).not.toContain(reference);
+    }
+  });
+
   test("exports component metadata for the initial schema surface", () => {
     expect(Object.keys(topikComponents).sort()).toEqual([
       "accordion",

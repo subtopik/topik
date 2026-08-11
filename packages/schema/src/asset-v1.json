@@ -6,7 +6,7 @@
   "properties": {
     "apiVersion": { "const": "v1" },
     "name": {
-      "pattern": "^auto-v1-[a-z2-7]{52}$",
+      "pattern": "^auto-v1-[a-z2-7]{51}[aq]$",
       "type": "string"
     },
     "spec": {

@@ -9,6 +9,7 @@ const ajv = new Ajv2020({ strict: true, strictRequired: false });
 const validateAsset = ajv.compile(assetV1Schema);
 const validateAssetContract = (value: unknown): boolean =>
   validateAsset(value) && hasMatchingAssetDigests(value);
+const BASE32_ALPHABET = "abcdefghijklmnopqrstuvwxyz234567";
 testSchema("asset", validateAssetContract);
 
 describe("Asset/v1 raw schema", () => {
@@ -44,4 +45,37 @@ describe("Asset/v1 raw schema", () => {
     expect(validateAsset({ ...output, spec: { uri: "manual.pdf" } })).toBe(false);
     expect(validateAsset({ ...output, spec: { ...output.spec, size: 268_435_457 } })).toBe(false);
   });
+
+  test("enforces canonical full-SHA-256 base32 generated names", () => {
+    for (const finalSymbol of BASE32_ALPHABET) {
+      expect(validateAsset(assetWithName(`auto-v1-${"a".repeat(51)}${finalSymbol}`))).toBe(
+        finalSymbol === "a" || finalSymbol === "q",
+      );
+    }
+    for (const name of [
+      `auto-v1-${"a".repeat(51)}`,
+      `auto-v1-${"a".repeat(53)}`,
+      `auto-v1-${"a".repeat(51)}0`,
+      `auto-v1-${"a".repeat(51)}A`,
+      `auto-v1-${"a".repeat(52)}=`,
+      `AUTO-v1-${"a".repeat(52)}`,
+    ]) {
+      expect(validateAsset(assetWithName(name)), name).toBe(false);
+    }
+  });
 });
+
+function assetWithName(name: string): unknown {
+  const digest = "0".repeat(64);
+  return {
+    apiVersion: "v1",
+    type: "Asset",
+    name,
+    spec: {
+      uri: `assets/sha256/${digest}`,
+      integrity: `sha256:${digest}`,
+      mediaType: "application/pdf",
+      size: 0,
+    },
+  };
+}

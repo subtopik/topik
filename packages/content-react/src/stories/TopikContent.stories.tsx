@@ -2,8 +2,8 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { TopikContent } from "../theme/TopikContent";
 
 const diagramAssetName = "auto-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-const heroAssetName = "auto-v1-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-const darkHeroAssetName = "auto-v1-cccccccccccccccccccccccccccccccccccccccccccccccccccc";
+const heroAssetName = "auto-v1-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbq";
+const darkHeroAssetName = "auto-v1-ccccccccccccccccccccccccccccccccccccccccccccccccccca";
 
 const learningPage = `
 # Building A Topic

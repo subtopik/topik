@@ -24,7 +24,7 @@ HTTPS forms, including URLs with credentials, fail visibly.
 Every generated name has this form:
 
 ```text
-auto-v1-<52 lowercase base32 characters>
+auto-v1-<51 lowercase base32 characters><a or q>
 ```
 
 The suffix is the complete unpadded RFC 4648 base32 encoding of:
@@ -32,6 +32,9 @@ The suffix is the complete unpadded RFC 4648 base32 encoding of:
 ```text
 sha256(UTF8(NFC(stable-source-namespace)) + NUL + UTF8(normalized-relative-POSIX-path))
 ```
+
+Because the suffix encodes all 256 digest bits without padding, its final symbol is always `a` or
+`q`; every other final base32 symbol is noncanonical.
 
 The namespace and normalized source path are the complete identity. Editing bytes at the same path
 keeps the name. Moving the file changes the name. Equal bytes at different paths produce distinct
@@ -132,6 +135,12 @@ submodules, special files, executables, changed-during-read bytes, unsupported G
 filters, working-tree encodings, active content, and unsupported media fail closed. Diagnostics use
 safe relative locations and never expose absolute paths, URI secrets, or file bytes.
 
-Compilation output is staged as a complete deterministic generation and published atomically.
-Identity changes to the output path, its parents, staged files, the prior generation, or the publish
-pointer stop publication without modifying a newcomer.
+Compilation output is fully and deterministically staged before publication. Output traversal is
+descriptor-anchored and no-follow, existing nodes must have supported types, and each payload is
+complete before it is exposed. Successful cooperative replacement removes the prior generation and
+its staging paths.
+
+Publication assumes callers do not concurrently mutate the same output tree. It does not provide
+cross-process locking, compare-and-swap filesystem names, continuous-reader old-or-new visibility,
+crash durability, or rollback. Consumers that need those properties must provide external
+isolation or a generation manager.

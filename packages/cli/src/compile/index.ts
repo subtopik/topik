@@ -6,23 +6,13 @@ import {
   lstatSync,
   openSync,
   readFileSync,
-  readlinkSync,
   readdirSync,
   renameSync,
-  symlinkSync,
+  rmdirSync,
+  unlinkSync,
 } from "node:fs";
 import type { BigIntStats } from "node:fs";
-import {
-  lstat,
-  mkdir,
-  mkdtemp,
-  open,
-  readlink,
-  readdir,
-  realpath,
-  rename,
-  symlink,
-} from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, open, realpath } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { boolean, command, positional, string } from "@drizzle-team/brocli";
@@ -42,8 +32,7 @@ import {
 } from "../source-namespace";
 
 const COMPILATION_GENERATION_PREFIX = ".topik-compilation-generation-";
-const COMPILATION_PUBLISH_PREFIX = ".topik-compilation-publish-";
-const COMPILATION_FILE_STAGE_PREFIX = ".topik-compilation-file-stage-";
+const COMPILATION_PRIOR_PREFIX = ".topik-compilation-prior-";
 
 export const compile = command({
   name: "compile",
@@ -131,23 +120,9 @@ export const compile = command({
   },
 });
 
-export interface CompilationReplaceTestHooks {
-  beforePublish?: () => void | Promise<void>;
-  afterPublish?: () => void | Promise<void>;
-  afterSupersededGenerationProof?: () => void | Promise<void>;
-  afterPublishStagingProof?: (path: string) => void | Promise<void>;
-  afterFileStagingProof?: (path: string) => void | Promise<void>;
-  afterFailedGenerationProof?: (path: string) => void | Promise<void>;
-  afterStagedGenerationProof?: (path: string) => void | Promise<void>;
-  afterPriorGenerationProof?: (path: string) => void | Promise<void>;
-  afterOutputTargetProof?: (path: string) => void | Promise<void>;
-  afterPublishPointerProof?: (path: string) => void | Promise<void>;
-}
-
 export async function replaceCompilationTree(
   absolutePath: string,
   files: readonly { path: string; bytes: string | Uint8Array }[],
-  hooks: CompilationReplaceTestHooks = {},
 ): Promise<void> {
   const stagedFiles = snapshotCompilationFiles(files);
   const target = basename(absolutePath);
@@ -158,198 +133,67 @@ export async function replaceCompilationTree(
   if (anchoredParent === undefined) {
     throw new CliError("Compilation output parent could not be created");
   }
-  const { bindings: parentBindings, handle: parent } = anchoredParent;
-  let existing: OwnedCompilationGeneration | undefined;
+  const parent = anchoredParent.handle;
+  let existing: OwnedCompilationOutput | undefined;
   let generation: OwnedTemporaryDirectory | undefined;
-  let publishStaging: OwnedTemporaryDirectory | undefined;
-  let fileStaging: OwnedTemporaryDirectory | undefined;
   let published = false;
+  let existingRemoved = false;
+  let operationError: unknown;
   try {
     const targetPath = procFdChild(parent.fd, target);
-    existing = await openOwnedCompilationGeneration(parent, target);
+    existing = await openOwnedCompilationOutput(parent, target);
     generation = await createOwnedTemporaryDirectory(parent, COMPILATION_GENERATION_PREFIX);
-    fileStaging = await createOwnedTemporaryDirectory(parent, COMPILATION_FILE_STAGE_PREFIX);
-    await proveRetainedTemporaryDirectory(fileStaging, hooks.afterFileStagingProof);
-    publishStaging = await createOwnedTemporaryDirectory(parent, COMPILATION_PUBLISH_PREFIX);
-    await proveRetainedTemporaryDirectory(publishStaging, hooks.afterPublishStagingProof);
-    const stagedLink = procFdChild(publishStaging.handle.fd, "current");
-    let operationError: unknown;
-    try {
-      await Promise.all(
-        stagedFiles.map((file) =>
-          writeAnchoredFile(generation!.handle, fileStaging!.handle, file.path, file.bytes),
-        ),
-      );
-      await generation.handle.sync();
-      await hooks.beforePublish?.();
-      await assertDirectoryIdentity(generation.path, generation.identity);
-      const stagedTree = bindCompleteCompilationTreeSync(generation.handle);
-      assertExpectedStagedTree(stagedTree, stagedFiles);
-      await hooks.afterStagedGenerationProof?.(generation.path);
-      if (existing !== undefined) {
-        let stagedPointer: OwnedStagedPointer;
-        try {
-          await symlink(basename(generation.path), stagedLink, "dir");
-          stagedPointer = await proveStagedPointer(stagedLink, basename(generation.path));
-        } catch {
-          throw new CliError("Compilation output pointer could not be staged safely");
-        }
-        await hooks.afterPublishPointerProof?.(stagedLink);
-        await assertCompilationGenerationBinding(parent, target, existing);
-        assertBoundCompilationTreeSync(existing.handle, existing.tree);
-        await hooks.afterPriorGenerationProof?.(procFdChild(parent.fd, existing.target));
-        await hooks.afterOutputTargetProof?.(targetPath);
-        try {
-          publishReplacementPointerSync(
-            parent,
-            target,
-            existing,
-            generation,
-            stagedTree,
-            stagedPointer,
-            parentBindings,
-          );
-        } catch (error) {
-          if (error instanceof CliError) throw error;
-          throw new CliError("Compilation output pointer could not be replaced atomically");
-        }
-      } else {
-        await assertOutputTargetAbsent(targetPath);
-        await hooks.afterOutputTargetProof?.(targetPath);
-        try {
-          publishInitialPointerSync(targetPath, generation, stagedTree, parentBindings);
-        } catch (error) {
-          if (error instanceof CliError) throw error;
-          throw new CliError("Compilation output pointer could not be published atomically");
-        }
-      }
-      published = true;
-      await parent.sync();
-      await hooks.afterPublish?.();
-    } catch (error) {
-      operationError = error;
+    for (const file of stagedFiles) {
+      await writeAnchoredFile(generation.handle, file.path, file.bytes);
     }
-    if (published && existing !== undefined) {
-      try {
-        await proveSupersededCompilationGeneration(
-          parent,
-          existing,
-          hooks.afterSupersededGenerationProof,
-        );
-      } catch (error) {
-        operationError ??= error;
-      }
+    generation.tree = bindCompleteCompilationTreeSync(generation.handle);
+    assertExpectedStagedTree(generation.tree, stagedFiles);
+
+    if (existing !== undefined) {
+      const priorName = `${COMPILATION_PRIOR_PREFIX}${randomUUID()}`;
+      assertOutputPathAbsent(procFdChild(parent.fd, priorName));
+      renameSync(targetPath, procFdChild(parent.fd, priorName));
+      existing.name = priorName;
     }
-    if (operationError !== undefined) throw operationError;
-  } finally {
-    if (generation !== undefined && !published) {
-      await proveRetainedTemporaryDirectory(generation, hooks.afterFailedGenerationProof).catch(
-        () => undefined,
-      );
-    }
-    await generation?.handle.close().catch(() => undefined);
-    await publishStaging?.handle.close().catch(() => undefined);
-    await fileStaging?.handle.close().catch(() => undefined);
-    await existing?.handle.close().catch(() => undefined);
-    await parent.close().catch(() => undefined);
-  }
-}
 
-function publishInitialPointerSync(
-  targetPath: string,
-  generation: OwnedTemporaryDirectory,
-  stagedTree: BoundCompilationTree,
-  parentBindings: readonly CallerVisibleDirectoryBinding[],
-): void {
-  assertCallerVisibleDirectoryBindingsSync(parentBindings);
-  assertDirectoryIdentitySync(generation.path, generation.identity);
-  assertBoundCompilationTreeSync(generation.handle, stagedTree);
-  assertCallerVisibleDirectoryBindingsSync(parentBindings);
-  assertDirectoryIdentitySync(generation.path, generation.identity);
-  assertBoundCompilationTreeSync(generation.handle, stagedTree);
-  assertCallerVisibleDirectoryBindingsSync(parentBindings);
-  assertDirectoryIdentitySync(generation.path, generation.identity);
-  try {
-    // symlink(2) is the conditional transition: an intervening target produces EEXIST and survives.
-    symlinkSync(basename(generation.path), targetPath, "dir");
-  } catch {
-    throw new CliError("Compilation output changed before conditional publish");
-  }
-}
+    renameSync(generation.path, targetPath);
+    generation.path = targetPath;
+    generation.name = target;
+    published = true;
 
-function publishReplacementPointerSync(
-  parent: FileHandle,
-  target: string,
-  existing: OwnedCompilationGeneration,
-  generation: OwnedTemporaryDirectory,
-  stagedTree: BoundCompilationTree,
-  stagedPointer: OwnedStagedPointer,
-  parentBindings: readonly CallerVisibleDirectoryBinding[],
-): void {
-  // Node does not expose an inode-conditional rename. Recheck both descriptor-backed bindings and
-  // perform the single atomic rename synchronously, with no promise, callback, or event-loop yield
-  // in between. The deterministic seam is before these final checks.
-  assertCallerVisibleDirectoryBindingsSync(parentBindings);
-  assertDirectoryIdentitySync(generation.path, generation.identity);
-  assertBoundCompilationTreeSync(generation.handle, stagedTree);
-  assertStagedPointerBindingSync(stagedPointer);
-  assertCompilationGenerationBindingSync(parent, target, existing);
-  assertBoundCompilationTreeSync(existing.handle, existing.tree);
-  assertCallerVisibleDirectoryBindingsSync(parentBindings);
-  assertDirectoryIdentitySync(generation.path, generation.identity);
-  assertBoundCompilationTreeSync(generation.handle, stagedTree);
-  assertStagedPointerBindingSync(stagedPointer);
-  assertCompilationGenerationBindingSync(parent, target, existing);
-  assertBoundCompilationTreeSync(existing.handle, existing.tree);
-  assertCallerVisibleDirectoryBindingsSync(parentBindings);
-  assertDirectoryIdentitySync(generation.path, generation.identity);
-  assertStagedPointerBindingSync(stagedPointer);
-  assertCompilationGenerationBindingSync(parent, target, existing);
-  renameSync(stagedPointer.path, procFdChild(parent.fd, target));
-}
-
-interface OwnedStagedPointer {
-  path: string;
-  target: string;
-  identity: { dev: number; ino: number };
-}
-
-async function proveStagedPointer(path: string, target: string): Promise<OwnedStagedPointer> {
-  const stat = await lstat(path);
-  const actualTarget = await readlink(path, { encoding: "utf8" });
-  if (!stat.isSymbolicLink() || actualTarget !== target) {
-    throw new CliError("Compilation output pointer staging identity changed");
-  }
-  return { path, target, identity: { dev: stat.dev, ino: stat.ino } };
-}
-
-function assertStagedPointerBindingSync(staged: OwnedStagedPointer): void {
-  try {
-    const stat = lstatSync(staged.path);
-    const target = readlinkSync(staged.path, { encoding: "utf8" });
-    if (
-      !stat.isSymbolicLink() ||
-      stat.dev !== staged.identity.dev ||
-      stat.ino !== staged.identity.ino ||
-      target !== staged.target
-    ) {
-      throw new CliError("Compilation output pointer staging identity changed");
+    if (existing !== undefined) {
+      cleanupCompilationDirectory(parent, existing);
+      existingRemoved = true;
     }
   } catch (error) {
-    if (error instanceof CliError) throw error;
-    throw new CliError("Compilation output pointer staging identity changed");
+    operationError = error;
   }
+  if (generation !== undefined && !published) {
+    try {
+      generation.tree = bindCompleteCompilationTreeSync(generation.handle);
+      cleanupCompilationDirectory(parent, generation);
+    } catch (error) {
+      operationError ??= error;
+    }
+  }
+  if (existing !== undefined && !existingRemoved && existing.name !== target) {
+    try {
+      cleanupCompilationDirectory(parent, existing);
+    } catch (error) {
+      operationError ??= error;
+    }
+  }
+  await generation?.handle.close().catch(() => undefined);
+  await existing?.handle.close().catch(() => undefined);
+  await parent.close().catch(() => undefined);
+  if (operationError !== undefined) throw operationError;
 }
 
 interface OwnedTemporaryDirectory {
+  name: string;
   path: string;
   handle: FileHandle;
-  identity: DirectoryIdentity;
-}
-
-interface DirectoryIdentity {
-  dev: bigint;
-  ino: bigint;
+  tree: BoundCompilationTree;
 }
 
 async function createOwnedTemporaryDirectory(
@@ -362,34 +206,25 @@ async function createOwnedTemporaryDirectory(
     handle = await open(path, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
     const stat = await handle.stat({ bigint: true });
     if (!stat.isDirectory()) throw new CliError("Compilation staging identity is invalid");
-    return { path, handle, identity: { dev: stat.dev, ino: stat.ino } };
+    return { name: basename(path), path, handle, tree: { entries: [] } };
   } catch (error) {
     await handle?.close().catch(() => undefined);
+    try {
+      rmdirSync(procFdChild(parent.fd, basename(path)));
+    } catch {
+      // The staging-open failure remains the actionable error.
+    }
     if (error instanceof CliError) throw error;
-    throw new CliError("Compilation staging identity could not be proven");
+    throw new CliError("Compilation staging directory could not be opened safely");
   }
 }
 
-async function proveRetainedTemporaryDirectory(
-  temporary: OwnedTemporaryDirectory,
-  afterProof?: (path: string) => void | Promise<void>,
-): Promise<void> {
-  await assertDirectoryIdentity(temporary.path, temporary.identity);
-  await afterProof?.(temporary.path);
-}
+type OwnedCompilationOutput = OwnedTemporaryDirectory;
 
-interface OwnedCompilationGeneration {
-  target: string;
-  handle: FileHandle;
-  identity: { dev: bigint; ino: bigint };
-  pointerIdentity: { dev: number; ino: number };
-  tree: BoundCompilationTree;
-}
-
-async function openOwnedCompilationGeneration(
+async function openOwnedCompilationOutput(
   parent: FileHandle,
   target: string,
-): Promise<OwnedCompilationGeneration | undefined> {
+): Promise<OwnedCompilationOutput | undefined> {
   const targetPath = procFdChild(parent.fd, target);
   let stat: Awaited<ReturnType<typeof lstat>>;
   try {
@@ -399,194 +234,44 @@ async function openOwnedCompilationGeneration(
     throw new CliError("Compilation output target could not be inspected safely");
   }
 
-  if (!stat.isSymbolicLink()) {
-    if (!stat.isDirectory()) {
-      throw new CliError("Compilation output contains a link or non-directory collision");
-    }
-    const directory = await openAnchoredChildDirectory(parent, target, false);
-    if (directory === undefined) {
-      throw new CliError("Compilation output directory identity could not be proven");
-    }
-    try {
-      await assertSafeOutputTree(directory);
-      await assertOwnedCompilationTree(directory);
-    } finally {
-      await directory.close().catch(() => undefined);
-    }
-    throw new CliError(
-      "Existing directory output cannot be replaced atomically; choose a new output path",
-    );
+  if (!stat.isDirectory()) {
+    throw new CliError("Compilation output contains a link or non-directory collision");
   }
-
-  let generation: string;
-  try {
-    generation = await readlink(targetPath, { encoding: "utf8" });
-  } catch {
-    throw new CliError("Compilation output generation pointer could not be read safely");
-  }
-  if (!isCompilationGenerationName(generation)) {
-    throw new CliError("Existing compilation output is populated but is not recognized as owned");
-  }
-  const handle = await openAnchoredChildDirectory(parent, generation, false);
-  if (handle === undefined) {
-    throw new CliError("Existing compilation output generation is missing");
+  const directory = await openAnchoredChildDirectory(parent, target, false);
+  if (directory === undefined) {
+    throw new CliError("Compilation output directory could not be opened safely");
   }
   try {
-    await assertSafeOutputTree(handle);
-    await assertOwnedCompilationTree(handle);
-    const identity = await handle.stat({ bigint: true });
-    const tree = bindCompleteCompilationTreeSync(handle);
-    return {
-      target: generation,
-      handle,
-      identity: { dev: identity.dev, ino: identity.ino },
-      pointerIdentity: { dev: stat.dev, ino: stat.ino },
-      tree,
-    };
+    await assertOwnedCompilationTree(directory);
+    const tree = bindCompleteCompilationTreeSync(directory);
+    return { handle: directory, name: target, path: targetPath, tree };
   } catch (error) {
-    await handle.close().catch(() => undefined);
+    await directory.close().catch(() => undefined);
     throw error;
   }
 }
 
-async function assertCompilationGenerationBinding(
+function cleanupCompilationDirectory(
   parent: FileHandle,
-  target: string,
-  existing: OwnedCompilationGeneration,
-): Promise<void> {
-  let pointerIdentity: Awaited<ReturnType<typeof lstat>>;
-  try {
-    pointerIdentity = await lstat(procFdChild(parent.fd, target));
-  } catch {
-    throw new CliError("Compilation output identity changed before atomic publish");
-  }
-  if (
-    !pointerIdentity.isSymbolicLink() ||
-    pointerIdentity.dev !== existing.pointerIdentity.dev ||
-    pointerIdentity.ino !== existing.pointerIdentity.ino
-  ) {
-    throw new CliError("Compilation output identity changed before atomic publish");
-  }
-  let current: string;
-  try {
-    current = await readlink(procFdChild(parent.fd, target), { encoding: "utf8" });
-  } catch {
-    throw new CliError("Compilation output identity changed before atomic publish");
-  }
-  if (current !== existing.target) {
-    throw new CliError("Compilation output identity changed before atomic publish");
-  }
-  await assertDirectoryIdentity(procFdChild(parent.fd, existing.target), existing.identity);
-}
-
-function assertCompilationGenerationBindingSync(
-  parent: FileHandle,
-  target: string,
-  existing: OwnedCompilationGeneration,
+  directory: Pick<OwnedTemporaryDirectory, "handle" | "name" | "tree">,
 ): void {
-  let pointerIdentity: ReturnType<typeof lstatSync>;
-  try {
-    pointerIdentity = lstatSync(procFdChild(parent.fd, target));
-  } catch {
-    throw new CliError("Compilation output identity changed before atomic publish");
+  for (const entry of [...directory.tree.entries].reverse()) {
+    if (entry.path.length === 0) continue;
+    const path = `${procFd(directory.handle.fd)}/${entry.path}`;
+    if (entry.kind === "file") unlinkSync(path);
+    else rmdirSync(path);
   }
-  if (
-    !pointerIdentity.isSymbolicLink() ||
-    pointerIdentity.dev !== existing.pointerIdentity.dev ||
-    pointerIdentity.ino !== existing.pointerIdentity.ino
-  ) {
-    throw new CliError("Compilation output identity changed before atomic publish");
-  }
-  let current: string;
-  try {
-    current = readlinkSync(procFdChild(parent.fd, target), { encoding: "utf8" });
-  } catch {
-    throw new CliError("Compilation output identity changed before atomic publish");
-  }
-  if (current !== existing.target) {
-    throw new CliError("Compilation output identity changed before atomic publish");
-  }
-  assertDirectoryIdentitySync(procFdChild(parent.fd, existing.target), existing.identity);
+  rmdirSync(procFdChild(parent.fd, directory.name));
 }
 
-async function assertOutputTargetAbsent(targetPath: string): Promise<void> {
+function assertOutputPathAbsent(path: string): void {
   try {
-    await lstat(targetPath);
+    lstatSync(path);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-    throw new CliError("Compilation output target could not be inspected safely");
+    throw new CliError("Compilation replacement storage could not be inspected safely");
   }
-  throw new CliError("Compilation output appeared before atomic publish");
-}
-
-async function proveSupersededCompilationGeneration(
-  parent: FileHandle,
-  existing: OwnedCompilationGeneration,
-  afterProof?: () => void | Promise<void>,
-): Promise<void> {
-  const path = procFdChild(parent.fd, existing.target);
-  await assertDirectoryIdentity(path, existing.identity);
-  await afterProof?.();
-}
-
-function isCompilationGenerationName(value: string): boolean {
-  return (
-    value.startsWith(COMPILATION_GENERATION_PREFIX) &&
-    value.length > COMPILATION_GENERATION_PREFIX.length &&
-    !value.includes("/") &&
-    !value.includes("\\")
-  );
-}
-
-async function assertDirectoryIdentity(
-  path: string,
-  expected: { dev: bigint; ino: bigint },
-): Promise<void> {
-  let handle: FileHandle | undefined;
-  try {
-    handle = await open(path, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
-    const actual = await handle.stat({ bigint: true });
-    if (!actual.isDirectory() || actual.dev !== expected.dev || actual.ino !== expected.ino) {
-      throw new CliError("Compilation output identity changed during publish");
-    }
-  } catch (error) {
-    if (error instanceof CliError) throw error;
-    throw new CliError("Compilation output identity changed during publish");
-  } finally {
-    await handle?.close().catch(() => undefined);
-  }
-}
-
-function assertDirectoryIdentitySync(path: string, expected: { dev: bigint; ino: bigint }): void {
-  try {
-    const actual = lstatSync(path, { bigint: true });
-    if (!actual.isDirectory() || actual.dev !== expected.dev || actual.ino !== expected.ino) {
-      throw new CliError("Compilation output identity changed during publish");
-    }
-  } catch (error) {
-    if (error instanceof CliError) throw error;
-    throw new CliError("Compilation output identity changed during publish");
-  }
-}
-
-function assertCallerVisibleDirectoryBindingsSync(
-  bindings: readonly CallerVisibleDirectoryBinding[],
-): void {
-  for (const binding of bindings) {
-    try {
-      const actual = lstatSync(binding.path, { bigint: true });
-      if (
-        !actual.isDirectory() ||
-        actual.dev !== binding.identity.dev ||
-        actual.ino !== binding.identity.ino
-      ) {
-        throw new CliError("Compilation output parent or ancestor changed during publish");
-      }
-    } catch (error) {
-      if (error instanceof CliError) throw error;
-      throw new CliError("Compilation output parent or ancestor changed during publish");
-    }
-  }
+  throw new CliError("Compilation replacement storage is already occupied");
 }
 
 async function assertCompilationOutputScope(sourceDir: string, outDir: string): Promise<void> {
@@ -674,24 +359,17 @@ async function openAnchoredOutputDirectory(
     throw new CliError("Compilation output root cannot be the filesystem root");
   const components = normalized.split("/").filter(Boolean);
   let current = await open("/", constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
-  const bindings: CallerVisibleDirectoryBinding[] = [];
   try {
-    for (let index = 0; index < components.length; index++) {
-      const component = components[index];
+    for (const component of components) {
       const child = await openAnchoredChildDirectory(current, component, create);
       if (child === undefined) {
         await current.close();
         return undefined;
       }
-      const stat = await child.stat({ bigint: true });
-      bindings.push({
-        path: `/${components.slice(0, index + 1).join("/")}`,
-        identity: { dev: stat.dev, ino: stat.ino },
-      });
       await current.close();
       current = child;
     }
-    return { bindings, handle: current };
+    return { handle: current };
   } catch (error) {
     await current.close().catch(() => undefined);
     if (error instanceof CliError) throw error;
@@ -700,13 +378,7 @@ async function openAnchoredOutputDirectory(
 }
 
 interface AnchoredOutputDirectory {
-  bindings: CallerVisibleDirectoryBinding[];
   handle: FileHandle;
-}
-
-interface CallerVisibleDirectoryBinding {
-  path: string;
-  identity: DirectoryIdentity;
 }
 
 interface StagedCompilationFile {
@@ -766,7 +438,7 @@ function bindCompleteCompilationTreeSync(root: FileHandle): BoundCompilationTree
     inspectBoundDirectorySync(root.fd, "", entries);
   } catch (error) {
     if (error instanceof CliError) throw error;
-    throw new CliError("Compilation generation contents could not be proven safely");
+    throw new CliError("Compilation generation contents could not be inspected safely");
   }
   entries.sort((left, right) =>
     Buffer.compare(Buffer.from(left.path, "utf8"), Buffer.from(right.path, "utf8")),
@@ -804,6 +476,9 @@ function inspectBoundDirectorySync(
       }
       continue;
     }
+    if (!child.isFile()) {
+      throw new CliError("Compilation generation contains a link or special-node entry");
+    }
 
     let fileFd: number | undefined;
     try {
@@ -815,12 +490,12 @@ function inspectBoundDirectorySync(
       );
       const fileBefore = fstatSync(fileFd, { bigint: true });
       if (!fileBefore.isFile() || fileBefore.nlink !== 1n) {
-        throw new CliError("Compilation generation contains an unsafe file entry");
+        throw new CliError("Compilation generation contains a hard link or unsafe file entry");
       }
       const bytes = readFileSync(fileFd);
       const fileAfter = fstatSync(fileFd, { bigint: true });
       if (!sameBoundOutputIdentity(fileBefore, fileAfter)) {
-        throw new CliError("Compilation generation file changed while it was proven");
+        throw new CliError("Compilation generation file changed while it was inspected");
       }
       assertPathStillBindsIdentitySync(anchoredPath, fileAfter, "file");
       entries.push({
@@ -835,7 +510,7 @@ function inspectBoundDirectorySync(
   }
   const after = fstatSync(directoryFd, { bigint: true });
   if (!sameBoundOutputIdentity(before, after)) {
-    throw new CliError("Compilation generation directory changed while it was proven");
+    throw new CliError("Compilation generation directory changed while it was inspected");
   }
   entries.push({ path: prefix, kind: "directory", identity: toBoundOutputIdentity(after) });
 }
@@ -850,7 +525,7 @@ function assertPathStillBindsIdentitySync(
     (kind === "directory" ? !actual.isDirectory() : !actual.isFile()) ||
     !sameBoundOutputIdentity(actual, expected)
   ) {
-    throw new CliError("Compilation generation path binding changed while it was proven");
+    throw new CliError("Compilation generation path binding changed while it was inspected");
   }
 }
 
@@ -883,26 +558,6 @@ function assertExpectedStagedTree(
       entry.digest !== expected.digest
     ) {
       throw new CliError("Compilation staged generation bytes do not match expected output");
-    }
-  }
-}
-
-function assertBoundCompilationTreeSync(root: FileHandle, expected: BoundCompilationTree): void {
-  const actual = bindCompleteCompilationTreeSync(root);
-  if (actual.entries.length !== expected.entries.length) {
-    throw new CliError("Compilation generation contents changed before atomic publish");
-  }
-  for (let index = 0; index < expected.entries.length; index++) {
-    const expectedEntry = expected.entries[index];
-    const actualEntry = actual.entries[index];
-    if (
-      expectedEntry.path !== actualEntry.path ||
-      expectedEntry.kind !== actualEntry.kind ||
-      !sameStoredOutputIdentity(expectedEntry.identity, actualEntry.identity) ||
-      (expectedEntry.kind === "file" &&
-        (actualEntry.kind !== "file" || expectedEntry.digest !== actualEntry.digest))
-    ) {
-      throw new CliError("Compilation generation contents changed before atomic publish");
     }
   }
 }
@@ -971,44 +626,15 @@ async function openAnchoredChildDirectory(
   }
 }
 
-async function assertSafeOutputTree(directory: FileHandle): Promise<void> {
-  for (const entry of await readdir(procFd(directory.fd))) {
-    const path = procFdChild(directory.fd, entry);
-    let handle: FileHandle;
-    try {
-      handle = await open(
-        path,
-        constants.O_RDONLY |
-          constants.O_NOFOLLOW |
-          (typeof constants.O_NONBLOCK === "number" ? constants.O_NONBLOCK : 0),
-      );
-    } catch {
-      throw new CliError("Compilation output contains a link or special-node collision");
-    }
-    try {
-      const stat = await handle.stat({ bigint: true });
-      if (stat.isDirectory()) {
-        await assertSafeOutputTree(handle);
-      } else if (!stat.isFile() || stat.nlink !== 1n) {
-        throw new CliError("Compilation output contains a hard link or special-node collision");
-      }
-    } finally {
-      await handle.close();
-    }
-  }
-}
-
 async function writeAnchoredFile(
   root: FileHandle,
-  staging: FileHandle,
   relativePath: string,
   bytes: string | Uint8Array,
 ): Promise<void> {
   const components = safeOutputComponents(relativePath);
   const directories: FileHandle[] = [];
   let parent = root;
-  let stagedFile: FileHandle | undefined;
-  const stagedPath = procFdChild(staging.fd, randomUUID());
+  let output: FileHandle | undefined;
   try {
     for (const component of components.slice(0, -1)) {
       const child = await openAnchoredChildDirectory(parent, component, true);
@@ -1017,43 +643,15 @@ async function writeAnchoredFile(
       parent = child;
     }
     const path = procFdChild(parent.fd, components.at(-1) ?? "");
-    let existing: FileHandle | undefined;
-    try {
-      existing = await open(
-        path,
-        constants.O_RDONLY |
-          constants.O_NOFOLLOW |
-          (typeof constants.O_NONBLOCK === "number" ? constants.O_NONBLOCK : 0),
-      );
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        throw new CliError("Compilation output file is a link or special-node collision");
-      }
-    }
-    if (existing !== undefined) {
-      try {
-        const stat = await existing.stat({ bigint: true });
-        if (!stat.isFile() || stat.nlink !== 1n) {
-          throw new CliError("Compilation output file is hard-linked or not regular");
-        }
-      } finally {
-        await existing.close();
-      }
-    }
-
-    stagedFile = await open(
-      stagedPath,
+    output = await open(
+      path,
       constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
       0o600,
     );
-    await stagedFile.writeFile(bytes);
-    await stagedFile.chmod(0o644);
-    await stagedFile.sync();
-    await stagedFile.close();
-    stagedFile = undefined;
-    await rename(stagedPath, path);
+    await output.writeFile(bytes);
+    await output.chmod(0o644);
   } finally {
-    await stagedFile?.close().catch(() => undefined);
+    await output?.close().catch(() => undefined);
     await Promise.all(directories.map((handle) => handle.close().catch(() => undefined)));
   }
 }

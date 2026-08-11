@@ -44,6 +44,48 @@ describe("Topik links", () => {
     }
   });
 
+  test("returns safe generic diagnostics for malformed untrusted references", () => {
+    const sentinel = "PRIVATE_VALUE";
+    for (const href of [
+      `https://user:${sentinel}@[`,
+      `https://user:%50RIVATE_VALUE@[`,
+      `hTtPs://user:${sentinel}@[`,
+      `https://example.com/?token=${sentinel}#%zz`,
+      `https://[${sentinel}`,
+    ]) {
+      const result = validateTopikHref(href);
+      expect(result).toEqual([
+        {
+          id: "link-url-invalid",
+          level: "error",
+          message: "Link target is not a valid URL reference.",
+        },
+      ]);
+      expect(JSON.stringify(result)).not.toContain(sentinel);
+      expect(JSON.stringify(result)).not.toContain(href);
+    }
+  });
+
+  test("enforces the canonical generated-name grammar in Asset hrefs", () => {
+    const alphabet = "abcdefghijklmnopqrstuvwxyz234567";
+    for (const finalSymbol of alphabet) {
+      const href = `asset:auto-v1-${"a".repeat(51)}${finalSymbol}`;
+      expect(validateTopikHref(href).length === 0, href).toBe(
+        finalSymbol === "a" || finalSymbol === "q",
+      );
+    }
+    for (const href of [
+      `asset:auto-v1-${"a".repeat(51)}`,
+      `asset:auto-v1-${"a".repeat(53)}`,
+      `asset:auto-v1-${"a".repeat(51)}0`,
+      `asset:auto-v1-${"a".repeat(51)}A`,
+      `asset:auto-v1-${"a".repeat(52)}=`,
+      `asset:AUTO-v1-${"a".repeat(52)}`,
+    ]) {
+      expect(validateTopikHref(href).length, href).toBeGreaterThan(0);
+    }
+  });
+
   test("extracts headings, Markdown links, cards, and source locations", () => {
     const result = analyzeTopikContent(
       [

@@ -159,7 +159,9 @@ function sanitizeDescriptorVersion(value: string): string {
 }
 
 function sanitizeKey(value: string): string {
-  return /^(?:[a-z0-9]+(?:-[a-z0-9]+)*|auto-v1-[a-z2-7]{52})$/u.test(value) ? value : "[redacted]";
+  return /^(?:[a-z0-9]+(?:-[a-z0-9]+)*|auto-v1-[a-z2-7]{51}[aq])$/u.test(value)
+    ? value
+    : "[redacted]";
 }
 
 function sanitizeCommit(value: string): string {
@@ -175,7 +177,7 @@ function sanitizeJsonPointer(value: string): string {
 function isSafeJsonPointerSegment(value: string): boolean {
   return (
     value.length === 0 ||
-    /^(?:[0-9]+|[a-z0-9]+(?:-[a-z0-9]+)*|auto-v1-[a-z2-7]{52})$/u.test(value) ||
+    /^(?:[0-9]+|[a-z0-9]+(?:-[a-z0-9]+)*|auto-v1-[a-z2-7]{51}[aq])$/u.test(value) ||
     [
       "algorithm",
       "apiVersion",

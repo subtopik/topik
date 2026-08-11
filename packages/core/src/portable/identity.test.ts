@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import type { Asset, CoursePage, Guide, WikiPage } from "@topik/schema";
+import type { Asset, CoursePage, GeneratedAssetName, Guide, WikiPage } from "@topik/schema";
 import type { Resource } from "../resource";
 import {
   createTopikAssetSemanticRecord,
@@ -11,7 +11,7 @@ import { serializeTopikJson } from "./json";
 
 const bytes = new TextEncoder().encode("payload\n");
 const integrity = "sha256:d4e4877bac978b7952f0d544fc52ebff5411d351d129f1f056fa43f11da9af2b";
-const assetName = `auto-v1-${"a".repeat(52)}` as const;
+const assetName = `auto-v1-${"a".repeat(52)}` as GeneratedAssetName;
 const asset: Asset = {
   apiVersion: "v1",
   type: "Asset",

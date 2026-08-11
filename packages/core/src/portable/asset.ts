@@ -1,7 +1,12 @@
 import { createHash } from "node:crypto";
 import Ajv2020 from "ajv/dist/2020.js";
 import type { ErrorObject } from "ajv";
-import { assetV1Schema, hasMatchingAssetDigests, type Asset } from "@topik/schema";
+import {
+  assetV1Schema,
+  hasMatchingAssetDigests,
+  type Asset,
+  type GeneratedAssetName,
+} from "@topik/schema";
 import {
   ASSET_API_VERSION,
   ASSET_TYPE,
@@ -23,7 +28,7 @@ import { validateTopikPath } from "./path";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
-const GENERATED_NAME = /^auto-v1-[a-z2-7]{52}$/u;
+const GENERATED_NAME = /^auto-v1-[a-z2-7]{51}[aq]$/u;
 const FORBIDDEN_TEXT =
   /[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Default_Ignorable_Code_Point}\p{Bidi_Control}\p{Noncharacter_Code_Point}]/u;
 
@@ -188,7 +193,7 @@ export function validateAssetUri(
   };
 }
 
-export function isGeneratedAssetName(value: string): boolean {
+export function isGeneratedAssetName(value: string): value is GeneratedAssetName {
   return GENERATED_NAME.test(value);
 }
 
@@ -211,7 +216,7 @@ export interface GenerateAutomaticAssetNameOptions {
 
 export function generateAutomaticAssetName(
   options: GenerateAutomaticAssetNameOptions,
-): TopikAssetResult<`auto-v1-${string}`> {
+): TopikAssetResult<GeneratedAssetName> {
   const namespace = validateStableSourceNamespace(options.stableSourceNamespace);
   if (!namespace.ok) return { ok: false, diagnostics: namespace.diagnostics };
   const path = validateTopikPath(options.normalizedPath);
@@ -227,7 +232,7 @@ export function generateAutomaticAssetName(
   const digest = createHash("sha256").update(input).digest();
   return {
     ok: true,
-    value: `auto-v1-${base32(digest)}`,
+    value: `auto-v1-${base32(digest)}` as GeneratedAssetName,
     diagnostics: [],
   };
 }

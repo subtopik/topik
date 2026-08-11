@@ -2,6 +2,7 @@ import type { Node, ValidationError } from "@markdoc/markdoc";
 import { assignTopikHeadingIds, type TopikHeading } from "./headings";
 import { parseTopikContent } from "./content";
 import type { TopikContentDiagnostic } from "./diagnostics";
+import { TOPIK_GENERATED_ASSET_NAME_PATTERN } from "./asset-references";
 
 const ALLOWED_SCHEMES = new Set(["asset", "http", "https", "mailto", "tel"]);
 const UNSAFE_SCHEMES = new Set(["data", "javascript", "vbscript"]);
@@ -102,7 +103,7 @@ export function validateTopikHref(value: unknown): ValidationError[] {
   const explicitScheme = SCHEME.exec(value)?.[1].toLowerCase();
 
   if (explicitScheme === "asset") {
-    return /^auto-v1-[a-z2-7]{52}$/u.test(value.slice("asset:".length))
+    return TOPIK_GENERATED_ASSET_NAME_PATTERN.test(value.slice("asset:".length))
       ? []
       : [linkError("link-asset-invalid", "Asset link must use a generated Asset name.")];
   }
@@ -135,7 +136,7 @@ export function validateTopikHref(value: unknown): ValidationError[] {
     }
     if (parsed.hash) decodeURIComponent(parsed.hash.slice(1));
   } catch {
-    return [linkError("link-url-invalid", `Invalid link target '${value}'.`)];
+    return [linkError("link-url-invalid", "Link target is not a valid URL reference.")];
   }
 
   return [];

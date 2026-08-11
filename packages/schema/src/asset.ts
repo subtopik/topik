@@ -7,6 +7,9 @@ export const assetV1Schema: JSONSchema = rawAssetV1Schema as JSONSchema;
 /** Current compiler-output schema. */
 export const assetSchema = assetV1Schema;
 
+/** Canonical unpadded base32 encoding of a full SHA-256 with the versioned prefix. */
+export type GeneratedAssetName = `auto-v1-${string}${"a" | "q"}`;
+
 export interface AssetSpec {
   uri: `assets/sha256/${string}`;
   integrity: `sha256:${string}`;
@@ -17,7 +20,7 @@ export interface AssetSpec {
 export interface Asset {
   apiVersion: "v1";
   type: "Asset";
-  name: `auto-v1-${string}`;
+  name: GeneratedAssetName;
   spec: AssetSpec;
 }
 

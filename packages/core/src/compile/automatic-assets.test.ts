@@ -16,7 +16,16 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 import { extractTopikAssetOccurrences } from "@topik/content-schema";
-import type { Asset, Course, CourseModule, CoursePage, Guide, Wiki, WikiPage } from "@topik/schema";
+import type {
+  Asset,
+  Course,
+  CourseModule,
+  CoursePage,
+  GeneratedAssetName,
+  Guide,
+  Wiki,
+  WikiPage,
+} from "@topik/schema";
 import type { SourceResource } from "../resource";
 import { TOPIK_ASSET_LIMITS } from "../portable/constants";
 import {
@@ -143,7 +152,7 @@ function compiledAsset(): Asset {
   return {
     apiVersion: "v1",
     type: "Asset",
-    name: `auto-v1-${"a".repeat(52)}`,
+    name: `auto-v1-${"a".repeat(52)}` as GeneratedAssetName,
     spec: {
       uri: `assets/sha256/${digest}`,
       integrity: `sha256:${digest}`,
@@ -181,7 +190,7 @@ describe("compilation-wide automatic Assets", () => {
     expect(asset).toEqual({
       apiVersion: "v1",
       type: "Asset",
-      name: expect.stringMatching(/^auto-v1-[a-z2-7]{52}$/u),
+      name: expect.stringMatching(/^auto-v1-[a-z2-7]{51}[aq]$/u),
       spec: {
         uri: expect.stringMatching(/^assets\/sha256\/[0-9a-f]{64}$/u),
         integrity: expect.stringMatching(/^sha256:[0-9a-f]{64}$/u),
@@ -626,7 +635,7 @@ describe("compilation-wide automatic Assets", () => {
       result.semantic.references.filter((reference) => reference.slot === "link.href"),
     ).toHaveLength(4);
     expect(
-      compiledGuide?.spec.content.value.match(/\]\(asset:auto-v1-[a-z2-7]{52}/gu),
+      compiledGuide?.spec.content.value.match(/\]\(asset:auto-v1-[a-z2-7]{51}[aq]/gu),
     ).toHaveLength(5);
   });
 
@@ -676,10 +685,10 @@ describe("compilation-wide automatic Assets", () => {
         "link.href",
       ]);
       expect(compiledGuide?.spec.content.value).toMatch(
-        /!\[Hero\]\(asset:auto-v1-[a-z2-7]{52} "title(?: \(detail\)| detail)"\)/u,
+        /!\[Hero\]\(asset:auto-v1-[a-z2-7]{51}[aq] "title(?: \(detail\)| detail)"\)/u,
       );
       expect(compiledGuide?.spec.content.value).toMatch(
-        /\[Manual\]\(asset:auto-v1-[a-z2-7]{52} "title(?: \(detail\)| detail)"\)/u,
+        /\[Manual\]\(asset:auto-v1-[a-z2-7]{51}[aq] "title(?: \(detail\)| detail)"\)/u,
       );
     },
   );
@@ -934,8 +943,8 @@ describe("compilation-wide automatic Assets", () => {
     ).rejects.toMatchObject({
       diagnostics: [expect.objectContaining({ id: "TOPIK_ASSET_REFERENCE_AMBIGUOUS" })],
     });
-    const paths = new Map<`auto-v1-${string}`, string>();
-    const collidingName = `auto-v1-${"a".repeat(52)}` as const;
+    const paths = new Map<GeneratedAssetName, string>();
+    const collidingName = `auto-v1-${"a".repeat(52)}` as GeneratedAssetName;
     registerGeneratedAssetPath(paths, collidingName, "a.png");
     expect(() => registerGeneratedAssetPath(paths, collidingName, "b.png")).toThrowError(
       expect.objectContaining({

@@ -6,14 +6,33 @@ const privateLabelPattern =
 
 describe("diagnostic file sanitization", () => {
   test.each([
+    " https://user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+    "\thttps://user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+    "https%3A%2F%2Fuser%3AFILE_CREDENTIAL_SENTINEL%40example.com%2FSENSITIVE_DIRECTORY%2Flesson.md%3Ftoken%3DQUERY_SENTINEL%23FRAGMENT_SENTINEL",
+    "https%253A%252F%252Fuser%253AFILE_CREDENTIAL_SENTINEL%2540example.com%252FSENSITIVE_DIRECTORY%252Flesson.md%253Ftoken%253DQUERY_SENTINEL%2523FRAGMENT_SENTINEL",
+    "/tmp/SENSITIVE_DIRECTORY%2Flesson.md%3Ftoken%3DQUERY_SENTINEL%23FRAGMENT_SENTINEL",
+    String.raw`C:\SENSITIVE_DIRECTORY%5Clesson.md%3Ftoken%3DQUERY_SENTINEL%23FRAGMENT_SENTINEL`,
+    String.raw`\\server\SENSITIVE_DIRECTORY%5Clesson.md%253Ftoken%253DQUERY_SENTINEL%2523FRAGMENT_SENTINEL`,
+    String.raw`\Users\SENSITIVE_DIRECTORY\lesson.md%3Ftoken%3DQUERY_SENTINEL%23FRAGMENT_SENTINEL`,
+    String.raw`\?\C:\SENSITIVE_DIRECTORY\lesson.md%253Ftoken%253DQUERY_SENTINEL%2523FRAGMENT_SENTINEL`,
+    "https://example.com/SENSITIVE_DIRECTORY%2Flesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL",
+    "https://user:%46ILE_CREDENTIAL_SENTINEL@example.com/lesson.md",
+  ])("fails an encoded or whitespace-ambiguous label closed", (file) => {
+    const label = sanitizeTopikDiagnosticFile(file);
+
+    expect(label).toBe("content");
+    expect(label).not.toMatch(privateLabelPattern);
+  });
+
+  test.each([
     String.raw`C:\SENSITIVE_DIRECTORY\lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL`,
-    String.raw`\Users\SENSITIVE_DIRECTORY\lesson.md?token=%51UERY_SENTINEL#%46RAGMENT_SENTINEL`,
+    String.raw`\Users\SENSITIVE_DIRECTORY\lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL`,
     String.raw`\\user:FILE_CREDENTIAL_SENTINEL@server\SENSITIVE_DIRECTORY\lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL`,
     String.raw`\?\C:\SENSITIVE_DIRECTORY\lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL`,
-    String.raw`\\?\C:\SENSITIVE_DIRECTORY\lesson.md?token=%51UERY_SENTINEL#%46RAGMENT_SENTINEL`,
+    String.raw`\\?\C:\SENSITIVE_DIRECTORY\lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL`,
     String.raw`\Device\HarddiskVolume1\SENSITIVE_DIRECTORY\lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL`,
-    "https://user:%46ILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md?token=%51UERY_SENTINEL#%46RAGMENT_SENTINEL",
-    "file:///SENSITIVE_DIRECTORY/lesson.md?token=%51UERY_SENTINEL#%46RAGMENT_SENTINEL",
+    "https://user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL",
+    "file:///SENSITIVE_DIRECTORY/lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL",
   ])("removes private suffixes from a rooted file label", (file) => {
     const label = sanitizeTopikDiagnosticFile(file);
 

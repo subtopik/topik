@@ -1,11 +1,15 @@
-import Markdoc from "@markdoc/markdoc";
-import { describe, expect, test } from "vite-plus/test";
+import Markdoc, { type Config, type Node } from "@markdoc/markdoc";
+import { describe, expect, test, vi } from "vite-plus/test";
 import { topikComponents } from "./components";
 import { mergeTopikMarkdocConfig, topikMarkdocConfig } from "./config";
 import { validateTopikContent } from "./validate";
 
 function idsFor(source: string): string[] {
   return validateTopikContent(source).errors.map((error) => error.id);
+}
+
+function findTag(root: Node | undefined, tag: string): Node | undefined {
+  return root === undefined ? undefined : [root, ...root.walk()].find((node) => node.tag === tag);
 }
 
 const unsafeDiagnosticFiles = [
@@ -17,12 +21,26 @@ const unsafeDiagnosticFiles = [
   String.raw`\\?\C:\SENSITIVE_DIRECTORY\lesson.md`,
   String.raw`\Device\HarddiskVolume1\SENSITIVE_DIRECTORY\lesson.md`,
   String.raw`C:\SENSITIVE_DIRECTORY\lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL`,
-  String.raw`\Users\SENSITIVE_DIRECTORY\lesson.md?token=%51UERY_SENTINEL#%46RAGMENT_SENTINEL`,
+  String.raw`\Users\SENSITIVE_DIRECTORY\lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL`,
   String.raw`\\user:FILE_CREDENTIAL_SENTINEL@server\SENSITIVE_DIRECTORY\lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL`,
   String.raw`\?\C:\SENSITIVE_DIRECTORY\lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL`,
-  String.raw`\\?\C:\SENSITIVE_DIRECTORY\lesson.md?token=%51UERY_SENTINEL#%46RAGMENT_SENTINEL`,
+  String.raw`\\?\C:\SENSITIVE_DIRECTORY\lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL`,
   "https://user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL",
   "//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL",
+] as const;
+
+const ambiguousDiagnosticFiles = [
+  " https://user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+  "https%3A%2F%2Fuser%3AFILE_CREDENTIAL_SENTINEL%40example.com%2FSENSITIVE_DIRECTORY%2Flesson.md%3Ftoken%3DQUERY_SENTINEL%23FRAGMENT_SENTINEL",
+  "https%253A%252F%252Fuser%253AFILE_CREDENTIAL_SENTINEL%2540example.com%252FSENSITIVE_DIRECTORY%252Flesson.md%253Ftoken%253DQUERY_SENTINEL%2523FRAGMENT_SENTINEL",
+  "/tmp/SENSITIVE_DIRECTORY%2Flesson.md%3Ftoken%3DQUERY_SENTINEL%23FRAGMENT_SENTINEL",
+  String.raw`C:\SENSITIVE_DIRECTORY%5Clesson.md%3Ftoken%3DQUERY_SENTINEL%23FRAGMENT_SENTINEL`,
+  String.raw`\\server\SENSITIVE_DIRECTORY%5Clesson.md%253Ftoken%253DQUERY_SENTINEL%2523FRAGMENT_SENTINEL`,
+  String.raw`\Users\SENSITIVE_DIRECTORY\lesson.md%3Ftoken%3DQUERY_SENTINEL%23FRAGMENT_SENTINEL`,
+  String.raw`\?\C:\SENSITIVE_DIRECTORY\lesson.md%253Ftoken%253DQUERY_SENTINEL%2523FRAGMENT_SENTINEL`,
+  "https://example.com/SENSITIVE_DIRECTORY%2Flesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL",
+  "https://user:%46ILE_CREDENTIAL_SENTINEL@example.com/lesson.md",
+  "https://user:%46ILE_CREDENTIAL_SENTINEL@[?token=%51UERY_SENTINEL#%46RAGMENT_SENTINEL",
 ] as const;
 
 describe("topik content schema", () => {
@@ -97,6 +115,463 @@ describe("topik content schema", () => {
     );
   });
 
+  test("rejects canonical errors before extension callbacks can mutate validation state", () => {
+    const invalidQuiz = "{% attack /%}\n{% quiz %}ordinary child{% /quiz %}";
+    const validQuiz = findTag(
+      Markdoc.parse(`{% quiz %}
+{% question type="single-choice" %}
+{% choice correct=true %}Yes{% /choice %}
+{% choice %}No{% /choice %}
+{% /question %}
+{% /quiz %}`),
+      "quiz",
+    );
+    const cases: Array<{
+      mutate: (node: Node, config: Config) => void;
+      source: string;
+    }> = [
+      {
+        source: invalidQuiz,
+        mutate: (_node, config) => {
+          const quiz = config.tags?.quiz as Record<string, unknown>;
+          Reflect.set(quiz, "validate", () => []);
+        },
+      },
+      {
+        source: invalidQuiz,
+        mutate: (_node, config) => {
+          const quiz = findTag(config.validation?.parents?.[0], "quiz");
+          if (quiz !== undefined) quiz.tag = "attack";
+        },
+      },
+      {
+        source: '{% attack /%}\n{% callout variant="PRIVATE_VALUE_SENTINEL" /%}',
+        mutate: (_node, config) => {
+          const callout = findTag(config.validation?.parents?.[0], "callout");
+          if (callout !== undefined) callout.attributes.variant = "info";
+        },
+      },
+      {
+        source: invalidQuiz,
+        mutate: (_node, config) => {
+          const quiz = findTag(config.validation?.parents?.[0], "quiz");
+          if (quiz !== undefined && validQuiz !== undefined) quiz.children = validQuiz.children;
+        },
+      },
+      {
+        source: "{% attack %}{% quiz %}ordinary child{% /quiz %}{% /attack %}",
+        mutate: (node) => {
+          const quiz = findTag(node, "quiz");
+          if (quiz !== undefined) quiz.tag = "attack";
+          node.attributes.changed = true;
+          node.children = [];
+        },
+      },
+    ];
+
+    for (const { mutate, source } of cases) {
+      const extensionValidator = vi.fn((node: Node, config: Config) => {
+        mutate(node, config);
+        return [];
+      });
+      const result = validateTopikContent(source, {
+        config: { tags: { attack: { render: "div", validate: extensionValidator } } },
+      });
+
+      expect(result).toMatchObject({ source, valid: false });
+      expect(result.errors).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ level: expect.stringMatching(/^(?:error|critical)$/u) }),
+        ]),
+      );
+      expect(extensionValidator).not.toHaveBeenCalled();
+    }
+  });
+
+  test("isolates caller and returned extension graphs from extension validation", () => {
+    const source = '{% attack value="original" /%}';
+    const attribute = { type: String };
+    const schema = {
+      render: "div",
+      attributes: { value: attribute },
+      validate: (_node: Node, config: Config) => {
+        const effectiveAttack = config.tags?.attack as Record<string, unknown>;
+        const effectiveAttributes = effectiveAttack.attributes as Record<string, unknown>;
+        Reflect.set(effectiveAttack, "render", "mutated");
+        Reflect.set(effectiveAttributes, "value", { type: Number });
+        return [];
+      },
+    };
+    const extension = { tags: { attack: schema } };
+    const returned = mergeTopikMarkdocConfig(extension);
+
+    expect(validateTopikContent(source, { config: returned })).toMatchObject({ valid: true });
+    expect(schema.render).toBe("div");
+    expect(schema.attributes.value).toBe(attribute);
+    expect(returned.tags?.attack).toMatchObject({
+      render: "div",
+      attributes: { value: attribute },
+    });
+    expect(topikMarkdocConfig.tags.quiz).toHaveProperty("validate", expect.any(Function));
+  });
+
+  test("rejects canonical errors in the complete reachable partial closure before callbacks", () => {
+    const source = '{% partial file="outer.md" /%}';
+    const extensionValidator = vi.fn(() => []);
+    const partials = {
+      "outer.md": Markdoc.parse('{% partial file="inner.md" /%}'),
+      "inner.md": Markdoc.parse("{% attack /%}\n{% quiz %}ordinary child{% /quiz %}", {
+        file: "/tmp/SENSITIVE_DIRECTORY/inner.md",
+      }),
+    };
+
+    const result = validateTopikContent(source, {
+      config: {
+        partials,
+        tags: { attack: { render: "div", validate: extensionValidator } },
+      },
+    });
+
+    expect(result).toMatchObject({ source, valid: false });
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "topik-quiz-requires-question",
+          file: "inner.md",
+        }),
+      ]),
+    );
+    expect(JSON.stringify(result.errors)).not.toMatch(
+      /ordinary child|SENSITIVE_DIRECTORY|\/tmp\//u,
+    );
+    expect(extensionValidator).not.toHaveBeenCalled();
+  });
+
+  test("validates partial arrays once when their AST is shared by multiple names", () => {
+    const source = ['{% partial file="first.md" /%}', '{% partial file="second.md" /%}'].join("\n");
+    const invalid = Markdoc.parse("{% quiz %}ordinary child{% /quiz %}");
+    const shared = [Markdoc.parse("# Safe"), invalid];
+    const result = validateTopikContent(source, {
+      config: { partials: { "first.md": shared, "second.md": shared } },
+    });
+
+    expect(result).toMatchObject({ source, valid: false });
+    expect(result.errors.filter(({ id }) => id === "topik-quiz-requires-question")).toHaveLength(1);
+  });
+
+  test.each([
+    {
+      name: "a literal partial name",
+      source: '{% partial file="asset.md" /%}',
+      variables: {},
+    },
+    {
+      name: "a variable-selected partial name",
+      source: "{% partial file=$selection.which /%}",
+      variables: { selection: { which: "asset.md" } },
+    },
+  ])(
+    "applies canonical Asset policy throughout the partial closure for $name",
+    ({ source, variables }) => {
+      const partial = Markdoc.parse("![Asset](safe.png)", {
+        file: "/tmp/SENSITIVE_DIRECTORY/asset.md",
+      });
+      const image = [partial, ...partial.walk()].find((node) => node.type === "image");
+      if (image === undefined) throw new Error("Expected image fixture");
+      image.attributes.src = "é.png";
+      const result = validateTopikContent(source, {
+        config: {
+          variables,
+          partials: {
+            "asset.md": partial,
+          },
+        },
+      });
+
+      expect(result).toMatchObject({ source, valid: false });
+      expect(result.errors).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "TOPIK_ASSET_PATH_INVALID", file: "asset.md" }),
+        ]),
+      );
+      expect(JSON.stringify(result.errors)).not.toMatch(/é\.png|SENSITIVE_DIRECTORY|\/tmp\//u);
+    },
+  );
+
+  test.each([
+    {
+      partials: (() => {
+        const partials: Record<string, Node> = {};
+        partials["self.md"] = Markdoc.parse('{% partial file="self.md" /%}');
+        return partials;
+      })(),
+      source: '{% partial file="self.md" /%}',
+      id: "topik-partial-cycle",
+    },
+    {
+      partials: {
+        "a.md": Markdoc.parse('{% partial file="b.md" /%}'),
+        "b.md": Markdoc.parse('{% partial file="a.md" /%}'),
+      },
+      source: '{% partial file="a.md" /%}',
+      id: "topik-partial-cycle",
+    },
+    {
+      partials: { "bad.md": { private: "PRIVATE_VALUE_SENTINEL" } },
+      source: '{% partial file="bad.md" /%}',
+      id: "topik-partial-invalid",
+    },
+    {
+      partials: { "bad.md": [Markdoc.parse("# Safe"), "PRIVATE_VALUE_SENTINEL"] },
+      source: '{% partial file="bad.md" /%}',
+      id: "topik-partial-invalid",
+    },
+    {
+      partials: (() => {
+        const root = Markdoc.parse("# Cyclic AST");
+        root.children.push(root);
+        return { "cycle.md": root };
+      })(),
+      source: '{% partial file="cycle.md" /%}',
+      id: "topik-partial-cycle",
+    },
+    {
+      partials: (() => {
+        const roots: unknown[] = [];
+        roots.push(roots);
+        return { "cycle.md": roots };
+      })(),
+      source: '{% partial file="cycle.md" /%}',
+      id: "topik-partial-invalid",
+    },
+  ])("fails a cyclic or malformed partial graph closed", ({ id, partials, source }) => {
+    const result = validateTopikContent(source, { config: { partials } });
+
+    expect(result).toMatchObject({ source, valid: false });
+    expect(result.errors).toEqual(expect.arrayContaining([expect.objectContaining({ id })]));
+    expect(JSON.stringify(result.errors)).not.toMatch(
+      /PRIVATE_VALUE_SENTINEL|self\.md|a\.md|b\.md|bad\.md|cycle\.md/u,
+    );
+  });
+
+  test("clones partial AST graphs without changing valid partial and custom-function behavior", () => {
+    const source = '{% partial file="safe.md" /%}';
+    const partial = Markdoc.parse("{% callout title=label() %}Custom child{% /callout %}");
+    const transform = vi.fn(() => "Safe title");
+    const extension = {
+      functions: { label: { returns: String, transform } },
+      partials: { "safe.md": partial },
+    };
+    const first = mergeTopikMarkdocConfig(extension);
+    const second = mergeTopikMarkdocConfig(extension);
+
+    expect(first.partials?.["safe.md"]).not.toBe(partial);
+    expect(first.partials?.["safe.md"]).not.toBe(second.partials?.["safe.md"]);
+    expect(validateTopikContent(source, { config: extension })).toMatchObject({
+      source,
+      valid: true,
+      errors: [],
+    });
+    expect(transform).not.toHaveBeenCalled();
+  });
+
+  test("ignores malformed partial graphs that are not reachable from the source", () => {
+    const source = "# Safe";
+    const result = validateTopikContent(source, {
+      config: {
+        partials: {
+          "unused.md": { private: "PRIVATE_VALUE_SENTINEL" },
+        },
+      },
+    });
+
+    expect(result).toEqual({ source, valid: true, errors: [] });
+  });
+
+  test.each([
+    {
+      name: "a top-level variable",
+      source: "{% partial file=$which /%}",
+      config: {
+        variables: { which: "part.md" },
+        partials: { "part.md": Markdoc.parse("Top-level child") },
+      },
+    },
+    {
+      name: "a nested variable path",
+      source: "{% partial file=$selection.which /%}",
+      config: {
+        variables: { selection: { which: "part.md" } },
+        partials: { "part.md": Markdoc.parse("Nested-path child") },
+      },
+    },
+    {
+      name: "a partial-local literal variable",
+      source: '{% partial file="outer.md" variables={which: "inner.md"} /%}',
+      config: {
+        partials: {
+          "outer.md": Markdoc.parse("{% partial file=$which /%}"),
+          "inner.md": Markdoc.parse("Scoped child"),
+        },
+      },
+    },
+    {
+      name: "a partial-local variable resolved from global scope",
+      source: '{% partial file="outer.md" variables={which: $target} /%}',
+      config: {
+        variables: { target: "inner.md" },
+        partials: {
+          "outer.md": Markdoc.parse("{% partial file=$which /%}"),
+          "inner.md": Markdoc.parse("Scoped global child"),
+        },
+      },
+    },
+  ])("accepts a valid partial selected by $name", ({ config, source }) => {
+    expect(validateTopikContent(source, { config })).toEqual({ source, valid: true, errors: [] });
+  });
+
+  test.each([
+    { variables: {}, name: "missing variable" },
+    { variables: { which: "missing.md" }, name: "missing target" },
+    { variables: { which: 42 }, name: "non-string target" },
+  ])("fails a variable-selected partial with a $name closed", ({ variables }) => {
+    const source = "{% partial file=$which /%}";
+    const result = validateTopikContent(source, {
+      config: { variables, partials: { "part.md": Markdoc.parse("Safe") } },
+    });
+
+    expect(result).toMatchObject({ source, valid: false });
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ level: expect.stringMatching(/^(?:error|critical)$/u) }),
+      ]),
+    );
+    expect(JSON.stringify(result.errors)).not.toMatch(/missing\.md|which|42/u);
+  });
+
+  test("does not execute a function transform to select a partial", () => {
+    const source = "{% partial file=select() /%}";
+    const transform = vi.fn(() => "part.md");
+    const result = validateTopikContent(source, {
+      config: {
+        functions: { select: { returns: String, transform } },
+        partials: { "part.md": Markdoc.parse("Safe") },
+      },
+    });
+
+    expect(result).toMatchObject({ source, valid: false });
+    expect(result.errors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "topik-partial-invalid" })]),
+    );
+    expect(transform).not.toHaveBeenCalled();
+  });
+
+  test("applies the same invalid closure proof to a variable-selected partial", () => {
+    const source = "{% partial file=$selection.which /%}";
+    const result = validateTopikContent(source, {
+      config: {
+        variables: { selection: { which: "bad.md" } },
+        partials: { "bad.md": Markdoc.parse("{% quiz %}ordinary child{% /quiz %}") },
+      },
+    });
+
+    expect(result).toMatchObject({ source, valid: false });
+    expect(result.errors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "topik-quiz-requires-question" })]),
+    );
+    expect(JSON.stringify(result.errors)).not.toMatch(/bad\.md|ordinary child/u);
+  });
+
+  test.each([
+    {
+      name: "cyclic closure",
+      variables: { selection: { which: "self.md" } },
+      partials: { "self.md": Markdoc.parse('{% partial file="self.md" /%}') },
+      id: "topik-partial-cycle",
+    },
+    {
+      name: "malformed entry",
+      variables: { selection: { which: "bad.md" } },
+      partials: { "bad.md": { private: "PRIVATE_VALUE_SENTINEL" } },
+      id: "topik-partial-invalid",
+    },
+  ])("fails a variable-selected $name closed", ({ id, partials, variables }) => {
+    const source = "{% partial file=$selection.which /%}";
+    const result = validateTopikContent(source, { config: { partials, variables } });
+
+    expect(result).toMatchObject({ source, valid: false });
+    expect(result.errors).toEqual(expect.arrayContaining([expect.objectContaining({ id })]));
+    expect(JSON.stringify(result.errors)).not.toMatch(
+      /PRIVATE_VALUE_SENTINEL|selection|self\.md|bad\.md/u,
+    );
+  });
+
+  test("runs additive extension validation once after canonical acceptance", () => {
+    const source = '{% notice tone="quiet" /%}';
+    const extensionValidator = vi.fn(() => [
+      {
+        id: "extension-warning",
+        level: "warning" as const,
+        message: "PRIVATE_VALUE_SENTINEL",
+      },
+    ]);
+    const result = validateTopikContent(source, {
+      config: {
+        tags: {
+          notice: {
+            render: "aside",
+            attributes: { tone: { type: String, required: true } },
+            validate: extensionValidator,
+          },
+        },
+      },
+    });
+
+    expect(result).toMatchObject({ source, valid: true });
+    expect(result.errors).toEqual([
+      expect.objectContaining({
+        id: "extension-warning",
+        level: "warning",
+        message: "Content validation failed.",
+      }),
+    ]);
+    expect(JSON.stringify(result.errors)).not.toContain("PRIVATE_VALUE_SENTINEL");
+    expect(extensionValidator).toHaveBeenCalledOnce();
+  });
+
+  test("returns a sanitized blocking extension diagnostic after canonical acceptance", () => {
+    const source = '{% notice tone="PRIVATE_VALUE_SENTINEL" /%}';
+    const extensionValidator = vi.fn(() => [
+      {
+        id: "extension-invalid",
+        level: "error" as const,
+        message: "Rejected PRIVATE_VALUE_SENTINEL",
+      },
+    ]);
+    const result = validateTopikContent(source, {
+      config: {
+        tags: {
+          notice: {
+            render: "aside",
+            attributes: { tone: { type: String } },
+            validate: extensionValidator,
+          },
+        },
+      },
+    });
+
+    expect(result).toMatchObject({ source, valid: false });
+    expect(result.errors).toEqual([
+      expect.objectContaining({
+        id: "extension-invalid",
+        level: "error",
+        message: "Content validation failed.",
+      }),
+    ]);
+    expect(JSON.stringify(result.errors)).not.toContain("PRIVATE_VALUE_SENTINEL");
+    expect(extensionValidator).toHaveBeenCalledOnce();
+  });
+
   test.each([
     '{% mystery private="opaque" %}\r\nchild\r\n{% /mystery %}',
     'Before {% mystery private="opaque" %}child{% /mystery %} after',
@@ -160,6 +635,18 @@ describe("topik content schema", () => {
       expect(result.errors[0]?.file).toBe(file);
     },
   );
+
+  test.each(ambiguousDiagnosticFiles)("fails an ambiguous diagnostic label closed", (file) => {
+    const source = '{% callout variant="PRIVATE_VALUE_SENTINEL" /%}';
+    const result = validateTopikContent(source, { file });
+
+    expect(result.errors).toEqual([
+      expect.objectContaining({ file: "content", message: "An attribute has an invalid value." }),
+    ]);
+    expect(JSON.stringify(result.errors)).not.toMatch(
+      /PRIVATE_VALUE_SENTINEL|SENSITIVE_DIRECTORY|FILE_CREDENTIAL_SENTINEL|QUERY_SENTINEL|FRAGMENT_SENTINEL|%2F|%25/iu,
+    );
+  });
 
   test("exports component metadata for the initial schema surface", () => {
     expect(Object.keys(topikComponents).sort()).toEqual([

@@ -1,3 +1,4 @@
+import Markdoc, { type Config } from "@markdoc/markdoc";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { mergeTopikMarkdocConfig } from "@topik/content-schema";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -7,6 +8,59 @@ import { InvalidTopikContentError } from "../core/render";
 import { TopikContent } from "./TopikContent";
 
 describe("TopikContent", () => {
+  it("refuses an invalid reachable partial before default or custom SSR", () => {
+    const source = '{% partial file="bad.md" /%}';
+    const renderQuiz = vi.fn(() => <span>must not render</span>);
+    const config = {
+      partials: { "bad.md": Markdoc.parse("{% quiz %}ordinary child{% /quiz %}") },
+    };
+
+    expect(() => renderToStaticMarkup(<TopikContent config={config} content={source} />)).toThrow(
+      InvalidTopikContentError,
+    );
+    expect(() =>
+      renderToStaticMarkup(
+        <TopikContent components={{ TopikQuiz: renderQuiz }} config={config} content={source} />,
+      ),
+    ).toThrow(InvalidTopikContentError);
+    const placeholder = renderToStaticMarkup(
+      <TopikContent config={config} content={source} invalidContent="placeholder" />,
+    );
+    expect(placeholder).toContain('role="alert"');
+    expect(placeholder).not.toContain("ordinary child");
+    expect(renderQuiz).not.toHaveBeenCalled();
+  });
+
+  it("refuses canonical errors before an additive validator can affect SSR", () => {
+    const source = "{% attack /%}\n{% quiz %}ordinary child{% /quiz %}";
+    const extensionValidator = vi.fn((_node, config: Config) => {
+      const quiz = config.tags?.quiz as Record<string, unknown>;
+      Reflect.set(quiz, "validate", () => []);
+      return [];
+    });
+
+    expect(() =>
+      renderToStaticMarkup(
+        <TopikContent
+          config={{ tags: { attack: { render: "div", validate: extensionValidator } } }}
+          content={source}
+        />,
+      ),
+    ).toThrow(InvalidTopikContentError);
+    expect(extensionValidator).not.toHaveBeenCalled();
+
+    const placeholder = renderToStaticMarkup(
+      <TopikContent
+        config={{ tags: { attack: { render: "div", validate: extensionValidator } } }}
+        content={source}
+        invalidContent="placeholder"
+      />,
+    );
+    expect(placeholder).toContain('role="alert"');
+    expect(placeholder).not.toContain("ordinary child");
+    expect(extensionValidator).not.toHaveBeenCalled();
+  });
+
   it("cannot render through a mutated merged canonical schema", () => {
     const source = "{% quiz %}ordinary child{% /quiz %}";
     const config = mergeTopikMarkdocConfig();

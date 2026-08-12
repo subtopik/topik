@@ -89,9 +89,11 @@ function compileTopikContentInternal(
   content: string,
   options: CompileTopikContentOptions & Pick<RenderTopikContentOptions, "onAssetDiagnostic">,
 ): CompileTopikContentResult {
+  const configSnapshot =
+    options.config === undefined ? undefined : mergeTopikMarkdocConfig(options.config);
   const validation = validateTopikContent(content, {
     file: options.file,
-    config: options.config,
+    config: configSnapshot,
     allowCompiledAssetReferences: true,
   });
   for (const diagnostic of validation.errors) options.onDiagnostic?.(diagnostic);
@@ -115,7 +117,7 @@ function compileTopikContentInternal(
     ok: true,
     source: content,
     diagnostics: validation.errors,
-    tree: Markdoc.transform(ast, mergeTopikMarkdocConfig(options.config)),
+    tree: Markdoc.transform(ast, mergeTopikMarkdocConfig(configSnapshot)),
   };
 }
 

@@ -1,4 +1,5 @@
-import { describe, expect, test } from "vite-plus/test";
+import Markdoc, { type Config } from "@markdoc/markdoc";
+import { describe, expect, test, vi } from "vite-plus/test";
 import { mergeTopikMarkdocConfig } from "./config";
 import { formatTopikContent } from "./format";
 
@@ -12,7 +13,103 @@ const unsafeDiagnosticFiles = [
   "https://user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL",
 ] as const;
 
+const ambiguousDiagnosticFiles = [
+  " https://user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+  "https%3A%2F%2Fuser%3AFILE_CREDENTIAL_SENTINEL%40example.com%2FSENSITIVE_DIRECTORY%2Flesson.md%3Ftoken%3DQUERY_SENTINEL%23FRAGMENT_SENTINEL",
+  "https%253A%252F%252Fuser%253AFILE_CREDENTIAL_SENTINEL%2540example.com%252FSENSITIVE_DIRECTORY%252Flesson.md%253Ftoken%253DQUERY_SENTINEL%2523FRAGMENT_SENTINEL",
+  "/tmp/SENSITIVE_DIRECTORY%2Flesson.md%3Ftoken%3DQUERY_SENTINEL%23FRAGMENT_SENTINEL",
+  String.raw`C:\SENSITIVE_DIRECTORY%5Clesson.md%3Ftoken%3DQUERY_SENTINEL%23FRAGMENT_SENTINEL`,
+  String.raw`\\server\SENSITIVE_DIRECTORY%5Clesson.md%253Ftoken%253DQUERY_SENTINEL%2523FRAGMENT_SENTINEL`,
+  String.raw`\Users\SENSITIVE_DIRECTORY\lesson.md%3Ftoken%3DQUERY_SENTINEL%23FRAGMENT_SENTINEL`,
+  String.raw`\?\C:\SENSITIVE_DIRECTORY\lesson.md%253Ftoken%253DQUERY_SENTINEL%2523FRAGMENT_SENTINEL`,
+  "https://example.com/SENSITIVE_DIRECTORY%2Flesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL",
+  "https://user:%46ILE_CREDENTIAL_SENTINEL@example.com/lesson.md",
+  "https://user:%46ILE_CREDENTIAL_SENTINEL@[?token=%51UERY_SENTINEL#%46RAGMENT_SENTINEL",
+] as const;
+
 describe("Topik content formatting", () => {
+  test.each([
+    {
+      source: "{% partial file=$which /%}",
+      config: {
+        variables: { which: "part.md" },
+        partials: { "part.md": Markdoc.parse("Top-level child") },
+      },
+    },
+    {
+      source: "{% partial file=$selection.which /%}",
+      config: {
+        variables: { selection: { which: "part.md" } },
+        partials: { "part.md": Markdoc.parse("Nested-path child") },
+      },
+    },
+    {
+      source: '{% partial file="outer.md" variables={which: "inner.md"} /%}',
+      config: {
+        partials: {
+          "outer.md": Markdoc.parse("{% partial file=$which /%}"),
+          "inner.md": Markdoc.parse("Scoped child"),
+        },
+      },
+    },
+  ])("formats valid variable-selected partial source", ({ config, source }) => {
+    const result = formatTopikContent(source, { config });
+
+    expect(result).toMatchObject({ ok: true, source });
+    if (!result.ok) return;
+    expect(result.formatted).toBe(`${source}\n`);
+  });
+
+  test.each([undefined, 42, "missing.md"])(
+    "refuses an unresolved variable-selected partial without formatting",
+    (which) => {
+      const source = "  {% partial file=$which /%}  ";
+      const result = formatTopikContent(source, {
+        config: {
+          variables: { which },
+          partials: { "part.md": Markdoc.parse("Safe") },
+        },
+      });
+
+      expect(result).toMatchObject({ ok: false, source });
+      expect(result).not.toHaveProperty("formatted");
+    },
+  );
+
+  test("refuses an invalid reachable partial without formatting or extension validation", () => {
+    const source = '  {% partial file="bad.md" /%}  ';
+    const extensionValidator = vi.fn(() => []);
+    const result = formatTopikContent(source, {
+      config: {
+        partials: {
+          "bad.md": Markdoc.parse("{% attack /%}\n{% quiz %}ordinary child{% /quiz %}"),
+        },
+        tags: { attack: { render: "div", validate: extensionValidator } },
+      },
+    });
+
+    expect(result).toMatchObject({ ok: false, source });
+    expect(result).not.toHaveProperty("formatted");
+    expect(JSON.stringify(result.diagnostics)).not.toContain("ordinary child");
+    expect(extensionValidator).not.toHaveBeenCalled();
+  });
+
+  test("refuses canonical errors before an extension validator can enable formatting", () => {
+    const source = "{% attack /%}\n{% quiz %}ordinary child{% /quiz %}";
+    const extensionValidator = vi.fn((_node, config: Config) => {
+      const quiz = config.tags?.quiz as Record<string, unknown>;
+      Reflect.set(quiz, "validate", () => []);
+      return [];
+    });
+    const result = formatTopikContent(source, {
+      config: { tags: { attack: { render: "div", validate: extensionValidator } } },
+    });
+
+    expect(result).toMatchObject({ ok: false, source });
+    expect(result).not.toHaveProperty("formatted");
+    expect(extensionValidator).not.toHaveBeenCalled();
+  });
+
   test("mutated merged schemas cannot weaken validation before formatting", () => {
     const source = "{% quiz %}ordinary child{% /quiz %}";
     const config = mergeTopikMarkdocConfig();
@@ -105,6 +202,18 @@ describe("Topik content formatting", () => {
     ]);
     expect(JSON.stringify(result.diagnostics)).not.toMatch(
       /PRIVATE_VALUE_SENTINEL|SENSITIVE_DIRECTORY|FILE_CREDENTIAL_SENTINEL|QUERY_SENTINEL|FRAGMENT_SENTINEL/u,
+    );
+  });
+
+  test.each(ambiguousDiagnosticFiles)("fails an ambiguous format label closed", (file) => {
+    const source = '{% callout variant="PRIVATE_VALUE_SENTINEL" /%}';
+    const result = formatTopikContent(source, { file });
+
+    expect(result).toMatchObject({ ok: false, source });
+    expect(result).not.toHaveProperty("formatted");
+    expect(result.diagnostics).toEqual([expect.objectContaining({ file: "content" })]);
+    expect(JSON.stringify(result.diagnostics)).not.toMatch(
+      /PRIVATE_VALUE_SENTINEL|SENSITIVE_DIRECTORY|FILE_CREDENTIAL_SENTINEL|QUERY_SENTINEL|FRAGMENT_SENTINEL|%2F|%25/iu,
     );
   });
 });

@@ -1,4 +1,4 @@
-import Markdoc from "@markdoc/markdoc";
+import Markdoc, { type Config } from "@markdoc/markdoc";
 import { renderToStaticMarkup, renderToString } from "react-dom/server";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { mergeTopikMarkdocConfig } from "@topik/content-schema";
@@ -101,7 +101,358 @@ const unsafeDiagnosticFiles = [
   "//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL",
 ] as const;
 
+const ambiguousDiagnosticFiles = [
+  " https://user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+  "https%3A%2F%2Fuser%3AFILE_CREDENTIAL_SENTINEL%40example.com%2FSENSITIVE_DIRECTORY%2Flesson.md%3Ftoken%3DQUERY_SENTINEL%23FRAGMENT_SENTINEL",
+  "https%253A%252F%252Fuser%253AFILE_CREDENTIAL_SENTINEL%2540example.com%252FSENSITIVE_DIRECTORY%252Flesson.md%253Ftoken%253DQUERY_SENTINEL%2523FRAGMENT_SENTINEL",
+  "/tmp/SENSITIVE_DIRECTORY%2Flesson.md%3Ftoken%3DQUERY_SENTINEL%23FRAGMENT_SENTINEL",
+  String.raw`C:\SENSITIVE_DIRECTORY%5Clesson.md%3Ftoken%3DQUERY_SENTINEL%23FRAGMENT_SENTINEL`,
+  String.raw`\\server\SENSITIVE_DIRECTORY%5Clesson.md%253Ftoken%253DQUERY_SENTINEL%2523FRAGMENT_SENTINEL`,
+  String.raw`\Users\SENSITIVE_DIRECTORY\lesson.md%3Ftoken%3DQUERY_SENTINEL%23FRAGMENT_SENTINEL`,
+  String.raw`\?\C:\SENSITIVE_DIRECTORY\lesson.md%253Ftoken%253DQUERY_SENTINEL%2523FRAGMENT_SENTINEL`,
+  "https://example.com/SENSITIVE_DIRECTORY%2Flesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL",
+  "https://user:%46ILE_CREDENTIAL_SENTINEL@example.com/lesson.md",
+  "https://user:%46ILE_CREDENTIAL_SENTINEL@[?token=%51UERY_SENTINEL#%46RAGMENT_SENTINEL",
+] as const;
+
 describe("content-react core", () => {
+  it.each([
+    {
+      source: "{% partial file=$which /%}",
+      config: {
+        variables: { which: "part.md" },
+        partials: { "part.md": Markdoc.parse("Top-level child") },
+      },
+      child: "Top-level child",
+    },
+    {
+      source: "{% partial file=$selection.which /%}",
+      config: {
+        variables: { selection: { which: "part.md" } },
+        partials: { "part.md": Markdoc.parse("Nested-path child") },
+      },
+      child: "Nested-path child",
+    },
+    {
+      source: '{% partial file="outer.md" variables={which: "inner.md"} /%}',
+      config: {
+        partials: {
+          "outer.md": Markdoc.parse("{% partial file=$which /%}"),
+          "inner.md": Markdoc.parse("Scoped child"),
+        },
+      },
+      child: "Scoped child",
+    },
+    {
+      source: '{% partial file="outer.md" variables={which: $target} /%}',
+      config: {
+        variables: { target: "inner.md" },
+        partials: {
+          "outer.md": Markdoc.parse("{% partial file=$which /%}"),
+          "inner.md": Markdoc.parse("Scoped global child"),
+        },
+      },
+      child: "Scoped global child",
+    },
+  ])("compiles and renders valid variable-selected partial source", ({ child, config, source }) => {
+    const result = compileTopikContent(source, { config });
+
+    expect(result).toMatchObject({ ok: true, source, diagnostics: [] });
+    expect(renderToStaticMarkup(renderTopikContent(result))).toContain(child);
+    expect(renderToStaticMarkup(renderTopikMarkdown(source, { config }))).toContain(child);
+  });
+
+  it.each([undefined, 42, "missing.md"])(
+    "refuses an unresolved variable-selected partial before render",
+    (which) => {
+      const source = "{% partial file=$which /%}";
+      const config = {
+        variables: { which },
+        partials: { "part.md": Markdoc.parse("must not render") },
+      };
+      const transform = vi.spyOn(Markdoc, "transform");
+      const result = compileTopikContent(source, { config });
+
+      expect(result).toMatchObject({ ok: false, source });
+      expect(result).not.toHaveProperty("tree");
+      expect(() => renderTopikMarkdown(source, { config })).toThrow(InvalidTopikContentError);
+      expect(transform).not.toHaveBeenCalled();
+      transform.mockRestore();
+    },
+  );
+
+  it("keeps variable-selected partials stable across callback-controlled phases", () => {
+    const source = "{% attack /%}\n{% partial file=$which /%}";
+    const safe = Markdoc.parse("Safe selected child");
+    const bad = Markdoc.parse("{% quiz %}ordinary child{% /quiz %}");
+    const config = {
+      variables: { which: "safe.md" },
+      partials: { "bad.md": bad, "safe.md": safe },
+      tags: {
+        attack: {
+          render: "div",
+          validate: (_node: unknown, effective: Config) => {
+            config.variables.which = "bad.md";
+            if (effective.variables && typeof effective.variables !== "function") {
+              effective.variables.which = "bad.md";
+            }
+            return [];
+          },
+        },
+      },
+    };
+
+    const result = compileTopikContent(source, { config });
+
+    expect(result).toMatchObject({ ok: true, source, diagnostics: [] });
+    const html = renderToStaticMarkup(renderTopikContent(result));
+    expect(html).toContain("Safe selected child");
+    expect(html).not.toContain("ordinary child");
+  });
+
+  it("refuses invalid reachable partials before validation, transform, or rendering", () => {
+    const source = '{% partial file="bad.md" /%}';
+    const extensionValidator = vi.fn(() => []);
+    const extensionTransform = vi.fn(() => new Markdoc.Tag("div", {}, ["must not render"]));
+    const renderQuiz = vi.fn(() => <span>must not render</span>);
+    const config = {
+      partials: {
+        "bad.md": Markdoc.parse("{% attack /%}\n{% quiz %}ordinary child{% /quiz %}"),
+      },
+      tags: {
+        attack: {
+          render: "div",
+          validate: extensionValidator,
+          transform: extensionTransform,
+        },
+      },
+    };
+    const transform = vi.spyOn(Markdoc, "transform");
+
+    const result = compileTopikContent(source, { config });
+
+    expect(result).toMatchObject({ ok: false, source });
+    expect(result).not.toHaveProperty("tree");
+    expect(() => renderTopikContent(result)).toThrow(InvalidTopikContentError);
+    expect(() => renderTopikMarkdown(source, { config })).toThrow(InvalidTopikContentError);
+    expect(() =>
+      renderTopikMarkdown(source, { components: { TopikQuiz: renderQuiz }, config }),
+    ).toThrow(InvalidTopikContentError);
+    const placeholder = renderToStaticMarkup(
+      renderTopikMarkdown(source, { config, invalidContent: "placeholder" }),
+    );
+    expect(placeholder).toContain('role="alert"');
+    expect(placeholder).not.toContain("ordinary child");
+    expect(extensionValidator).not.toHaveBeenCalled();
+    expect(extensionTransform).not.toHaveBeenCalled();
+    expect(renderQuiz).not.toHaveBeenCalled();
+    expect(transform).not.toHaveBeenCalled();
+    transform.mockRestore();
+  });
+
+  it("renders a valid partial and custom function from isolated transform state", () => {
+    const source = '{% partial file="safe.md" /%}';
+    const functionTransform = vi.fn(() => "Safe title");
+    const partial = [
+      Markdoc.parse('{% partial file="nested.md" /%}'),
+      Markdoc.parse("Second child"),
+    ];
+    const config = {
+      functions: { label: { returns: String, transform: functionTransform } },
+      partials: {
+        "nested.md": Markdoc.parse("{% callout title=label() %}Custom child{% /callout %}"),
+        "safe.md": partial,
+      },
+    };
+
+    const result = compileTopikContent(source, { config });
+
+    expect(result).toMatchObject({ ok: true, source, diagnostics: [] });
+    expect(functionTransform).toHaveBeenCalledOnce();
+    const html = renderToStaticMarkup(renderTopikContent(result));
+    expect(html).toContain("Custom child");
+    expect(html).toContain("Second child");
+  });
+
+  it("isolates transform partials from extension-validation graph mutations", () => {
+    const source = '{% attack /%}\n{% partial file="safe.md" /%}';
+    const partial = Markdoc.parse("Original child");
+    const extensionValidator = vi.fn((_node, config: Config) => {
+      const effectivePartial = config.partials?.["safe.md"] as { children: unknown[] };
+      effectivePartial.children = [];
+      return [];
+    });
+    const config = {
+      partials: { "safe.md": partial },
+      tags: { attack: { render: "div", validate: extensionValidator } },
+    };
+
+    const result = compileTopikContent(source, { config });
+
+    expect(result).toMatchObject({ ok: true, source, diagnostics: [] });
+    expect(extensionValidator).toHaveBeenCalledOnce();
+    expect(partial.children).not.toHaveLength(0);
+    expect(renderToStaticMarkup(renderTopikContent(result))).toContain("Original child");
+  });
+
+  it("refuses a sanitized extension diagnostic inside a canonically valid partial", () => {
+    const source = '{% partial file="custom.md" /%}';
+    const extensionValidator = vi.fn(() => [
+      {
+        id: "extension-invalid",
+        level: "error" as const,
+        message: "Rejected PRIVATE_VALUE_SENTINEL",
+      },
+    ]);
+    const extensionTransform = vi.fn(() => new Markdoc.Tag("aside", {}, ["must not render"]));
+    const config = {
+      partials: {
+        "custom.md": Markdoc.parse('{% notice tone="PRIVATE_VALUE_SENTINEL" /%}'),
+      },
+      tags: {
+        notice: {
+          render: "aside",
+          attributes: { tone: { type: String } },
+          validate: extensionValidator,
+          transform: extensionTransform,
+        },
+      },
+    };
+
+    const result = compileTopikContent(source, { config });
+
+    expect(result).toMatchObject({
+      ok: false,
+      source,
+      diagnostics: [
+        expect.objectContaining({
+          id: "extension-invalid",
+          message: "Content validation failed.",
+        }),
+      ],
+    });
+    expect(result).not.toHaveProperty("tree");
+    expect(extensionValidator).toHaveBeenCalledOnce();
+    expect(extensionTransform).not.toHaveBeenCalled();
+    expect(JSON.stringify(result.diagnostics)).not.toContain("PRIVATE_VALUE_SENTINEL");
+  });
+
+  it("refuses canonical errors before extension validation or transformation", () => {
+    const source = "{% attack /%}\n{% quiz %}ordinary child{% /quiz %}";
+    const extensionValidator = vi.fn((_node, config: Config) => {
+      const quiz = config.tags?.quiz as Record<string, unknown>;
+      Reflect.set(quiz, "validate", () => []);
+      return [];
+    });
+    const extensionTransform = vi.fn(() => new Markdoc.Tag("div", {}, ["must not render"]));
+    const config = {
+      tags: {
+        attack: {
+          render: "div",
+          validate: extensionValidator,
+          transform: extensionTransform,
+        },
+      },
+    };
+    const transform = vi.spyOn(Markdoc, "transform");
+    const diagnostics: unknown[] = [];
+
+    const result = compileTopikContent(source, {
+      config,
+      onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+    });
+
+    expect(result).toMatchObject({ ok: false, source });
+    expect(result).not.toHaveProperty("tree");
+    expect(() => renderTopikMarkdown(source, { config })).toThrow(InvalidTopikContentError);
+    expect(extensionValidator).not.toHaveBeenCalled();
+    expect(extensionTransform).not.toHaveBeenCalled();
+    expect(transform).not.toHaveBeenCalled();
+    expect(JSON.stringify(diagnostics)).not.toContain(source);
+    transform.mockRestore();
+  });
+
+  it("validates and transforms a valid additive tag on separate AST and config graphs", () => {
+    const source = '{% notice tone="quiet" %}Custom child{% /notice %}';
+    let validatedNode: object | undefined;
+    let validatedConfig: object | undefined;
+    const extensionValidator = vi.fn((node, config) => {
+      validatedNode = node;
+      validatedConfig = config;
+      node.tag = "renamed-during-validation";
+      node.attributes.tone = "mutated-during-validation";
+      node.children = [];
+      Reflect.set(config.tags?.notice as Record<string, unknown>, "transform", () => "leak");
+      return [];
+    });
+    const extensionTransform = vi.fn((node, config) => {
+      expect(node).not.toBe(validatedNode);
+      expect(config).not.toBe(validatedConfig);
+      return new Markdoc.Tag(
+        "aside",
+        node.transformAttributes(config),
+        node.transformChildren(config),
+      );
+    });
+    const config = {
+      tags: {
+        notice: {
+          render: "aside",
+          attributes: { tone: { type: String } },
+          validate: extensionValidator,
+          transform: extensionTransform,
+        },
+      },
+    };
+
+    const result = compileTopikContent(source, { config });
+    expect(result).toMatchObject({ ok: true, source, diagnostics: [] });
+    expect(extensionValidator).toHaveBeenCalledOnce();
+    expect(extensionTransform).toHaveBeenCalledOnce();
+    expect(renderToStaticMarkup(renderTopikContent(result))).toContain("Custom child");
+  });
+
+  it("refuses a sanitized extension error before transformation", () => {
+    const source = '{% notice tone="PRIVATE_VALUE_SENTINEL" /%}';
+    const extensionValidator = vi.fn(() => [
+      {
+        id: "extension-invalid",
+        level: "error" as const,
+        message: "Rejected PRIVATE_VALUE_SENTINEL",
+      },
+    ]);
+    const extensionTransform = vi.fn(() => new Markdoc.Tag("aside", {}, ["must not render"]));
+    const transform = vi.spyOn(Markdoc, "transform");
+    const result = compileTopikContent(source, {
+      config: {
+        tags: {
+          notice: {
+            render: "aside",
+            attributes: { tone: { type: String } },
+            validate: extensionValidator,
+            transform: extensionTransform,
+          },
+        },
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      source,
+      diagnostics: [
+        expect.objectContaining({
+          id: "extension-invalid",
+          message: "Content validation failed.",
+        }),
+      ],
+    });
+    expect(result).not.toHaveProperty("tree");
+    expect(extensionValidator).toHaveBeenCalledOnce();
+    expect(extensionTransform).not.toHaveBeenCalled();
+    expect(transform).not.toHaveBeenCalled();
+    transform.mockRestore();
+  });
+
   it("cannot transform or render through a mutated merged canonical schema", () => {
     const source = "{% quiz %}ordinary child{% /quiz %}";
     const config = mergeTopikMarkdocConfig();
@@ -268,6 +619,36 @@ describe("content-react core", () => {
         );
         expect(JSON.stringify((error as InvalidTopikContentError).result.diagnostics)).not.toMatch(
           /PRIVATE_VALUE_SENTINEL|SENSITIVE_DIRECTORY|FILE_CREDENTIAL_SENTINEL|QUERY_SENTINEL|FRAGMENT_SENTINEL/u,
+        );
+      }
+    },
+  );
+
+  it.each(ambiguousDiagnosticFiles)(
+    "fails an ambiguous label closed across compile, callback, and typed-error surfaces",
+    (file) => {
+      const source = '{% callout variant="PRIVATE_VALUE_SENTINEL" /%}';
+      const callbacks: unknown[] = [];
+      const result = compileTopikContent(source, {
+        file,
+        onDiagnostic: (diagnostic) => callbacks.push(diagnostic),
+      });
+
+      expect(result).toMatchObject({ ok: false, source });
+      expect(result.diagnostics).toEqual([expect.objectContaining({ file: "content" })]);
+      try {
+        void renderTopikContent(result);
+      } catch (error) {
+        expect(error).toBeInstanceOf(InvalidTopikContentError);
+        const typedError = error as InvalidTopikContentError;
+        expect(typedError.result.source).toBe(source);
+        const surface = JSON.stringify({
+          callbacks,
+          diagnostics: typedError.result.diagnostics,
+          message: typedError.message,
+        });
+        expect(surface).not.toMatch(
+          /PRIVATE_VALUE_SENTINEL|SENSITIVE_DIRECTORY|FILE_CREDENTIAL_SENTINEL|QUERY_SENTINEL|FRAGMENT_SENTINEL|%2F|%25/iu,
         );
       }
     },

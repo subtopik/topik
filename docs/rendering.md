@@ -29,7 +29,14 @@ transformation. Warnings and informational diagnostics may accompany a successfu
 tag schemas always take precedence on normal validation, compile, render, format, and rewrite APIs,
 so configuration cannot replace or weaken required validation. The exported canonical config is an
 immutable snapshot, and merged configs receive isolated canonical schema copies; normal APIs use a
-separate private canonical authority.
+separate private canonical authority. Validation is phased: a private canonical preflight first
+recognizes additive constructs without running their validators or transforms. Only accepted source
+continues to extension validation on a separate parse and isolated config; compilation transforms a
+third fresh parse. The canonical preflight also validates the complete reachable configured partial
+closure and rejects malformed or cyclic partial graphs. Literal and variable-selected partial names
+use isolated variable data, including nested paths and partial-local variable scopes; callback-based
+selection is rejected rather than executed during preflight. Extension diagnostics are sanitized
+like canonical diagnostics.
 
 `renderTopikMarkdown`, `renderTopikContent`, and the default `TopikContent` component throw
 `InvalidTopikContentError` for a failure unless a safe placeholder is selected explicitly:

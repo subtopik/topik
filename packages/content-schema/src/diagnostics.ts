@@ -69,6 +69,8 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "topik-question-parent-required": "A question must be nested inside a quiz.",
   "topik-question-single-correct-choice":
     "A single-choice question requires exactly one correct choice.",
+  "topik-partial-cycle": "Partial references must not be cyclic.",
+  "topik-partial-invalid": "Partial content is invalid or unavailable.",
   "topik-quiz-children": "A quiz contains an unsupported child.",
   "topik-quiz-requires-question": "A quiz requires at least one question.",
   "topik-step-parent-required": "A step must be nested inside steps.",
@@ -113,6 +115,7 @@ export function toTopikContentDiagnostic(error: ValidateError): TopikContentDiag
 /** Convert an untrusted diagnostic location to a browser-compatible safe label. */
 export function sanitizeTopikDiagnosticFile(file: string | undefined): string | undefined {
   if (file === undefined) return undefined;
+  if (file.trim() !== file || hasAsciiControl(file) || file.includes("%")) return "content";
 
   if (WINDOWS_DRIVE_PREFIX.test(file) || file.startsWith("\\")) {
     return diagnosticBasename(file);
@@ -133,6 +136,14 @@ export function sanitizeTopikDiagnosticFile(file: string | undefined): string | 
   }
 
   return file.startsWith("/") ? diagnosticBasename(file) : file;
+}
+
+function hasAsciiControl(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code <= 0x1f || code === 0x7f) return true;
+  }
+  return false;
 }
 
 function diagnosticBasename(file: string): string {

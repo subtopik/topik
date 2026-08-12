@@ -1,5 +1,5 @@
 import { isAbsolute, posix, win32 } from "node:path";
-import { isTopikPathCodePointForbiddenV17 } from "../portable/path-unicode-v17";
+import { isTopikPathCodePointForbiddenV17 } from "../assets/path-unicode-v17";
 
 const PUBLIC_COMPILE_ERROR_MESSAGES = {
   "config-access-failed": "Configuration file could not be accessed.",

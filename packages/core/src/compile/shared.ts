@@ -2,10 +2,7 @@ import { sanitizeTopikContentDiagnostic, type TopikContentDiagnostic } from "@to
 import { isAbsolute, win32 } from "node:path";
 import { parse as parseYaml } from "yaml";
 import type { Resource } from "../resource";
-import type {
-  TopikAssetSemanticRecordV1,
-  TopikMaterializationRecordV1,
-} from "../portable/identity";
+import type { TopikAssetSemanticRecordV1, TopikMaterializationRecordV1 } from "../assets/identity";
 import type { AssetPayload } from "./assets";
 import { PublicCompileError } from "./public-errors";
 

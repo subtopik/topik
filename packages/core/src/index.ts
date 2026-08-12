@@ -39,4 +39,4 @@ export { validateResources, type ValidationError, type ValidationResult } from "
 export { watch, type WatchOptions, type Watcher } from "./watch";
 
 /** Compiler-derived Asset/v1 output, validation, identity, and safety APIs. */
-export * from "./portable";
+export * from "./assets";

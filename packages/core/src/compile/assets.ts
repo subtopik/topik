@@ -10,19 +10,19 @@ import {
 } from "@topik/content-schema";
 import type { Asset, CoursePage, GeneratedAssetName, Guide, WikiPage } from "@topik/schema";
 import type { Resource, SourceResource } from "../resource";
-import { generateAutomaticAssetName } from "../portable/asset";
-import { TOPIK_ASSET_LIMITS, TOPIK_ASSET_OUTPUT_PREFIX } from "../portable/constants";
+import { generateAutomaticAssetName } from "../assets/asset";
+import { TOPIK_ASSET_LIMITS, TOPIK_ASSET_OUTPUT_PREFIX } from "../assets/constants";
 import {
   TOPIK_ASSET_DIAGNOSTIC_IDS,
   topikAssetDiagnostic,
   type TopikAssetDiagnostic,
   type TopikAssetDiagnosticId,
-} from "../portable/diagnostics";
+} from "../assets/diagnostics";
 import {
   classifyPortableNavigationPath,
   readPortableAssetFile,
   readPortableAssetFileWithReadHookForTest,
-} from "../portable/files";
+} from "../assets/files";
 import {
   createTopikAssetSemanticRecord,
   createTopikMaterializationRecord,
@@ -30,14 +30,14 @@ import {
   type TopikAssetReferenceMappingV1,
   type TopikAssetSemanticRecordV1,
   type TopikMaterializationRecordV1,
-} from "../portable/identity";
-import { serializeTopikJson } from "../portable/json";
+} from "../assets/identity";
+import { serializeTopikJson } from "../assets/json";
 import {
   isInlineMediaCompatible,
   isTopikActiveMediaType,
   sniffPortableMediaType,
-} from "../portable/media";
-import { validateTopikPath, validateTopikPathSet } from "../portable/path";
+} from "../assets/media";
+import { validateTopikPath, validateTopikPathSet } from "../assets/path";
 import { validateResources, type ValidationError } from "../validate";
 
 export type ContentBearingResource = CoursePage | Guide | WikiPage;

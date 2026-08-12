@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { watch as chokidarWatch } from "chokidar";
 import { compile } from "./compile";
 import type { AssetCompilationOptions, AssetPayload } from "./compile/assets";
-import { digestTopikMaterializationRecord } from "./portable/identity";
+import { digestTopikMaterializationRecord } from "./assets/identity";
 import type { Resource } from "./resource";
 
 export interface WatchOptions {

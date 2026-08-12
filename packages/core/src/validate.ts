@@ -9,8 +9,8 @@ import {
   wikiPageSchema,
   wikiSchema,
 } from "@topik/schema";
-import { validateAssetValue } from "./portable/asset";
-import type { TopikAssetDiagnosticId } from "./portable/diagnostics";
+import { validateAssetValue } from "./assets/asset";
+import type { TopikAssetDiagnosticId } from "./assets/diagnostics";
 
 const ajv = new Ajv2020({ strict: true, discriminator: true, ownProperties: true });
 addFormats(ajv);

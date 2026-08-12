@@ -22,8 +22,8 @@ import type { CompileResourceDiscovery } from "./guide";
 import { readOptionalConfigFileWithPath } from "./config";
 import { readRegularFileWithinRoot } from "./files";
 import { PublicCompileError } from "./public-errors";
-import { classifyPortableNavigationPath, readPortableAssetFile } from "../portable/files";
-import { validateTopikPath } from "../portable/path";
+import { classifyPortableNavigationPath, readPortableAssetFile } from "../assets/files";
+import { validateTopikPath } from "../assets/path";
 import {
   extractMarkdownTitle,
   hasCompileErrors,

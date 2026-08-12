@@ -28,7 +28,7 @@ import type {
   WikiPage,
 } from "@topik/schema";
 import type { SourceResource } from "../resource";
-import { TOPIK_ASSET_LIMITS } from "../portable/constants";
+import { TOPIK_ASSET_LIMITS } from "../assets/constants";
 import {
   AssetCompilationError,
   compileAssetResources,

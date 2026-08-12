@@ -1,6 +1,23 @@
 import { describe, expect, test } from "vite-plus/test";
 import { analyzeTopikContent, validateTopikHref } from "./links";
 
+const unsafeDiagnosticFiles = [
+  "/tmp/SENSITIVE_DIRECTORY/lesson.md",
+  String.raw`C:\SENSITIVE_DIRECTORY\lesson.md`,
+  String.raw`\\server\SENSITIVE_DIRECTORY\lesson.md`,
+  String.raw`\Users\SENSITIVE_DIRECTORY\lesson.md`,
+  String.raw`\?\C:\SENSITIVE_DIRECTORY\lesson.md`,
+  String.raw`\\?\C:\SENSITIVE_DIRECTORY\lesson.md`,
+  String.raw`\Device\HarddiskVolume1\SENSITIVE_DIRECTORY\lesson.md`,
+  String.raw`C:\SENSITIVE_DIRECTORY\lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL`,
+  String.raw`\Users\SENSITIVE_DIRECTORY\lesson.md?token=%51UERY_SENTINEL#%46RAGMENT_SENTINEL`,
+  String.raw`\\user:FILE_CREDENTIAL_SENTINEL@server\SENSITIVE_DIRECTORY\lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL`,
+  String.raw`\?\C:\SENSITIVE_DIRECTORY\lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL`,
+  String.raw`\\?\C:\SENSITIVE_DIRECTORY\lesson.md?token=%51UERY_SENTINEL#%46RAGMENT_SENTINEL`,
+  "https://user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL",
+  "//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL",
+] as const;
+
 describe("Topik links", () => {
   test("accepts supported internal, external, and contact links", () => {
     for (const href of [
@@ -157,10 +174,7 @@ describe("Topik links", () => {
       `## Two {% #${sentinel} %}`,
     ].join("\n");
 
-    for (const file of [
-      "/tmp/SENSITIVE_DIRECTORY/lesson.md",
-      "C:\\SENSITIVE_DIRECTORY\\lesson.md",
-    ]) {
+    for (const file of unsafeDiagnosticFiles) {
       const result = analyzeTopikContent(source, { file });
 
       expect(result.diagnostics).toEqual([
@@ -172,6 +186,9 @@ describe("Topik links", () => {
       ]);
       expect(JSON.stringify(result.diagnostics)).not.toContain(sentinel);
       expect(JSON.stringify(result.diagnostics)).not.toContain("SENSITIVE_DIRECTORY");
+      expect(JSON.stringify(result.diagnostics)).not.toMatch(
+        /FILE_CREDENTIAL_SENTINEL|QUERY_SENTINEL|FRAGMENT_SENTINEL/u,
+      );
       expect(result.headings).toEqual([
         expect.objectContaining({ file, id: sentinel, title: "One" }),
         expect.objectContaining({ file, id: sentinel, title: "Two" }),

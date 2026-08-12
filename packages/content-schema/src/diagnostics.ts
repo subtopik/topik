@@ -13,7 +13,7 @@ export interface TopikContentDiagnostic {
   message: string;
   /** One-based source lines associated with the diagnostic, when available. */
   lines: number[];
-  /** Optional source file path provided to the Markdoc parser. */
+  /** Optional sanitized source label. Absolute directories and URL secrets are removed. */
   file?: string;
 }
 
@@ -80,6 +80,10 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "variable-undefined": "A referenced variable is not defined.",
 };
 
+const DIAGNOSTIC_URL_BASE = new URL("https://topik.invalid/");
+const EXPLICIT_URL_SCHEME = /^[a-z][a-z0-9+.-]*:/iu;
+const WINDOWS_DRIVE_PREFIX = /^[a-z]:/iu;
+
 /** Fixed public wording for link diagnostics; authored targets are never accepted as input. */
 export function topikLinkDiagnosticMessage(id: string): string | undefined {
   return TOPIK_LINK_DIAGNOSTIC_MESSAGES[id];
@@ -106,10 +110,33 @@ export function toTopikContentDiagnostic(error: ValidateError): TopikContentDiag
   });
 }
 
-function sanitizeTopikDiagnosticFile(file: string | undefined): string | undefined {
+/** Convert an untrusted diagnostic location to a browser-compatible safe label. */
+export function sanitizeTopikDiagnosticFile(file: string | undefined): string | undefined {
   if (file === undefined) return undefined;
-  if (!file.startsWith("/") && !file.startsWith("\\\\") && !/^[a-z]:[\\/]/iu.test(file)) {
-    return file;
+
+  if (WINDOWS_DRIVE_PREFIX.test(file) || file.startsWith("\\")) {
+    return diagnosticBasename(file);
   }
-  return file.replaceAll("\\", "/").split("/").at(-1) || "content";
+
+  if (
+    EXPLICIT_URL_SCHEME.test(file) ||
+    file.startsWith("//") ||
+    file.includes("?") ||
+    file.includes("#")
+  ) {
+    try {
+      const url = new URL(file, DIAGNOSTIC_URL_BASE);
+      return url.pathname.startsWith("/") ? diagnosticBasename(url.pathname) : "content";
+    } catch {
+      return "content";
+    }
+  }
+
+  return file.startsWith("/") ? diagnosticBasename(file) : file;
+}
+
+function diagnosticBasename(file: string): string {
+  const basename = file.replaceAll("\\", "/").split("/").at(-1);
+  const label = basename?.split(/[?#]/u, 1)[0];
+  return !label || label === "." || label === ".." ? "content" : label;
 }

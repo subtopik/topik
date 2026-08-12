@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vite-plus/test";
+import { mergeTopikMarkdocConfig } from "@topik/content-schema";
 import { renderToStaticMarkup } from "react-dom/server";
 import { TopikContentProvider } from "../core/context";
 import type { TopikLinkRenderProps } from "../core/components";
@@ -6,6 +7,28 @@ import { InvalidTopikContentError } from "../core/render";
 import { TopikContent } from "./TopikContent";
 
 describe("TopikContent", () => {
+  it("cannot render through a mutated merged canonical schema", () => {
+    const source = "{% quiz %}ordinary child{% /quiz %}";
+    const config = mergeTopikMarkdocConfig();
+    const renderQuiz = vi.fn(() => <span>must not render</span>);
+    const quiz = config.tags?.quiz as Record<string, unknown>;
+    const originalValidate = quiz.validate;
+
+    try {
+      Reflect.set(quiz, "validate", () => []);
+      Reflect.set(config, "tags", { quiz: { render: "TopikQuiz", validate: () => [] } });
+
+      expect(() =>
+        renderToStaticMarkup(
+          <TopikContent components={{ TopikQuiz: renderQuiz }} config={config} content={source} />,
+        ),
+      ).toThrow(InvalidTopikContentError);
+      expect(renderQuiz).not.toHaveBeenCalled();
+    } finally {
+      Reflect.set(quiz, "validate", originalValidate);
+    }
+  });
+
   it("cannot replace canonical validation through the default component", () => {
     const renderQuiz = vi.fn(() => <span>must not render</span>);
 

@@ -1,6 +1,7 @@
 import Markdoc from "@markdoc/markdoc";
 import { renderToStaticMarkup, renderToString } from "react-dom/server";
 import { describe, expect, it, vi } from "vite-plus/test";
+import { mergeTopikMarkdocConfig } from "@topik/content-schema";
 import { TopikContentProvider, useTopikComponents } from "./context";
 import { getTopikComponents } from "./components";
 import {
@@ -88,7 +89,42 @@ Because it is correct.
 {% /quiz %}
 `;
 
+const unsafeDiagnosticFiles = [
+  "/tmp/SENSITIVE_DIRECTORY/lesson.md",
+  String.raw`C:\SENSITIVE_DIRECTORY\lesson.md`,
+  String.raw`\\server\SENSITIVE_DIRECTORY\lesson.md`,
+  String.raw`\Users\SENSITIVE_DIRECTORY\lesson.md`,
+  String.raw`\?\C:\SENSITIVE_DIRECTORY\lesson.md`,
+  String.raw`\\?\C:\SENSITIVE_DIRECTORY\lesson.md`,
+  String.raw`\Device\HarddiskVolume1\SENSITIVE_DIRECTORY\lesson.md`,
+  "https://user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL",
+  "//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL",
+] as const;
+
 describe("content-react core", () => {
+  it("cannot transform or render through a mutated merged canonical schema", () => {
+    const source = "{% quiz %}ordinary child{% /quiz %}";
+    const config = mergeTopikMarkdocConfig();
+    const transform = vi.spyOn(Markdoc, "transform");
+    const quiz = config.tags?.quiz as Record<string, unknown>;
+    const originalValidate = quiz.validate;
+
+    try {
+      Reflect.set(quiz, "validate", () => []);
+      Reflect.set(config, "tags", { quiz: { render: "TopikQuiz", validate: () => [] } });
+
+      const result = compileTopikContent(source, { config });
+
+      expect(result).toMatchObject({ ok: false, source });
+      expect(result).not.toHaveProperty("tree");
+      expect(() => renderTopikMarkdown(source, { config })).toThrow(InvalidTopikContentError);
+      expect(transform).not.toHaveBeenCalled();
+    } finally {
+      Reflect.set(quiz, "validate", originalValidate);
+      transform.mockRestore();
+    }
+  });
+
   it("cannot replace canonical validation through normal compile and Markdown rendering", () => {
     const source = "{% quiz %}{% /quiz %}";
     const config = { tags: { quiz: { render: "TopikQuiz" } } };
@@ -191,30 +227,51 @@ describe("content-react core", () => {
     expect(() => renderTopikContent(result)).toThrow("Topik content is unsupported or invalid");
   });
 
-  it("normalizes enum diagnostics across compile results, typed errors, and callbacks", () => {
-    const sentinel = "PRIVATE_VALUE_SENTINEL";
-    const source = `{% callout variant="${sentinel}" %}child{% /callout %}`;
-    const callbacks: unknown[] = [];
-    const result = compileTopikContent(source, {
-      file: "/tmp/SENSITIVE_DIRECTORY/lesson.md",
-      onDiagnostic: (diagnostic) => callbacks.push(diagnostic),
-    });
+  it.each(unsafeDiagnosticFiles)(
+    "normalizes %s across compile results, typed errors, and callbacks",
+    (file) => {
+      const sentinel = "PRIVATE_VALUE_SENTINEL";
+      const source = `{% callout variant="${sentinel}" %}child{% /callout %}`;
+      const compileCallbacks: unknown[] = [];
+      const renderCallbacks: unknown[] = [];
+      const result = compileTopikContent(source, {
+        file,
+        onDiagnostic: (diagnostic) => compileCallbacks.push(diagnostic),
+      });
 
-    expect(result).toMatchObject({ ok: false, source });
-    expect(() => renderTopikContent(result)).toThrow(InvalidTopikContentError);
-    for (const surface of [result.diagnostics, callbacks]) {
-      expect(JSON.stringify(surface)).not.toContain(sentinel);
-      expect(JSON.stringify(surface)).not.toContain("SENSITIVE_DIRECTORY");
-      expect(JSON.stringify(surface)).not.toContain(source);
-    }
-    try {
-      void renderTopikContent(result);
-    } catch (error) {
-      expect((error as Error).message).not.toContain(sentinel);
-      expect((error as Error).message).not.toContain("SENSITIVE_DIRECTORY");
-      expect((error as Error).message).not.toContain(source);
-    }
-  });
+      expect(result).toMatchObject({ ok: false, source });
+      expect(result.diagnostics).toEqual([
+        expect.objectContaining({
+          file: "lesson.md",
+          message: "An attribute has an invalid value.",
+        }),
+      ]);
+      expect(() => renderTopikContent(result)).toThrow(InvalidTopikContentError);
+      expect(() =>
+        renderTopikMarkdown(source, {
+          file,
+          onDiagnostic: (diagnostic) => renderCallbacks.push(diagnostic),
+        }),
+      ).toThrow(InvalidTopikContentError);
+      for (const surface of [result.diagnostics, compileCallbacks, renderCallbacks]) {
+        expect(JSON.stringify(surface)).not.toMatch(
+          /PRIVATE_VALUE_SENTINEL|SENSITIVE_DIRECTORY|FILE_CREDENTIAL_SENTINEL|QUERY_SENTINEL|FRAGMENT_SENTINEL/u,
+        );
+        expect(JSON.stringify(surface)).not.toContain(source);
+      }
+      try {
+        void renderTopikContent(result);
+      } catch (error) {
+        expect((error as InvalidTopikContentError).result.source).toBe(source);
+        expect((error as Error).message).not.toMatch(
+          /PRIVATE_VALUE_SENTINEL|SENSITIVE_DIRECTORY|FILE_CREDENTIAL_SENTINEL|QUERY_SENTINEL|FRAGMENT_SENTINEL/u,
+        );
+        expect(JSON.stringify((error as InvalidTopikContentError).result.diagnostics)).not.toMatch(
+          /PRIVATE_VALUE_SENTINEL|SENSITIVE_DIRECTORY|FILE_CREDENTIAL_SENTINEL|QUERY_SENTINEL|FRAGMENT_SENTINEL/u,
+        );
+      }
+    },
+  );
 
   it("removes unsafe evaluated card targets before custom SSR renderers", () => {
     const credential =

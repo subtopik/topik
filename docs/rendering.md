@@ -27,7 +27,9 @@ transformation. Warnings and informational diagnostics may accompany a successfu
 
 `config` may add custom tags, nodes, variables, functions, and partials. Canonical Topik node and
 tag schemas always take precedence on normal validation, compile, render, format, and rewrite APIs,
-so configuration cannot replace or weaken required validation.
+so configuration cannot replace or weaken required validation. The exported canonical config is an
+immutable snapshot, and merged configs receive isolated canonical schema copies; normal APIs use a
+separate private canonical authority.
 
 `renderTopikMarkdown`, `renderTopikContent`, and the default `TopikContent` component throw
 `InvalidTopikContentError` for a failure unless a safe placeholder is selected explicitly:

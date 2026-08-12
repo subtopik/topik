@@ -17,6 +17,23 @@ const diagnostic = (level: TopikContentDiagnostic["level"]): TopikContentDiagnos
   lines: [],
 });
 
+const unsafeDiagnosticFiles = [
+  "/tmp/SENSITIVE_DIRECTORY/lesson.md",
+  String.raw`C:\SENSITIVE_DIRECTORY\lesson.md`,
+  String.raw`\\server\SENSITIVE_DIRECTORY\lesson.md`,
+  String.raw`\Users\SENSITIVE_DIRECTORY\lesson.md`,
+  String.raw`\?\C:\SENSITIVE_DIRECTORY\lesson.md`,
+  String.raw`\\?\C:\SENSITIVE_DIRECTORY\lesson.md`,
+  String.raw`\Device\HarddiskVolume1\SENSITIVE_DIRECTORY\lesson.md`,
+  String.raw`C:\SENSITIVE_DIRECTORY\lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL`,
+  String.raw`\Users\SENSITIVE_DIRECTORY\lesson.md?token=%51UERY_SENTINEL#%46RAGMENT_SENTINEL`,
+  String.raw`\\user:FILE_CREDENTIAL_SENTINEL@server\SENSITIVE_DIRECTORY\lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL`,
+  String.raw`\?\C:\SENSITIVE_DIRECTORY\lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL`,
+  String.raw`\\?\C:\SENSITIVE_DIRECTORY\lesson.md?token=%51UERY_SENTINEL#%46RAGMENT_SENTINEL`,
+  "https://user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL",
+  "//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL",
+] as const;
+
 describe("compile error diagnostics", () => {
   test.each(["error", "critical"] as const)("treats %s as an error", (level) => {
     expect(isErrorDiagnostic(diagnostic(level))).toBe(true);
@@ -28,14 +45,17 @@ describe("compile error diagnostics", () => {
     expect(hasCompileErrors([diagnostic(level)])).toBe(false);
   });
 
-  test("sanitizes absolute diagnostic paths in public CompileError state and text", () => {
-    const error = new CompileError([
-      { ...diagnostic("error"), file: "/var/redacted/docs/page.md" },
-    ]);
+  test.each(unsafeDiagnosticFiles)(
+    "sanitizes diagnostic path %s in public CompileError state and text",
+    (file) => {
+      const error = new CompileError([{ ...diagnostic("error"), file }]);
 
-    expect(error.diagnostics).toEqual([expect.objectContaining({ file: "page.md" })]);
-    expect(`${error.message}\n${JSON.stringify(error)}`).not.toContain("/var/redacted");
-  });
+      expect(error.diagnostics).toEqual([expect.objectContaining({ file: "lesson.md" })]);
+      expect(`${error.message}\n${JSON.stringify(error)}`).not.toMatch(
+        /SENSITIVE_DIRECTORY|FILE_CREDENTIAL_SENTINEL|QUERY_SENTINEL|FRAGMENT_SENTINEL/u,
+      );
+    },
+  );
 });
 
 describe("parseMarkdownFrontmatter", () => {

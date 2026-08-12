@@ -4,9 +4,41 @@ import {
   topikAssetReferenceSlots,
   validateTopikAssetReference,
 } from "./asset-references";
+import { mergeTopikMarkdocConfig } from "./config";
 import { rewriteTopikAssetOccurrences } from "./rewrite";
 
+const unsafeDiagnosticFiles = [
+  "/tmp/SENSITIVE_DIRECTORY/lesson.md",
+  String.raw`C:\SENSITIVE_DIRECTORY\lesson.md`,
+  String.raw`\\server\SENSITIVE_DIRECTORY\lesson.md`,
+  String.raw`\Users\SENSITIVE_DIRECTORY\lesson.md`,
+  String.raw`\?\C:\SENSITIVE_DIRECTORY\lesson.md`,
+  String.raw`\Device\HarddiskVolume1\SENSITIVE_DIRECTORY\lesson.md`,
+  "https://user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL",
+] as const;
+
 describe("topik-asset-reference-v1 occurrence registry", () => {
+  test("mutated merged schemas cannot weaken validation before rewrite or replacement", () => {
+    const source = "{% quiz %}ordinary child{% /quiz %}";
+    const config = mergeTopikMarkdocConfig();
+    const replace = vi.fn(() => "new.png");
+    const quiz = config.tags?.quiz as Record<string, unknown>;
+    const originalValidate = quiz.validate;
+
+    try {
+      Reflect.set(quiz, "validate", () => []);
+      Reflect.set(config, "tags", { quiz: { render: "TopikQuiz", validate: () => [] } });
+
+      const result = rewriteTopikAssetOccurrences(source, replace, { config });
+
+      expect(result).toMatchObject({ ok: false, source });
+      expect(result).not.toHaveProperty("content");
+      expect(replace).not.toHaveBeenCalled();
+    } finally {
+      Reflect.set(quiz, "validate", originalValidate);
+    }
+  });
+
   test("canonical validation cannot be replaced before rewrite or replacement", () => {
     const source = "{% quiz %}{% /quiz %}";
     const replace = vi.fn(() => "new.png");
@@ -66,6 +98,22 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
     expect(JSON.stringify(result.diagnostics)).not.toContain(sentinel);
     expect(JSON.stringify(result.diagnostics)).not.toContain("SENSITIVE_DIRECTORY");
     expect(JSON.stringify(result.diagnostics)).not.toContain(source);
+  });
+
+  test.each(unsafeDiagnosticFiles)("sanitizes rewrite-refusal file label %s", (file) => {
+    const source = '{% callout variant="PRIVATE_VALUE_SENTINEL" %}child{% /callout %}';
+    const replace = vi.fn(() => "new.png");
+    const result = rewriteTopikAssetOccurrences(source, replace, { file });
+
+    expect(result).toMatchObject({ ok: false, source });
+    expect(result).not.toHaveProperty("content");
+    expect(replace).not.toHaveBeenCalled();
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({ file: "lesson.md", message: "An attribute has an invalid value." }),
+    ]);
+    expect(JSON.stringify(result.diagnostics)).not.toMatch(
+      /PRIVATE_VALUE_SENTINEL|SENSITIVE_DIRECTORY|FILE_CREDENTIAL_SENTINEL|QUERY_SENTINEL|FRAGMENT_SENTINEL/u,
+    );
   });
 
   test("retains duplicate occurrences and occurrence-specific semantics", () => {

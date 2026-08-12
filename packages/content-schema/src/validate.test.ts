@@ -1,14 +1,90 @@
 import Markdoc from "@markdoc/markdoc";
 import { describe, expect, test } from "vite-plus/test";
 import { topikComponents } from "./components";
-import { topikMarkdocConfig } from "./config";
+import { mergeTopikMarkdocConfig, topikMarkdocConfig } from "./config";
 import { validateTopikContent } from "./validate";
 
 function idsFor(source: string): string[] {
   return validateTopikContent(source).errors.map((error) => error.id);
 }
 
+const unsafeDiagnosticFiles = [
+  "/tmp/SENSITIVE_DIRECTORY/lesson.md",
+  String.raw`C:\SENSITIVE_DIRECTORY\lesson.md`,
+  String.raw`\\server\SENSITIVE_DIRECTORY\lesson.md`,
+  String.raw`\Users\SENSITIVE_DIRECTORY\lesson.md`,
+  String.raw`\?\C:\SENSITIVE_DIRECTORY\lesson.md`,
+  String.raw`\\?\C:\SENSITIVE_DIRECTORY\lesson.md`,
+  String.raw`\Device\HarddiskVolume1\SENSITIVE_DIRECTORY\lesson.md`,
+  String.raw`C:\SENSITIVE_DIRECTORY\lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL`,
+  String.raw`\Users\SENSITIVE_DIRECTORY\lesson.md?token=%51UERY_SENTINEL#%46RAGMENT_SENTINEL`,
+  String.raw`\\user:FILE_CREDENTIAL_SENTINEL@server\SENSITIVE_DIRECTORY\lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL`,
+  String.raw`\?\C:\SENSITIVE_DIRECTORY\lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL`,
+  String.raw`\\?\C:\SENSITIVE_DIRECTORY\lesson.md?token=%51UERY_SENTINEL#%46RAGMENT_SENTINEL`,
+  "https://user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL",
+  "//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL",
+] as const;
+
 describe("topik content schema", () => {
+  test("public config maps and nested schemas cannot mutate canonical validation authority", () => {
+    const source = "{% quiz %}ordinary child{% /quiz %}";
+    const publicConfig = topikMarkdocConfig as unknown as Record<string, unknown>;
+    const publicTags = topikMarkdocConfig.tags as unknown as Record<string, unknown>;
+    const publicQuiz = topikMarkdocConfig.tags.quiz as unknown as Record<string, unknown>;
+    const originalTags = publicConfig.tags;
+    const originalQuiz = publicTags.quiz;
+    const originalValidate = publicQuiz.validate;
+
+    try {
+      const mutationResults = [
+        Reflect.set(publicQuiz, "validate", () => []),
+        Reflect.set(publicTags, "quiz", { render: "TopikQuiz", validate: () => [] }),
+        Reflect.set(publicConfig, "tags", {
+          quiz: { render: "TopikQuiz", validate: () => [] },
+        }),
+      ];
+
+      expect(mutationResults).toEqual([false, false, false]);
+      const result = validateTopikContent(source);
+      expect(result).toMatchObject({ source, valid: false });
+      expect(result.errors).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: "topik-quiz-requires-question" })]),
+      );
+    } finally {
+      Reflect.set(publicConfig, "tags", originalTags);
+      Reflect.set(publicTags, "quiz", originalQuiz);
+      Reflect.set(publicQuiz, "validate", originalValidate);
+    }
+  });
+
+  test("merged config snapshots cannot mutate or replace canonical validation authority", () => {
+    const source = "{% quiz %}ordinary child{% /quiz %}";
+    const first = mergeTopikMarkdocConfig();
+    const second = mergeTopikMarkdocConfig();
+    const firstQuiz = first.tags?.quiz as Record<string, unknown>;
+
+    expect(first.tags).not.toBe(topikMarkdocConfig.tags);
+    expect(first.tags).not.toBe(second.tags);
+    expect(firstQuiz).not.toBe(topikMarkdocConfig.tags.quiz);
+    expect(firstQuiz).not.toBe(second.tags?.quiz);
+
+    const originalValidate = firstQuiz.validate;
+    try {
+      expect(Reflect.set(firstQuiz, "validate", () => [])).toBe(true);
+      expect(
+        Reflect.set(first, "tags", { quiz: { render: "TopikQuiz", validate: () => [] } }),
+      ).toBe(true);
+
+      const result = validateTopikContent(source, { config: first });
+      expect(result).toMatchObject({ source, valid: false });
+      expect(result.errors).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: "topik-quiz-requires-question" })]),
+      );
+    } finally {
+      Reflect.set(firstQuiz, "validate", originalValidate);
+    }
+  });
+
   test("canonical validation cannot be replaced through normal configuration", () => {
     const source = "{% quiz %}{% /quiz %}";
     const result = validateTopikContent(source, {
@@ -50,7 +126,7 @@ describe("topik content schema", () => {
     }
   });
 
-  test.each(["/tmp/SENSITIVE_DIRECTORY/lesson.md", "C:\\SENSITIVE_DIRECTORY\\lesson.md"])(
+  test.each(unsafeDiagnosticFiles)(
     "normalizes every public Markdoc diagnostic surface for %s",
     (file) => {
       const sentinel = "PRIVATE_VALUE_SENTINEL";
@@ -71,6 +147,17 @@ describe("topik content schema", () => {
       expect(JSON.stringify(result.errors)).not.toContain(sentinel);
       expect(JSON.stringify(result.errors)).not.toContain("SENSITIVE_DIRECTORY");
       expect(JSON.stringify(result.errors)).not.toContain(source);
+      expect(JSON.stringify(result.errors)).not.toMatch(
+        /FILE_CREDENTIAL_SENTINEL|QUERY_SENTINEL|FRAGMENT_SENTINEL/u,
+      );
+    },
+  );
+
+  test.each(["lesson.md", "guides/lesson.md", String.raw`guides\lesson.md`])(
+    "preserves safe relative diagnostic label %s",
+    (file) => {
+      const result = validateTopikContent('{% callout variant="invalid" /%}', { file });
+      expect(result.errors[0]?.file).toBe(file);
     },
   );
 

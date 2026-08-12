@@ -1,5 +1,8 @@
-import { sanitizeTopikContentDiagnostic, type TopikContentDiagnostic } from "@topik/content-schema";
-import { isAbsolute, win32 } from "node:path";
+import {
+  sanitizeTopikContentDiagnostic,
+  sanitizeTopikDiagnosticFile,
+  type TopikContentDiagnostic,
+} from "@topik/content-schema";
 import { parse as parseYaml } from "yaml";
 import type { Resource } from "../resource";
 import type { TopikAssetSemanticRecordV1, TopikMaterializationRecordV1 } from "../assets/identity";
@@ -96,24 +99,16 @@ export function formatContentDiagnostics(diagnostics: TopikContentDiagnostic[]):
   return diagnostics
     .filter(isErrorDiagnostic)
     .map((diagnostic) => {
-      const file = sanitizeDiagnosticFile(diagnostic.file);
-      const location = diagnostic.lines.length > 0 ? `:${diagnostic.lines.join(",")}` : "";
-      return `${file}${location} ${diagnostic.level} ${diagnostic.id}: ${diagnostic.message}`;
+      const sanitized = sanitizeTopikContentDiagnostic(diagnostic);
+      const file = sanitizeTopikDiagnosticFile(sanitized.file) ?? "content";
+      const location = sanitized.lines.length > 0 ? `:${sanitized.lines.join(",")}` : "";
+      return `${file}${location} ${sanitized.level} ${sanitized.id}: ${sanitized.message}`;
     })
     .join("\n");
 }
 
 function sanitizeContentDiagnostic(diagnostic: TopikContentDiagnostic): TopikContentDiagnostic {
-  const file = sanitizeDiagnosticFile(diagnostic.file);
-  return sanitizeTopikContentDiagnostic(
-    diagnostic.file === undefined ? diagnostic : { ...diagnostic, file },
-  );
-}
-
-function sanitizeDiagnosticFile(file: string | undefined): string {
-  if (file === undefined) return "content";
-  if (!isAbsolute(file) && !win32.isAbsolute(file)) return file;
-  return file.replaceAll("\\", "/").split("/").at(-1) || "content";
+  return sanitizeTopikContentDiagnostic(diagnostic);
 }
 
 export function parseReferenceList(

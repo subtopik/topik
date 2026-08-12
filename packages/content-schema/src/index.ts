@@ -56,6 +56,7 @@ export {
   type TopikComponentName,
 } from "./components";
 export {
+  sanitizeTopikDiagnosticFile,
   sanitizeTopikContentDiagnostic,
   topikLinkDiagnosticMessage,
   toTopikContentDiagnostic,

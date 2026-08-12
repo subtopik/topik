@@ -75,14 +75,7 @@ function handleAssetPayload(
     return false;
   }
 
-  let relativePath: string;
-  try {
-    relativePath = decodeURIComponent(url.pathname.slice(1));
-  } catch {
-    res.writeHead(404, corsHeaders);
-    res.end();
-    return true;
-  }
+  const relativePath = url.pathname.slice(1);
   if (!/^blobs\/[0-9a-f]{64}$/u.test(relativePath)) {
     res.writeHead(404, corsHeaders);
     res.end();

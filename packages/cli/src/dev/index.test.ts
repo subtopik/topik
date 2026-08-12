@@ -327,6 +327,23 @@ describe("dev command", () => {
     expect(headRes.headers.get("content-length")).toBe(String(PNG_BYTES.byteLength));
     expect((await headRes.arrayBuffer()).byteLength).toBe(0);
 
+    const assetUri = asset?.spec?.uri;
+    if (assetUri === undefined) throw new Error("Compiled Asset URI is missing");
+    const digestOffset = "blobs/".length;
+    const encodedAlias = `/blobs/%${assetUri
+      .charCodeAt(digestOffset)
+      .toString(16)
+      .padStart(2, "0")}${assetUri.slice(digestOffset + 1)}`;
+    const [encodedGetAliasRes, encodedHeadAliasRes] = await Promise.all(
+      (["GET", "HEAD"] as const).map((method) =>
+        fetch(`http://127.0.0.1:${port}${encodedAlias}`, { method }),
+      ),
+    );
+    expect({ GET: encodedGetAliasRes.status, HEAD: encodedHeadAliasRes.status }).toEqual({
+      GET: 404,
+      HEAD: 404,
+    });
+
     const rejectedAssetRes = await fetch(`http://127.0.0.1:${port}/${asset?.spec?.uri}`, {
       headers: { Origin: "https://attacker.example" },
     });

@@ -2,13 +2,14 @@ import Markdoc, { type Config, type RenderableTreeNode } from "@markdoc/markdoc"
 import {
   assignTopikHeadingIds,
   extractTopikAssetOccurrences,
+  mergeTopikMarkdocConfig,
   parseTopikContent,
   removeInvalidTopikAssetReferences,
   removeInvalidTopikNavigationReferences,
-  topikMarkdocConfig,
   validateTopikAssetReference,
   validateTopikContent,
   validateTopikHref,
+  validateTopikNavigationHref,
   type TopikContentDiagnostic,
 } from "@topik/content-schema";
 import * as React from "react";
@@ -28,6 +29,7 @@ export interface RenderTrustedTopikTreeOptions {
   components?: TopikComponentOverrides;
   resolveAsset?: TopikAssetResolver;
   onAssetDiagnostic?: (diagnostic: TopikAssetResolutionDiagnostic) => void;
+  onNavigationDiagnostic?: (diagnostic: TopikNavigationResolutionDiagnostic) => void;
 }
 
 export interface RenderTopikContentOptions extends RenderTrustedTopikTreeOptions {
@@ -65,6 +67,12 @@ export interface TopikAssetResolutionDiagnostic {
   message: string;
   name?: string;
   slot: "image.src" | "figure.src" | "figure.darkSrc" | "link.href";
+}
+
+export interface TopikNavigationResolutionDiagnostic {
+  id: "TOPIK_NAVIGATION_REFERENCE_UNSAFE";
+  message: string;
+  slot: "card.href";
 }
 
 export interface RenderTopikMarkdownOptions
@@ -107,7 +115,7 @@ function compileTopikContentInternal(
     ok: true,
     source: content,
     diagnostics: validation.errors,
-    tree: Markdoc.transform(ast, mergeConfigs(topikMarkdocConfig, options.config)),
+    tree: Markdoc.transform(ast, mergeTopikMarkdocConfig(options.config)),
   };
 }
 
@@ -135,6 +143,7 @@ export function renderTrustedTopikTree(
 ): React.ReactNode {
   const resolved = resolveTopikAssetReferences(tree, options.resolveAsset, {
     onDiagnostic: options.onAssetDiagnostic,
+    onNavigationDiagnostic: options.onNavigationDiagnostic,
   });
   return Markdoc.renderers.react(resolved, React, {
     components: getTopikComponents(options.components),
@@ -151,9 +160,10 @@ function renderInvalidTopikContent(Placeholder: React.ComponentType | undefined)
 
 interface ResolveTopikAssetReferencesOptions {
   onDiagnostic?: (diagnostic: TopikAssetResolutionDiagnostic) => void;
+  onNavigationDiagnostic?: (diagnostic: TopikNavigationResolutionDiagnostic) => void;
 }
 
-/** Resolve only schema-declared rendered Asset slots; arbitrary nested strings are untouched. */
+/** Resolve and sanitize only schema-declared browser-facing references. */
 export function resolveTopikAssetReferences<T>(
   value: T,
   resolveAsset?: TopikAssetResolver,
@@ -165,10 +175,27 @@ export function resolveTopikAssetReferences<T>(
   if (!(value instanceof Markdoc.Tag)) return value;
 
   const attributes = { ...value.attributes };
-  const slots = renderedAssetSlots(value.name);
-  for (const [attribute, slot] of slots) {
+  const slots = renderedReferenceSlots(value.name);
+  for (const definition of slots) {
+    const { attribute } = definition;
     if (!Object.hasOwn(attributes, attribute)) continue;
     const reference = attributes[attribute];
+    if (definition.kind === "navigation") {
+      if (
+        typeof reference !== "string" ||
+        usesReservedAssetScheme(reference) ||
+        validateTopikNavigationHref(reference).length > 0
+      ) {
+        delete attributes[attribute];
+        options.onNavigationDiagnostic?.({
+          id: "TOPIK_NAVIGATION_REFERENCE_UNSAFE",
+          message: "Card navigation target is unsafe or invalid",
+          slot: definition.slot,
+        });
+      }
+      continue;
+    }
+    const { slot } = definition;
     if (typeof reference !== "string") {
       delete attributes[attribute];
       malformedReference(options, slot);
@@ -273,17 +300,31 @@ function usesReservedAssetScheme(value: string): boolean {
   return /^asset:/iu.test(prefix);
 }
 
-function renderedAssetSlots(
-  name: string,
-): ReadonlyArray<readonly [string, TopikAssetResolutionDiagnostic["slot"]]> {
-  if (name === "TopikImage") return [["src", "image.src"]];
+type RenderedReferenceSlot =
+  | {
+      kind: "asset";
+      attribute: string;
+      slot: TopikAssetResolutionDiagnostic["slot"];
+    }
+  | {
+      kind: "navigation";
+      attribute: "href";
+      slot: TopikNavigationResolutionDiagnostic["slot"];
+    };
+
+/** Closed registry for every canonical browser-facing URL or Asset attribute. */
+function renderedReferenceSlots(name: string): readonly RenderedReferenceSlot[] {
+  if (name === "TopikCard") return [{ kind: "navigation", attribute: "href", slot: "card.href" }];
+  if (name === "TopikImage") return [{ kind: "asset", attribute: "src", slot: "image.src" }];
   if (name === "TopikFigure") {
     return [
-      ["src", "figure.src"],
-      ["darkSrc", "figure.darkSrc"],
+      { kind: "asset", attribute: "src", slot: "figure.src" },
+      { kind: "asset", attribute: "darkSrc", slot: "figure.darkSrc" },
     ];
   }
-  if (name === "TopikLink") return [["href", "link.href"]];
+  if (name === "TopikLink") {
+    return [{ kind: "asset", attribute: "href", slot: "link.href" }];
+  }
   return [];
 }
 
@@ -293,17 +334,4 @@ export function renderTopikMarkdown(
 ): React.ReactNode {
   const result = compileTopikContentInternal(content, options);
   return renderTopikContent(result, { ...options, onDiagnostic: undefined });
-}
-
-function mergeConfigs(base: Config, override: Config = {}): Config {
-  return {
-    ...base,
-    ...override,
-    nodes: { ...base.nodes, ...override.nodes },
-    tags: { ...base.tags, ...override.tags },
-    variables: { ...base.variables, ...override.variables },
-    functions: { ...base.functions, ...override.functions },
-    partials: { ...base.partials, ...override.partials },
-    validation: { ...base.validation, ...override.validation },
-  };
 }

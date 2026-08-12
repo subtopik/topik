@@ -25,6 +25,10 @@ const rendered = renderTopikContent(compiled);
 A failure has no `tree`. Error- or critical-level content is never passed to Markdoc
 transformation. Warnings and informational diagnostics may accompany a successful result.
 
+`config` may add custom tags, nodes, variables, functions, and partials. Canonical Topik node and
+tag schemas always take precedence on normal validation, compile, render, format, and rewrite APIs,
+so configuration cannot replace or weaken required validation.
+
 `renderTopikMarkdown`, `renderTopikContent`, and the default `TopikContent` component throw
 `InvalidTopikContentError` for a failure unless a safe placeholder is selected explicitly:
 
@@ -101,6 +105,9 @@ This API and default-behavior change is breaking under the Topik compatibility p
 - Callers that passed an AST to `formatTopikContent` must pass the original source string and handle
   the discriminated result.
 - Callers of `rewriteTopikAssetOccurrences` must handle its success and failure branches.
+- `ValidateTopikContentResult` exposes only normalized `errors`; raw Markdoc validation objects are
+  intentionally not public because their messages and locations can contain authored values or
+  absolute directory paths.
 
 The grammar meaning is unchanged, so `TOPIK_CONTENT_SCHEMA_VERSION` is not changed. Publication
 requires a new package compatibility line and the coordinated release, deprecation, and migration

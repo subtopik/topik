@@ -30,24 +30,69 @@ const TOPIK_LINK_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "link-url-protocol-relative": "Protocol-relative link targets are not supported.",
 };
 
+const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
+  ...TOPIK_LINK_DIAGNOSTIC_MESSAGES,
+  TOPIK_ASSET_PATH_INVALID: "Local Asset reference is not canonical.",
+  TOPIK_ASSET_REFERENCE_MALFORMED: "Asset reference has an invalid generated name.",
+  TOPIK_EXTERNAL_REFERENCE_UNSAFE: "External Asset reference requires credential-free HTTPS.",
+  "attribute-missing-required": "A required attribute is missing.",
+  "attribute-type-invalid": "An attribute has an invalid type.",
+  "attribute-undefined": "An attribute is not supported.",
+  "attribute-value-invalid": "An attribute has an invalid value.",
+  "child-invalid": "A child node is not supported in this location.",
+  "duplicate-attribute": "An attribute is specified more than once.",
+  "fence-tag-error": "A fenced tag is invalid.",
+  "function-undefined": "A referenced function is not defined.",
+  "heading-id-duplicate": "Explicit heading IDs must be unique within a document.",
+  "missing-closing": "Content has a missing closing delimiter.",
+  "missing-opening": "Content has a missing opening delimiter.",
+  "no-inline-annotations": "Inline annotations are not supported in this location.",
+  "parameter-missing-required": "A required function parameter is missing.",
+  "parameter-type-invalid": "A function parameter has an invalid type.",
+  "parameter-undefined": "A function parameter is not supported.",
+  "parse-error": "Content could not be parsed.",
+  "slot-missing-required": "A required slot is missing.",
+  "slot-undefined": "A slot is not supported.",
+  "table-syntax": "Table syntax is invalid.",
+  "tag-placement-invalid": "A tag is not supported in this location.",
+  "tag-selfclosing-has-children": "A self-closing tag cannot contain children.",
+  "tag-undefined": "A tag is not supported.",
+  "topik-code-group-children": "A code group contains an unsupported child.",
+  "topik-code-group-requires-code-tab": "A code group requires at least one code tab.",
+  "topik-code-tab-parent-required": "A code tab must be nested inside a code group.",
+  "topik-code-tab-requires-fence": "A code tab requires a fenced code block.",
+  "topik-columns-range": "Card grid columns must be an integer from 1 to 4.",
+  "topik-question-choice-count": "A question requires at least two choices.",
+  "topik-question-children": "A question contains an unsupported child.",
+  "topik-question-correct-choice-required":
+    "A multiple-choice question requires at least one correct choice.",
+  "topik-question-parent-required": "A question must be nested inside a quiz.",
+  "topik-question-single-correct-choice":
+    "A single-choice question requires exactly one correct choice.",
+  "topik-quiz-children": "A quiz contains an unsupported child.",
+  "topik-quiz-requires-question": "A quiz requires at least one question.",
+  "topik-step-parent-required": "A step must be nested inside steps.",
+  "topik-steps-children": "Steps contain an unsupported child.",
+  "topik-steps-requires-step": "Steps require at least one step.",
+  "topik-tab-parent-required": "A tab must be nested inside tabs.",
+  "topik-tabs-children": "Tabs contain an unsupported child.",
+  "topik-tabs-requires-tab": "Tabs require at least one tab.",
+  "variable-undefined": "A referenced variable is not defined.",
+};
+
 /** Fixed public wording for link diagnostics; authored targets are never accepted as input. */
 export function topikLinkDiagnosticMessage(id: string): string | undefined {
   return TOPIK_LINK_DIAGNOSTIC_MESSAGES[id];
 }
 
-/** Re-apply the fixed link-message boundary when diagnostics cross package layers. */
+/** Re-apply fixed public messages and safe file labels when diagnostics cross package layers. */
 export function sanitizeTopikContentDiagnostic(
   diagnostic: TopikContentDiagnostic,
 ): TopikContentDiagnostic {
-  const message = topikLinkDiagnosticMessage(diagnostic.id);
+  const message = TOPIK_CONTENT_DIAGNOSTIC_MESSAGES[diagnostic.id] ?? "Content validation failed.";
   const file = sanitizeTopikDiagnosticFile(diagnostic.file);
-  return (message === undefined || message === diagnostic.message) && file === diagnostic.file
-    ? diagnostic
-    : {
-        ...diagnostic,
-        ...(message === undefined ? {} : { message }),
-        ...(file === undefined ? {} : { file }),
-      };
+  const { file: _untrustedFile, message: _untrustedMessage, ...safe } = diagnostic;
+  return { ...safe, message, ...(file === undefined ? {} : { file }) };
 }
 
 export function toTopikContentDiagnostic(error: ValidateError): TopikContentDiagnostic {

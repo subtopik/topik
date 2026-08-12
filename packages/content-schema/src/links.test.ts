@@ -145,4 +145,38 @@ describe("Topik links", () => {
       expect.objectContaining({ id: "heading-id-duplicate", level: "error", type: "heading" }),
     ]);
   });
+
+  test("sanitizes duplicate-heading diagnostics without changing structured analysis data", () => {
+    const sentinel = "PRIVATE_VALUE_SENTINEL";
+    const href = `https://example.com/?token=${sentinel}`;
+    const source = [
+      `## One {% #${sentinel} %}`,
+      "",
+      `[Reference](${href})`,
+      "",
+      `## Two {% #${sentinel} %}`,
+    ].join("\n");
+
+    for (const file of [
+      "/tmp/SENSITIVE_DIRECTORY/lesson.md",
+      "C:\\SENSITIVE_DIRECTORY\\lesson.md",
+    ]) {
+      const result = analyzeTopikContent(source, { file });
+
+      expect(result.diagnostics).toEqual([
+        expect.objectContaining({
+          file: "lesson.md",
+          id: "heading-id-duplicate",
+          message: "Explicit heading IDs must be unique within a document.",
+        }),
+      ]);
+      expect(JSON.stringify(result.diagnostics)).not.toContain(sentinel);
+      expect(JSON.stringify(result.diagnostics)).not.toContain("SENSITIVE_DIRECTORY");
+      expect(result.headings).toEqual([
+        expect.objectContaining({ file, id: sentinel, title: "One" }),
+        expect.objectContaining({ file, id: sentinel, title: "Two" }),
+      ]);
+      expect(result.links).toEqual([expect.objectContaining({ file, href })]);
+    }
+  });
 });

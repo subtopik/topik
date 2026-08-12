@@ -7,6 +7,18 @@ import {
 import { rewriteTopikAssetOccurrences } from "./rewrite";
 
 describe("topik-asset-reference-v1 occurrence registry", () => {
+  test("canonical validation cannot be replaced before rewrite or replacement", () => {
+    const source = "{% quiz %}{% /quiz %}";
+    const replace = vi.fn(() => "new.png");
+    const result = rewriteTopikAssetOccurrences(source, replace, {
+      config: { tags: { quiz: { render: "TopikQuiz" } } },
+    });
+
+    expect(result).toMatchObject({ ok: false, source });
+    expect(result).not.toHaveProperty("content");
+    expect(replace).not.toHaveBeenCalled();
+  });
+
   test("refuses unsupported source before replacement or formatting", () => {
     const source = '  {% mystery private="opaque" %}\r\n![child](old.png)\r\n{% /mystery %}  ';
     const replace = vi.fn(() => "new.png");
@@ -38,6 +50,22 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
     expect(JSON.stringify(result.diagnostics)).not.toContain(sentinel);
     expect(JSON.stringify(result.diagnostics)).not.toContain("/tmp/");
     expect(replace).not.toHaveBeenCalled();
+  });
+
+  test("does not expose invalid authored enum values through rewrite refusal", () => {
+    const sentinel = "PRIVATE_VALUE_SENTINEL";
+    const source = `{% callout variant="${sentinel}" %}child{% /callout %}`;
+    const replace = vi.fn(() => "new.png");
+    const result = rewriteTopikAssetOccurrences(source, replace, {
+      file: "/tmp/SENSITIVE_DIRECTORY/lesson.md",
+    });
+
+    expect(result).toMatchObject({ ok: false, source });
+    expect(result).not.toHaveProperty("content");
+    expect(replace).not.toHaveBeenCalled();
+    expect(JSON.stringify(result.diagnostics)).not.toContain(sentinel);
+    expect(JSON.stringify(result.diagnostics)).not.toContain("SENSITIVE_DIRECTORY");
+    expect(JSON.stringify(result.diagnostics)).not.toContain(source);
   });
 
   test("retains duplicate occurrences and occurrence-specific semantics", () => {

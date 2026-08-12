@@ -45,7 +45,7 @@ describe("CLI diagnostic serialization", () => {
         file,
       });
 
-      expect(output).toBe("page.md:3 error test-diagnostic: Invalid content");
+      expect(output).toBe("page.md:3 error test-diagnostic: Content validation failed.");
       expect(output).not.toMatch(/var|redacted|C:/u);
     },
   );

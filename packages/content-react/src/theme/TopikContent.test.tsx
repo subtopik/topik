@@ -6,6 +6,21 @@ import { InvalidTopikContentError } from "../core/render";
 import { TopikContent } from "./TopikContent";
 
 describe("TopikContent", () => {
+  it("cannot replace canonical validation through the default component", () => {
+    const renderQuiz = vi.fn(() => <span>must not render</span>);
+
+    expect(() =>
+      renderToStaticMarkup(
+        <TopikContent
+          components={{ TopikQuiz: renderQuiz }}
+          config={{ tags: { quiz: { render: "TopikQuiz" } } }}
+          content="{% quiz %}{% /quiz %}"
+        />,
+      ),
+    ).toThrow(InvalidTopikContentError);
+    expect(renderQuiz).not.toHaveBeenCalled();
+  });
+
   it("throws for unsupported content by default", () => {
     expect(() =>
       renderToStaticMarkup(

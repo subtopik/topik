@@ -1,5 +1,5 @@
-import Markdoc, { type Config, type ValidateError } from "@markdoc/markdoc";
-import { topikMarkdocConfig } from "./config";
+import Markdoc, { type Config } from "@markdoc/markdoc";
+import { mergeTopikMarkdocConfig } from "./config";
 import { parseTopikContent } from "./content";
 import {
   sanitizeTopikContentDiagnostic,
@@ -15,7 +15,7 @@ import {
 export interface ValidateTopikContentOptions {
   /** Source file path used in Markdoc locations and diagnostics. */
   file?: string;
-  /** Additional Markdoc config to merge after the Topik defaults. */
+  /** Additive Markdoc config; canonical Topik node and tag schemas retain precedence. */
   config?: Config;
   /** Permit compiler-produced `asset:auto-v1-*` references at an output-consumer boundary. */
   allowCompiledAssetReferences?: boolean;
@@ -26,7 +26,6 @@ export interface ValidateTopikContentResult {
   source: string;
   valid: boolean;
   errors: TopikContentDiagnostic[];
-  markdocErrors: ValidateError[];
 }
 
 export function validateTopikContent(
@@ -34,7 +33,7 @@ export function validateTopikContent(
   options: ValidateTopikContentOptions = {},
 ): ValidateTopikContentResult {
   const ast = parseTopikContent(source, { file: options.file, location: true });
-  const markdocErrors = Markdoc.validate(ast, mergeConfigs(topikMarkdocConfig, options.config));
+  const markdocErrors = Markdoc.validate(ast, mergeTopikMarkdocConfig(options.config));
   const assetOccurrences = extractTopikAssetOccurrences(source);
   const unsafeHttpLinkOccurrences = extractTopikAssetOccurrences(source, {
     includeGenericLinkCandidates: true,
@@ -91,7 +90,6 @@ export function validateTopikContent(
       (diagnostic) => diagnostic.level !== "error" && diagnostic.level !== "critical",
     ),
     errors,
-    markdocErrors,
   };
 }
 
@@ -100,17 +98,4 @@ function effectiveExternalReference(occurrence: TopikAssetOccurrence): string {
   return occurrence.reference.length === 0 && /^https?:/iu.test(occurrence.parsedReference)
     ? occurrence.parsedReference
     : occurrence.reference;
-}
-
-function mergeConfigs(base: Config, override: Config = {}): Config {
-  return {
-    ...base,
-    ...override,
-    nodes: { ...base.nodes, ...override.nodes },
-    tags: { ...base.tags, ...override.tags },
-    variables: { ...base.variables, ...override.variables },
-    functions: { ...base.functions, ...override.functions },
-    partials: { ...base.partials, ...override.partials },
-    validation: { ...base.validation, ...override.validation },
-  };
 }

@@ -89,6 +89,20 @@ Because it is correct.
 `;
 
 describe("content-react core", () => {
+  it("cannot replace canonical validation through normal compile and Markdown rendering", () => {
+    const source = "{% quiz %}{% /quiz %}";
+    const config = { tags: { quiz: { render: "TopikQuiz" } } };
+    const transform = vi.spyOn(Markdoc, "transform");
+
+    const result = compileTopikContent(source, { config });
+
+    expect(result).toMatchObject({ ok: false, source });
+    expect(result).not.toHaveProperty("tree");
+    expect(() => renderTopikMarkdown(source, { config })).toThrow(InvalidTopikContentError);
+    expect(transform).not.toHaveBeenCalled();
+    transform.mockRestore();
+  });
+
   it("compiles warning-only content and retains its diagnostic", () => {
     const source = "Warning-only content.";
     const transform = vi.spyOn(Markdoc, "transform");
@@ -176,6 +190,103 @@ describe("content-react core", () => {
     expect(JSON.stringify(result.diagnostics)).not.toContain("/tmp/");
     expect(() => renderTopikContent(result)).toThrow("Topik content is unsupported or invalid");
   });
+
+  it("normalizes enum diagnostics across compile results, typed errors, and callbacks", () => {
+    const sentinel = "PRIVATE_VALUE_SENTINEL";
+    const source = `{% callout variant="${sentinel}" %}child{% /callout %}`;
+    const callbacks: unknown[] = [];
+    const result = compileTopikContent(source, {
+      file: "/tmp/SENSITIVE_DIRECTORY/lesson.md",
+      onDiagnostic: (diagnostic) => callbacks.push(diagnostic),
+    });
+
+    expect(result).toMatchObject({ ok: false, source });
+    expect(() => renderTopikContent(result)).toThrow(InvalidTopikContentError);
+    for (const surface of [result.diagnostics, callbacks]) {
+      expect(JSON.stringify(surface)).not.toContain(sentinel);
+      expect(JSON.stringify(surface)).not.toContain("SENSITIVE_DIRECTORY");
+      expect(JSON.stringify(surface)).not.toContain(source);
+    }
+    try {
+      void renderTopikContent(result);
+    } catch (error) {
+      expect((error as Error).message).not.toContain(sentinel);
+      expect((error as Error).message).not.toContain("SENSITIVE_DIRECTORY");
+      expect((error as Error).message).not.toContain(source);
+    }
+  });
+
+  it("removes unsafe evaluated card targets before custom SSR renderers", () => {
+    const credential =
+      "https://user:SECRET_SENTINEL@example.com/file?q=QUERY_SENTINEL#FRAGMENT_SENTINEL";
+    const assetDiagnostics: string[] = [];
+    const navigationDiagnostics: string[] = [];
+    const html = renderToStaticMarkup(
+      <>
+        {renderTopikMarkdown(
+          [
+            '{% card title="Credential" href=$credential /%}',
+            '{% card title="Scheme" href=$scheme /%}',
+            '{% card title="Reserved" href=$reserved /%}',
+          ].join("\n\n"),
+          {
+            components: {
+              TopikCard: ({ href, title }) => (
+                <span data-href={typeof href === "string" ? href : "missing"}>{String(title)}</span>
+              ),
+            },
+            config: {
+              variables: {
+                credential,
+                reserved: `asset:auto-v1-${"a".repeat(52)}`,
+                scheme: "javascript:alert(1)",
+              },
+            },
+            onAssetDiagnostic: (diagnostic) => assetDiagnostics.push(diagnostic.id),
+            onNavigationDiagnostic: (diagnostic) => navigationDiagnostics.push(diagnostic.id),
+          },
+        )}
+      </>,
+    );
+
+    expect(html.match(/data-href="missing"/gu)).toHaveLength(3);
+    expect(html).not.toContain("SECRET_SENTINEL");
+    expect(html).not.toContain("QUERY_SENTINEL");
+    expect(html).not.toContain("FRAGMENT_SENTINEL");
+    expect(html).not.toContain("javascript:");
+    expect(html).not.toContain("asset:");
+    expect(assetDiagnostics).toEqual([]);
+    expect(navigationDiagnostics).toEqual(Array(3).fill("TOPIK_NAVIGATION_REFERENCE_UNSAFE"));
+  });
+
+  const unsafeTrustedCardTargets: ReadonlyArray<readonly [string, unknown]> = [
+    ["credentialed URL", "https://user:SECRET_SENTINEL@example.com/path?q=x#y"],
+    ["unsafe scheme", "javascript:alert(1)"],
+    ["reserved Asset locator", `asset:auto-v1-${"a".repeat(52)}`],
+    ["non-string value", { toString: () => "https://example.com" }],
+  ];
+
+  it.each(unsafeTrustedCardTargets)(
+    "removes a trusted card %s before its custom renderer",
+    (_kind, href) => {
+      const html = renderToStaticMarkup(
+        <>
+          {renderTrustedTopikTree(new Markdoc.Tag("TopikCard", { href, title: "Unsafe" }), {
+            components: {
+              TopikCard: ({ href: received }) => (
+                <span data-href={typeof received === "string" ? received : "missing"} />
+              ),
+            },
+          })}
+        </>,
+      );
+
+      expect(html).toContain('data-href="missing"');
+      expect(html).not.toContain("SECRET_SENTINEL");
+      expect(html).not.toContain("javascript:");
+      expect(html).not.toContain("asset:");
+    },
+  );
 
   it("sanitizes absolute paths on manual asset diagnostics across compile failure", () => {
     const sentinel = "SENSITIVE_DIRECTORY";
@@ -779,7 +890,7 @@ describe("content-react core", () => {
     });
 
     expect(rendered).toBeDefined();
-    expect(diagnostics.some((message) => message.includes("'quiz' requires"))).toBe(true);
+    expect(diagnostics).toContain("A quiz requires at least one question.");
   });
 
   it("does not expose untrusted link structure through renderer diagnostic callbacks", () => {

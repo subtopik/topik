@@ -9,6 +9,18 @@ function idsFor(source: string): string[] {
 }
 
 describe("topik content schema", () => {
+  test("canonical validation cannot be replaced through normal configuration", () => {
+    const source = "{% quiz %}{% /quiz %}";
+    const result = validateTopikContent(source, {
+      config: { tags: { quiz: { render: "TopikQuiz" } } },
+    });
+
+    expect(result).toMatchObject({ source, valid: false });
+    expect(result.errors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "topik-quiz-requires-question" })]),
+    );
+  });
+
   test.each([
     '{% mystery private="opaque" %}\r\nchild\r\n{% /mystery %}',
     'Before {% mystery private="opaque" %}child{% /mystery %} after',
@@ -37,6 +49,30 @@ describe("topik content schema", () => {
       expect(JSON.stringify(result.errors)).not.toContain(reference);
     }
   });
+
+  test.each(["/tmp/SENSITIVE_DIRECTORY/lesson.md", "C:\\SENSITIVE_DIRECTORY\\lesson.md"])(
+    "normalizes every public Markdoc diagnostic surface for %s",
+    (file) => {
+      const sentinel = "PRIVATE_VALUE_SENTINEL";
+      const source = `{% callout variant="${sentinel}" %}child{% /callout %}`;
+      const result = validateTopikContent(source, { file });
+
+      expect(result).toMatchObject({ source, valid: false });
+      expect(result.errors).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: "attribute-value-invalid",
+            file: "lesson.md",
+            message: expect.any(String),
+          }),
+        ]),
+      );
+      expect(result).not.toHaveProperty("markdocErrors");
+      expect(JSON.stringify(result.errors)).not.toContain(sentinel);
+      expect(JSON.stringify(result.errors)).not.toContain("SENSITIVE_DIRECTORY");
+      expect(JSON.stringify(result.errors)).not.toContain(source);
+    },
+  );
 
   test("exports component metadata for the initial schema surface", () => {
     expect(Object.keys(topikComponents).sort()).toEqual([

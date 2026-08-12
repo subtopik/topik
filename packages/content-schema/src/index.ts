@@ -1,4 +1,4 @@
-export { topikMarkdocConfig } from "./config";
+export { mergeTopikMarkdocConfig, topikMarkdocConfig } from "./config";
 export {
   TOPIK_ASSET_REFERENCE_VERSION,
   TOPIK_GENERATED_ASSET_NAME_PATTERN,

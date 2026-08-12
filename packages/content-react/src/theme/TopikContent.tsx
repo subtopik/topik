@@ -74,6 +74,7 @@ export function TopikContent({
       compileOptions.invalidContentPlaceholder,
       compileOptions.onAssetDiagnostic,
       compileOptions.onDiagnostic,
+      compileOptions.onNavigationDiagnostic,
       content,
       effectiveResolveAsset,
       mergedComponents,

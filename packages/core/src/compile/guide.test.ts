@@ -378,6 +378,32 @@ describe("compileGuides", () => {
     await expect(compileGuides({ dir })).rejects.not.toThrow(sentinel);
   });
 
+  test("keeps duplicate heading IDs out of useful compiler diagnostics", async () => {
+    const sentinel = "PRIVATE_VALUE_SENTINEL";
+    await writeCollectionConfig("id: docs\ntitle: Docs\n");
+    await writeGuide("post", `## One {% #${sentinel} %}\n\n## Two {% #${sentinel} %}\n`);
+
+    let failure: unknown;
+    try {
+      await compileGuides({ dir });
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toMatchObject({
+      diagnostics: [
+        expect.objectContaining({
+          file: "post.md",
+          id: "heading-id-duplicate",
+          message: "Explicit heading IDs must be unique within a document.",
+        }),
+      ],
+    });
+    expect(String(failure)).toContain("heading-id-duplicate");
+    expect(`${String(failure)}\n${JSON.stringify(failure)}`).not.toContain(sentinel);
+    expect(`${String(failure)}\n${JSON.stringify(failure)}`).not.toContain(dir);
+  });
+
   test("compiled Guide resources validate against schema", async () => {
     await writeCollectionConfig("id: blog\ntitle: Blog\ntags:\n  - official\n");
     await writeFile(

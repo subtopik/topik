@@ -39,3 +39,21 @@ export const topikMarkdocConfig = {
     validateFunctions: true,
   },
 } as const satisfies Config;
+
+/**
+ * Extend Topik's Markdoc environment without replacing canonical node or tag schemas.
+ * Canonical validation always wins on normal source APIs.
+ */
+export function mergeTopikMarkdocConfig(extension: Config = {}): Config {
+  const canonical: Config = topikMarkdocConfig;
+  return {
+    ...extension,
+    ...canonical,
+    nodes: { ...extension.nodes, ...canonical.nodes },
+    tags: { ...extension.tags, ...canonical.tags },
+    variables: { ...extension.variables, ...canonical.variables },
+    functions: { ...extension.functions, ...canonical.functions },
+    partials: { ...extension.partials, ...canonical.partials },
+    validation: { ...extension.validation, ...canonical.validation },
+  };
+}

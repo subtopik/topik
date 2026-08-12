@@ -33,6 +33,7 @@ import {
 
 const COMPILATION_GENERATION_PREFIX = ".topik-compilation-generation-";
 const COMPILATION_PRIOR_PREFIX = ".topik-compilation-prior-";
+const COMPILATION_DIRECTORIES = ["blobs", "resources"] as const;
 
 export const compile = command({
   name: "compile",
@@ -62,7 +63,7 @@ export const compile = command({
   handler: async (options) => {
     const dir = resolve(options.dir);
     const links = options.links as LinkValidationPolicy;
-    const outDir = options.outDir ? resolve(options.outDir) : join(dir, ".topik", "resources");
+    const outDir = options.outDir ? resolve(options.outDir) : join(dir, ".topik");
     await assertCompilationOutputScope(dir, outDir);
     const assetOptions = sourceNamespaceOptions(options.sourceNamespace);
     let result: Awaited<ReturnType<typeof compileContent>>;
@@ -89,10 +90,13 @@ export const compile = command({
     }
 
     if (options.dryRun) {
-      for (const resource of resources) {
-        console.log(`${resource.type}/${resource.name}.json`);
-      }
-      for (const payload of payloads) console.log(payload.path);
+      const paths = [
+        ...resources.map((resource) => `resources/${resource.type}/${resource.name}.json`),
+        ...payloads.map((payload) => payload.path),
+        "materialization.json",
+        "semantic.json",
+      ].sort((left, right) => Buffer.compare(Buffer.from(left), Buffer.from(right)));
+      for (const path of paths) console.log(path);
       console.log(`\n${resources.length} resources and ${payloads.length} payloads (dry run)`);
       return;
     }
@@ -109,8 +113,8 @@ export const compile = command({
     });
     files.push(
       ...payloads.map((payload) => ({ path: payload.path, bytes: payload.bytes })),
-      { path: ".topik/materialization.json", bytes: serializeTopikJson(materialization) },
-      { path: ".topik/semantic.json", bytes: serializeTopikJson(semantic) },
+      { path: "materialization.json", bytes: serializeTopikJson(materialization) },
+      { path: "semantic.json", bytes: serializeTopikJson(semantic) },
     );
     await replaceCompilationTree(outDir, files);
 
@@ -143,6 +147,13 @@ export async function replaceCompilationTree(
     const targetPath = procFdChild(parent.fd, target);
     existing = await openOwnedCompilationOutput(parent, target);
     generation = await createOwnedTemporaryDirectory(parent, COMPILATION_GENERATION_PREFIX);
+    for (const directory of COMPILATION_DIRECTORIES) {
+      const handle = await openAnchoredChildDirectory(generation.handle, directory, true);
+      if (handle === undefined) {
+        throw new CliError("Compilation output directory is unavailable");
+      }
+      await handle.close();
+    }
     for (const file of stagedFiles) {
       await writeAnchoredFile(generation.handle, file.path, file.bytes);
     }
@@ -296,8 +307,8 @@ async function assertCompilationOutputScope(sourceDir: string, outDir: string): 
 }
 
 async function assertOwnedCompilationTree(directory: FileHandle): Promise<void> {
-  const materialization = await readOwnedDescriptor(directory, ".topik/materialization.json");
-  const semantic = await readOwnedDescriptor(directory, ".topik/semantic.json");
+  const materialization = await readOwnedDescriptor(directory, "materialization.json");
+  const semantic = await readOwnedDescriptor(directory, "semantic.json");
   if (
     materialization?.descriptor !== "topik-materialization-v1" ||
     !Array.isArray(materialization.resources) ||
@@ -536,6 +547,7 @@ function assertExpectedStagedTree(
   files: readonly StagedCompilationFile[],
 ): void {
   const expectedDirectories = new Set<string>([""]);
+  for (const directory of COMPILATION_DIRECTORIES) expectedDirectories.add(directory);
   const expectedFiles = new Map(files.map((file) => [file.path, file] as const));
   for (const file of files) {
     const components = safeOutputComponents(file.path);

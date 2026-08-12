@@ -216,7 +216,7 @@ describe("dev command", () => {
     });
     expect(allowed.status).toBe(204);
     expect(allowed.headers.get("access-control-allow-origin")).toBe(WRITE_ORIGIN);
-    expect(allowed.headers.get("access-control-allow-methods")).toBe("GET, OPTIONS");
+    expect(allowed.headers.get("access-control-allow-methods")).toBe("GET, HEAD, OPTIONS");
 
     const rejected = await fetch(`http://127.0.0.1:${port}/resources`, {
       method: "OPTIONS",
@@ -292,7 +292,7 @@ describe("dev command", () => {
     expect(data.resources.find((r) => r.type === "WikiPage")?.name).toMatch(/^docs-[a-f0-9]{16}$/);
   });
 
-  test("GET /assets/sha256/:digest serves shared payloads", async () => {
+  test("GET and HEAD /blobs/:digest serve only shared compiler payloads", async () => {
     await rm(join(dir, "collection.yaml"));
     await rm(join(dir, "intro.md"));
     await writeFile(join(dir, "wiki.yaml"), "id: docs\ntitle: Docs\nnavigation:\n  - intro\n");
@@ -306,25 +306,38 @@ describe("dev command", () => {
       resources: { type: string; name: string; spec?: { uri?: string } }[];
     };
     const asset = resources.resources.find((resource) => resource.type === "Asset");
-    expect(asset?.spec?.uri).toMatch(/^assets\/sha256\/[0-9a-f]{64}$/u);
+    expect(asset?.spec?.uri).toMatch(/^blobs\/[0-9a-f]{64}$/u);
 
     const assetRes = await fetch(`http://127.0.0.1:${port}/${asset?.spec?.uri}`, {
       headers: { Origin: WRITE_ORIGIN },
     });
     expect(assetRes.status).toBe(200);
     expect(assetRes.headers.get("content-type")).toBe("image/png");
+    expect(assetRes.headers.get("content-length")).toBe(String(PNG_BYTES.byteLength));
     expect(assetRes.headers.get("x-content-type-options")).toBe("nosniff");
     expect(assetRes.headers.get("access-control-allow-origin")).toBe(WRITE_ORIGIN);
     expect(Buffer.from(await assetRes.arrayBuffer())).toEqual(PNG_BYTES);
+
+    const headRes = await fetch(`http://127.0.0.1:${port}/${asset?.spec?.uri}`, {
+      method: "HEAD",
+      headers: { Origin: WRITE_ORIGIN },
+    });
+    expect(headRes.status).toBe(200);
+    expect(headRes.headers.get("content-type")).toBe("image/png");
+    expect(headRes.headers.get("content-length")).toBe(String(PNG_BYTES.byteLength));
+    expect((await headRes.arrayBuffer()).byteLength).toBe(0);
 
     const rejectedAssetRes = await fetch(`http://127.0.0.1:${port}/${asset?.spec?.uri}`, {
       headers: { Origin: "https://attacker.example" },
     });
     expect(rejectedAssetRes.status).toBe(403);
 
-    const malformedAssetRes = await fetch(`http://127.0.0.1:${port}/assets/sha256/%E0%A4%A`);
+    const malformedAssetRes = await fetch(`http://127.0.0.1:${port}/blobs/%E0%A4%A`);
     expect(malformedAssetRes.status).not.toBe(500);
     expect(malformedAssetRes.status).toBe(404);
+
+    const legacyAssetRes = await fetch(`http://127.0.0.1:${port}/assets/sha256/${"a".repeat(64)}`);
+    expect(legacyAssetRes.status).toBe(404);
 
     const sourcePathRes = await fetch(`http://127.0.0.1:${port}/images/hero.png`);
     expect(sourcePathRes.status).toBe(404);

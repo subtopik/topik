@@ -9,7 +9,7 @@ import type { Resource } from "../resource";
 import { validateResources } from "../validate";
 import {
   TOPIK_ASSET_LIMITS,
-  TOPIK_ASSET_OUTPUT_PREFIX,
+  TOPIK_BLOB_OUTPUT_PREFIX,
   TOPIK_MATERIALIZATION_VERSION,
 } from "./constants";
 import {
@@ -100,7 +100,7 @@ export function createTopikMaterializationRecord(
     resources: resources
       .map((input) => ({
         resource: `${input.resource.type}/${input.resource.name}`,
-        path: `${input.resource.type}/${input.resource.name}.json`,
+        path: `resources/${input.resource.type}/${input.resource.name}.json`,
         size: input.bytes.byteLength,
         sha256: sha256(input.bytes),
       }))
@@ -334,7 +334,7 @@ function expectedMaterializationRecord(
       integrity === undefined ||
       size === undefined ||
       size > TOPIK_ASSET_LIMITS.maxAssetBytes ||
-      uri !== `${TOPIK_ASSET_OUTPUT_PREFIX}/${integrity.slice("sha256:".length)}`
+      uri !== `${TOPIK_BLOB_OUTPUT_PREFIX}/${integrity.slice("sha256:".length)}`
     ) {
       return undefined;
     }

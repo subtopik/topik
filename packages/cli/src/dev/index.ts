@@ -67,10 +67,11 @@ function handleEvents(watcher: Watcher, res: ServerResponse, corsHeaders: Record
 function handleAssetPayload(
   watcher: Watcher,
   url: URL,
+  method: "GET" | "HEAD",
   res: ServerResponse,
   corsHeaders: Record<string, string>,
 ): boolean {
-  if (!url.pathname.startsWith("/assets/sha256/")) {
+  if (!url.pathname.startsWith("/blobs/")) {
     return false;
   }
 
@@ -82,7 +83,7 @@ function handleAssetPayload(
     res.end();
     return true;
   }
-  if (!/^assets\/sha256\/[0-9a-f]{64}$/u.test(relativePath)) {
+  if (!/^blobs\/[0-9a-f]{64}$/u.test(relativePath)) {
     res.writeHead(404, corsHeaders);
     res.end();
     return true;
@@ -98,12 +99,13 @@ function handleAssetPayload(
   const contentType = payload.mediaType;
   res.writeHead(200, {
     "Content-Type": contentType,
+    "Content-Length": String(payload.size),
     ...corsHeaders,
     "Cache-Control": "no-cache",
     "X-Content-Type-Options": "nosniff",
     ...(isDownloadMediaType(contentType) ? { "Content-Disposition": "attachment" } : {}),
   });
-  res.end(payload.bytes);
+  res.end(method === "HEAD" ? undefined : payload.bytes);
 
   return true;
 }
@@ -202,7 +204,7 @@ function createRequestHandler(watcher: Watcher, getPort: () => number, allowedOr
     if (req.method === "OPTIONS") {
       res.writeHead(204, {
         ...corsHeaders,
-        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type",
       });
       res.end();
@@ -240,7 +242,10 @@ function createRequestHandler(watcher: Watcher, getPort: () => number, allowedOr
       return;
     }
 
-    if (req.method === "GET" && handleAssetPayload(watcher, url, res, corsHeaders)) {
+    if (
+      (req.method === "GET" || req.method === "HEAD") &&
+      handleAssetPayload(watcher, url, req.method, res, corsHeaders)
+    ) {
       return;
     }
 

@@ -16,7 +16,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 import { extractTopikAssetOccurrences } from "@topik/content-schema";
-import { parseGeneratedAssetName } from "@topik/schema";
+import { parseAssetBlobUri, parseGeneratedAssetName } from "@topik/schema";
 import type {
   Asset,
   Course,
@@ -155,7 +155,7 @@ function compiledAsset(): Asset {
     type: "Asset",
     name: parseGeneratedAssetName(`auto-v1-${"a".repeat(52)}`),
     spec: {
-      uri: `assets/sha256/${digest}`,
+      uri: parseAssetBlobUri(`blobs/${digest}`),
       integrity: `sha256:${digest}`,
       size: 0,
       mediaType: "application/octet-stream",
@@ -193,7 +193,7 @@ describe("compilation-wide automatic Assets", () => {
       type: "Asset",
       name: expect.stringMatching(/^auto-v1-[a-z2-7]{51}[aq]$/u),
       spec: {
-        uri: expect.stringMatching(/^assets\/sha256\/[0-9a-f]{64}$/u),
+        uri: expect.stringMatching(/^blobs\/[0-9a-f]{64}$/u),
         integrity: expect.stringMatching(/^sha256:[0-9a-f]{64}$/u),
         size: PNG_BYTES.byteLength,
         mediaType: "image/png",
@@ -201,6 +201,14 @@ describe("compilation-wide automatic Assets", () => {
     });
     expect(compiledGuide?.spec.content.value).toContain(`asset:${asset?.name}`);
     expect(result.payloads).toHaveLength(1);
+    expect(result.payloads[0].path).toMatch(/^blobs\/[0-9a-f]{64}$/u);
+    expect(result.materialization.resources.map((entry) => entry.path)).toEqual([
+      expect.stringMatching(/^resources\/Asset\/auto-v1-[a-z2-7]{51}[aq]\.json$/u),
+      "resources/Guide/guide.json",
+    ]);
+    expect(result.materialization.payloads.map((entry) => entry.path)).toEqual([
+      result.payloads[0].path,
+    ]);
   });
 
   test("leaves credential-free HTTPS external without synthesizing or downloading Assets", async () => {

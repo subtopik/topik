@@ -114,7 +114,7 @@ describe("validateResources", () => {
         type: "Asset",
         name: `auto-v1-${"a".repeat(52)}`,
         spec: {
-          uri: `assets/sha256/${digest}`,
+          uri: `blobs/${digest}`,
           integrity: `sha256:${"f".repeat(64)}`,
           size: 7,
           mediaType: "image/png",

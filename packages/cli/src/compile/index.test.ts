@@ -66,9 +66,14 @@ describe("compile command", () => {
       sourceNamespace: "cli-test-source",
     });
     expect(log).toHaveBeenCalledWith(
-      expect.stringMatching(/^Asset\/auto-v1-[a-z2-7]{51}[aq]\.json$/u),
+      expect.stringMatching(/^resources\/Asset\/auto-v1-[a-z2-7]{51}[aq]\.json$/u),
     );
-    expect(log).toHaveBeenCalledWith(expect.stringMatching(/^assets\/sha256\/[0-9a-f]{64}$/u));
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/^blobs\/[0-9a-f]{64}$/u));
+    expect(log).toHaveBeenCalledWith("materialization.json");
+    expect(log).toHaveBeenCalledWith("semantic.json");
+    expect(log.mock.calls.map(([value]) => String(value)).join("\n")).not.toContain(
+      "assets/sha256",
+    );
   });
 
   test("never exposes absolute Guide or WikiPage paths in CLI compile failures", async () => {
@@ -148,7 +153,7 @@ describe("compile command", () => {
         links: "error",
         sourceNamespace,
       });
-      names.push((await readdir(join(outDir, "Asset")))[0]);
+      names.push((await readdir(join(outDir, "resources", "Asset")))[0]);
     }
     expect(names[0]).toBe(names[1]);
   });
@@ -168,11 +173,17 @@ describe("compile command", () => {
     };
     await (compile as CompileCommand).handler?.(options);
     expect((await lstat(outDir)).isDirectory()).toBe(true);
-    const [assetFile] = await readdir(join(outDir, "Asset"));
-    const descriptor = await readFile(join(outDir, "Asset", assetFile), "utf8");
+    expect((await readdir(outDir)).sort()).toEqual([
+      "blobs",
+      "materialization.json",
+      "resources",
+      "semantic.json",
+    ]);
+    const [assetFile] = await readdir(join(outDir, "resources", "Asset"));
+    const descriptor = await readFile(join(outDir, "resources", "Asset", assetFile), "utf8");
     const asset = JSON.parse(descriptor) as { spec: { uri: string } };
     expect(await readFile(join(outDir, asset.spec.uri))).toEqual(PNG_BYTES);
-    const firstIdentity = await readFile(join(outDir, ".topik", "materialization.json"));
+    const firstIdentity = await readFile(join(outDir, "materialization.json"));
     const materialization = JSON.parse(firstIdentity.toString("utf8")) as {
       resources: Array<{ resource: string; path: string; size: number; sha256: string }>;
       payloads: Array<{ path: string; size: number; sha256: string }>;
@@ -183,7 +194,7 @@ describe("compile command", () => {
       expect(`${descriptor.type}/${descriptor.name}`).toBe(record.resource);
       expect(bytes.byteLength).toBe(record.size);
       expect(sha256(bytes)).toBe(record.sha256);
-      expect(record.path).toBe(`${record.resource}.json`);
+      expect(record.path).toBe(`resources/${record.resource}.json`);
     }
     for (const record of materialization.payloads) {
       const bytes = await readFile(join(outDir, record.path));
@@ -195,13 +206,13 @@ describe("compile command", () => {
       ...materialization.payloads.map((record) => record.path),
     ].sort();
     const actualOutput = (await listFiles(outDir))
-      .filter((path) => !path.startsWith(".topik/"))
+      .filter((path) => path !== "materialization.json" && path !== "semantic.json")
       .sort();
     expect(actualOutput).toEqual(recordedOutput);
     await writeFile(join(outDir, "stale.bin"), "stale");
     await (compile as CompileCommand).handler?.(options);
     expect((await lstat(outDir)).isDirectory()).toBe(true);
-    expect(await readFile(join(outDir, ".topik", "materialization.json"))).toEqual(firstIdentity);
+    expect(await readFile(join(outDir, "materialization.json"))).toEqual(firstIdentity);
     await expect(readFile(join(outDir, "stale.bin"))).rejects.toMatchObject({ code: "ENOENT" });
     expect(
       (await readdir(dir)).filter(
@@ -210,6 +221,33 @@ describe("compile command", () => {
           name.startsWith(".topik-compilation-prior-"),
       ),
     ).toEqual([]);
+  });
+
+  test("uses .topik as the default compilation root without rediscovering prior output", async () => {
+    const options = {
+      dir,
+      format: "json" as const,
+      dryRun: false,
+      validate: true,
+      links: "error" as const,
+      sourceNamespace: "cli-default-output",
+    };
+    await (compile as CompileCommand).handler?.(options);
+    const outDir = join(dir, ".topik");
+    const firstTree = await snapshotTree(outDir);
+    expect((await readdir(outDir)).sort()).toEqual([
+      "blobs",
+      "materialization.json",
+      "resources",
+      "semantic.json",
+    ]);
+    expect(await readdir(join(outDir, "blobs"))).toEqual([]);
+    expect(await readdir(join(outDir, "resources", "Guide"))).toEqual(["docs-intro.json"]);
+
+    await writeFile(join(outDir, "ignored.md"), "# Generated output is never source\n");
+    await (compile as CompileCommand).handler?.(options);
+    expect(await snapshotTree(outDir)).toEqual(firstTree);
+    await expect(readFile(join(outDir, "ignored.md"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   test("rejects a symlinked output ancestor without writing outside", async () => {
@@ -334,7 +372,6 @@ describe("compile command", () => {
 
   test("replaces an existing owned directory and removes its stale files", async () => {
     const outDir = join(dir, "directory-output");
-    await mkdir(join(outDir, ".topik"), { recursive: true });
     for (const file of ownedFiles("existing")) {
       await mkdir(dirname(join(outDir, file.path)), { recursive: true });
       await writeFile(join(outDir, file.path), file.bytes);
@@ -357,10 +394,10 @@ describe("compile command", () => {
   });
 
   test.each([
-    ["FIFO", ".topik/materialization.json"],
-    ["FIFO", ".topik/semantic.json"],
-    ["Unix socket", ".topik/materialization.json"],
-    ["Unix socket", ".topik/semantic.json"],
+    ["FIFO", "materialization.json"],
+    ["FIFO", "semantic.json"],
+    ["Unix socket", "materialization.json"],
+    ["Unix socket", "semantic.json"],
   ] as const)(
     "promptly rejects a %s ownership marker at %s without mutation",
     async (nodeKind, marker) => {
@@ -434,13 +471,13 @@ function ownedFiles(generation: string): Array<{ path: string; bytes: string }> 
   return [
     { path: "generation.txt", bytes: generation },
     {
-      path: ".topik/materialization.json",
+      path: "materialization.json",
       bytes: `${JSON.stringify({
         descriptor: "topik-materialization-v1",
         payloads: [
           {
             assetNames: [],
-            path: `assets/sha256/${payloadDigest}`,
+            path: `blobs/${payloadDigest}`,
             sha256: payloadDigest,
             size: Buffer.byteLength(payload),
           },
@@ -449,10 +486,10 @@ function ownedFiles(generation: string): Array<{ path: string; bytes: string }> 
       })}\n`,
     },
     {
-      path: ".topik/semantic.json",
+      path: "semantic.json",
       bytes: '{"assetNames":[],"descriptor":"topik-asset-semantic-v1","references":[]}\n',
     },
-    { path: `assets/sha256/${payloadDigest}`, bytes: payload },
+    { path: `blobs/${payloadDigest}`, bytes: payload },
   ];
 }
 
@@ -475,6 +512,15 @@ async function listFiles(root: string, prefix = ""): Promise<string[]> {
     else files.push(path);
   }
   return files;
+}
+
+async function snapshotTree(root: string): Promise<Array<[string, string]>> {
+  const files = (await listFiles(root)).sort();
+  return Promise.all(
+    files.map(
+      async (path): Promise<[string, string]> => [path, sha256(await readFile(join(root, path)))],
+    ),
+  );
 }
 
 async function replaceCompilationTreeBounded(

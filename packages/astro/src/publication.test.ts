@@ -32,10 +32,10 @@ describe("Astro static Asset publication", () => {
 
     await publishDigestSnapshot(output, second);
     expect(await readFile(targetFile(output, second[0].digest))).toEqual(second[0].bytes);
-    expect(await readdir(assetsDirectory(output))).toEqual(["sha256"]);
+    expect(await readdir(output.pathname)).toEqual(["blobs"]);
 
     await removeDigestSnapshot(output);
-    expect(await readdir(assetsDirectory(output))).toEqual([]);
+    expect(await readdir(output.pathname)).toEqual([]);
   });
 
   test("snapshots caller-owned bytes before asynchronous staging", async () => {
@@ -77,23 +77,23 @@ describe("Astro static Asset publication", () => {
   test("rejects a symlinked digest target without following or changing its destination", async () => {
     const output = outputUrl(join(root, "target-link"));
     const outside = join(root, "outside-target");
-    await mkdir(assetsDirectory(output), { recursive: true });
+    await mkdir(output.pathname, { recursive: true });
     await mkdir(outside);
     await writeFile(join(outside, "author.txt"), "preserve me");
-    await symlink(outside, join(assetsDirectory(output), "sha256"), "dir");
+    await symlink(outside, join(output.pathname, "blobs"), "dir");
 
     await expect(publishDigestSnapshot(output, snapshot("blocked"))).rejects.toThrow(
       /link or non-directory collision/u,
     );
     expect(await readFile(join(outside, "author.txt"), "utf8")).toBe("preserve me");
-    expect(await readdir(assetsDirectory(output))).toEqual(["sha256"]);
+    expect(await readdir(output.pathname)).toEqual(["blobs"]);
   });
 
   test.each(["noncanonical", "digest-mismatch", "special"] as const)(
     "rejects an unsafe pre-existing digest tree (%s) before replacement",
     async (kind) => {
       const output = outputUrl(join(root, `unsafe-${kind}`));
-      const target = join(assetsDirectory(output), "sha256");
+      const target = join(output.pathname, "blobs");
       await mkdir(target, { recursive: true });
       if (kind === "noncanonical") {
         await writeFile(join(target, "author.txt"), "preserve me");
@@ -107,7 +107,7 @@ describe("Astro static Asset publication", () => {
       await expect(publishDigestSnapshot(output, snapshot("next"))).rejects.toThrow(
         /non-canonical|digest|unsafe/u,
       );
-      expect(await readdir(assetsDirectory(output))).toEqual(["sha256"]);
+      expect(await readdir(output.pathname)).toEqual(["blobs"]);
     },
   );
 });
@@ -121,10 +121,6 @@ function outputUrl(path: string): URL {
   return pathToFileURL(`${path}/`);
 }
 
-function assetsDirectory(output: URL): string {
-  return join(output.pathname, "assets");
-}
-
 function targetFile(output: URL, digest: string): string {
-  return join(assetsDirectory(output), "sha256", digest);
+  return join(output.pathname, "blobs", digest);
 }

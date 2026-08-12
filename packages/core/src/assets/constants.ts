@@ -6,7 +6,7 @@ export const TOPIK_PATH_VERSION = "topik-path-v1" as const;
 export const TOPIK_ASSET_REFERENCE_VERSION = "topik-asset-reference-v1" as const;
 export const TOPIK_MATERIALIZATION_VERSION = "topik-materialization-v1" as const;
 export const TOPIK_ASSET_NAME_VERSION = "topik-asset-name-v1" as const;
-export const TOPIK_ASSET_OUTPUT_PREFIX = "assets/sha256" as const;
+export const TOPIK_BLOB_OUTPUT_PREFIX = "blobs" as const;
 
 export const TOPIK_PATH_V1_DESCRIPTOR = {
   collisionNormalization: "toNFKC_Casefold",

@@ -4,7 +4,7 @@ name: auto-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 labels:
   topic: manuals
 spec:
-  uri: assets/sha256/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  uri: blobs/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
   integrity: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
   size: 48123
   mediaType: application/pdf

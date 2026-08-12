@@ -18,9 +18,9 @@ import { basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/u;
-const STAGE_PREFIX = ".topik-sha256-stage-";
-const PRIOR_PREFIX = ".topik-sha256-prior-";
-const TARGET = "sha256";
+const STAGE_PREFIX = ".topik-blobs-stage-";
+const PRIOR_PREFIX = ".topik-blobs-prior-";
+const TARGET = "blobs";
 
 export interface DigestSnapshotFile {
   bytes: Uint8Array;
@@ -54,8 +54,8 @@ export async function publishDigestSnapshot(
   files: readonly DigestSnapshotFile[],
 ): Promise<void> {
   const snapshots = snapshotFiles(files);
-  const assetsPath = resolve(fileURLToPath(outputDirectory), "assets");
-  const parent = await openAnchoredDirectory(assetsPath, true);
+  const outputPath = resolve(fileURLToPath(outputDirectory));
+  const parent = await openAnchoredDirectory(outputPath, true);
   if (parent === undefined) throw publicationError("output parent could not be created safely");
 
   let prior: OwnedDigestDirectory | undefined;
@@ -111,8 +111,8 @@ export async function publishDigestSnapshot(
 }
 
 export async function removeDigestSnapshot(outputDirectory: URL): Promise<void> {
-  const assetsPath = resolve(fileURLToPath(outputDirectory), "assets");
-  const parent = await openAnchoredDirectory(assetsPath, false);
+  const outputPath = resolve(fileURLToPath(outputDirectory));
+  const parent = await openAnchoredDirectory(outputPath, false);
   if (parent === undefined) return;
   let prior: OwnedDigestDirectory | undefined;
   let removed = false;

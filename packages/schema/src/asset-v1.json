@@ -43,7 +43,7 @@
           "type": "integer"
         },
         "uri": {
-          "pattern": "^assets/sha256/[0-9a-f]{64}$",
+          "pattern": "^blobs/[0-9a-f]{64}$",
           "type": "string"
         }
       },

@@ -39,7 +39,7 @@ describe("Astro production Asset delivery", () => {
     await buildFixture(root);
     roots.push(root);
 
-    const digestDir = join(root, "dist/assets/sha256");
+    const digestDir = join(root, "dist/blobs");
     const digests = await readdir(digestDir);
     expect(digests).toHaveLength(2);
     const outputBytes = await Promise.all(
@@ -47,9 +47,11 @@ describe("Astro production Asset delivery", () => {
     );
     expect(outputBytes.some((bytes) => bytes.equals(PNG_BYTES))).toBe(true);
     expect(outputBytes.some((bytes) => bytes.equals(PDF_BYTES))).toBe(true);
+    expect(await pathExists(join(root, "dist/assets/sha256"))).toBe(false);
 
     const html = await readFile(join(root, "dist/index.html"), "utf8");
-    expect(html.match(/href="\/assets\/sha256\/[0-9a-f]{64}"/gu)).toHaveLength(4);
+    expect(html.match(/href="\/blobs\/[0-9a-f]{64}"/gu)).toHaveLength(4);
+    expect(html).not.toContain("/assets/sha256/");
     expect(html).not.toContain("hero.png");
     expect(html).not.toContain("manual.pdf");
   }, 15_000);
@@ -58,26 +60,26 @@ describe("Astro production Asset delivery", () => {
     const root = await createFixture();
     await buildFixture(root);
     roots.push(root);
-    expect(await pathExists(join(root, "dist/assets/sha256"))).toBe(true);
+    expect(await pathExists(join(root, "dist/blobs"))).toBe(true);
 
     await writeFile(join(root, "content/guides/intro.md"), "# Guide\n\nNo Assets.\n");
     await writeFile(join(root, "content/wiki/intro.md"), "# Wiki\n\nNo Assets.\n");
     await buildFixture(root);
 
-    expect(await pathExists(join(root, "dist/assets/sha256"))).toBe(false);
+    expect(await pathExists(join(root, "dist/blobs"))).toBe(false);
   }, 15_000);
 
   test("a failed replacement build leaves no prior or unsafe delivery snapshot", async () => {
     const root = await createFixture();
     await buildFixture(root);
     roots.push(root);
-    expect(await pathExists(join(root, "dist/assets/sha256"))).toBe(true);
+    expect(await pathExists(join(root, "dist/blobs"))).toBe(true);
     await writeFile(join(root, "content/guides/active.svg"), '<svg onload="alert(1)" />');
     await writeFile(join(root, "content/guides/intro.md"), "# Guide\n\n![Active](active.svg)\n");
 
     await expect(buildFixture(root)).rejects.toBeDefined();
 
-    expect(await pathExists(join(root, "dist/assets/sha256"))).toBe(false);
+    expect(await pathExists(join(root, "dist/blobs"))).toBe(false);
     expect(await pathExists(join(root, "dist/active.svg"))).toBe(false);
   }, 15_000);
 
@@ -90,12 +92,10 @@ describe("Astro production Asset delivery", () => {
     )) as { fetch: (request: Request) => Promise<Response> };
     const page = await serverModule.fetch(new Request("http://example.test/"));
     roots.push(root);
-    expect(await readdir(join(root, "dist/client/assets/sha256"))).toHaveLength(2);
+    expect(await readdir(join(root, "dist/client/blobs"))).toHaveLength(2);
     expect(page.status).toBe(200);
     const html = await page.text();
-    const urls = [...html.matchAll(/href="(\/assets\/sha256\/[0-9a-f]{64})"/gu)].map(
-      (match) => match[1],
-    );
+    const urls = [...html.matchAll(/href="(\/blobs\/[0-9a-f]{64})"/gu)].map((match) => match[1]);
     expect(urls).toHaveLength(4);
 
     for (const url of new Set(urls)) {
@@ -116,6 +116,11 @@ describe("Astro production Asset delivery", () => {
       expect(head.headers.get("content-length")).toBe(String(bytes.byteLength));
       expect((await head.arrayBuffer()).byteLength).toBe(0);
     }
+
+    const legacy = await serverModule.fetch(
+      new Request(`http://example.test/assets/sha256/${"a".repeat(64)}`),
+    );
+    expect(legacy.status).toBe(404);
 
     await writeFile(
       join(root, "content/guides/hero.png"),

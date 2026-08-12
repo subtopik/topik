@@ -8,6 +8,7 @@ export const assetV1Schema: JSONSchema = rawAssetV1Schema as JSONSchema;
 export const assetSchema = assetV1Schema;
 
 const GENERATED_ASSET_NAME_VALIDATOR = /^auto-v1-[a-z2-7]{51}[aq]$/u;
+const ASSET_BLOB_URI_VALIDATOR = /^blobs\/[0-9a-f]{64}$/u;
 
 /** Public grammar descriptor. Runtime admission uses an isolated boundary. */
 export const GENERATED_ASSET_NAME_PATTERN = /^auto-v1-[a-z2-7]{51}[aq]$/u;
@@ -31,8 +32,27 @@ export function parseGeneratedAssetName(value: string): GeneratedAssetName {
   return value;
 }
 
+declare const assetBlobUriBrand: unique symbol;
+
+/** Opaque canonical compilation-relative URI for one SHA-256-addressed Asset blob. */
+export type AssetBlobUri = string & {
+  readonly [assetBlobUriBrand]: "AssetBlobUri";
+};
+
+export function isAssetBlobUri(value: unknown): value is AssetBlobUri {
+  return typeof value === "string" && ASSET_BLOB_URI_VALIDATOR.test(value);
+}
+
+/** Validate an external string before admitting it to the Asset blob-URI type boundary. */
+export function parseAssetBlobUri(value: string): AssetBlobUri {
+  if (!isAssetBlobUri(value)) {
+    throw new TypeError("Asset blob URI is not canonical");
+  }
+  return value;
+}
+
 export interface AssetSpec {
-  uri: `assets/sha256/${string}`;
+  uri: AssetBlobUri;
   integrity: `sha256:${string}`;
   size: number;
   mediaType: string;
@@ -53,7 +73,8 @@ export function hasMatchingAssetDigests(value: unknown): boolean {
     return false;
   }
   if (typeof spec.uri !== "string" || typeof spec.integrity !== "string") return false;
-  const uri = /^assets\/sha256\/([0-9a-f]{64})$/u.exec(spec.uri);
+  if (!isAssetBlobUri(spec.uri)) return false;
+  const uriDigest = spec.uri.slice("blobs/".length);
   const integrity = /^sha256:([0-9a-f]{64})$/u.exec(spec.integrity);
-  return uri !== null && integrity !== null && uri[1] === integrity[1];
+  return integrity !== null && uriDigest === integrity[1];
 }

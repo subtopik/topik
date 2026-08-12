@@ -55,7 +55,7 @@ apiVersion: v1
 type: Asset
 name: auto-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 spec:
-  uri: assets/sha256/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  uri: blobs/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
   integrity: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
   size: 48123
   mediaType: application/pdf
@@ -67,18 +67,31 @@ type. The digest in the payload path and the integrity value must be identical.
 
 Discovery runs once after the complete content resource set is known. Multiple Guides, all pages in
 a Wiki, CoursePages, and mixed resource kinds therefore share one Asset set. Descriptors remain
-distinct by source identity, while equal payload bytes are written once per compilation digest:
+distinct by source identity, while equal payload bytes are written once per compilation digest.
+The CLI's default compilation root is `<source-root>/.topik`. A directory supplied through
+`--out-dir` is itself the compilation root and has the identical internal layout:
 
 ```text
-Asset/<generated-name>.json
-assets/sha256/<full-lowercase-sha256>
+.topik/
+├── semantic.json
+├── materialization.json
+├── resources/
+│   └── <ResourceType>/<resource-name>.json
+└── blobs/
+    └── <full-lowercase-sha256>
 ```
+
+The `resources/` and `blobs/` directories are present even when their inventories are empty. Asset
+descriptors use `resources/Asset/<generated-name>.json`, exactly like every other resource type,
+and `spec.uri` is the matching `blobs/<full-lowercase-sha256>` path. There are no compatibility
+aliases or fallback locations.
 
 The semantic inventory records generated names and their schema-declared content occurrences. The
 materialization inventory records every resource descriptor and payload path with its exact size and
-SHA-256 digest. Materialization validation requires both inventories together and proves exact
-closure: every compiled reference names one emitted Asset and payload, every semantic mapping
-matches a declared content slot, and no automatically generated Asset is orphaned.
+SHA-256 digest. Both inventories are direct children of the compilation root. Materialization
+validation requires them together and proves exact closure: every compiled reference names one
+emitted Asset and payload, every semantic mapping matches a declared content slot, and no
+automatically generated Asset is orphaned.
 
 ## Rendering
 
@@ -114,7 +127,7 @@ export const integration = topik({ loaders: [guides, wiki] });
 ```
 
 `loader.getAssets()` returns the current emitted descriptors, and `loader.resolveAsset(name)` maps a
-compiled name to its canonical `/assets/sha256/<digest>` URL for the renderer. During a static build,
+compiled name to its canonical `/blobs/<digest>` URL for the renderer. During a static build,
 the integration writes the exact deduplicated payload bytes into Astro's client output. Production
 server builds embed the same snapshot in an Astro middleware route with the compiler-proven media
 type, byte length, and `nosniff` response headers. The resolver mapping is installed with that

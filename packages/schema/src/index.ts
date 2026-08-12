@@ -4,9 +4,12 @@ export {
   assetV1Schema,
   GENERATED_ASSET_NAME_PATTERN,
   hasMatchingAssetDigests,
+  isAssetBlobUri,
   isGeneratedAssetName,
+  parseAssetBlobUri,
   parseGeneratedAssetName,
   type Asset,
+  type AssetBlobUri,
   type AssetSpec,
   type GeneratedAssetName,
 } from "./asset";

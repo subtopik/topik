@@ -1,0 +1,49 @@
+import {
+  isAssetBlobUri,
+  parseAssetBlobUri,
+  parseGeneratedAssetName,
+  type Asset,
+  type AssetBlobUri,
+} from "@topik/schema";
+import { validateAssetUri, type AssetCompilationResult } from "@topik/core";
+
+const parsed: AssetBlobUri = parseAssetBlobUri(
+  "blobs/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+);
+const asset: Asset = {
+  apiVersion: "v1",
+  type: "Asset",
+  name: parseGeneratedAssetName("auto-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+  spec: {
+    uri: parsed,
+    integrity: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    mediaType: "application/octet-stream",
+    size: 0,
+  },
+};
+
+const candidate: unknown = parsed;
+if (isAssetBlobUri(candidate)) {
+  const narrowed: AssetBlobUri = candidate;
+  void narrowed;
+}
+
+const coreValidation = validateAssetUri(String(parsed));
+if (coreValidation.ok) {
+  const coreUri: AssetBlobUri = coreValidation.value.uri;
+  void coreUri;
+}
+
+declare const compilation: AssetCompilationResult;
+for (const resource of compilation.resources) {
+  if (resource.type === "Asset") {
+    const compilerUri: AssetBlobUri = resource.spec.uri;
+    void compilerUri;
+  }
+}
+for (const payload of compilation.payloads) {
+  const compilerPayloadPath: AssetBlobUri = payload.path;
+  void compilerPayloadPath;
+}
+
+void asset;

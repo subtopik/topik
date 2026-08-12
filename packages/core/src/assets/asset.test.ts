@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { parseGeneratedAssetName, type Asset } from "@topik/schema";
+import { parseAssetBlobUri, parseGeneratedAssetName, type Asset } from "@topik/schema";
 import {
   generateAutomaticAssetName,
   isGeneratedAssetName,
@@ -18,7 +18,9 @@ const complete: Asset = {
   type: "Asset",
   name: parseGeneratedAssetName(`auto-v1-${"a".repeat(52)}`),
   spec: {
-    uri: "assets/sha256/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    uri: parseAssetBlobUri(
+      "blobs/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    ),
     integrity: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     size: 7,
     mediaType: "image/png",
@@ -62,6 +64,12 @@ describe("Asset/v1 strict JSON", () => {
     expect(validateAssetValue({ ...complete, spec: { uri: "images/logo.png" } })).toMatchObject({
       ok: false,
     });
+    expect(
+      validateAssetValue({
+        ...complete,
+        spec: { ...complete.spec, uri: `assets/sha256/${"0".repeat(64)}` },
+      }),
+    ).toMatchObject({ ok: false });
     expect(validateAssetValue({ ...complete, spec: { uri: complete.spec.uri } })).toMatchObject({
       ok: false,
     });

@@ -8,10 +8,18 @@ import {
   type TopikAssetOccurrence,
   type TopikContentDiagnostic,
 } from "@topik/content-schema";
-import type { Asset, CoursePage, GeneratedAssetName, Guide, WikiPage } from "@topik/schema";
+import {
+  parseAssetBlobUri,
+  type Asset,
+  type AssetBlobUri,
+  type CoursePage,
+  type GeneratedAssetName,
+  type Guide,
+  type WikiPage,
+} from "@topik/schema";
 import type { Resource, SourceResource } from "../resource";
 import { generateAutomaticAssetName } from "../assets/asset";
-import { TOPIK_ASSET_LIMITS, TOPIK_ASSET_OUTPUT_PREFIX } from "../assets/constants";
+import { TOPIK_ASSET_LIMITS, TOPIK_BLOB_OUTPUT_PREFIX } from "../assets/constants";
 import {
   TOPIK_ASSET_DIAGNOSTIC_IDS,
   topikAssetDiagnostic,
@@ -57,7 +65,7 @@ export interface CompileAssetResourcesInput extends AssetCompilationOptions {
 }
 
 export interface AssetPayload {
-  path: string;
+  path: AssetBlobUri;
   integrity: `sha256:${string}`;
   mediaType: string;
   size: number;
@@ -328,7 +336,7 @@ async function compileAssetResourcesWithReader(
       throw activeError(name, sourcePath);
     }
     assertRoleMediaCompatibility(name, sourcePath, mediaType, roles);
-    const payloadPath = `${TOPIK_ASSET_OUTPUT_PREFIX}/${digest}` as const;
+    const payloadPath = parseAssetBlobUri(`${TOPIK_BLOB_OUTPUT_PREFIX}/${digest}`);
     resolvedAssets.push({
       apiVersion: "v1",
       type: "Asset",
@@ -376,7 +384,7 @@ async function compileAssetResourcesWithReader(
   }
   const payloads: AssetPayload[] = [...payloadsByDigest.entries()]
     .map(([digest, payload]) => ({
-      path: `${TOPIK_ASSET_OUTPUT_PREFIX}/${digest}`,
+      path: parseAssetBlobUri(`${TOPIK_BLOB_OUTPUT_PREFIX}/${digest}`),
       integrity: `sha256:${digest}` as const,
       mediaType: payload.mediaType,
       size: payload.bytes.byteLength,

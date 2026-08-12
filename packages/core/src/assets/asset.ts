@@ -4,9 +4,11 @@ import type { ErrorObject } from "ajv";
 import {
   assetV1Schema,
   hasMatchingAssetDigests,
+  isAssetBlobUri,
   isGeneratedAssetName as isSchemaGeneratedAssetName,
   parseGeneratedAssetName,
   type Asset,
+  type AssetBlobUri,
   type GeneratedAssetName,
 } from "@topik/schema";
 import {
@@ -46,6 +48,11 @@ export interface ParsedAsset {
   asset: Asset;
   canonicalBytes: Uint8Array;
 }
+
+type StructurallyValidatedAsset = Omit<Asset, "name" | "spec"> & {
+  name: string;
+  spec: Omit<Asset["spec"], "uri"> & { uri: string };
+};
 
 export function parseAsset(input: string | Uint8Array): TopikAssetResult<ParsedAsset> {
   const source = typeof input === "string" ? encoder.encode(input) : Uint8Array.from(input);
@@ -139,7 +146,11 @@ export function validateAssetValue(value: unknown): TopikAssetResult<Asset> {
   if (!validateSchema(value)) {
     return { ok: false, diagnostics: (validateSchema.errors ?? []).map(schemaDiagnostic) };
   }
-  const asset = value as unknown as Asset;
+  const asset = value as StructurallyValidatedAsset;
+  const name = asset.name;
+  if (!isSchemaGeneratedAssetName(name)) {
+    return failure("TOPIK_ASSET_SCHEMA_INVALID", "Asset name must be compiler-derived", "/name");
+  }
   const uri = validateAssetUri(asset.spec.uri);
   if (!uri.ok) return { ok: false, diagnostics: uri.diagnostics };
   if (!hasMatchingAssetDigests(asset)) {
@@ -158,7 +169,11 @@ export function validateAssetValue(value: unknown): TopikAssetResult<Asset> {
       ],
     };
   }
-  return { ok: true, value: asset, diagnostics: [] };
+  return {
+    ok: true,
+    value: { ...asset, name, spec: { ...asset.spec, uri: uri.value.uri } },
+    diagnostics: [],
+  };
 }
 
 /** Serialize one Asset to deterministic UTF-8 canonical JSON and prove its round trip. */
@@ -176,12 +191,10 @@ export function serializeAsset(value: unknown): TopikAssetResult<Uint8Array> {
   return { ok: true, value: bytes, diagnostics: [] };
 }
 
-export function validateAssetUri(
-  value: string,
-): TopikAssetResult<{ uri: `assets/sha256/${string}` }> {
+export function validateAssetUri(value: string): TopikAssetResult<{ uri: AssetBlobUri }> {
   const local = validateTopikPath(value);
   if (!local.ok) return { ok: false, diagnostics: local.diagnostics };
-  if (!/^assets\/sha256\/[0-9a-f]{64}$/u.test(local.value.path)) {
+  if (!isAssetBlobUri(local.value.path)) {
     return failure(
       "TOPIK_ASSET_SCHEMA_INVALID",
       "Asset URI must identify a compiler-materialized payload",
@@ -190,7 +203,7 @@ export function validateAssetUri(
   }
   return {
     ok: true,
-    value: { uri: local.value.path as `assets/sha256/${string}` },
+    value: { uri: local.value.path },
     diagnostics: [],
   };
 }

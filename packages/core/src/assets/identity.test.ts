@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 import {
   parseGeneratedAssetName,
+  parseAssetBlobUri,
   type Asset,
   type CoursePage,
   type Guide,
@@ -23,7 +24,9 @@ const asset: Asset = {
   type: "Asset",
   name: assetName,
   spec: {
-    uri: "assets/sha256/d4e4877bac978b7952f0d544fc52ebff5411d351d129f1f056fa43f11da9af2b",
+    uri: parseAssetBlobUri(
+      "blobs/d4e4877bac978b7952f0d544fc52ebff5411d351d129f1f056fa43f11da9af2b",
+    ),
     integrity,
     size: bytes.byteLength,
     mediaType: "application/octet-stream",
@@ -130,9 +133,12 @@ describe("exact Asset materialization inventory", () => {
     expect(complete.resources).toEqual([
       expect.objectContaining({
         resource: `Asset/${assetName}`,
-        path: `Asset/${assetName}.json`,
+        path: `resources/Asset/${assetName}.json`,
       }),
-      expect.objectContaining({ resource: "Guide/guide", path: "Guide/guide.json" }),
+      expect.objectContaining({
+        resource: "Guide/guide",
+        path: "resources/Guide/guide.json",
+      }),
     ]);
 
     const noAssetDescriptor = mutableRecord();
@@ -374,7 +380,10 @@ describe("exact Asset materialization inventory", () => {
   test("rejects corrupt descriptor and payload facts", () => {
     const corruptions: Array<(record: ReturnType<typeof mutableRecord>) => void> = [
       (record) => {
-        record.resources[0].path = `../Asset/${assetName}.json`;
+        record.resources[0].path = `../resources/Asset/${assetName}.json`;
+      },
+      (record) => {
+        record.resources[0].path = `Asset/${assetName}.json`;
       },
       (record) => {
         record.resources[0].size++;
@@ -387,6 +396,9 @@ describe("exact Asset materialization inventory", () => {
       },
       (record) => {
         record.payloads[0].sha256 = "0".repeat(64);
+      },
+      (record) => {
+        record.payloads[0].path = `assets/sha256/${record.payloads[0].sha256}`;
       },
       (record) => {
         record.payloads[0].assetNames = [];

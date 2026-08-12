@@ -6,7 +6,9 @@ import {
   assetV1Schema,
   GENERATED_ASSET_NAME_PATTERN,
   hasMatchingAssetDigests,
+  isAssetBlobUri,
   isGeneratedAssetName,
+  parseAssetBlobUri,
   parseGeneratedAssetName,
 } from "./asset";
 import { testSchema } from "./test-utils";
@@ -33,7 +35,7 @@ describe("Asset/v1 raw schema", () => {
       type: "Asset",
       name: `auto-v1-${"a".repeat(52)}`,
       spec: {
-        uri: `assets/sha256/${digest}`,
+        uri: `blobs/${digest}`,
         integrity: `sha256:${digest}`,
         mediaType: "application/pdf",
         size: 268_435_456,
@@ -49,6 +51,12 @@ describe("Asset/v1 raw schema", () => {
     ).toBe(false);
     expect(validateAsset({ ...output, name: "manual" })).toBe(false);
     expect(validateAsset({ ...output, spec: { uri: "manual.pdf" } })).toBe(false);
+    expect(
+      validateAsset({
+        ...output,
+        spec: { ...output.spec, uri: `assets/sha256/${digest}` },
+      }),
+    ).toBe(false);
     expect(validateAsset({ ...output, spec: { ...output.spec, size: 268_435_457 } })).toBe(false);
   });
 
@@ -80,6 +88,23 @@ describe("Asset/v1 raw schema", () => {
     );
   });
 
+  test("admits blob URIs only through the exact canonical runtime boundary", () => {
+    const canonical = `blobs/${"0".repeat(64)}`;
+    expect(isAssetBlobUri(canonical)).toBe(true);
+    expect(parseAssetBlobUri(canonical)).toBe(canonical);
+    for (const invalid of [
+      `blobs/${"0".repeat(63)}`,
+      `blobs/${"0".repeat(65)}`,
+      `blobs/${"g".repeat(64)}`,
+      `blobs/${"A".repeat(64)}`,
+      `blob/${"0".repeat(64)}`,
+      `assets/sha256/${"0".repeat(64)}`,
+    ]) {
+      expect(isAssetBlobUri(invalid), invalid).toBe(false);
+      expect(() => parseAssetBlobUri(invalid), invalid).toThrow("Asset blob URI is not canonical");
+    }
+  });
+
   test("isolates opaque admission from mutation of the public pattern descriptor", () => {
     const originalTest = GENERATED_ASSET_NAME_PATTERN.test.bind(GENERATED_ASSET_NAME_PATTERN);
     GENERATED_ASSET_NAME_PATTERN.test = () => true;
@@ -101,7 +126,7 @@ function assetWithName(name: string): unknown {
     type: "Asset",
     name,
     spec: {
-      uri: `assets/sha256/${digest}`,
+      uri: `blobs/${digest}`,
       integrity: `sha256:${digest}`,
       mediaType: "application/pdf",
       size: 0,

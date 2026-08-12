@@ -17,8 +17,8 @@ export interface TopikOptions {
   loaders: readonly TopikAssetLoader[];
 }
 
-const PAYLOAD_PATH_PATTERN = /^\/assets\/sha256\/[0-9a-f]{64}$/u;
-const PAYLOAD_RELATIVE_PATTERN = /^assets\/sha256\/[0-9a-f]{64}$/u;
+const PAYLOAD_PATH_PATTERN = /^\/blobs\/[0-9a-f]{64}$/u;
+const PAYLOAD_RELATIVE_PATTERN = /^blobs\/[0-9a-f]{64}$/u;
 const VIRTUAL_SNAPSHOT_ID = "virtual:@topik/astro/asset-snapshot";
 const RESOLVED_VIRTUAL_SNAPSHOT_ID = `\0${VIRTUAL_SNAPSHOT_ID}`;
 
@@ -101,7 +101,7 @@ function snapshotPlugin(loaders: readonly TopikAssetLoader[]) {
 function productionMiddlewareSource(): string {
   return `import { topikAssetPayloads, topikAssetUrls } from ${JSON.stringify(VIRTUAL_SNAPSHOT_ID)};
 globalThis[Symbol.for("@topik/astro/runtime-asset-urls")] = topikAssetUrls;
-const pattern = /^\\/assets\\/sha256\\/[0-9a-f]{64}$/u;
+const pattern = /^\\/blobs\\/[0-9a-f]{64}$/u;
 export async function onRequest(context, next) {
   const request = context.request;
   if (request.method !== "GET" && request.method !== "HEAD") return next();
@@ -133,7 +133,7 @@ async function publishStaticSnapshot(
       }
       return {
         bytes: payload.bytes,
-        digest: payload.path.slice("assets/sha256/".length),
+        digest: payload.path.slice("blobs/".length),
       };
     }),
   );

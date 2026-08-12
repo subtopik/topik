@@ -1,6 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { TopikContent } from "../theme/TopikContent";
 
+const diagramAssetName = "auto-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
 const meta = {
   title: "Content React/Components",
   component: TopikContent,
@@ -76,7 +78,7 @@ export const MathAndMermaid: Story = {
 export const TableAndImage: Story = {
   args: {
     content: [
-      "![Resolved image](asset:diagram)",
+      `![Compiled image](asset:${diagramAssetName})`,
       "",
       "| Feature | Default support | Rich support |",
       "| - | - | - |",
@@ -84,7 +86,7 @@ export const TableAndImage: Story = {
       "| Math | Source fallback | KaTeX rendering |",
       "| Mermaid | Source fallback | SVG diagram |",
     ].join("\n"),
-    resolveAsset: (id: string) => `https://placehold.co/920x360?text=${encodeURIComponent(id)}`,
+    resolveAsset: (name: string) => `https://placehold.co/920x360?text=${encodeURIComponent(name)}`,
   },
 };
 
@@ -107,9 +109,8 @@ export const Steps: Story = {
 
 export const FigureAndBadge: Story = {
   args: {
-    content:
-      'Status: {% badge variant="info" %}draft{% /badge %}\n\n{% figure src="asset:diagram" alt="Diagram" caption="Figure caption" /%}',
-    resolveAsset: (id: string) => `https://placehold.co/800x360?text=${encodeURIComponent(id)}`,
+    content: `Status: {% badge variant="info" %}draft{% /badge %}\n\n{% figure src="asset:${diagramAssetName}" alt="Diagram" caption="Figure caption" /%}`,
+    resolveAsset: (name: string) => `https://placehold.co/800x360?text=${encodeURIComponent(name)}`,
   },
 };
 

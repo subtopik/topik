@@ -1,5 +1,18 @@
 export { personSchema, type Person } from "./person";
-export { assetSchema, type Asset } from "./asset";
+export {
+  assetSchema,
+  assetV1Schema,
+  GENERATED_ASSET_NAME_PATTERN,
+  hasMatchingAssetDigests,
+  isAssetBlobUri,
+  isGeneratedAssetName,
+  parseAssetBlobUri,
+  parseGeneratedAssetName,
+  type Asset,
+  type AssetBlobUri,
+  type AssetSpec,
+  type GeneratedAssetName,
+} from "./asset";
 export { guideSchema, type Guide } from "./guide";
 export {
   WIKI_EXTERNAL_HREF_PATTERN,

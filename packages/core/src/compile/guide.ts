@@ -2,15 +2,16 @@ import { readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { analyzeTopikContent, validateTopikContent } from "@topik/content-schema";
 import type { Guide } from "@topik/schema";
-import type { Resource } from "../resource";
+import type { SourceResource } from "../resource";
 import { parseCollectionConfig } from "../config/collection";
-import { extractAssets } from "./assets";
-import { readOptionalConfigFile } from "./config";
+import { compileAssetResources, type AssetCompilationOptions } from "./assets";
+import { readOptionalConfigFileWithPath } from "./config";
 import {
   FileNotRegularError,
   FileOutsideCompilationRootError,
   readRegularFileWithinRoot,
 } from "./files";
+import { PublicCompileError } from "./public-errors";
 import {
   extractMarkdownTitle,
   linkValidationPolicy,
@@ -25,6 +26,14 @@ import { validateLocalFragments } from "./links";
 export interface CompileGuidesOptions {
   dir: string;
   validation?: CompileValidationOptions;
+  assets?: AssetCompilationOptions;
+}
+
+export interface CompileResourceDiscovery {
+  diagnostics: CompileResult["diagnostics"];
+  resources: SourceResource[];
+  sourcePathsByResource: Record<string, string>;
+  consumedSourcePaths: string[];
 }
 
 export async function compileGuides(options: CompileGuidesOptions): Promise<CompileResult> {
@@ -34,25 +43,45 @@ export async function compileGuides(options: CompileGuidesOptions): Promise<Comp
 }
 
 export async function inspectGuides(options: CompileGuidesOptions): Promise<CompileResult> {
+  const discovered = await discoverGuides(options);
+  const compiled = await compileAssetResources({
+    rootDir: resolve(options.dir),
+    resources: discovered.resources,
+    sourcePathsByResource: discovered.sourcePathsByResource,
+    protectedSourcePaths: discovered.consumedSourcePaths,
+    ...options.assets,
+  });
+  return { diagnostics: discovered.diagnostics, ...compiled };
+}
+
+/** @internal Discovery phase used by the mixed top-level compiler. */
+export async function discoverGuides(
+  options: CompileGuidesOptions,
+): Promise<CompileResourceDiscovery> {
   const dir = resolve(options.dir);
 
-  const raw = await readOptionalConfigFile(dir, [
+  const loadedConfig = await readOptionalConfigFileWithPath(dir, [
     "collection.yaml",
     "collection.yml",
     "collection.json",
   ]);
-  if (raw == null) {
-    return { diagnostics: [], resources: [] };
+  if (loadedConfig == null) {
+    return { diagnostics: [], resources: [], sourcePathsByResource: {}, consumedSourcePaths: [] };
   }
 
-  const config = parseCollectionConfig(raw);
+  let config;
+  try {
+    config = parseCollectionConfig(loadedConfig.value);
+  } catch {
+    throw new PublicCompileError("config-invalid", loadedConfig.path);
+  }
 
   const files = await readdir(dir);
   const markdownFiles = files.filter((f) => f.endsWith(".md") || f.endsWith(".mdx")).sort();
 
-  const resources: Resource[] = [];
+  const resources: SourceResource[] = [];
   const diagnostics: CompileResult["diagnostics"] = [];
-  const assetsById = new Map<string, (typeof resources)[number]>();
+  const sourcePathsByResource: Record<string, string> = {};
 
   for (const file of markdownFiles) {
     const filePath = join(dir, file);
@@ -67,7 +96,7 @@ export async function inspectGuides(options: CompileGuidesOptions): Promise<Comp
           level: "error",
           message: "Guide files must resolve within the compilation directory",
           lines: [],
-          file: filePath,
+          file,
         });
         continue;
       }
@@ -78,42 +107,28 @@ export async function inspectGuides(options: CompileGuidesOptions): Promise<Comp
           level: "error",
           message: "Guide entries must be regular files",
           lines: [],
-          file: filePath,
+          file,
         });
         continue;
       }
       throw error;
     }
     const { frontmatter, content } = parseMarkdownFrontmatter(rawContent, file);
-    const validation = validateTopikContent(content, { file: filePath });
+    const validation = validateTopikContent(content, { file });
     diagnostics.push(...validation.errors);
     if (!validation.valid) continue;
-    const {
-      content: rewritten,
-      assets,
-      manifest,
-    } = await extractAssets(content, {
-      baseDir: dir,
-      filePath,
-    });
-    for (const asset of assets) {
-      if (!assetsById.has(asset.name)) {
-        assetsById.set(asset.name, asset);
-      }
-    }
-
     const slug = fileToSlug(file);
     const name = `${config.id}-${slug}`;
     const title =
       typeof frontmatter.title === "string"
         ? frontmatter.title
-        : extractMarkdownTitle(rewritten, slug);
+        : extractMarkdownTitle(content, slug);
 
     const tags = mergeTags(config.tags, frontmatter.tags);
     const authors = parseReferenceList(frontmatter.authors, "authors", file);
     const description =
       typeof frontmatter.description === "string" ? frontmatter.description : undefined;
-    const analysis = analyzeTopikContent(rewritten, { file: filePath });
+    const analysis = analyzeTopikContent(content, { file });
     diagnostics.push(...analysis.diagnostics);
     diagnostics.push(...validateLocalFragments(analysis, linkValidationPolicy(options.validation)));
 
@@ -129,20 +144,21 @@ export async function inspectGuides(options: CompileGuidesOptions): Promise<Comp
         ...(tags.length > 0 ? { tags } : {}),
         content: {
           format: "topik",
-          value: rewritten,
+          value: content,
         },
-        ...(manifest.length > 0 ? { assets: manifest } : {}),
       },
     };
 
     resources.push(guide);
+    sourcePathsByResource[`Guide/${guide.name}`] = file;
   }
 
-  for (const asset of assetsById.values()) {
-    resources.push(asset);
-  }
-
-  return { diagnostics, resources };
+  return {
+    diagnostics,
+    resources,
+    sourcePathsByResource,
+    consumedSourcePaths: [loadedConfig.path],
+  };
 }
 
 function fileToSlug(filename: string): string {

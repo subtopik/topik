@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
-import { join, resolve } from "node:path";
-import { analyzeTopikContent, validateTopikContent } from "@topik/content-schema";
+import { join, posix, resolve } from "node:path";
+import {
+  analyzeTopikContent,
+  validateTopikAssetReference,
+  validateTopikContent,
+  type TopikContentLink,
+} from "@topik/content-schema";
 import {
   joinWikiPath,
   type Wiki,
@@ -10,11 +15,15 @@ import {
   type WikiPage,
   type WikiSidebarNavNode,
 } from "@topik/schema";
-import type { Resource } from "../resource";
+import type { SourceResource } from "../resource";
 import { parseWikiConfig, WIKI_PAGE_NAME_HASH_LENGTH, type WikiNavNode } from "../config/wiki";
-import { extractAssets } from "./assets";
-import { readOptionalConfigFile } from "./config";
+import { compileAssetResources, type AssetCompilationOptions } from "./assets";
+import type { CompileResourceDiscovery } from "./guide";
+import { readOptionalConfigFileWithPath } from "./config";
 import { readRegularFileWithinRoot } from "./files";
+import { PublicCompileError } from "./public-errors";
+import { classifyPortableNavigationPath, readPortableAssetFile } from "../assets/files";
+import { validateTopikPath } from "../assets/path";
 import {
   extractMarkdownTitle,
   hasCompileErrors,
@@ -29,6 +38,7 @@ import { validateWikiLinks, type WikiPageLinkAnalysis } from "./links";
 export interface CompileWikiOptions {
   dir: string;
   validation?: CompileValidationOptions;
+  assets?: AssetCompilationOptions;
 }
 
 export async function compileWiki(options: CompileWikiOptions): Promise<CompileResult> {
@@ -38,49 +48,59 @@ export async function compileWiki(options: CompileWikiOptions): Promise<CompileR
 }
 
 export async function inspectWiki(options: CompileWikiOptions): Promise<CompileResult> {
+  const discovered = await discoverWiki(options);
+  const compiled = await compileAssetResources({
+    rootDir: resolve(options.dir),
+    resources: discovered.resources,
+    sourcePathsByResource: discovered.sourcePathsByResource,
+    protectedSourcePaths: discovered.consumedSourcePaths,
+    ...options.assets,
+  });
+  return { diagnostics: discovered.diagnostics, ...compiled };
+}
+
+/** @internal Discovery phase used by the mixed top-level compiler. */
+export async function discoverWiki(options: CompileWikiOptions): Promise<CompileResourceDiscovery> {
   const dir = resolve(options.dir);
 
-  const raw = await readOptionalConfigFile(dir, ["wiki.yaml", "wiki.yml", "wiki.json"]);
-  if (raw == null) {
-    return { diagnostics: [], resources: [] };
+  const loadedConfig = await readOptionalConfigFileWithPath(dir, [
+    "wiki.yaml",
+    "wiki.yml",
+    "wiki.json",
+  ]);
+  if (loadedConfig == null) {
+    return { diagnostics: [], resources: [], sourcePathsByResource: {}, consumedSourcePaths: [] };
   }
 
-  const config = parseWikiConfig(raw);
+  let config;
+  try {
+    config = parseWikiConfig(loadedConfig.value);
+  } catch {
+    throw new PublicCompileError("config-invalid", loadedConfig.path);
+  }
   const pagePaths = config.navigation ? [...new Set(collectPagePaths(config.navigation))] : [];
   const resolvedFiles = await Promise.all(pagePaths.map((pagePath) => readPageFile(dir, pagePath)));
 
-  const resources: Resource[] = [];
+  const resources: SourceResource[] = [];
   const diagnostics: CompileResult["diagnostics"] = [];
   const pageAnalyses: WikiPageLinkAnalysis[] = [];
-  const assetsById = new Map<string, (typeof resources)[number]>();
+  const sourcePathsByResource: Record<string, string> = {};
 
   for (let i = 0; i < pagePaths.length; i++) {
     const pagePath = pagePaths[i];
     const { filePath, raw } = resolvedFiles[i];
+    const sourcePath = `${pagePath}${filePath.endsWith(".mdx") ? ".mdx" : ".md"}`;
     const { frontmatter, content } = parseMarkdownFrontmatter(raw, pagePath);
-    const validation = validateTopikContent(content, { file: filePath });
+    const validation = validateTopikContent(content, { file: sourcePath });
     diagnostics.push(...validation.errors);
     if (!validation.valid) continue;
-    const {
-      content: rewritten,
-      assets,
-      manifest,
-    } = await extractAssets(content, {
-      baseDir: dir,
-      filePath,
-    });
-    for (const asset of assets) {
-      if (!assetsById.has(asset.name)) {
-        assetsById.set(asset.name, asset);
-      }
-    }
     const name = pagePathToName(config.id, pagePath);
     const title =
       typeof frontmatter.title === "string"
         ? frontmatter.title
-        : extractMarkdownTitle(rewritten, pagePathToTitleFallback(pagePath));
+        : extractMarkdownTitle(content, pagePathToTitleFallback(pagePath));
     const description = normalizeWikiPageDescription(frontmatter.description);
-    const analysis = analyzeTopikContent(rewritten, { file: filePath });
+    const analysis = analyzeTopikContent(content, { file: sourcePath });
     diagnostics.push(...analysis.diagnostics);
     pageAnalyses.push({ analysis, slug: pagePathToSlug(pagePath), sourcePath: pagePath });
 
@@ -94,17 +114,13 @@ export async function inspectWiki(options: CompileWikiOptions): Promise<CompileR
         ...(description != null ? { description } : {}),
         content: {
           format: "topik",
-          value: rewritten,
+          value: content,
         },
-        ...(manifest.length > 0 ? { assets: manifest } : {}),
       },
     };
 
     resources.push(pageResource);
-  }
-
-  for (const asset of assetsById.values()) {
-    resources.push(asset);
+    sourcePathsByResource[`WikiPage/${pageResource.name}`] = sourcePath;
   }
 
   const wikiResource: Wiki = {
@@ -124,10 +140,53 @@ export async function inspectWiki(options: CompileWikiOptions): Promise<CompileR
   resources.push(wikiResource);
 
   if (!hasCompileErrors(diagnostics)) {
-    diagnostics.push(...validateWikiLinks(pageAnalyses, linkValidationPolicy(options.validation)));
+    const nonPageLinks = await classifyWikiNonPageLinks(dir, pageAnalyses);
+    diagnostics.push(
+      ...validateWikiLinks(pageAnalyses, linkValidationPolicy(options.validation), nonPageLinks),
+    );
   }
 
-  return { diagnostics, resources };
+  return {
+    diagnostics,
+    resources,
+    sourcePathsByResource,
+    consumedSourcePaths: [loadedConfig.path],
+  };
+}
+
+async function classifyWikiNonPageLinks(
+  root: string,
+  pages: readonly WikiPageLinkAnalysis[],
+): Promise<ReadonlySet<TopikContentLink>> {
+  const nonPageLinks = new Set<TopikContentLink>();
+  const existingByPath = new Map<string, boolean>();
+  for (const page of pages) {
+    for (const link of page.analysis.links) {
+      if (link.kind !== "link") continue;
+      const reference = validateTopikAssetReference(link.href);
+      if (!reference.valid || reference.kind !== "local") continue;
+      const path = validateTopikPath(
+        posix.join(posix.dirname(page.sourcePath), reference.decodedPath),
+      );
+      if (!path.ok) continue;
+
+      let existing = existingByPath.get(path.value.path);
+      if (existing === undefined) {
+        const kind = await classifyPortableNavigationPath({ root, path: path.value.path });
+        if (kind === "directory") {
+          existing = true;
+        } else {
+          const proof = await readPortableAssetFile({ root, path: path.value.path });
+          existing =
+            proof.ok ||
+            proof.diagnostics.some((diagnostic) => diagnostic.id !== "TOPIK_ASSET_FILE_MISSING");
+        }
+        existingByPath.set(path.value.path, existing);
+      }
+      if (existing) nonPageLinks.add(link);
+    }
+  }
+  return nonPageLinks;
 }
 
 // Keep compiled WikiPage spec.description within wikiPageSchema's 1024-character limit.
@@ -163,7 +222,7 @@ async function readPageFile(
       throw error;
     }
   }
-  throw new Error(`Page not found: ${pagePath} (tried .md and .mdx in ${dir})`);
+  throw new PublicCompileError("wiki-page-not-found");
 }
 
 function pagePathToSlug(pagePath: string): string {

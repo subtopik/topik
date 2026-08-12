@@ -27,9 +27,10 @@ describe("compile config helpers", () => {
   test("surfaces parse failures with file context", async () => {
     await writeFile(join(dir, "wiki.yaml"), "id: docs\ntitle: [broken\n");
 
-    await expect(readConfigFile(dir, ["wiki.yaml"])).rejects.toThrow(
-      `Failed to parse config file ${join(dir, "wiki.yaml")}`,
-    );
+    await expect(readConfigFile(dir, ["wiki.yaml"])).rejects.toMatchObject({
+      id: "config-parse-failed",
+      location: "wiki.yaml",
+    });
   });
 
   test("returns the first accessible config candidate", async () => {
@@ -50,12 +51,14 @@ describe("compile config helpers", () => {
       await writeFile(join(external, "secret.yaml"), "id: secret\ntitle: Secret\n");
       await symlink(join(external, "secret.yaml"), join(dir, "wiki.yaml"));
 
-      await expect(readConfigFile(dir, ["wiki.yaml"])).rejects.toThrow(
-        /outside the compilation directory/,
-      );
-      await expect(findConfigFile(dir, ["wiki.yaml"])).rejects.toThrow(
-        /outside the compilation directory/,
-      );
+      await expect(readConfigFile(dir, ["wiki.yaml"])).rejects.toMatchObject({
+        id: "config-read-failed",
+        location: "wiki.yaml",
+      });
+      await expect(findConfigFile(dir, ["wiki.yaml"])).rejects.toMatchObject({
+        id: "config-access-failed",
+        location: "wiki.yaml",
+      });
     } finally {
       await rm(external, { recursive: true, force: true });
     }

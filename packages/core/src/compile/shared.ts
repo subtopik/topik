@@ -1,10 +1,17 @@
-import type { TopikContentDiagnostic } from "@topik/content-schema";
+import { sanitizeTopikContentDiagnostic, type TopikContentDiagnostic } from "@topik/content-schema";
+import { isAbsolute, win32 } from "node:path";
 import { parse as parseYaml } from "yaml";
 import type { Resource } from "../resource";
+import type { TopikAssetSemanticRecordV1, TopikMaterializationRecordV1 } from "../assets/identity";
+import type { AssetPayload } from "./assets";
+import { PublicCompileError } from "./public-errors";
 
 export interface CompileResult {
   diagnostics: TopikContentDiagnostic[];
   resources: Resource[];
+  payloads: AssetPayload[];
+  semantic: TopikAssetSemanticRecordV1;
+  materialization: TopikMaterializationRecordV1;
 }
 
 export type LinkValidationPolicy = "error" | "warning" | "off";
@@ -15,9 +22,13 @@ export interface CompileValidationOptions {
 }
 
 export class CompileError extends Error {
-  constructor(public readonly diagnostics: TopikContentDiagnostic[]) {
-    super(formatContentDiagnostics(diagnostics));
+  public readonly diagnostics: TopikContentDiagnostic[];
+
+  constructor(diagnostics: TopikContentDiagnostic[]) {
+    const sanitized = diagnostics.map(sanitizeContentDiagnostic);
+    super(formatContentDiagnostics(sanitized));
     this.name = "CompileError";
+    this.diagnostics = sanitized;
   }
 }
 
@@ -65,9 +76,8 @@ export function parseMarkdownFrontmatter(
       throw new Error("Frontmatter title must be a string");
     }
     return { frontmatter, content: match[2] };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Invalid frontmatter in ${filePath}: ${message}`, { cause: error });
+  } catch {
+    throw new PublicCompileError("frontmatter-invalid", filePath);
   }
 }
 
@@ -86,31 +96,44 @@ export function formatContentDiagnostics(diagnostics: TopikContentDiagnostic[]):
   return diagnostics
     .filter(isErrorDiagnostic)
     .map((diagnostic) => {
-      const file = diagnostic.file ?? "content";
+      const file = sanitizeDiagnosticFile(diagnostic.file);
       const location = diagnostic.lines.length > 0 ? `:${diagnostic.lines.join(",")}` : "";
       return `${file}${location} ${diagnostic.level} ${diagnostic.id}: ${diagnostic.message}`;
     })
     .join("\n");
 }
 
+function sanitizeContentDiagnostic(diagnostic: TopikContentDiagnostic): TopikContentDiagnostic {
+  const file = sanitizeDiagnosticFile(diagnostic.file);
+  return sanitizeTopikContentDiagnostic(
+    diagnostic.file === undefined ? diagnostic : { ...diagnostic, file },
+  );
+}
+
+function sanitizeDiagnosticFile(file: string | undefined): string {
+  if (file === undefined) return "content";
+  if (!isAbsolute(file) && !win32.isAbsolute(file)) return file;
+  return file.replaceAll("\\", "/").split("/").at(-1) || "content";
+}
+
 export function parseReferenceList(
   value: unknown,
-  fieldName: string,
+  _fieldName: string,
   filePath: string,
 ): string[] | undefined {
   if (value == null) {
     return undefined;
   }
   if (!Array.isArray(value)) {
-    throw new Error(`${fieldName} in ${filePath} must be an array of resource names`);
+    throw new PublicCompileError("reference-list-invalid", filePath);
   }
 
-  const references = value.map((entry, index) => {
+  const references = value.map((entry) => {
     if (typeof entry !== "string") {
-      throw new Error(`${fieldName}[${index}] in ${filePath} must be a string`);
+      throw new PublicCompileError("reference-list-invalid", filePath);
     }
     if (entry.length > 63 || !DNS_LABEL_PATTERN.test(entry)) {
-      throw new Error(`${fieldName}[${index}] in ${filePath} must be a DNS-1123 resource name`);
+      throw new PublicCompileError("reference-list-invalid", filePath);
     }
     return entry;
   });

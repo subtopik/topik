@@ -1,0 +1,8 @@
+apiVersion: v1
+type: Asset
+name: manual
+spec:
+  uri: blobs/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  integrity: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  size: 48123
+  mediaType: application/pdf

@@ -1,5 +1,5 @@
 import type { Schema } from "@markdoc/markdoc";
-import { validateTopikHref } from "../links";
+import { validateTopikNavigationHref } from "../links";
 import { FLOW_CHILDREN, validateNumericRange, validateOnlyDirectTagChildren } from "./helpers";
 
 export const cardGridTag: Schema = {
@@ -16,7 +16,7 @@ export const cardTag: Schema = {
   children: [...FLOW_CHILDREN],
   attributes: {
     title: { type: String, required: true },
-    href: { type: String, validate: validateTopikHref },
+    href: { type: String, validate: validateTopikNavigationHref },
     icon: { type: String },
   },
 };

@@ -1,5 +1,21 @@
 export { topikMarkdocConfig } from "./config";
 export {
+  TOPIK_ASSET_REFERENCE_VERSION,
+  TOPIK_GENERATED_ASSET_NAME_PATTERN,
+  extractTopikAssetOccurrences,
+  removeInvalidTopikAssetReferences,
+  rewriteTopikAssetOccurrences,
+  topikAssetReferenceSlots,
+  validateTopikAssetReference,
+  type ExtractTopikAssetOccurrencesOptions,
+  type TopikAssetOccurrence,
+  type TopikAssetOccurrenceKind,
+  type TopikAssetOccurrenceSemantics,
+  type TopikAssetReferenceSlot,
+  type TopikAssetReferenceValidation,
+  type TopikGeneratedAssetName,
+} from "./asset-references";
+export {
   formatTopikContent,
   parseTopikContent,
   type ParseTopikContentOptions,
@@ -8,6 +24,8 @@ export {
 export { assignTopikHeadingIds, type TopikHeading } from "./headings";
 export {
   analyzeTopikContent,
+  removeInvalidTopikNavigationReferences,
+  validateTopikNavigationHref,
   validateTopikHref,
   type AnalyzeTopikContentOptions,
   type AnalyzeTopikContentResult,
@@ -22,12 +40,16 @@ export {
   TOPIK_CONTENT_SCHEMA_VERSION,
   topikComponents,
   type TopikAttributeType,
+  type TopikAssetReferenceDefinition,
+  type TopikAssetReferenceRole,
   type TopikComponentAttributeDefinition,
   type TopikComponentDefinition,
   type TopikComponentKind,
   type TopikComponentName,
 } from "./components";
 export {
+  sanitizeTopikContentDiagnostic,
+  topikLinkDiagnosticMessage,
   toTopikContentDiagnostic,
   type TopikContentDiagnostic,
   type TopikContentDiagnosticLevel,

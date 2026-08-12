@@ -3,34 +3,30 @@ import { extname, join, resolve } from "node:path";
 import { command, positional } from "@drizzle-team/brocli";
 import { validateResources } from "@topik/core";
 import { parseAllDocuments } from "yaml";
-import { CliError } from "../errors";
-import { formatValidationFailure } from "../validation-output";
+import { PublicCliError } from "../errors";
 
-function parseJson(path: string, content: string): unknown {
+function parseJson(content: string): unknown {
   try {
     return JSON.parse(content);
-  } catch (error) {
-    throw new CliError(`Failed to parse JSON resource file ${path}`, { cause: error });
+  } catch {
+    throw new PublicCliError("resource-json-invalid");
   }
 }
 
-function parseJsonl(path: string, content: string): unknown[] {
+function parseJsonl(content: string): unknown[] {
   return content
     .split("\n")
-    .map((line, index) => ({ line, index: index + 1 }))
-    .filter(({ line }) => line.trim().length > 0)
-    .map(({ line, index }) => {
+    .filter((line) => line.trim().length > 0)
+    .map((line) => {
       try {
         return JSON.parse(line);
-      } catch (error) {
-        throw new CliError(`Failed to parse JSONL resource file ${path} at line ${index}`, {
-          cause: error,
-        });
+      } catch {
+        throw new PublicCliError("resource-jsonl-invalid");
       }
     });
 }
 
-function parseYaml(path: string, content: string): unknown[] {
+function parseYaml(content: string): unknown[] {
   try {
     return parseAllDocuments(content)
       .filter((document) => document.contents !== null)
@@ -40,38 +36,42 @@ function parseYaml(path: string, content: string): unknown[] {
         }
         return document.toJS();
       });
-  } catch (error) {
-    throw new CliError(`Failed to parse YAML resource file ${path}`, { cause: error });
+  } catch {
+    throw new PublicCliError("resource-yaml-invalid");
   }
 }
 
 async function readResourceFile(path: string): Promise<unknown[]> {
-  const content = await readFile(path, "utf-8");
+  const content = await readFile(path, "utf-8").catch(() => {
+    throw new PublicCliError("resource-read-failed");
+  });
   const extension = extname(path).toLowerCase();
 
   switch (extension) {
     case ".json":
-      return [parseJson(path, content)];
+      return [parseJson(content)];
     case ".jsonl":
-      return parseJsonl(path, content);
+      return parseJsonl(content);
     case ".yaml":
     case ".yml":
-      return parseYaml(path, content);
+      return parseYaml(content);
     default:
-      throw new CliError(`Unsupported resource file format for ${path}`);
+      throw new PublicCliError("resource-format-unsupported");
   }
 }
 
 export async function loadResources(path: string): Promise<unknown[]> {
-  const info = await stat(path).catch((error) => {
-    throw new CliError(`Failed to access ${path}`, { cause: error });
+  const info = await stat(path).catch(() => {
+    throw new PublicCliError("resource-access-failed");
   });
 
   if (info.isFile()) {
     return readResourceFile(path);
   }
 
-  const entries = await readdir(path, { withFileTypes: true, recursive: true });
+  const entries = await readdir(path, { withFileTypes: true, recursive: true }).catch(() => {
+    throw new PublicCliError("resource-read-failed");
+  });
   const resourceFiles = entries.filter((entry) => {
     if (!entry.isFile()) {
       return false;
@@ -108,12 +108,12 @@ export const validate = command({
       return;
     }
 
-    const { valid, errors } = validateResources(resources);
+    const { valid } = validateResources(resources);
 
     if (valid) {
       console.log(`Validated ${resources.length} resources`);
     } else {
-      throw new CliError(formatValidationFailure(errors, resources.length, "validating resources"));
+      throw new PublicCliError("resource-validation-failed");
     }
   },
 });

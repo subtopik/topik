@@ -6,6 +6,7 @@ export {
   type CompileTopikContentOptions,
   type RenderTopikContentOptions,
   type RenderTopikMarkdownOptions,
+  type TopikAssetResolutionDiagnostic,
 } from "./core/render";
 export {
   TopikContentProvider,
@@ -19,8 +20,8 @@ export {
 export {
   getTopikComponents,
   topikComponentNames,
-  type TopikAssetResolver,
   type TopikColorScheme,
+  type TopikAssetResolver,
   type TopikComponentMap,
   type TopikComponentName,
   type TopikComponentOverrides,

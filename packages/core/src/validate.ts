@@ -1,19 +1,36 @@
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
-import { assetSchema, guideSchema, wikiSchema, wikiPageSchema } from "@topik/schema";
-import type { ResourceType } from "./resource";
+import {
+  courseModuleSchema,
+  coursePageSchema,
+  courseSchema,
+  guideSchema,
+  personSchema,
+  wikiPageSchema,
+  wikiSchema,
+} from "@topik/schema";
+import { validateAssetValue } from "./assets/asset";
+import type { TopikAssetDiagnosticId } from "./assets/diagnostics";
 
-const ajv = new Ajv2020({ strict: true, discriminator: true });
+const ajv = new Ajv2020({ strict: true, discriminator: true, ownProperties: true });
 addFormats(ajv);
 
-const validators: Record<ResourceType, ReturnType<typeof ajv.compile>> = {
-  Asset: ajv.compile(assetSchema),
-  Guide: ajv.compile(guideSchema),
-  Wiki: ajv.compile(wikiSchema),
-  WikiPage: ajv.compile(wikiPageSchema),
-};
+const validators = new Map<string, ReturnType<typeof ajv.compile>>([
+  ["Course/v1", ajv.compile(courseSchema)],
+  ["CourseModule/v1", ajv.compile(courseModuleSchema)],
+  ["CoursePage/v1", ajv.compile(coursePageSchema)],
+  ["Guide/v1", ajv.compile(guideSchema)],
+  ["Person/v1", ajv.compile(personSchema)],
+  ["Wiki/v1", ajv.compile(wikiSchema)],
+  ["WikiPage/v1", ajv.compile(wikiPageSchema)],
+]);
 
 export interface ValidationError {
+  id?:
+    | "resource-invalid"
+    | "resource-unsupported-type"
+    | "resource-unsupported-version"
+    | TopikAssetDiagnosticId;
   resource: string;
   path: string;
   message: string;
@@ -29,8 +46,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function getResourceLabel(resource: Record<string, unknown>): string {
-  const type = typeof resource.type === "string" ? resource.type : "unknown";
-  const name = typeof resource.name === "string" ? resource.name : "unknown";
+  const type =
+    Object.hasOwn(resource, "type") && typeof resource.type === "string"
+      ? resource.type
+      : "unknown";
+  const name =
+    Object.hasOwn(resource, "name") && typeof resource.name === "string"
+      ? resource.name
+      : "unknown";
   return `${type}/${name}`;
 }
 
@@ -48,7 +71,7 @@ export function validateResources(resources: readonly unknown[]): ValidationResu
       continue;
     }
 
-    if (typeof resource.type !== "string") {
+    if (!Object.hasOwn(resource, "type") || typeof resource.type !== "string") {
       errors.push({
         resource: getResourceLabel(resource),
         path: "/type",
@@ -57,12 +80,56 @@ export function validateResources(resources: readonly unknown[]): ValidationResu
       continue;
     }
 
-    const validate = validators[resource.type as ResourceType];
-    if (!validate) {
+    const supportedType = [
+      "Asset",
+      "Course",
+      "CourseModule",
+      "CoursePage",
+      "Guide",
+      "Person",
+      "Wiki",
+      "WikiPage",
+    ].includes(resource.type);
+    if (!supportedType) {
       errors.push({
         resource: getResourceLabel(resource),
         path: "/type",
         message: `Unsupported resource type: ${resource.type}`,
+      });
+      continue;
+    }
+
+    if (!Object.hasOwn(resource, "apiVersion") || typeof resource.apiVersion !== "string") {
+      errors.push({
+        resource: getResourceLabel(resource),
+        path: "/apiVersion",
+        message: "Resource apiVersion must be a string",
+      });
+      continue;
+    }
+
+    if (resource.type === "Asset") {
+      const validation = validateAssetValue(resource);
+      if (!validation.ok) {
+        for (const diagnostic of validation.diagnostics) {
+          errors.push({
+            id: diagnostic.id,
+            resource: getResourceLabel(resource),
+            path: diagnostic.location.jsonPointer ?? "/",
+            message: diagnostic.message,
+          });
+        }
+      }
+      continue;
+    }
+
+    const validate = validators.get(`${resource.type}/${resource.apiVersion}`);
+    if (!validate) {
+      errors.push({
+        id: "resource-unsupported-version",
+        resource: getResourceLabel(resource),
+        path: "/apiVersion",
+        message: `Unsupported ${resource.type} apiVersion: ${resource.apiVersion}`,
       });
       continue;
     }

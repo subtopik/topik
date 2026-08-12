@@ -1,113 +1,139 @@
-import { constants } from "node:fs";
-import { open, realpath } from "node:fs/promises";
-import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { writeFile } from "node:fs/promises";
 import type { AstroIntegration } from "astro";
+import {
+  assertTopikAssetLoaders,
+  collectTopikAssetPayloads,
+  collectTopikAssetUrls,
+  findTopikAssetPayload,
+  refreshTopikAssetSnapshots,
+  type TopikAssetLoader,
+} from "./assets";
+import { publishDigestSnapshot, removeDigestSnapshot } from "./publication";
 
-const SAFE_READ_FLAGS =
-  constants.O_RDONLY |
-  (typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0) |
-  (typeof constants.O_NONBLOCK === "number" ? constants.O_NONBLOCK : 0);
+export type { TopikAssetLoader } from "./assets";
 
 export interface TopikOptions {
-  /** Directories containing topik content (guides, wikis). */
-  dirs: string[];
+  /** Topik Guide/Wiki loaders whose complete compiler snapshot is delivered. */
+  loaders: readonly TopikAssetLoader[];
 }
 
-const ASSET_EXTENSIONS = new Set([
-  ".png",
-  ".jpg",
-  ".jpeg",
-  ".gif",
-  ".svg",
-  ".webp",
-  ".avif",
-  ".ico",
-  ".mp4",
-  ".webm",
-]);
+const PAYLOAD_PATH_PATTERN = /^\/blobs\/[0-9a-f]{64}$/u;
+const PAYLOAD_RELATIVE_PATTERN = /^blobs\/[0-9a-f]{64}$/u;
+const VIRTUAL_SNAPSHOT_ID = "virtual:@topik/astro/asset-snapshot";
+const RESOLVED_VIRTUAL_SNAPSHOT_ID = `\0${VIRTUAL_SNAPSHOT_ID}`;
 
 export function topik(options: TopikOptions): AstroIntegration {
-  const resolvedDirs = options.dirs.map((d) => resolve(d));
+  assertTopikAssetLoaders(options.loaders);
+  const loaders = [...options.loaders];
 
   return {
     name: "@topik/astro",
     hooks: {
+      "astro:config:setup": async ({
+        addMiddleware,
+        command,
+        config,
+        createCodegenDir,
+        updateConfig,
+      }) => {
+        if (command === "build") {
+          await removePublishedSnapshot(
+            config.output === "server" ? config.build.client : config.outDir,
+          );
+        }
+        const codegenDir = createCodegenDir();
+        const middleware = new URL("topik-asset-middleware.mjs", codegenDir);
+        await writeFile(middleware, productionMiddlewareSource(), { encoding: "utf8" });
+        addMiddleware({ entrypoint: middleware, order: "pre" });
+        updateConfig({ vite: { plugins: [snapshotPlugin(loaders)] } });
+      },
+      "astro:build:start": async () => {
+        await refreshTopikAssetSnapshots(loaders);
+      },
+      "astro:build:done": async ({ dir }) => {
+        await publishStaticSnapshot(loaders, dir);
+      },
       "astro:server:setup": ({ server }) => {
         server.middlewares.use((req, res, next) => {
-          if (!req.url) return next();
+          if (req.method !== "GET" && req.method !== "HEAD") return next();
+          if (req.url === undefined) return next();
+          const queryOffset = req.url.indexOf("?");
+          const pathname = queryOffset === -1 ? req.url : req.url.slice(0, queryOffset);
+          if (!PAYLOAD_PATH_PATTERN.test(pathname)) return next();
 
-          const url = new URL(req.url, "http://localhost");
-          const ext = extname(url.pathname);
-          if (!ASSET_EXTENSIONS.has(ext)) return next();
-
-          void readAsset(resolvedDirs, url.pathname)
-            .then((data) => {
-              if (data === undefined) {
-                next();
-                return;
-              }
-
-              res.setHeader("Content-Type", mimeType(ext));
-              res.end(data);
-            })
-            .catch(() => next());
+          const payload = findTopikAssetPayload(loaders, pathname.slice(1));
+          if (payload === undefined) return next();
+          res.setHeader("Content-Type", payload.mediaType);
+          res.setHeader("Content-Length", String(payload.size));
+          res.setHeader("X-Content-Type-Options", "nosniff");
+          res.end(req.method === "HEAD" ? undefined : Buffer.from(payload.bytes));
         });
       },
     },
   };
 }
 
-async function readAsset(dirs: string[], urlPath: string): Promise<Buffer | undefined> {
-  for (const dir of dirs) {
-    // Assets are referenced relative to their content dir,
-    // e.g. /images/screenshot.png -> <dir>/images/screenshot.png
-    const filePath = resolve(join(dir, urlPath));
-
-    // Reject lexical traversal before resolving any symlinks.
-    if (!isWithin(dir, filePath)) continue;
-
-    try {
-      const [canonicalDir, canonicalFile] = await Promise.all([realpath(dir), realpath(filePath)]);
-      if (!isWithin(canonicalDir, canonicalFile)) continue;
-
-      // Verify and read through one handle; O_NOFOLLOW additionally hardens the
-      // final component on platforms that expose it.
-      const file = await open(canonicalFile, SAFE_READ_FLAGS);
-      try {
-        const stat = await file.stat();
-        if (!stat.isFile()) continue;
-        return await file.readFile();
-      } finally {
-        await file.close();
-      }
-    } catch {
-      // Try the next configured content directory.
-    }
-  }
-
-  return undefined;
+function snapshotPlugin(loaders: readonly TopikAssetLoader[]) {
+  return {
+    name: "@topik/astro:asset-snapshot",
+    resolveId(id: string) {
+      return id === VIRTUAL_SNAPSHOT_ID ? RESOLVED_VIRTUAL_SNAPSHOT_ID : undefined;
+    },
+    load(id: string) {
+      if (id !== RESOLVED_VIRTUAL_SNAPSHOT_ID) return undefined;
+      const records = collectTopikAssetPayloads(loaders).map((payload) => [
+        `/${payload.path}`,
+        payload.mediaType,
+        payload.size,
+        Buffer.from(payload.bytes).toString("base64"),
+      ]);
+      const urls = [...collectTopikAssetUrls(loaders)];
+      return `const decode = (value) => Uint8Array.from(atob(value), (character) => character.charCodeAt(0));\nexport const topikAssetPayloads = new Map(${JSON.stringify(records)}.map(([path, mediaType, size, bytes]) => [path, { bytes: decode(bytes), mediaType, size }]));\nexport const topikAssetUrls = new Map(${JSON.stringify(urls)});\n`;
+    },
+  };
 }
 
-function isWithin(dir: string, filePath: string): boolean {
-  const pathFromDir = relative(dir, filePath);
-  return (
-    pathFromDir === "" ||
-    (pathFromDir !== ".." && !pathFromDir.startsWith(`..${sep}`) && !isAbsolute(pathFromDir))
+function productionMiddlewareSource(): string {
+  return `import { topikAssetPayloads, topikAssetUrls } from ${JSON.stringify(VIRTUAL_SNAPSHOT_ID)};
+globalThis[Symbol.for("@topik/astro/runtime-asset-urls")] = topikAssetUrls;
+const pattern = /^\\/blobs\\/[0-9a-f]{64}$/u;
+export async function onRequest(context, next) {
+  const request = context.request;
+  if (request.method !== "GET" && request.method !== "HEAD") return next();
+  const pathname = new URL(request.url).pathname;
+  if (!pattern.test(pathname)) return next();
+  const payload = topikAssetPayloads.get(pathname);
+  if (payload === undefined) return next();
+  return new Response(request.method === "HEAD" ? null : payload.bytes, {
+    headers: {
+      "Content-Length": String(payload.size),
+      "Content-Type": payload.mediaType,
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+}
+`;
+}
+
+async function publishStaticSnapshot(
+  loaders: readonly TopikAssetLoader[],
+  outputDirectory: URL,
+): Promise<void> {
+  const payloads = collectTopikAssetPayloads(loaders);
+  await publishDigestSnapshot(
+    outputDirectory,
+    payloads.map((payload) => {
+      if (!PAYLOAD_RELATIVE_PATTERN.test(payload.path)) {
+        throw new TypeError("Topik compiler payload path is not canonical");
+      }
+      return {
+        bytes: payload.bytes,
+        digest: payload.path.slice("blobs/".length),
+      };
+    }),
   );
 }
 
-function mimeType(ext: string): string {
-  const types: Record<string, string> = {
-    ".png": "image/png",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".gif": "image/gif",
-    ".svg": "image/svg+xml",
-    ".webp": "image/webp",
-    ".avif": "image/avif",
-    ".ico": "image/x-icon",
-    ".mp4": "video/mp4",
-    ".webm": "video/webm",
-  };
-  return types[ext] ?? "application/octet-stream";
+async function removePublishedSnapshot(outputDirectory: URL): Promise<void> {
+  await removeDigestSnapshot(outputDirectory);
 }

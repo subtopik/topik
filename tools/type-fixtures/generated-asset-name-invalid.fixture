@@ -1,0 +1,21 @@
+import type { GeneratedAssetName } from "@topik/schema";
+import type { TopikGeneratedAssetName } from "@topik/content-schema";
+
+// @ts-expect-error generated names cannot be constructed from unchecked strings
+const unchecked: GeneratedAssetName =
+  "auto-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+// @ts-expect-error too short
+const shortName: GeneratedAssetName = "auto-v1-q";
+// @ts-expect-error invalid alphabet
+const alphabet: GeneratedAssetName = "auto-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0";
+// @ts-expect-error uppercase is noncanonical
+const uppercase: GeneratedAssetName =
+  "auto-v1-Aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaq";
+// @ts-expect-error prefix is versioned and exact
+const prefix: GeneratedAssetName = "asset-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+// @ts-expect-error final symbol must have zero base32 padding bits
+const suffix: GeneratedAssetName = "auto-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab";
+// @ts-expect-error the content-schema alias preserves the same opaque boundary
+const contentAlias: TopikGeneratedAssetName = "auto-v1-q";
+
+void [unchecked, shortName, alphabet, uppercase, prefix, suffix, contentAlias];

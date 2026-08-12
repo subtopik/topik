@@ -4,10 +4,15 @@ import { request } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
+import { formatPublicCliError } from "../errors";
 import { startDevServer, type StartedDevServer } from "./index";
 
 const WRITE_ORIGIN = "https://write.subtopik.com";
+const PNG_BYTES = Buffer.from(
+  "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000000500010d0a2db40000000049454e44ae426082",
+  "hex",
+);
 
 function addressOf(runningServer: StartedDevServer): AddressInfo {
   const address = runningServer.server.address();
@@ -65,7 +70,12 @@ describe("dev command", () => {
   let runningServer: StartedDevServer | undefined;
 
   async function start(options: { allowOrigin?: string } = {}): Promise<number> {
-    runningServer = await startDevServer({ dir, port: 0, ...options });
+    runningServer = await startDevServer({
+      dir,
+      port: 0,
+      sourceNamespace: "dev-test-source",
+      ...options,
+    });
     return addressOf(runningServer).port;
   }
 
@@ -76,6 +86,7 @@ describe("dev command", () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await runningServer?.close();
     runningServer = undefined;
     await rm(dir, { recursive: true, force: true });
@@ -159,11 +170,41 @@ describe("dev command", () => {
 
   test("rejects invalid browser origin configuration", async () => {
     await expect(startDevServer({ dir, port: 0, allowOrigin: "*" })).rejects.toThrow(
-      "Invalid browser origin",
+      "Browser origin configuration is invalid",
     );
     await expect(
       startDevServer({ dir, port: 0, allowOrigin: "https://write.example.com/path" }),
-    ).rejects.toThrow("Invalid browser origin");
+    ).rejects.toThrow("Browser origin configuration is invalid");
+  });
+
+  test("keeps config bytes and machine paths out of CLI dev output", async () => {
+    const sentinel = "PRIVATE_VALUE";
+    await writeFile(join(dir, "wiki.yaml"), `id: docs\ntitle: [${sentinel}\n`);
+    const logs: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((...values) => {
+      logs.push(values.map(String).join(" "));
+    });
+
+    let failure: unknown;
+    try {
+      await startDevServer({ dir, port: 0, sourceNamespace: "dev-test-source" });
+    } catch (error) {
+      failure = error;
+    }
+    const output = [formatPublicCliError(failure), ...logs].join("\n");
+    const surfaces = [
+      output,
+      String(failure),
+      failure instanceof Error ? failure.message : "",
+      JSON.stringify(failure),
+      typeof failure === "object" && failure !== null ? JSON.stringify(Object.values(failure)) : "",
+      failure instanceof Error && failure.cause instanceof Error ? String(failure.cause) : "",
+    ].join("\n");
+    expect(formatPublicCliError(failure)).toBe("Configuration file could not be parsed.");
+    expect(output).toContain("Watching content for changes...");
+    expect(surfaces).not.toContain(sentinel);
+    expect(surfaces).not.toContain(dir);
+    expect(surfaces).not.toContain(tmpdir());
   });
 
   test("handles preflight only for the trusted browser origin", async () => {
@@ -175,7 +216,7 @@ describe("dev command", () => {
     });
     expect(allowed.status).toBe(204);
     expect(allowed.headers.get("access-control-allow-origin")).toBe(WRITE_ORIGIN);
-    expect(allowed.headers.get("access-control-allow-methods")).toBe("GET, OPTIONS");
+    expect(allowed.headers.get("access-control-allow-methods")).toBe("GET, HEAD, OPTIONS");
 
     const rejected = await fetch(`http://127.0.0.1:${port}/resources`, {
       method: "OPTIONS",
@@ -251,67 +292,176 @@ describe("dev command", () => {
     expect(data.resources.find((r) => r.type === "WikiPage")?.name).toMatch(/^docs-[a-f0-9]{16}$/);
   });
 
-  test("GET /assets/:name serves compiled assets without exposing source routes", async () => {
+  test("GET and HEAD /blobs/:digest serve only shared compiler payloads", async () => {
     await rm(join(dir, "collection.yaml"));
     await rm(join(dir, "intro.md"));
     await writeFile(join(dir, "wiki.yaml"), "id: docs\ntitle: Docs\nnavigation:\n  - intro\n");
     await mkdir(join(dir, "images"), { recursive: true });
-    await writeFile(join(dir, "images", "hero.png"), "not really a png");
-    await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](./images/hero.png)\n");
+    await writeFile(join(dir, "images", "hero.png"), PNG_BYTES);
+    await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](images/hero.png)\n");
 
     const port = await start();
 
     const resources = (await (await fetch(`http://127.0.0.1:${port}/resources`)).json()) as {
-      resources: { type: string; name: string }[];
+      resources: { type: string; name: string; spec?: { uri?: string } }[];
     };
-    const asset = resources.resources.find((r) => r.type === "Asset");
-    expect(asset).toBeDefined();
+    const asset = resources.resources.find((resource) => resource.type === "Asset");
+    expect(asset?.spec?.uri).toMatch(/^blobs\/[0-9a-f]{64}$/u);
 
-    const assetRes = await fetch(`http://127.0.0.1:${port}/assets/${asset!.name}`, {
+    const assetRes = await fetch(`http://127.0.0.1:${port}/${asset?.spec?.uri}`, {
       headers: { Origin: WRITE_ORIGIN },
     });
     expect(assetRes.status).toBe(200);
     expect(assetRes.headers.get("content-type")).toBe("image/png");
+    expect(assetRes.headers.get("content-length")).toBe(String(PNG_BYTES.byteLength));
+    expect(assetRes.headers.get("x-content-type-options")).toBe("nosniff");
     expect(assetRes.headers.get("access-control-allow-origin")).toBe(WRITE_ORIGIN);
-    expect(await assetRes.text()).toBe("not really a png");
+    expect(Buffer.from(await assetRes.arrayBuffer())).toEqual(PNG_BYTES);
 
-    const rejectedAssetRes = await fetch(`http://127.0.0.1:${port}/assets/${asset!.name}`, {
+    const headRes = await fetch(`http://127.0.0.1:${port}/${asset?.spec?.uri}`, {
+      method: "HEAD",
+      headers: { Origin: WRITE_ORIGIN },
+    });
+    expect(headRes.status).toBe(200);
+    expect(headRes.headers.get("content-type")).toBe("image/png");
+    expect(headRes.headers.get("content-length")).toBe(String(PNG_BYTES.byteLength));
+    expect((await headRes.arrayBuffer()).byteLength).toBe(0);
+
+    const assetUri = asset?.spec?.uri;
+    if (assetUri === undefined) throw new Error("Compiled Asset URI is missing");
+    const digestOffset = "blobs/".length;
+    const encodedAlias = `/blobs/%${assetUri
+      .charCodeAt(digestOffset)
+      .toString(16)
+      .padStart(2, "0")}${assetUri.slice(digestOffset + 1)}`;
+    const [encodedGetAliasRes, encodedHeadAliasRes] = await Promise.all(
+      (["GET", "HEAD"] as const).map((method) =>
+        fetch(`http://127.0.0.1:${port}${encodedAlias}`, { method }),
+      ),
+    );
+    expect({ GET: encodedGetAliasRes.status, HEAD: encodedHeadAliasRes.status }).toEqual({
+      GET: 404,
+      HEAD: 404,
+    });
+
+    const digest = assetUri.slice(digestOffset);
+    const rawPaths = [
+      `/${assetUri}`,
+      `/${assetUri}?cache=off`,
+      `/blobs/../blobs/${digest}`,
+      `/blobs/%2e%2e/blobs/${digest}`,
+    ] as const;
+    const rawStatuses = Object.fromEntries(
+      await Promise.all(
+        rawPaths.map(async (path) => {
+          const [rawGet, rawHead] = await Promise.all(
+            (["GET", "HEAD"] as const).map((method) =>
+              requestServer(port, { host: `localhost:${port}`, method, path }),
+            ),
+          );
+          return [path, { GET: rawGet.status, HEAD: rawHead.status }] as const;
+        }),
+      ),
+    );
+    expect(rawStatuses).toEqual({
+      [`/${assetUri}`]: { GET: 200, HEAD: 200 },
+      [`/${assetUri}?cache=off`]: { GET: 200, HEAD: 200 },
+      [`/blobs/../blobs/${digest}`]: { GET: 404, HEAD: 404 },
+      [`/blobs/%2e%2e/blobs/${digest}`]: { GET: 404, HEAD: 404 },
+    });
+
+    const rejectedAssetRes = await fetch(`http://127.0.0.1:${port}/${asset?.spec?.uri}`, {
       headers: { Origin: "https://attacker.example" },
     });
     expect(rejectedAssetRes.status).toBe(403);
-    expect(await rejectedAssetRes.text()).not.toContain("not really a png");
 
-    const malformedAssetRes = await fetch(`http://127.0.0.1:${port}/assets/%E0%A4%A`);
+    const malformedAssetRes = await fetch(`http://127.0.0.1:${port}/blobs/%E0%A4%A`);
     expect(malformedAssetRes.status).not.toBe(500);
     expect(malformedAssetRes.status).toBe(404);
+
+    const legacyAssetRes = await fetch(`http://127.0.0.1:${port}/assets/sha256/${"a".repeat(64)}`);
+    expect(legacyAssetRes.status).toBe(404);
 
     const sourcePathRes = await fetch(`http://127.0.0.1:${port}/images/hero.png`);
     expect(sourcePathRes.status).toBe(404);
   });
 
-  test("does not serve a compiled asset after it is replaced by an outside symlink", async () => {
+  test("serves proven opaque downloads with enforced non-inline headers", async () => {
+    await writeFile(join(dir, "manual.bin"), "offline bytes");
+    await writeFile(join(dir, "intro.md"), "# Intro\n\n[Download](manual.bin)\n");
+    const port = await start();
+
+    const asset = [...runningServer!.watcher.resources.values()].find(
+      (resource) => resource.type === "Asset",
+    );
+    const response = await fetch(`http://127.0.0.1:${port}/${asset?.spec.uri}`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("application/octet-stream");
+    expect(response.headers.get("content-disposition")).toBe("attachment");
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(await response.text()).toBe("offline bytes");
+  });
+
+  test("refreshes the dev snapshot when a dot-prefixed asset changes", async () => {
+    await mkdir(join(dir, ".images"));
+    await writeFile(join(dir, ".images", "hero.png"), PNG_BYTES);
+    await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](.images/hero.png)\n");
+
+    const port = await start();
+    const initialAsset = [...runningServer!.watcher.resources.values()].find(
+      (resource) => resource.type === "Asset",
+    );
+    const key = `Asset/${initialAsset?.name}`;
+    const initialPayload = [...runningServer!.watcher.payloads.values()][0];
+    expect(initialPayload).toBeDefined();
+
+    const changedBytes = Uint8Array.from(PNG_BYTES);
+    changedBytes[changedBytes.length - 1] ^= 1;
+    const updated = new Promise<void>((resolve) => {
+      runningServer!.watcher.on("update", (updatedKey) => {
+        if (updatedKey === key) resolve();
+      });
+    });
+
+    // Let chokidar finish establishing its recursive watches before changing the asset.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await writeFile(join(dir, ".images", "hero.png"), changedBytes);
+    await updated;
+
+    const resourcesResponse = await fetch(`http://127.0.0.1:${port}/resources`);
+    const resources = (await resourcesResponse.json()) as {
+      payloads: { integrity: string; path: string }[];
+    };
+    const refreshed = resources.payloads[0];
+    expect(refreshed?.integrity).not.toBe(initialPayload?.integrity);
+
+    const assetResponse = await fetch(`http://127.0.0.1:${port}/${refreshed?.path}`);
+    expect(assetResponse.status).toBe(200);
+    expect(Buffer.from(await assetResponse.arrayBuffer())).toEqual(Buffer.from(changedBytes));
+  }, 10_000);
+
+  test("serves only the proven snapshot after a source asset becomes an outside symlink", async () => {
     const external = await mkdtemp(join(tmpdir(), "topik-dev-secret-"));
     try {
       await mkdir(join(dir, "images"), { recursive: true });
       const assetPath = join(dir, "images", "hero.png");
-      await writeFile(assetPath, "public asset");
-      await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](./images/hero.png)\n");
+      await writeFile(assetPath, PNG_BYTES);
+      await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](images/hero.png)\n");
       await writeFile(join(external, "secret.png"), "secret bytes");
 
       const port = await start();
 
-      const resources = (await (await fetch(`http://127.0.0.1:${port}/resources`)).json()) as {
-        resources: { type: string; name: string }[];
-      };
-      const asset = resources.resources.find((resource) => resource.type === "Asset");
-      expect(asset).toBeDefined();
+      const payloadPath = [...runningServer!.watcher.payloads.keys()][0];
+      expect(payloadPath).toBeDefined();
 
       await rm(assetPath);
       await symlink(join(external, "secret.png"), assetPath);
 
-      const response = await fetch(`http://127.0.0.1:${port}/assets/${asset!.name}`);
-      expect(response.status).toBe(404);
-      expect(await response.text()).not.toContain("secret bytes");
+      const response = await fetch(`http://127.0.0.1:${port}/${payloadPath}`);
+      expect(response.status).toBe(200);
+      const responseBytes = Buffer.from(await response.arrayBuffer());
+      expect(responseBytes).toEqual(PNG_BYTES);
+      expect(responseBytes.toString()).not.toContain("secret bytes");
     } finally {
       await rm(external, { recursive: true, force: true });
     }

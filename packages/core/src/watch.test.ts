@@ -1,10 +1,15 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 import { pagePathToName } from "./compile/wiki";
 import { watch } from "./watch";
 import type { Watcher } from "./watch";
+
+const PNG_BYTES = Buffer.from(
+  "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000000500010d0a2db40000000049454e44ae426082",
+  "hex",
+);
 
 function delay(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
@@ -54,6 +59,65 @@ describe("watch", () => {
     const { key, resource } = await updated;
     expect(key).toBe("Guide/guides-intro");
     expect(resource).toHaveProperty("spec.content.value", "# Intro\n\nUpdated content.\n");
+  }, 10_000);
+
+  test("emits the automatic Asset update with a refreshed payload when bytes change", async () => {
+    await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](hero.png)\n");
+    await writeFile(join(dir, "hero.png"), PNG_BYTES);
+    watcher = await watch({ dir, assets: { sourceNamespace: "watch-fixture" } });
+
+    const asset = [...watcher.resources.values()].find((resource) => resource.type === "Asset");
+    const key = `Asset/${asset?.name}`;
+    const before = [...watcher.payloads.values()][0];
+    expect(before).toBeDefined();
+
+    const changedBytes = Uint8Array.from(PNG_BYTES);
+    changedBytes[changedBytes.length - 1] ^= 1;
+    const updated = new Promise<{ resource: unknown; payloadBytes: Uint8Array; integrity: string }>(
+      (resolve) => {
+        watcher.on("update", (updatedKey, resource) => {
+          if (updatedKey !== key) return;
+          const payload = [...watcher.payloads.values()][0];
+          if (payload !== undefined)
+            resolve({ resource, payloadBytes: payload.bytes, integrity: payload.integrity });
+        });
+      },
+    );
+
+    await delay(500);
+    await writeFile(join(dir, "hero.png"), changedBytes);
+
+    const result = await updated;
+    expect(result.resource).toBe(watcher.resources.get(key));
+    expect([...result.payloadBytes]).toEqual([...changedBytes]);
+    expect(result.integrity).not.toBe(before?.integrity);
+  }, 10_000);
+
+  test("watches valid assets inside dot-prefixed directories", async () => {
+    await mkdir(join(dir, ".images"));
+    await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](.images/hero.png)\n");
+    await writeFile(join(dir, ".images", "hero.png"), PNG_BYTES);
+    watcher = await watch({ dir, assets: { sourceNamespace: "watch-fixture" } });
+
+    const asset = [...watcher.resources.values()].find((resource) => resource.type === "Asset");
+    const key = `Asset/${asset?.name}`;
+    const beforeEntry = [...watcher.payloads.values()][0];
+    const changedBytes = Uint8Array.from(PNG_BYTES);
+    changedBytes[changedBytes.length - 1] ^= 1;
+    const updated = new Promise<{ bytes: Uint8Array; digest: string }>((resolve) => {
+      watcher.on("update", (updatedKey) => {
+        if (updatedKey !== key) return;
+        const payload = [...watcher.payloads.values()][0];
+        if (payload !== undefined) resolve({ bytes: payload.bytes, digest: payload.integrity });
+      });
+    });
+
+    await delay(500);
+    await writeFile(join(dir, ".images", "hero.png"), changedBytes);
+
+    const result = await updated;
+    expect([...result.bytes]).toEqual([...changedBytes]);
+    expect(result.digest).not.toBe(beforeEntry?.integrity);
   }, 10_000);
 
   test("detects new files", async () => {

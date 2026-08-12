@@ -3,6 +3,16 @@ export const TOPIK_CONTENT_SCHEMA_VERSION = "0.1.0";
 export type TopikComponentKind = "block" | "inline";
 export type TopikAttributeType = "string" | "number" | "boolean" | "enum";
 
+export type TopikAssetReferenceRole = "image" | "image-light" | "image-dark" | "media" | "download";
+
+export interface TopikAssetReferenceDefinition {
+  /** Stable slot identifier used by topik-asset-reference-v1 extractors. */
+  slot: string;
+  role: TopikAssetReferenceRole;
+  /** Generic links are occurrences only when a regular file resolves them unambiguously. */
+  conditional?: "proven-download";
+}
+
 export interface TopikComponentAttributeDefinition {
   type: TopikAttributeType;
   required?: boolean;
@@ -10,6 +20,7 @@ export interface TopikComponentAttributeDefinition {
   min?: number;
   max?: number;
   description?: string;
+  assetReference?: TopikAssetReferenceDefinition;
 }
 
 export interface TopikComponentDefinition {
@@ -158,8 +169,17 @@ export const topikComponents = {
     kind: "block",
     description: "Media with an optional caption.",
     attributes: {
-      src: { type: "string", required: true, description: "Default/light image source URL." },
-      darkSrc: { type: "string", description: "Optional dark-mode image source URL." },
+      src: {
+        type: "string",
+        required: true,
+        description: "Default/light image source URL.",
+        assetReference: { slot: "figure.src", role: "image-light" },
+      },
+      darkSrc: {
+        type: "string",
+        description: "Optional dark-mode image source URL.",
+        assetReference: { slot: "figure.darkSrc", role: "image-dark" },
+      },
       alt: { type: "string", required: true, description: "Accessible alternative text." },
       caption: { type: "string", description: "Optional figure caption." },
     },
@@ -170,7 +190,12 @@ export const topikComponents = {
     kind: "block",
     description: "Markdown image rendered through Topik asset resolution.",
     attributes: {
-      src: { type: "string", required: true, description: "Image source URL." },
+      src: {
+        type: "string",
+        required: true,
+        description: "Image source URL.",
+        assetReference: { slot: "image.src", role: "image" },
+      },
       alt: { type: "string", description: "Accessible alternative text." },
       title: { type: "string", description: "Optional image title." },
     },
@@ -181,7 +206,16 @@ export const topikComponents = {
     kind: "inline",
     description: "Markdown link with optional application-level navigation interception.",
     attributes: {
-      href: { type: "string", required: true, description: "Link target URL." },
+      href: {
+        type: "string",
+        required: true,
+        description: "Link target URL.",
+        assetReference: {
+          slot: "link.href",
+          role: "download",
+          conditional: "proven-download",
+        },
+      },
       title: { type: "string", description: "Optional link title." },
     },
   },

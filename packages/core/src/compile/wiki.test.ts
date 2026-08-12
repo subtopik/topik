@@ -75,6 +75,17 @@ navigation:
     });
   });
 
+  test("reports only compilation-relative WikiPage diagnostic paths", async () => {
+    await writeWikiConfig("id: tw\ntitle: Test Wiki\nnavigation:\n  - nested/unsafe\n");
+    await mkdir(join(dir, "nested"));
+    await writePage("nested/unsafe", "<http://example.com/file.pdf>\n");
+
+    await expect(compileWiki({ dir })).rejects.toMatchObject({
+      diagnostics: [expect.objectContaining({ file: "nested/unsafe.md" })],
+      message: expect.not.stringContaining(dir),
+    });
+  });
+
   test("only compiles pages referenced in navigation", async () => {
     await writeWikiConfig(`
 id: tw
@@ -98,10 +109,38 @@ navigation:
       await writeFile(join(external, "secret.md"), "# Secret\n\nTOPIK_SECRET=outside-root\n");
       await symlink(join(external, "secret.md"), join(dir, "leak.md"));
 
-      await expect(compileWiki({ dir })).rejects.toThrow(/outside the compilation directory/);
+      await expect(compileWiki({ dir })).rejects.toMatchObject({
+        id: "file-outside-compilation-root",
+        location: "leak.md",
+      });
     } finally {
       await rm(external, { recursive: true, force: true });
     }
+  });
+
+  test("rejects an in-root symlinked wiki config before automatic Asset discovery", async () => {
+    await writeFile(
+      join(dir, "wiki-source.yaml"),
+      "id: tw\ntitle: Test Wiki\nnavigation:\n  - hello\n",
+    );
+    await symlink("wiki-source.yaml", join(dir, "wiki.yaml"));
+    await writePage("hello", "# Hello\n");
+
+    await expect(compileWiki({ dir })).rejects.toMatchObject({
+      id: "config-read-failed",
+      location: "wiki.yaml",
+    });
+  });
+
+  test("rejects an in-root symlinked wiki page source", async () => {
+    await writeWikiConfig("id: tw\ntitle: Test Wiki\nnavigation:\n  - linked\n");
+    await writeFile(join(dir, "linked-source.txt"), "# Linked page\n");
+    await symlink("linked-source.txt", join(dir, "linked.md"));
+
+    await expect(compileWiki({ dir })).rejects.toMatchObject({
+      id: "file-not-regular",
+      location: "linked.md",
+    });
   });
 
   test("collapses index pages in slug", async () => {
@@ -229,8 +268,8 @@ navigation:
     const result = await compileWiki({ dir });
     const pages = result.resources.filter((r) => r.type === "WikiPage");
     expect(pages.map((p) => p.name)).toEqual([
-      pageName("test", "runtime/http/server"),
       pageName("test", "runtime/index"),
+      pageName("test", "runtime/http/server"),
     ]);
   });
 
@@ -288,8 +327,8 @@ navigation:
     const result = await compileWiki({ dir });
     const pages = result.resources.filter((resource) => resource.type === "WikiPage");
     expect(pages.map((page) => page.name)).toEqual([
-      pageName("test", "docs/guides/getting-started/index"),
       pageName("test", "docs/guides/getting-started/installation"),
+      pageName("test", "docs/guides/getting-started/index"),
     ]);
 
     const wiki = result.resources.find((resource) => resource.type === "Wiki")!;
@@ -474,23 +513,55 @@ navigation:
     expect(wiki!.spec.description).toBe("Documentation for Topik.");
   });
 
-  test("extracts local image references as Asset resources", async () => {
+  test("compiles local images directly into a page-scoped portable artifact", async () => {
     await writeWikiConfig("id: tw\ntitle: Wiki\nnavigation:\n  - hello\n");
     const png = Buffer.from(
       "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000000500010d0a2db40000000049454e44ae426082",
       "hex",
     );
     await writeFile(join(dir, "hero.png"), png);
-    await writePage("hello", "# Hello\n\n![hero](./hero.png)\n");
+    await writePage("hello", "# Hello\n\n![hero](hero.png)\n");
 
-    const result = await compileWiki({ dir });
-    const assets = result.resources.filter((r) => r.type === "Asset");
+    const result = await compileWiki({ dir, assets: { sourceNamespace: "example-wiki" } });
     const page = result.resources.find((r) => r.type === "WikiPage")!;
+    const asset = result.resources.find((resource) => resource.type === "Asset");
 
-    expect(assets).toHaveLength(1);
-    expect(assets[0].name).toMatch(/^[a-f0-9]{16}$/);
-    expect(page.spec.content.value).toContain(`![hero](asset:${assets[0].name})`);
-    expect(page.spec.assets).toEqual([assets[0].name]);
+    expect(asset?.name).toMatch(/^auto-v1-[a-z2-7]{51}[aq]$/u);
+    expect(result.payloads).toHaveLength(1);
+    expect(page.spec.content.value).toContain(`![hero](asset:${asset?.name})`);
+    expect(page.spec).not.toHaveProperty("assets");
+  });
+
+  test("compiles a proven local download without weakening missing-page validation", async () => {
+    await writeWikiConfig("id: tw\ntitle: Wiki\nnavigation:\n  - hello\n");
+    await writeFile(join(dir, "manual.pdf"), "%PDF-1.7\nmanual\n");
+    await writePage("hello", "# Hello\n\n[Manual](manual.pdf)\n");
+
+    const result = await compileWiki({
+      dir,
+      assets: { sourceNamespace: "example-wiki-download" },
+    });
+    const page = result.resources.find((resource) => resource.type === "WikiPage");
+    const asset = result.resources.find((resource) => resource.type === "Asset");
+    expect(asset?.spec.mediaType).toBe("application/pdf");
+    expect(page?.spec.content.value).toContain(`[Manual](asset:${asset?.name})`);
+
+    await writePage("hello", "# Hello\n\n[Missing](missing.pdf)\n");
+    await expect(
+      compileWiki({ dir, assets: { sourceNamespace: "example-wiki-download" } }),
+    ).rejects.toThrow(/link-page-not-found/u);
+  });
+
+  test("does not turn the consumed wiki config into a downloadable Asset", async () => {
+    await writeWikiConfig("id: tw\ntitle: Wiki\nnavigation:\n  - hello\n");
+    await writePage("hello", "[Configuration](wiki.yaml)\n");
+    const result = await compileWiki({
+      dir,
+      validation: { links: "off" },
+      assets: { sourceNamespace: "protected-wiki-config" },
+    });
+    expect(result.resources.filter((resource) => resource.type === "Asset")).toEqual([]);
+    expect(result.payloads).toEqual([]);
   });
 
   test("extracts local asset references from valid Topik tags", async () => {
@@ -500,15 +571,15 @@ navigation:
       "hex",
     );
     await writeFile(join(dir, "hero.png"), png);
-    await writePage("hello", '# Hello\n\n{% figure src="./hero.png" alt="Hero" /%}\n');
+    await writePage("hello", '# Hello\n\n{% figure src="hero.png" alt="Hero" /%}\n');
 
-    const result = await compileWiki({ dir });
-    const assets = result.resources.filter((r) => r.type === "Asset");
+    const result = await compileWiki({ dir, assets: { sourceNamespace: "example-wiki" } });
     const page = result.resources.find((r) => r.type === "WikiPage")!;
+    const asset = result.resources.find((resource) => resource.type === "Asset");
 
-    expect(assets).toHaveLength(1);
-    expect(page.spec.content.value).toContain(`src="asset:${assets[0].name}"`);
-    expect(page.spec.assets).toEqual([assets[0].name]);
+    expect(result.payloads).toHaveLength(1);
+    expect(page.spec.content.value).toContain(`src="asset:${asset?.name}"`);
+    expect(page.spec).not.toHaveProperty("assets");
   });
 
   test("validates same-page and cross-page heading links", async () => {
@@ -583,6 +654,40 @@ navigation:
     await expect(compileWiki({ dir })).rejects.toThrow(/link-fragment-not-found/);
   });
 
+  test("keeps authored and derived missing-link targets out of every public surface", async () => {
+    const sentinel = "PRIVATE_VALUE";
+    await writeWikiConfig("id: tw\ntitle: Wiki\nnavigation:\n  - intro\n  - setup\n");
+    await writePage(
+      "intro",
+      `# Introduction\n\n[Missing page](/private-value?token=${sentinel}#%50RIVATE_VALUE)\n\n[Missing heading](/setup#${sentinel})\n`,
+    );
+    await writePage("setup", "# Setup\n");
+
+    const warning = await compileWiki({ dir, validation: { links: "warning" } });
+    expect(warning.diagnostics.map((diagnostic) => diagnostic.id)).toEqual([
+      "link-page-not-found",
+      "link-fragment-not-found",
+    ]);
+    expect(JSON.stringify(warning.diagnostics)).not.toContain(sentinel);
+    expect(JSON.stringify(warning.diagnostics)).not.toContain("private-value");
+
+    let failure: unknown;
+    try {
+      await compileWiki({ dir });
+    } catch (error) {
+      failure = error;
+    }
+    const surfaces = [
+      String(failure),
+      failure instanceof Error ? failure.message : "",
+      JSON.stringify(failure),
+      typeof failure === "object" && failure !== null ? JSON.stringify(Object.values(failure)) : "",
+      failure instanceof Error && failure.cause instanceof Error ? String(failure.cause) : "",
+    ].join("\n");
+    expect(surfaces).not.toContain(sentinel);
+    expect(surfaces).not.toContain("private-value");
+  });
+
   test("can downgrade unresolved internal links to warnings", async () => {
     await writeWikiConfig("id: tw\ntitle: Wiki\nnavigation:\n  - intro\n");
     await writePage("intro", "# Introduction\n\n[Missing](/absent#heading)\n");
@@ -632,21 +737,26 @@ navigation:
   - nonexistent
 `);
 
-    await expect(compileWiki({ dir })).rejects.toThrow("Page not found: nonexistent");
+    await expect(compileWiki({ dir })).rejects.toMatchObject({ id: "wiki-page-not-found" });
   });
 
   test("returns no resources when the wiki config is missing", async () => {
     await writePage("hello", "# Hello\n");
 
-    await expect(compileWiki({ dir })).resolves.toEqual({ diagnostics: [], resources: [] });
+    await expect(compileWiki({ dir })).resolves.toMatchObject({
+      diagnostics: [],
+      resources: [],
+      payloads: [],
+    });
   });
 
   test("rejects navigation page paths that cannot become wiki page names", async () => {
     await writeWikiConfig("id: test\ntitle: Wiki\nnavigation:\n  - Runtime/Hello_World\n");
 
-    await expect(compileWiki({ dir })).rejects.toThrow(
-      "Wiki page paths must use lowercase DNS-style segments separated by '/'",
-    );
+    await expect(compileWiki({ dir })).rejects.toMatchObject({
+      id: "config-invalid",
+      location: "wiki.yaml",
+    });
   });
 
   test("throws when the wiki id is too long for hashed page names", async () => {
@@ -655,7 +765,10 @@ navigation:
     );
     await writePage("intro", "# Intro\n");
 
-    await expect(compileWiki({ dir })).rejects.toThrow("Wiki id must be 46 characters or fewer");
+    await expect(compileWiki({ dir })).rejects.toMatchObject({
+      id: "config-invalid",
+      location: "wiki.yaml",
+    });
   });
 });
 

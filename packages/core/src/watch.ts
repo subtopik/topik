@@ -2,11 +2,14 @@ import { EventEmitter } from "node:events";
 import { resolve } from "node:path";
 import { watch as chokidarWatch } from "chokidar";
 import { compile } from "./compile";
+import type { AssetCompilationOptions, AssetPayload } from "./compile/assets";
+import { digestTopikMaterializationRecord } from "./assets/identity";
 import type { Resource } from "./resource";
 
 export interface WatchOptions {
   dir: string;
   signal?: AbortSignal;
+  assets?: AssetCompilationOptions;
 }
 
 export type UpdateListener = (key: string, resource: Resource) => void;
@@ -15,6 +18,8 @@ export type ErrorListener = (error: Error) => void;
 export interface Watcher {
   /** Current compiled resources, keyed by `Type/name`. */
   resources: Map<string, Resource>;
+  /** Current deduplicated local payloads, keyed by compilation-relative output path. */
+  payloads: Map<string, AssetPayload>;
   on(event: "update", listener: UpdateListener): this;
   on(event: "error", listener: ErrorListener): this;
   off(event: "update", listener: UpdateListener): this;
@@ -30,28 +35,37 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
   const dir = resolve(options.dir);
   const emitter = new EventEmitter();
   const resources = new Map<string, Resource>();
+  const payloads = new Map<string, AssetPayload>();
 
   // Initial compile
-  const initial = await compile({ dir });
+  const initial = await compile({ dir, assets: options.assets });
+  let materialization = initial.materialization;
   for (const resource of initial.resources) {
     resources.set(resourceKey(resource), resource);
   }
+  for (const payload of initial.payloads) payloads.set(payload.path, payload);
 
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   async function recompile() {
     try {
-      const result = await compile({ dir });
+      const result = await compile({ dir, assets: options.assets });
       const newKeys = new Set<string>();
+      const materializationChanged =
+        digestTopikMaterializationRecord(materialization) !==
+        digestTopikMaterializationRecord(result.materialization);
+      materialization = result.materialization;
+      payloads.clear();
+      for (const payload of result.payloads) payloads.set(payload.path, payload);
 
       for (const resource of result.resources) {
         const key = resourceKey(resource);
         newKeys.add(key);
 
         const existing = resources.get(key);
-        const serialized = JSON.stringify(resource);
-        if (!existing || JSON.stringify(existing) !== serialized) {
-          resources.set(key, resource);
+        const resourceChanged = !existing || JSON.stringify(existing) !== JSON.stringify(resource);
+        resources.set(key, resource);
+        if (resourceChanged || (resource.type === "Asset" && materializationChanged)) {
           emitter.emit("update", key, resource);
         }
       }
@@ -75,7 +89,7 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
   const fsWatcher = chokidarWatch(dir, {
     ignoreInitial: true,
     ignored: [
-      /(^|[/\\])\../, // dotfiles
+      /(^|[/\\])(?:\.git|\.topik(?:-compilation-(?:generation|prior)-[^/\\]+)?)(?:[/\\]|$)/,
       "**/node_modules/**",
     ],
   });
@@ -92,6 +106,7 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
 
   const watcher = {
     resources,
+    payloads,
     on(event: string, listener: (...args: unknown[]) => void) {
       emitter.on(event, listener);
       return watcher;

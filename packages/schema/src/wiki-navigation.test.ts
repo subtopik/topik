@@ -135,7 +135,7 @@ describe("resolveWikiNavigation", () => {
   });
 
   test("rejects non-content and unresolvable links", () => {
-    expect(resolveWikiContentHref("asset:hero", "guides-index", resolved)).toBeNull();
+    expect(resolveWikiContentHref("custom:opaque", "guides-index", resolved)).toBeNull();
     expect(resolveWikiContentHref("./installation", "unknown", resolved)).toBeNull();
     expect(resolveWikiContentHref("//example.com/docs", "guides-index", resolved)).toBeNull();
     expect(resolveWikiContentHref("/%ZZ", "guides-index", resolved)).toBeNull();

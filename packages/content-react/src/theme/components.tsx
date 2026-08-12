@@ -358,10 +358,11 @@ export function TopikStep({ children, title }: TopikComponentProps) {
 }
 
 export function TopikFigure({ alt, caption, colorScheme, darkSrc, src }: TopikComponentProps) {
-  const lightSource = stringAttribute(src) ?? "";
+  const lightSource = stringAttribute(src);
   const darkSource = stringAttribute(darkSrc);
   const explicitColorScheme = colorScheme as TopikColorScheme | undefined;
   const imageSource = explicitColorScheme === "dark" ? (darkSource ?? lightSource) : lightSource;
+  if (imageSource === undefined) return null;
   return (
     <figure className="topik-figure">
       <picture>
@@ -376,11 +377,13 @@ export function TopikFigure({ alt, caption, colorScheme, darkSrc, src }: TopikCo
 }
 
 export function TopikImage({ alt, src, title }: TopikComponentProps) {
+  const source = stringAttribute(src);
+  if (source === undefined) return null;
   return (
     <img
       alt={stringAttribute(alt) ?? ""}
       className="topik-image"
-      src={stringAttribute(src) ?? ""}
+      src={source}
       title={stringAttribute(title)}
     />
   );

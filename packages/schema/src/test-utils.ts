@@ -2,7 +2,6 @@ import { describe, test, expect } from "vite-plus/test";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
-import type Ajv2020 from "ajv/dist/2020";
 
 const fixturesPath = join(import.meta.dirname, "..", "fixtures");
 
@@ -21,7 +20,12 @@ function listYamlFiles(dir: string): string[] {
   }
 }
 
-export function testSchema(resourceName: string, validate: ReturnType<Ajv2020["compile"]>) {
+interface FixtureValidator {
+  (data: unknown): unknown;
+  errors?: unknown;
+}
+
+export function testSchema(resourceName: string, validate: FixtureValidator) {
   describe(`${resourceName} schema`, () => {
     describe("valid fixtures", () => {
       const validPath = join(fixturesPath, resourceName, "valid");

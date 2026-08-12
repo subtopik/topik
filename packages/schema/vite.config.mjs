@@ -8,7 +8,11 @@ export default defineConfig({
     dts: {
       tsgo: true,
     },
-    exports: true,
+    exports: {
+      customExports: {
+        "./asset/v1.json": "./dist/asset-v1.json",
+      },
+    },
   },
   lint: {
     options: {

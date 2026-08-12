@@ -11,19 +11,32 @@ export {
   lint,
   compileWiki,
   compileGuides,
+  compileAssetResources,
   isErrorDiagnostic,
   pagePathToName,
+  publicCompileErrorMessage,
+  PublicCompileError,
   type CompileOptions,
   type CompileWikiOptions,
   type CompileGuidesOptions,
   type CompileResult,
   type CompileValidationOptions,
+  type PublicCompileErrorId,
   type LinkValidationPolicy,
   type LintResult,
+  AssetCompilationError,
+  type AssetCompilationOptions,
+  type AssetCompilationResult,
+  type AssetPayload,
+  type CompileAssetResourcesInput,
+  type ContentBearingResource,
 } from "./compile";
 export { CompileError } from "./compile";
-export type { Resource, ResourceType } from "./resource";
+export type { Resource, ResourceType, SourceResource } from "./resource";
 
 export { validateResources, type ValidationError, type ValidationResult } from "./validate";
 
 export { watch, type WatchOptions, type Watcher } from "./watch";
+
+/** Compiler-derived Asset/v1 output, validation, identity, and safety APIs. */
+export * from "./assets";

@@ -4,3 +4,15 @@ version = 1
 path = "**"
 SPDX-FileCopyrightText = "2026 The Topik Authors"
 SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = "packages/core/src/assets/nfkc-casefold-v17.ts"
+precedence = "override"
+SPDX-FileCopyrightText = "2025 Unicode, Inc."
+SPDX-License-Identifier = "Unicode-3.0"
+
+[[annotations]]
+path = "packages/core/src/assets/path-unicode-v17.ts"
+precedence = "override"
+SPDX-FileCopyrightText = "2025 Unicode, Inc."
+SPDX-License-Identifier = "Unicode-3.0"

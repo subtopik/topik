@@ -7,6 +7,5 @@ export interface CompiledTopikContent {
   markdocVersion: string;
   configHash: string;
   renderableTree: RenderableTreeNode;
-  assets: string[];
   diagnostics: TopikContentDiagnostic[];
 }

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 import type { TopikContentDiagnostic } from "@topik/content-schema";
 import {
+  CompileError,
   extractMarkdownTitle,
   hasCompileErrors,
   isErrorDiagnostic,
@@ -26,6 +27,15 @@ describe("compile error diagnostics", () => {
     expect(isErrorDiagnostic(diagnostic(level))).toBe(false);
     expect(hasCompileErrors([diagnostic(level)])).toBe(false);
   });
+
+  test("sanitizes absolute diagnostic paths in public CompileError state and text", () => {
+    const error = new CompileError([
+      { ...diagnostic("error"), file: "/var/redacted/docs/page.md" },
+    ]);
+
+    expect(error.diagnostics).toEqual([expect.objectContaining({ file: "page.md" })]);
+    expect(`${error.message}\n${JSON.stringify(error)}`).not.toContain("/var/redacted");
+  });
 });
 
 describe("parseMarkdownFrontmatter", () => {
@@ -38,7 +48,7 @@ describe("parseMarkdownFrontmatter", () => {
 
   test("rejects non-object frontmatter", () => {
     expect(() => parseMarkdownFrontmatter("---\n- invalid\n---\nbody", "guide.md")).toThrow(
-      "Invalid frontmatter in guide.md: Frontmatter must parse to an object",
+      "Document frontmatter is invalid.",
     );
   });
 });
@@ -67,7 +77,7 @@ describe("parseReferenceList", () => {
 
   test("rejects invalid references", () => {
     expect(() => parseReferenceList(["John Doe"], "authors", "guide.md")).toThrow(
-      "authors[0] in guide.md must be a DNS-1123 resource name",
+      "Document resource references are invalid.",
     );
   });
 });

@@ -4,6 +4,7 @@ import { useTopikContentContextValue } from "../core/context";
 import { getDefaultTopikComponents } from "./components";
 import type {
   TopikColorScheme,
+  TopikAssetResolver,
   TopikLinkHandler,
   TopikLinkRenderer,
   TopikLinkResolver,
@@ -16,6 +17,7 @@ export interface TopikContentProps extends RenderTopikMarkdownOptions {
   onNavigateLink?: TopikLinkHandler;
   renderLink?: TopikLinkRenderer;
   resolveLink?: TopikLinkResolver;
+  resolveAsset?: TopikAssetResolver;
 }
 
 export function TopikContent({
@@ -34,6 +36,7 @@ export function TopikContent({
   const effectiveOnNavigateLink = onNavigateLink ?? context?.onNavigateLink;
   const effectiveRenderLink = renderLink ?? context?.renderLink;
   const effectiveResolveLink = resolveLink ?? context?.resolveLink;
+  const effectiveResolveAsset = resolveAsset ?? context?.resolveAsset;
   const mergedComponents = useMemo(
     () =>
       getDefaultTopikComponents(
@@ -57,7 +60,6 @@ export function TopikContent({
       effectiveResolveLink,
     ],
   );
-  const effectiveResolveAsset = resolveAsset ?? context?.resolveAsset;
   const rendered = useMemo(
     () =>
       renderTopikMarkdown(content, {
@@ -68,6 +70,7 @@ export function TopikContent({
     [
       compileOptions.config,
       compileOptions.file,
+      compileOptions.onAssetDiagnostic,
       compileOptions.onDiagnostic,
       compileOptions.validate,
       content,

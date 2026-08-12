@@ -3,6 +3,7 @@ import type {
   TopikContentDiagnostic,
   TopikContentLink,
 } from "@topik/content-schema";
+import { topikLinkDiagnosticMessage } from "@topik/content-schema";
 import type { LinkValidationPolicy } from "./shared";
 
 const NON_PAGE_SCHEME = /^(?:asset|https?|mailto|tel):/i;
@@ -17,6 +18,7 @@ export interface WikiPageLinkAnalysis {
 export function validateWikiLinks(
   pages: WikiPageLinkAnalysis[],
   policy: LinkValidationPolicy,
+  nonPageLinks: ReadonlySet<TopikContentLink> = new Set(),
 ): TopikContentDiagnostic[] {
   if (policy === "off") return [];
 
@@ -32,14 +34,8 @@ export function validateWikiLinks(
       if (!target) continue;
       const targetPage = pagesBySlug.get(target.slug);
       if (!targetPage) {
-        diagnostics.push(
-          linkDiagnostic(
-            "link-page-not-found",
-            level,
-            `Internal link '${link.href}' resolves to missing page '/${target.slug}'.`,
-            link,
-          ),
-        );
+        if (nonPageLinks.has(link)) continue;
+        diagnostics.push(linkDiagnostic("link-page-not-found", level, link));
         continue;
       }
 
@@ -47,14 +43,7 @@ export function validateWikiLinks(
         target.fragment &&
         !targetPage.analysis.headings.some((heading) => heading.id === target.fragment)
       ) {
-        diagnostics.push(
-          linkDiagnostic(
-            "link-fragment-not-found",
-            level,
-            `Internal link '${link.href}' references missing heading '#${target.fragment}' on '/${target.slug}'.`,
-            link,
-          ),
-        );
+        diagnostics.push(linkDiagnostic("link-fragment-not-found", level, link));
       }
     }
   }
@@ -76,14 +65,7 @@ export function validateLocalFragments(
     if (!link.href.startsWith("#") || link.href === "#") continue;
     const fragment = decodeFragment(link.href.slice(1));
     if (fragment && !headingIds.has(fragment)) {
-      diagnostics.push(
-        linkDiagnostic(
-          "link-fragment-not-found",
-          level,
-          `Link '${link.href}' references a missing heading in this document.`,
-          link,
-        ),
-      );
+      diagnostics.push(linkDiagnostic("link-fragment-not-found", level, link));
     }
   }
 
@@ -139,9 +121,10 @@ function decodePath(pathname: string): string {
 function linkDiagnostic(
   id: string,
   level: "error" | "warning",
-  message: string,
   link: TopikContentLink,
 ): TopikContentDiagnostic {
+  const message = topikLinkDiagnosticMessage(id);
+  if (message === undefined) throw new TypeError("Unknown link diagnostic identifier");
   return {
     id,
     type: link.kind,

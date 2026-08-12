@@ -50,6 +50,73 @@ describe("compileGuides", () => {
     });
   });
 
+  test("reports only compilation-relative Guide diagnostic paths", async () => {
+    await writeCollectionConfig("id: blog\ntitle: Blog\n");
+    await writeGuide("unsafe", "<http://example.com/file.pdf>\n");
+
+    await expect(compileGuides({ dir })).rejects.toMatchObject({
+      diagnostics: [expect.objectContaining({ file: "unsafe.md" })],
+      message: expect.not.stringContaining(dir),
+    });
+  });
+
+  test("does not expose malformed external reference text in compile errors", async () => {
+    const sentinel = "PRIVATE_VALUE";
+    await writeCollectionConfig("id: blog\ntitle: Blog\n");
+    await writeGuide(
+      "unsafe-reference",
+      `{% card title="Unsafe" href="hTtPs://user:${sentinel}@[" /%}\n`,
+    );
+
+    let failure: unknown;
+    try {
+      await compileGuides({ dir });
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toBeDefined();
+    expect(`${String(failure)}\n${JSON.stringify(failure)}`).not.toContain(sentinel);
+    expect(`${String(failure)}\n${JSON.stringify(failure)}`).not.toContain("hTtPs://user:");
+  });
+
+  test("does not turn the consumed collection config into a downloadable Asset", async () => {
+    await writeCollectionConfig("id: blog\ntitle: Blog\n");
+    await writeGuide("config", "[Configuration](collection.yaml)\n");
+    const result = await compileGuides({
+      dir,
+      validation: { links: "off" },
+      assets: { sourceNamespace: "protected-guide-config" },
+    });
+    expect(result.resources.filter((resource) => resource.type === "Asset")).toEqual([]);
+    expect(result.payloads).toEqual([]);
+  });
+
+  test("rejects an in-root symlinked collection config before automatic Asset discovery", async () => {
+    await writeFile(join(dir, "collection-source.yaml"), "id: blog\ntitle: Blog\n");
+    await symlink("collection-source.yaml", join(dir, "collection.yaml"));
+    await writeGuide("config", "[Configuration](collection-source.yaml)\n");
+
+    await expect(
+      compileGuides({
+        dir,
+        validation: { links: "off" },
+        assets: { sourceNamespace: "symlinked-guide-config" },
+      }),
+    ).rejects.toMatchObject({ id: "config-read-failed", location: "collection.yaml" });
+  });
+
+  test("rejects an in-root symlinked guide source", async () => {
+    await writeCollectionConfig("id: blog\ntitle: Blog\n");
+    await writeFile(join(dir, "post-source.txt"), "# Linked guide\n");
+    await symlink("post-source.txt", join(dir, "post.md"));
+
+    await expect(compileGuides({ dir })).rejects.toMatchObject({
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ id: "guide-not-regular-file", level: "error" }),
+      ]),
+    });
+  });
+
   test("extracts title from markdown heading", async () => {
     await writeCollectionConfig("id: blog\ntitle: Blog\n");
     await writeGuide("my-post", "# My Custom Title\n\nContent here.");
@@ -142,9 +209,10 @@ describe("compileGuides", () => {
       "---\ntitle: Post\nauthors:\n  - John Doe\n---\n\nContent.",
     );
 
-    await expect(compileGuides({ dir })).rejects.toThrow(
-      "authors[0] in post.md must be a DNS-1123 resource name",
-    );
+    await expect(compileGuides({ dir })).rejects.toMatchObject({
+      id: "reference-list-invalid",
+      location: "post.md",
+    });
   });
 
   test("compiles multiple guides sorted by filename", async () => {
@@ -188,22 +256,16 @@ describe("compileGuides", () => {
     }
   });
 
-  test("allows markdown symlinks that resolve within the compilation directory", async () => {
+  test("rejects markdown symlinks that resolve within the compilation directory", async () => {
     await writeCollectionConfig("id: blog\ntitle: Blog\n");
     await mkdir(join(dir, "shared"));
     await writeFile(join(dir, "shared", "post.md"), "# Shared Post\n\nReusable content.\n");
     await symlink(join(dir, "shared", "post.md"), join(dir, "alias.md"));
 
-    const result = await compileGuides({ dir });
-
-    expect(result.resources).toHaveLength(1);
-    expect(result.resources[0]).toMatchObject({
-      type: "Guide",
-      name: "blog-alias",
-      spec: {
-        title: "Shared Post",
-        content: { value: "# Shared Post\n\nReusable content.\n" },
-      },
+    await expect(compileGuides({ dir })).rejects.toMatchObject({
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ id: "guide-not-regular-file", level: "error" }),
+      ]),
     });
   });
 
@@ -226,33 +288,34 @@ describe("compileGuides", () => {
   test("returns no resources when the collection config is missing", async () => {
     await writeGuide("post", "# Post\n");
 
-    await expect(compileGuides({ dir })).resolves.toEqual({ diagnostics: [], resources: [] });
+    await expect(compileGuides({ dir })).resolves.toMatchObject({
+      diagnostics: [],
+      resources: [],
+      payloads: [],
+    });
   });
 
-  test("extracts local image references as Asset resources", async () => {
+  test("compiles local images into named Assets and shared payloads", async () => {
     await writeCollectionConfig("id: blog\ntitle: Blog\n");
     const png = Buffer.from(
       "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000000500010d0a2db40000000049454e44ae426082",
       "hex",
     );
     await writeFile(join(dir, "hero.png"), png);
-    await writeGuide("post", "# Post\n\n![hero](./hero.png)\n");
+    await writeGuide("post", "# Post\n\n![hero](hero.png)\n");
 
-    const result = await compileGuides({ dir });
+    const result = await compileGuides({ dir, assets: { sourceNamespace: "example-guides" } });
     const guide = result.resources.find((r) => r.type === "Guide") as Guide;
-    const assets = result.resources.filter((r) => r.type === "Asset");
+    const asset = result.resources.find((resource) => resource.type === "Asset");
 
-    expect(assets).toHaveLength(1);
-    expect(assets[0]).toMatchObject({
-      type: "Asset",
-      spec: { uri: "hero.png", mediaType: "image/png" },
-    });
-    expect(assets[0].name).toMatch(/^[a-f0-9]{16}$/);
-    expect(guide.spec.content.value).toContain(`![hero](asset:${assets[0].name})`);
-    expect(guide.spec.assets).toEqual([assets[0].name]);
+    expect(asset?.name).toMatch(/^auto-v1-[a-z2-7]{51}[aq]$/u);
+    expect(asset?.spec).toMatchObject({ mediaType: "image/png", size: png.byteLength });
+    expect(result.payloads).toHaveLength(1);
+    expect(guide.spec.content.value).toContain(`![hero](asset:${asset?.name})`);
+    expect(guide.spec).not.toHaveProperty("assets");
   });
 
-  test("omits assets manifest when no assets are referenced", async () => {
+  test("emits no Asset resources when no assets are referenced", async () => {
     await writeCollectionConfig("id: blog\ntitle: Blog\n");
     await writeGuide("plain", "# Plain\n\nNo assets here.");
 
@@ -261,19 +324,19 @@ describe("compileGuides", () => {
     expect(guide.spec).not.toHaveProperty("assets");
   });
 
-  test("dedupes assets referenced from multiple guides", async () => {
+  test("shares one automatically discovered Asset and payload across guides", async () => {
     await writeCollectionConfig("id: blog\ntitle: Blog\n");
     const png = Buffer.from(
       "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000000500010d0a2db40000000049454e44ae426082",
       "hex",
     );
     await writeFile(join(dir, "shared.png"), png);
-    await writeGuide("one", "# One\n\n![s](./shared.png)\n");
-    await writeGuide("two", "# Two\n\n![s](./shared.png)\n");
+    await writeGuide("one", "# One\n\n![s](shared.png)\n");
+    await writeGuide("two", "# Two\n\n![s](shared.png)\n");
 
-    const result = await compileGuides({ dir });
-    const assets = result.resources.filter((r) => r.type === "Asset");
-    expect(assets).toHaveLength(1);
+    const result = await compileGuides({ dir, assets: { sourceNamespace: "example-guides" } });
+    expect(result.resources.filter((resource) => resource.type === "Asset")).toHaveLength(1);
+    expect(result.payloads).toHaveLength(1);
   });
 
   test("rejects invalid Topik content in guides", async () => {
@@ -296,6 +359,23 @@ describe("compileGuides", () => {
 
     const off = await compileGuides({ dir, validation: { links: "off" } });
     expect(off.diagnostics).toEqual([]);
+  });
+
+  test("does not disclose a missing local fragment through compile diagnostics", async () => {
+    const sentinel = "PRIVATE_VALUE";
+    await writeCollectionConfig("id: docs\ntitle: Docs\n");
+    await writeGuide("post", `# Post\n\n[Missing](#${sentinel})\n`);
+
+    const warning = await compileGuides({ dir, validation: { links: "warning" } });
+    expect(warning.diagnostics).toEqual([
+      expect.objectContaining({
+        id: "link-fragment-not-found",
+        message: "Link target heading was not found.",
+      }),
+    ]);
+    expect(JSON.stringify(warning.diagnostics)).not.toContain(sentinel);
+
+    await expect(compileGuides({ dir })).rejects.not.toThrow(sentinel);
   });
 
   test("compiled Guide resources validate against schema", async () => {

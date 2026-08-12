@@ -1,6 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { TopikContent } from "../theme/TopikContent";
 
+const diagramAssetName = "auto-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const heroAssetName = "auto-v1-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbq";
+const darkHeroAssetName = "auto-v1-ccccccccccccccccccccccccccccccccccccccccccccccccccca";
+
 const learningPage = `
 # Building A Topic
 
@@ -40,7 +44,7 @@ Create your first lesson.
 {% /step %}
 {% /steps %}
 
-{% figure src="asset:diagram" alt="Lesson diagram" caption="Assets can be resolved by the host app." /%}
+{% figure src="asset:${diagramAssetName}" alt="Lesson diagram" caption="Compiled Asset resolved by the host." /%}
 
 {% quiz %}
 {% question type="single-choice" %}
@@ -62,7 +66,7 @@ const meta = {
   component: TopikContent,
   args: {
     content: learningPage,
-    resolveAsset: (id: string) => `https://placehold.co/960x420?text=${encodeURIComponent(id)}`,
+    resolveAsset: (name: string) => `https://placehold.co/960x420?text=${encodeURIComponent(name)}`,
   },
 } satisfies Meta<typeof TopikContent>;
 
@@ -81,8 +85,8 @@ export const InvalidDiagnostics: Story = {
 
 export const AssetResolution: Story = {
   args: {
-    content: '{% figure src="asset:hero" darkSrc="asset:hero-dark" alt="Resolved asset" /%}',
-    resolveAsset: (id: string) => `https://placehold.co/960x420?text=${encodeURIComponent(id)}`,
+    content: `{% figure src="asset:${heroAssetName}" darkSrc="asset:${darkHeroAssetName}" alt="Compiled Asset" /%}`,
+    resolveAsset: (name: string) => `https://placehold.co/960x420?text=${encodeURIComponent(name)}`,
   },
 };
 

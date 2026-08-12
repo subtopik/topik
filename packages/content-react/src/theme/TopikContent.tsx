@@ -70,9 +70,10 @@ export function TopikContent({
     [
       compileOptions.config,
       compileOptions.file,
+      compileOptions.invalidContent,
+      compileOptions.invalidContentPlaceholder,
       compileOptions.onAssetDiagnostic,
       compileOptions.onDiagnostic,
-      compileOptions.validate,
       content,
       effectiveResolveAsset,
       mergedComponents,

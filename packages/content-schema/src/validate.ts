@@ -1,7 +1,11 @@
 import Markdoc, { type Config, type ValidateError } from "@markdoc/markdoc";
 import { topikMarkdocConfig } from "./config";
 import { parseTopikContent } from "./content";
-import { toTopikContentDiagnostic, type TopikContentDiagnostic } from "./diagnostics";
+import {
+  sanitizeTopikContentDiagnostic,
+  toTopikContentDiagnostic,
+  type TopikContentDiagnostic,
+} from "./diagnostics";
 import {
   extractTopikAssetOccurrences,
   type TopikAssetOccurrence,
@@ -18,6 +22,8 @@ export interface ValidateTopikContentOptions {
 }
 
 export interface ValidateTopikContentResult {
+  /** Exact caller-supplied source. This field is intentionally not diagnostic text. */
+  source: string;
   valid: boolean;
   errors: TopikContentDiagnostic[];
   markdocErrors: ValidateError[];
@@ -78,8 +84,9 @@ export function validateTopikContent(
         ];
       },
     ),
-  ];
+  ].map(sanitizeTopikContentDiagnostic);
   return {
+    source,
     valid: errors.every(
       (diagnostic) => diagnostic.level !== "error" && diagnostic.level !== "critical",
     ),

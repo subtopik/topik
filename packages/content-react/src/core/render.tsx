@@ -21,14 +21,43 @@ import {
 export interface CompileTopikContentOptions {
   file?: string;
   config?: Config;
-  validate?: boolean;
   onDiagnostic?: (diagnostic: TopikContentDiagnostic) => void;
 }
 
-export interface RenderTopikContentOptions {
+export interface RenderTrustedTopikTreeOptions {
   components?: TopikComponentOverrides;
   resolveAsset?: TopikAssetResolver;
   onAssetDiagnostic?: (diagnostic: TopikAssetResolutionDiagnostic) => void;
+}
+
+export interface RenderTopikContentOptions extends RenderTrustedTopikTreeOptions {
+  onDiagnostic?: (diagnostic: TopikContentDiagnostic) => void;
+  invalidContent?: "placeholder";
+  invalidContentPlaceholder?: React.ComponentType;
+}
+
+export interface CompileTopikContentSuccess {
+  ok: true;
+  /** Exact caller-supplied source. */
+  source: string;
+  diagnostics: TopikContentDiagnostic[];
+  tree: RenderableTreeNode;
+}
+
+export interface CompileTopikContentFailure {
+  ok: false;
+  /** Exact caller-supplied source, unchanged and never transformed. */
+  source: string;
+  diagnostics: TopikContentDiagnostic[];
+}
+
+export type CompileTopikContentResult = CompileTopikContentSuccess | CompileTopikContentFailure;
+
+export class InvalidTopikContentError extends Error {
+  constructor(public readonly result: CompileTopikContentFailure) {
+    super("Topik content is unsupported or invalid");
+    this.name = "InvalidTopikContentError";
+  }
 }
 
 export interface TopikAssetResolutionDiagnostic {
@@ -44,26 +73,25 @@ export interface RenderTopikMarkdownOptions
 export function compileTopikContent(
   content: string,
   options: CompileTopikContentOptions = {},
-): RenderableTreeNode {
+): CompileTopikContentResult {
   return compileTopikContentInternal(content, options);
 }
 
 function compileTopikContentInternal(
   content: string,
   options: CompileTopikContentOptions & Pick<RenderTopikContentOptions, "onAssetDiagnostic">,
-): RenderableTreeNode {
-  const shouldValidate = options.validate ?? true;
-
-  if (shouldValidate) {
-    const result = validateTopikContent(content, {
-      file: options.file,
-      config: options.config,
-      allowCompiledAssetReferences: true,
-    });
-    for (const diagnostic of result.errors) options.onDiagnostic?.(diagnostic);
+): CompileTopikContentResult {
+  const validation = validateTopikContent(content, {
+    file: options.file,
+    config: options.config,
+    allowCompiledAssetReferences: true,
+  });
+  for (const diagnostic of validation.errors) options.onDiagnostic?.(diagnostic);
+  if (!validation.valid) {
+    return { ok: false, source: content, diagnostics: validation.errors };
   }
 
-  const ast = parseTopikContent(content, { file: options.file, location: shouldValidate });
+  const ast = parseTopikContent(content, { file: options.file, location: true });
   for (const occurrence of extractTopikAssetOccurrences(content)) {
     if (occurrence.kind !== "reserved-asset") continue;
     options.onAssetDiagnostic?.({
@@ -75,12 +103,35 @@ function compileTopikContentInternal(
   removeInvalidTopikAssetReferences(ast, content);
   removeInvalidTopikNavigationReferences(ast);
   assignTopikHeadingIds(ast);
-  return Markdoc.transform(ast, mergeConfigs(topikMarkdocConfig, options.config));
+  return {
+    ok: true,
+    source: content,
+    diagnostics: validation.errors,
+    tree: Markdoc.transform(ast, mergeConfigs(topikMarkdocConfig, options.config)),
+  };
 }
 
 export function renderTopikContent(
-  tree: RenderableTreeNode,
+  result: CompileTopikContentResult,
   options: RenderTopikContentOptions = {},
+): React.ReactNode {
+  if (!result.ok) {
+    for (const diagnostic of result.diagnostics) options.onDiagnostic?.(diagnostic);
+    if (options.invalidContent === "placeholder") {
+      return renderInvalidTopikContent(options.invalidContentPlaceholder);
+    }
+    throw new InvalidTopikContentError(result);
+  }
+  return renderTrustedTopikTree(result.tree, options);
+}
+
+/**
+ * Render a caller-trusted Markdoc tree. The caller owns validation and this API remains separate
+ * from normal source rendering. Post-transform link and Asset sanitization still applies.
+ */
+export function renderTrustedTopikTree(
+  tree: RenderableTreeNode,
+  options: RenderTrustedTopikTreeOptions = {},
 ): React.ReactNode {
   const resolved = resolveTopikAssetReferences(tree, options.resolveAsset, {
     onDiagnostic: options.onAssetDiagnostic,
@@ -88,6 +139,14 @@ export function renderTopikContent(
   return Markdoc.renderers.react(resolved, React, {
     components: getTopikComponents(options.components),
   });
+}
+
+function renderInvalidTopikContent(Placeholder: React.ComponentType | undefined): React.ReactNode {
+  return (
+    <div role="alert">
+      {Placeholder === undefined ? "Unsupported or invalid Topik content" : <Placeholder />}
+    </div>
+  );
 }
 
 interface ResolveTopikAssetReferencesOptions {
@@ -232,7 +291,8 @@ export function renderTopikMarkdown(
   content: string,
   options: RenderTopikMarkdownOptions = {},
 ): React.ReactNode {
-  return renderTopikContent(compileTopikContentInternal(content, options), options);
+  const result = compileTopikContentInternal(content, options);
+  return renderTopikContent(result, { ...options, onDiagnostic: undefined });
 }
 
 function mergeConfigs(base: Config, override: Config = {}): Config {

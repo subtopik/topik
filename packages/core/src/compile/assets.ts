@@ -364,14 +364,26 @@ async function compileAssetResourcesWithReader(
     const key = resourceKey(resource);
     const byPosition = replacements.get(key);
     if (byPosition === undefined || byPosition.size === 0) return resource;
-    const content = rewriteTopikAssetOccurrences(
+    const rewrittenContent = rewriteTopikAssetOccurrences(
       resource.spec.content.value,
       (occurrence) => byPosition.get(occurrence.position),
       { includeGenericLinkCandidates: true },
     );
+    if (!rewrittenContent.ok) {
+      throw new AssetCompilationError("Asset compilation could not rewrite invalid content", [
+        topikAssetDiagnostic(
+          "TOPIK_ASSET_SCHEMA_INVALID",
+          "Asset compilation could not rewrite invalid content",
+          { location: { path: sourcePaths.get(key) } },
+        ),
+      ]);
+    }
     return {
       ...resource,
-      spec: { ...resource.spec, content: { ...resource.spec.content, value: content } },
+      spec: {
+        ...resource.spec,
+        content: { ...resource.spec.content, value: rewrittenContent.content },
+      },
     } as Resource;
   });
   const resources = [...rewritten, ...resolvedAssets].sort(compareResources);

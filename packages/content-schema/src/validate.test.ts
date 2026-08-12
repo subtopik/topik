@@ -9,6 +9,20 @@ function idsFor(source: string): string[] {
 }
 
 describe("topik content schema", () => {
+  test.each([
+    '{% mystery private="opaque" %}\r\nchild\r\n{% /mystery %}',
+    'Before {% mystery private="opaque" %}child{% /mystery %} after',
+    '{% mystery private="outer" %}\n{% unknown private="inner" %}child{% /unknown %}\n{% /mystery %}',
+  ])("retains the exact source when unsupported content is rejected", (source) => {
+    const result = validateTopikContent(source);
+
+    expect(result.source).toBe(source);
+    expect(result.valid).toBe(false);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "tag-undefined", level: "critical" })]),
+    );
+  });
+
   test("keeps malformed external reference text out of serialized diagnostics", () => {
     const sentinel = "PRIVATE_VALUE";
     for (const reference of [
@@ -569,6 +583,21 @@ graph TD;
     expect(result.valid).toBe(false);
     expect(result.errors[0]).toMatchObject({ file: "lesson.md" });
     expect(result.errors[0].lines.length).toBeGreaterThan(0);
+  });
+
+  test("sanitizes absolute paths on manually constructed asset diagnostics", () => {
+    const sentinel = "SENSITIVE_DIRECTORY";
+    const source = "![x](é.png)";
+    const result = validateTopikContent(source, { file: `/tmp/${sentinel}/lesson.md` });
+
+    expect(result).toMatchObject({ source, valid: false });
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_ASSET_PATH_INVALID", file: "lesson.md" }),
+      ]),
+    );
+    expect(JSON.stringify(result.errors)).not.toContain(sentinel);
+    expect(JSON.stringify(result.errors)).not.toContain("/tmp/");
   });
 
   test("transforms tags to stable renderer component names", () => {

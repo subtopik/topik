@@ -6,7 +6,7 @@ import {
   type GeneratedAssetName,
 } from "@topik/schema";
 import type { TopikContentNode } from "./content";
-import { formatTopikContent, parseTopikContent } from "./content";
+import { formatTopikContentAst, parseTopikContent } from "./content";
 import type { TopikAssetReferenceRole } from "./components";
 
 export const TOPIK_ASSET_REFERENCE_VERSION = "topik-asset-reference-v1" as const;
@@ -138,7 +138,8 @@ export function extractTopikAssetOccurrences(
   return occurrences;
 }
 
-export function rewriteTopikAssetOccurrences(
+/** Internal tree mutation used only after the public serializer has validated exact source. */
+export function rewriteTopikAssetOccurrencesUnchecked(
   source: string,
   replace: (occurrence: TopikAssetOccurrence) => string | undefined,
   options: ExtractTopikAssetOccurrencesOptions = {},
@@ -183,7 +184,7 @@ export function rewriteTopikAssetOccurrences(
   });
 
   escapeMarkdownInlineTitlesForFormatting(ast);
-  return formatTopikContent(ast);
+  return formatTopikContentAst(ast);
 }
 
 function escapeMarkdownInlineTitlesForFormatting(root: TopikContentNode): void {

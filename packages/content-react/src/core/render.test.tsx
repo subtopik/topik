@@ -5,8 +5,10 @@ import { TopikContentProvider, useTopikComponents } from "./context";
 import { getTopikComponents } from "./components";
 import {
   compileTopikContent,
+  InvalidTopikContentError,
   renderTopikContent,
   renderTopikMarkdown,
+  renderTrustedTopikTree,
   resolveTopikAssetReferences,
 } from "./render";
 
@@ -87,6 +89,141 @@ Because it is correct.
 `;
 
 describe("content-react core", () => {
+  it("compiles warning-only content and retains its diagnostic", () => {
+    const source = "Warning-only content.";
+    const transform = vi.spyOn(Markdoc, "transform");
+
+    const result = compileTopikContent(source, {
+      config: {
+        nodes: {
+          paragraph: {
+            render: "p",
+            validate: () => [
+              { id: "test-warning", level: "warning", message: "A non-blocking warning" },
+            ],
+          },
+        },
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      source,
+      diagnostics: [expect.objectContaining({ id: "test-warning", level: "warning" })],
+    });
+    expect(result).toHaveProperty("tree");
+    expect(transform).toHaveBeenCalledOnce();
+    transform.mockRestore();
+  });
+
+  it.each([
+    '{% mystery private="opaque" %}child{% /mystery %}',
+    'Before {% mystery private="opaque" %}child{% /mystery %} after',
+    '{% mystery private="outer" %}{% unknown private="inner" %}child{% /unknown %}{% /mystery %}',
+    "{% quiz %}{% /quiz %}",
+  ])("returns a tree-free compile failure before transformation for %s", (source) => {
+    const transform = vi.spyOn(Markdoc, "transform");
+
+    const result = compileTopikContent(source);
+
+    expect(result).toMatchObject({ ok: false, source });
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ level: expect.stringMatching(/^(?:error|critical)$/u) }),
+      ]),
+    );
+    expect(result).not.toHaveProperty("tree");
+    expect(transform).not.toHaveBeenCalled();
+    transform.mockRestore();
+  });
+
+  it("throws by default for invalid source after reporting sanitized diagnostics", () => {
+    const source = '{% mystery private="opaque" %}child{% /mystery %}';
+    const diagnostics: unknown[] = [];
+
+    expect(() =>
+      renderTopikMarkdown(source, {
+        onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+      }),
+    ).toThrow();
+    expect(diagnostics).not.toHaveLength(0);
+    expect(JSON.stringify(diagnostics)).not.toContain("opaque");
+    expect(JSON.stringify(diagnostics)).not.toContain(source);
+  });
+
+  it("throws a typed error carrying the exact tree-free compile failure", () => {
+    const source = '  {% mystery private="opaque" %}\r\nchild\r\n{% /mystery %}  ';
+    const result = compileTopikContent(source);
+
+    expect(result).toMatchObject({ ok: false, source });
+    expect(() => renderTopikContent(result)).toThrow(InvalidTopikContentError);
+    try {
+      void renderTopikContent(result);
+    } catch (error) {
+      expect(error).toBeInstanceOf(InvalidTopikContentError);
+      expect((error as InvalidTopikContentError).result).toBe(result);
+      expect(error).not.toHaveProperty("tree");
+    }
+  });
+
+  it("keeps sensitive source and paths out of compile diagnostics and typed error messages", () => {
+    const sentinel = "PRIVATE_VALUE";
+    const source = `{% mystery private="${sentinel}" %}child{% /mystery %}`;
+    const result = compileTopikContent(source, { file: `/tmp/${sentinel}/lesson.md` });
+
+    expect(result).toMatchObject({ ok: false, source });
+    expect(JSON.stringify(result.diagnostics)).not.toContain(sentinel);
+    expect(JSON.stringify(result.diagnostics)).not.toContain("/tmp/");
+    expect(() => renderTopikContent(result)).toThrow("Topik content is unsupported or invalid");
+  });
+
+  it("sanitizes absolute paths on manual asset diagnostics across compile failure", () => {
+    const sentinel = "SENSITIVE_DIRECTORY";
+    const source = "![x](é.png)";
+    const result = compileTopikContent(source, { file: `/tmp/${sentinel}/lesson.md` });
+
+    expect(result).toMatchObject({ ok: false, source });
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_ASSET_PATH_INVALID", file: "lesson.md" }),
+      ]),
+    );
+    expect(JSON.stringify(result.diagnostics)).not.toContain(sentinel);
+    expect(JSON.stringify(result.diagnostics)).not.toContain("/tmp/");
+  });
+
+  it("server-renders a fixed accessible placeholder only when selected explicitly", () => {
+    const source = '{% mystery private="opaque" %}leaked child{% /mystery %}';
+
+    const html = renderToStaticMarkup(
+      <>{renderTopikMarkdown(source, { invalidContent: "placeholder" })}</>,
+    );
+
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("Unsupported or invalid Topik content");
+    expect(html).not.toContain("leaked child");
+    expect(html).not.toContain("opaque");
+    expect(html).not.toContain("mystery");
+  });
+
+  it("wraps a custom invalid-content presentation in fixed alert semantics", () => {
+    const source = '{% mystery private="opaque" %}leaked child{% /mystery %}';
+
+    const html = renderToStaticMarkup(
+      <>
+        {renderTopikMarkdown(source, {
+          invalidContent: "placeholder",
+          invalidContentPlaceholder: () => <strong>Cannot preview this content</strong>,
+        })}
+      </>,
+    );
+
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("Cannot preview this content");
+    expect(html).not.toContain("leaked child");
+    expect(html).not.toContain("opaque");
+  });
+
   it("resolves names in declared slots during server rendering", () => {
     const assetNames = ["a", "b", "c", "d"].map(
       (character, index) => `auto-v1-${character.repeat(51)}${index % 2 === 0 ? "a" : "q"}`,
@@ -195,6 +332,7 @@ describe("content-react core", () => {
     const html = renderToStaticMarkup(
       <>
         {renderTopikMarkdown("![Logo](asset:auto-v1-short)", {
+          invalidContent: "placeholder",
           onDiagnostic: (diagnostic) => sourceDiagnostics.push(diagnostic.id),
         })}
       </>,
@@ -305,7 +443,7 @@ describe("content-react core", () => {
     expect(() =>
       renderToStaticMarkup(
         <>
-          {renderTopikContent(
+          {renderTrustedTopikTree(
             new Markdoc.Tag("article", {}, [
               new Markdoc.Tag("TopikImage", { src: { toString: () => "unsafe-image" } }),
               new Markdoc.Tag("TopikFigure", { darkSrc: Object("unsafe-dark"), src: 1 }),
@@ -319,132 +457,124 @@ describe("content-react core", () => {
     expect(diagnostics).toEqual(Array(4).fill("TOPIK_ASSET_REFERENCE_MALFORMED"));
   });
 
-  it.each([true, false])(
-    "sanitizes variable and function results before custom renderers with validation %s",
-    (validate) => {
-      const diagnostics: string[] = [];
-      const html = renderToStaticMarkup(
-        <>
-          {renderTopikMarkdown(
-            [
-              '{% evaluatedImage src=$unsafe alt="Image" /%}',
-              '{% figure src=unsafe() darkSrc=$allowed alt="Figure" /%}',
-              "{% evaluatedLink href=$unsafe %}Download{% /evaluatedLink %}",
-            ].join("\n\n"),
-            {
-              components: {
-                TopikFigure: ({ darkSrc, src }) => (
-                  <span data-dark={String(darkSrc)} data-src={String(src)} />
-                ),
-                TopikImage: ({ src }) => <span data-src={String(src)} />,
-                TopikLink: ({ children, href }) =>
-                  typeof href === "string" ? (
-                    <a data-custom href={href}>
-                      {children}
-                    </a>
-                  ) : (
-                    <span data-no-target>{children}</span>
-                  ),
-              },
-              config: {
-                functions: { unsafe: { transform: () => "javascript:alert(1)" } },
-                tags: {
-                  evaluatedImage: {
-                    render: "TopikImage",
-                    attributes: { alt: { type: String }, src: { type: String } },
-                  },
-                  evaluatedLink: {
-                    render: "TopikLink",
-                    attributes: { href: { type: String } },
-                  },
-                },
-                variables: {
-                  allowed: "HtTpS://example.com/dark.png",
-                  unsafe: "http://example.com/file.png",
-                },
-              },
-              onAssetDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id),
-              validate,
-            },
-          )}
-        </>,
-      );
-
-      expect(diagnostics).toEqual(Array(3).fill("TOPIK_ASSET_REFERENCE_MALFORMED"));
-      expect(html).toContain('data-dark="HtTpS://example.com/dark.png"');
-      expect(html).not.toContain("http://");
-      expect(html).not.toContain("javascript:");
-      expect(html).not.toContain("href=");
-      expect(html).toContain("data-no-target");
-    },
-  );
-
-  it.each([true, false])(
-    "omits coercible non-string variable and function results before custom renderers with validation %s",
-    (validate) => {
-      const unsafe = "https://user:secret@example.com/file.png";
-      const diagnostics: string[] = [];
-      const html = renderToStaticMarkup(
-        <>
-          {renderTopikMarkdown(
-            [
-              '{% evaluatedImage src=$object alt="Object" /%}',
-              '{% figure src=boxed() darkSrc=$array alt="Figure" /%}',
-              "{% evaluatedLink href=number() %}Number{% /evaluatedLink %}",
-              '{% evaluatedImage src=$boolean alt="Boolean" /%}',
-              "{% evaluatedLink href=nil() %}Null{% /evaluatedLink %}",
-              '{% evaluatedImage src=$allowed alt="Allowed" /%}',
-            ].join("\n\n"),
-            {
-              components: {
-                TopikFigure: ({ darkSrc, src }) => (
-                  <span data-dark={String(darkSrc)} data-src={String(src)} />
-                ),
-                TopikImage: ({ src }) => <span data-src={String(src)} />,
-                TopikLink: ({ children, href }) => (
-                  <a data-custom href={String(href)}>
+  it("sanitizes variable and function results before custom renderers", () => {
+    const diagnostics: string[] = [];
+    const html = renderToStaticMarkup(
+      <>
+        {renderTopikMarkdown(
+          [
+            '{% evaluatedImage src=$unsafe alt="Image" /%}',
+            '{% figure src=unsafe() darkSrc=$allowed alt="Figure" /%}',
+            "{% evaluatedLink href=$unsafe %}Download{% /evaluatedLink %}",
+          ].join("\n\n"),
+          {
+            components: {
+              TopikFigure: ({ darkSrc, src }) => (
+                <span data-dark={String(darkSrc)} data-src={String(src)} />
+              ),
+              TopikImage: ({ src }) => <span data-src={String(src)} />,
+              TopikLink: ({ children, href }) =>
+                typeof href === "string" ? (
+                  <a data-custom href={href}>
                     {children}
                   </a>
+                ) : (
+                  <span data-no-target>{children}</span>
                 ),
-              },
-              config: {
-                functions: {
-                  boxed: { transform: () => Object(unsafe) },
-                  nil: { transform: () => null },
-                  number: { transform: () => 42 },
-                },
-                tags: {
-                  evaluatedImage: {
-                    render: "TopikImage",
-                    attributes: { alt: { type: String }, src: { type: Object } },
-                  },
-                  evaluatedLink: {
-                    render: "TopikLink",
-                    attributes: { href: { type: Object } },
-                  },
-                },
-                variables: {
-                  allowed: "images/allowed.png",
-                  array: [unsafe],
-                  boolean: true,
-                  object: { toString: () => unsafe },
-                },
-              },
-              onAssetDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id),
-              validate,
             },
-          )}
-        </>,
-      );
+            config: {
+              functions: { unsafe: { transform: () => "javascript:alert(1)" } },
+              tags: {
+                evaluatedImage: {
+                  render: "TopikImage",
+                  attributes: { alt: { type: String }, src: { type: String } },
+                },
+                evaluatedLink: {
+                  render: "TopikLink",
+                  attributes: { href: { type: String } },
+                },
+              },
+              variables: {
+                allowed: "HtTpS://example.com/dark.png",
+                unsafe: "http://example.com/file.png",
+              },
+            },
+            onAssetDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id),
+          },
+        )}
+      </>,
+    );
 
-      expect(diagnostics).toEqual(Array(6).fill("TOPIK_ASSET_REFERENCE_MALFORMED"));
-      expect(html).toContain('data-src="images/allowed.png"');
-      expect(html).not.toContain("user:secret");
-      expect(html).not.toContain('href="42"');
-      expect(html).not.toContain('href="null"');
-      expect(html).not.toContain('data-src="true"');
-    },
-  );
+    expect(diagnostics).toEqual(Array(3).fill("TOPIK_ASSET_REFERENCE_MALFORMED"));
+    expect(html).toContain('data-dark="HtTpS://example.com/dark.png"');
+    expect(html).not.toContain("http://");
+    expect(html).not.toContain("javascript:");
+    expect(html).not.toContain("href=");
+    expect(html).toContain("data-no-target");
+  });
+
+  it("omits coercible non-string variable and function results before custom renderers", () => {
+    const unsafe = "https://user:secret@example.com/file.png";
+    const diagnostics: string[] = [];
+    const html = renderToStaticMarkup(
+      <>
+        {renderTopikMarkdown(
+          [
+            '{% evaluatedImage src=$object alt="Object" /%}',
+            '{% figure src=boxed() darkSrc=$array alt="Figure" /%}',
+            "{% evaluatedLink href=number() %}Number{% /evaluatedLink %}",
+            '{% evaluatedImage src=$boolean alt="Boolean" /%}',
+            "{% evaluatedLink href=nil() %}Null{% /evaluatedLink %}",
+            '{% evaluatedImage src=$allowed alt="Allowed" /%}',
+          ].join("\n\n"),
+          {
+            components: {
+              TopikFigure: ({ darkSrc, src }) => (
+                <span data-dark={String(darkSrc)} data-src={String(src)} />
+              ),
+              TopikImage: ({ src }) => <span data-src={String(src)} />,
+              TopikLink: ({ children, href }) => (
+                <a data-custom href={String(href)}>
+                  {children}
+                </a>
+              ),
+            },
+            config: {
+              functions: {
+                boxed: { transform: () => Object(unsafe) },
+                nil: { transform: () => null },
+                number: { transform: () => 42 },
+              },
+              tags: {
+                evaluatedImage: {
+                  render: "TopikImage",
+                  attributes: { alt: { type: String }, src: { type: Object } },
+                },
+                evaluatedLink: {
+                  render: "TopikLink",
+                  attributes: { href: { type: Object } },
+                },
+              },
+              variables: {
+                allowed: "images/allowed.png",
+                array: [unsafe],
+                boolean: true,
+                object: { toString: () => unsafe },
+              },
+            },
+            onAssetDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id),
+          },
+        )}
+      </>,
+    );
+
+    expect(diagnostics).toEqual(Array(6).fill("TOPIK_ASSET_REFERENCE_MALFORMED"));
+    expect(html).toContain('data-src="images/allowed.png"');
+    expect(html).not.toContain("user:secret");
+    expect(html).not.toContain('href="42"');
+    expect(html).not.toContain('href="null"');
+    expect(html).not.toContain('data-src="true"');
+  });
 
   it("preserves safe evaluated navigation and Asset values", () => {
     const references = [
@@ -644,6 +774,7 @@ describe("content-react core", () => {
     const diagnostics: string[] = [];
 
     const rendered = renderTopikMarkdown("{% quiz %}{% /quiz %}", {
+      invalidContent: "placeholder",
       onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.message),
     });
 
@@ -662,6 +793,7 @@ describe("content-react core", () => {
       const diagnostics: unknown[] = [];
       void renderTopikMarkdown(`{% card title="Unsafe" href="${href}" /%}`, {
         file: `/tmp/${sentinel}/lesson.md`,
+        invalidContent: "placeholder",
         onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
       });
 
@@ -702,6 +834,7 @@ describe("content-react core", () => {
                 </picture>
               ) : null,
           },
+          invalidContent: "placeholder",
           onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id),
         })}
       </>,
@@ -728,6 +861,7 @@ describe("content-react core", () => {
             TopikImage: ({ src }) =>
               typeof src === "string" ? <img alt="" data-unsafe src={src} /> : null,
           },
+          invalidContent: "placeholder",
           onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id),
         })}
       </>,
@@ -747,6 +881,7 @@ describe("content-react core", () => {
             TopikImage: ({ src }) =>
               typeof src === "string" ? <img alt="" data-unsafe src={src} /> : null,
           },
+          invalidContent: "placeholder",
           onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id),
         })}
       </>,
@@ -765,6 +900,7 @@ describe("content-react core", () => {
             TopikImage: ({ src }) =>
               typeof src === "string" ? <img alt="" data-unsafe src={src} /> : null,
           },
+          invalidContent: "placeholder",
           onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id),
         })}
       </>,
@@ -786,6 +922,7 @@ describe("content-react core", () => {
             TopikImage: ({ src }) =>
               typeof src === "string" ? <img alt="" data-unsafe src={src} /> : null,
           },
+          invalidContent: "placeholder",
           onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id),
         })}
       </>,
@@ -808,6 +945,7 @@ describe("content-react core", () => {
             TopikImage: ({ src }) =>
               typeof src === "string" ? <img alt="" data-unsafe src={src} /> : null,
           },
+          invalidContent: "placeholder",
           onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id),
         })}
       </>,
@@ -835,6 +973,7 @@ describe("content-react core", () => {
             TopikImage: ({ src }) =>
               typeof src === "string" ? <img alt="" data-unsafe src={src} /> : null,
           },
+          invalidContent: "placeholder",
           onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id),
         })}
       </>,
@@ -880,6 +1019,7 @@ describe("content-react core", () => {
             TopikImage: ({ src }) =>
               typeof src === "string" ? <img alt="" data-unsafe src={src} /> : null,
           },
+          invalidContent: "placeholder",
           onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id),
         })}
       </>,
@@ -920,6 +1060,7 @@ describe("content-react core", () => {
             TopikImage: ({ src }) =>
               typeof src === "string" ? <img alt="" data-unsafe src={src} /> : null,
           },
+          invalidContent: "placeholder",
           onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id),
         })}
       </>,
@@ -952,104 +1093,82 @@ describe("content-react core", () => {
     expect(html).toContain('srcSet="https://example.com/dark.png?q=1#x"');
   });
 
-  it.each([true, false])(
-    "preserves mixed-case HTTPS through custom renderers with validation=%s",
-    (validate) => {
-      const content = [
-        "![Image](HtTpS://example.com/image.png)",
-        "[Download](hTTps://example.com/manual.pdf)",
-        "<HTTPS://example.com/autolink.pdf>",
-        '{% figure src="HTtPs://example.com/light.png" darkSrc="htTPs://example.com/dark.png" alt="Theme" /%}',
-      ].join("\n\n");
-      const customHtml = renderToStaticMarkup(
-        <>
-          {renderTopikMarkdown(content, {
-            validate,
-            components: {
-              TopikImage: ({ src }) => <span data-image={String(src)} />,
-              TopikLink: ({ href }) => <span data-link={String(href)} />,
-              TopikFigure: ({ darkSrc, src }) => (
-                <span data-dark={String(darkSrc)} data-light={String(src)} />
-              ),
-            },
-          })}
-        </>,
-      );
+  it("preserves mixed-case HTTPS through custom renderers", () => {
+    const content = [
+      "![Image](HtTpS://example.com/image.png)",
+      "[Download](hTTps://example.com/manual.pdf)",
+      "<HTTPS://example.com/autolink.pdf>",
+      '{% figure src="HTtPs://example.com/light.png" darkSrc="htTPs://example.com/dark.png" alt="Theme" /%}',
+    ].join("\n\n");
+    const customHtml = renderToStaticMarkup(
+      <>
+        {renderTopikMarkdown(content, {
+          components: {
+            TopikImage: ({ src }) => <span data-image={String(src)} />,
+            TopikLink: ({ href }) => <span data-link={String(href)} />,
+            TopikFigure: ({ darkSrc, src }) => (
+              <span data-dark={String(darkSrc)} data-light={String(src)} />
+            ),
+          },
+        })}
+      </>,
+    );
 
-      for (const reference of [
-        "HtTpS://example.com/image.png",
-        "hTTps://example.com/manual.pdf",
-        "HTTPS://example.com/autolink.pdf",
-        "HTtPs://example.com/light.png",
-        "htTPs://example.com/dark.png",
-      ]) {
-        expect(customHtml).toContain(reference);
-      }
-    },
-  );
+    for (const reference of [
+      "HtTpS://example.com/image.png",
+      "hTTps://example.com/manual.pdf",
+      "HTTPS://example.com/autolink.pdf",
+      "HTtPs://example.com/light.png",
+      "htTPs://example.com/dark.png",
+    ]) {
+      expect(customHtml).toContain(reference);
+    }
+  });
 
-  it.each([true, false])(
-    "removes mixed-case HTTP and credential-bearing HTTPS with validation=%s",
-    (validate) => {
-      const diagnostics: string[] = [];
-      const html = renderToStaticMarkup(
-        <>
-          {renderTopikMarkdown(
-            [
-              "![HTTP](HtTp://example.com/image.png)",
-              "[HTTP](hTtP://example.com/manual.pdf)",
-              "<HTtp://example.com/autolink.pdf>",
-              '{% figure src="hTtPs://user:secret@example.com/image.png" alt="Unsafe" /%}',
-              "![Protocol relative](//example.com/image.png)",
-              '{% figure src="HtTpS://[invalid" alt="Malformed" /%}',
-            ].join("\n\n"),
-            {
-              validate,
-              components: {
-                TopikImage: ({ src }) => <span data-image={String(src)} />,
-                TopikFigure: ({ src }) => <span data-figure={String(src)} />,
-              },
-              onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id),
-            },
-          )}
-        </>,
-      );
+  it("rejects mixed-case HTTP and credential-bearing HTTPS before rendering", () => {
+    const diagnostics: string[] = [];
+    expect(() =>
+      renderTopikMarkdown(
+        [
+          "![HTTP](HtTp://example.com/image.png)",
+          "[HTTP](hTtP://example.com/manual.pdf)",
+          "<HTtp://example.com/autolink.pdf>",
+          '{% figure src="hTtPs://user:secret@example.com/image.png" alt="Unsafe" /%}',
+          "![Protocol relative](//example.com/image.png)",
+          '{% figure src="HtTpS://[invalid" alt="Malformed" /%}',
+        ].join("\n\n"),
+        {
+          components: {
+            TopikImage: ({ src }) => <span data-image={String(src)} />,
+            TopikFigure: ({ src }) => <span data-figure={String(src)} />,
+          },
+          onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.id),
+        },
+      ),
+    ).toThrow(InvalidTopikContentError);
+    expect(diagnostics).toContain("TOPIK_EXTERNAL_REFERENCE_UNSAFE");
+  });
 
-      expect(html).not.toContain('data-image="HtTp:');
-      expect(html).not.toContain('data-link="hTtP:');
-      expect(html).not.toContain('data-link="HTtp:');
-      expect(html).not.toContain("user:secret");
-      expect(html).not.toContain('data-image="//example.com');
-      expect(html).not.toContain('data-figure="HtTpS://[invalid');
-      expect(html).not.toMatch(/\b(?:src|href)="/iu);
-      if (validate) expect(diagnostics).toContain("TOPIK_EXTERNAL_REFERENCE_UNSAFE");
-    },
-  );
+  it("preserves ordinary navigation with query and fragment", () => {
+    const href = "guide?tab=assets#delivery";
+    const html = renderToStaticMarkup(
+      <>
+        {renderTopikMarkdown(`[Guide](${href})`, {
+          components: {
+            TopikLink: ({ children, href: target }) => <a href={String(target)}>{children}</a>,
+          },
+        })}
+      </>,
+    );
 
-  it.each([true, false])(
-    "preserves ordinary navigation with query and fragment when validation=%s",
-    (validate) => {
-      const href = "guide?tab=assets#delivery";
-      const html = renderToStaticMarkup(
-        <>
-          {renderTopikMarkdown(`[Guide](${href})`, {
-            validate,
-            components: {
-              TopikLink: ({ children, href: target }) => <a href={String(target)}>{children}</a>,
-            },
-          })}
-        </>,
-      );
-
-      expect(html).toContain(`href="${href}"`);
-    },
-  );
+    expect(html).toContain(`href="${href}"`);
+  });
 
   it("server-renders compiled content without crashing", () => {
-    const tree = compileTopikContent('{% callout title="SSR" %}Works.{% /callout %}');
-    const html = renderToString(<>{renderTopikContent(tree)}</>);
+    const result = compileTopikContent('{% callout title="SSR" %}Works.{% /callout %}');
+    const html = renderToString(<>{renderTopikContent(result)}</>);
 
-    expect(tree).toBeTruthy();
+    expect(result.ok).toBe(true);
     expect(html).toContain("Works.");
   });
 

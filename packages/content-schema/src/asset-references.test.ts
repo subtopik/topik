@@ -1,12 +1,45 @@
-import { describe, expect, test } from "vite-plus/test";
+import { describe, expect, test, vi } from "vite-plus/test";
 import {
   extractTopikAssetOccurrences,
-  rewriteTopikAssetOccurrences,
   topikAssetReferenceSlots,
   validateTopikAssetReference,
 } from "./asset-references";
+import { rewriteTopikAssetOccurrences } from "./rewrite";
 
 describe("topik-asset-reference-v1 occurrence registry", () => {
+  test("refuses unsupported source before replacement or formatting", () => {
+    const source = '  {% mystery private="opaque" %}\r\n![child](old.png)\r\n{% /mystery %}  ';
+    const replace = vi.fn(() => "new.png");
+
+    const result = rewriteTopikAssetOccurrences(source, replace);
+
+    expect(result).toMatchObject({ ok: false, source });
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "tag-undefined", level: "critical" })]),
+    );
+    expect(result).not.toHaveProperty("content");
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  test("keeps sensitive source and absolute paths out of rewrite-refusal diagnostics", () => {
+    const sentinel = "SENSITIVE_DIRECTORY";
+    const source = "![x](é.png)";
+    const replace = vi.fn(() => "new.png");
+    const result = rewriteTopikAssetOccurrences(source, replace, {
+      file: `/tmp/${sentinel}/lesson.md`,
+    });
+
+    expect(result).toMatchObject({ ok: false, source });
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_ASSET_PATH_INVALID", file: "lesson.md" }),
+      ]),
+    );
+    expect(JSON.stringify(result.diagnostics)).not.toContain(sentinel);
+    expect(JSON.stringify(result.diagnostics)).not.toContain("/tmp/");
+    expect(replace).not.toHaveBeenCalled();
+  });
+
   test("retains duplicate occurrences and occurrence-specific semantics", () => {
     const source = [
       '![First](assets/hero.png "First title")',
@@ -62,8 +95,10 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
         occurrence.slot === "image.src" ? "compiled-hero.png" : "compiled-manual.bin",
       options,
     );
-    expect(rewritten).toContain(`![Hero](compiled-hero.png "${title}")`);
-    expect(rewritten).toContain(`[Manual](compiled-manual.bin "${title}")`);
+    expect(rewritten.ok).toBe(true);
+    if (!rewritten.ok) return;
+    expect(rewritten.content).toContain(`![Hero](compiled-hero.png "${title}")`);
+    expect(rewritten.content).toContain(`[Manual](compiled-manual.bin "${title}")`);
   });
 
   test.each([
@@ -91,7 +126,9 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
         occurrence.slot === "image.src" ? "compiled-hero.png" : "compiled-manual.bin",
       { provenDownloadPaths: ["manual.bin"] },
     );
-    const after = extractTopikAssetOccurrences(rewritten, {
+    expect(rewritten.ok).toBe(true);
+    if (!rewritten.ok) return;
+    const after = extractTopikAssetOccurrences(rewritten.content, {
       provenDownloadPaths: ["compiled-manual.bin"],
     });
     expect(after).toMatchObject([
@@ -113,7 +150,9 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
         occurrence.slot === "image.src" ? "compiled-hero.png" : occurrence.reference,
       { includeGenericLinkCandidates: true },
     );
-    const after = extractTopikAssetOccurrences(rewritten, {
+    expect(rewritten.ok).toBe(true);
+    if (!rewritten.ok) return;
+    const after = extractTopikAssetOccurrences(rewritten.content, {
       includeGenericLinkCandidates: true,
     });
 
@@ -430,8 +469,10 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
       { reference: "%C3%A9.png", parsedReference: "%C3%A9.png", kind: "local" },
     ]);
     const rewritten = rewriteTopikAssetOccurrences(source, () => "replacement.png");
-    expect(rewritten).toContain("![real](replacement.png)");
-    expect(rewritten).toContain('title="![attribute](other.png)"');
+    expect(rewritten.ok).toBe(true);
+    if (!rewritten.ok) return;
+    expect(rewritten.content).toContain("![real](replacement.png)");
+    expect(rewritten.content).toContain('title="![attribute](other.png)"');
   });
 
   test.each(["before", "after"])(
@@ -621,11 +662,13 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
   });
 
   test("rewrites only declared slots", () => {
-    const source = '![image](old.png)\n\n{% card title="leave" href="custom:leave" /%}';
+    const source = '![image](old.png)\n\n{% card title="leave" href="/leave" /%}';
     const rewritten = rewriteTopikAssetOccurrences(source, () => "new.png");
-    expect(rewritten).toContain("![image](new.png)");
-    expect(rewritten).toContain('title="leave"');
-    expect(rewritten).toContain('href="custom:leave"');
+    expect(rewritten.ok).toBe(true);
+    if (!rewritten.ok) return;
+    expect(rewritten.content).toContain("![image](new.png)");
+    expect(rewritten.content).toContain('title="leave"');
+    expect(rewritten.content).toContain('href="/leave"');
   });
 
   test("rewrites light and dark figure slots independently", () => {
@@ -634,7 +677,9 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
     const rewritten = rewriteTopikAssetOccurrences(source, (occurrence) =>
       occurrence.slot === "figure.src" ? "images/light.png" : "images/dark.png",
     );
-    expect(rewritten).toContain('src="images/light.png"');
-    expect(rewritten).toContain('darkSrc="images/dark.png"');
+    expect(rewritten.ok).toBe(true);
+    if (!rewritten.ok) return;
+    expect(rewritten.content).toContain('src="images/light.png"');
+    expect(rewritten.content).toContain('darkSrc="images/dark.png"');
   });
 });

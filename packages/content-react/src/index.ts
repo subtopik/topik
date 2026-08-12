@@ -2,11 +2,17 @@ export {
   compileTopikContent,
   renderTopikContent,
   renderTopikMarkdown,
+  renderTrustedTopikTree,
   resolveTopikAssetReferences,
   type CompileTopikContentOptions,
+  type CompileTopikContentFailure,
+  type CompileTopikContentResult,
+  type CompileTopikContentSuccess,
   type RenderTopikContentOptions,
   type RenderTopikMarkdownOptions,
+  type RenderTrustedTopikTreeOptions,
   type TopikAssetResolutionDiagnostic,
+  InvalidTopikContentError,
 } from "./core/render";
 export {
   TopikContentProvider,

@@ -4,7 +4,6 @@ export {
   TOPIK_GENERATED_ASSET_NAME_PATTERN,
   extractTopikAssetOccurrences,
   removeInvalidTopikAssetReferences,
-  rewriteTopikAssetOccurrences,
   topikAssetReferenceSlots,
   validateTopikAssetReference,
   type ExtractTopikAssetOccurrencesOptions,
@@ -15,12 +14,21 @@ export {
   type TopikAssetReferenceValidation,
   type TopikGeneratedAssetName,
 } from "./asset-references";
+export { parseTopikContent, type ParseTopikContentOptions, type TopikContentNode } from "./content";
 export {
   formatTopikContent,
-  parseTopikContent,
-  type ParseTopikContentOptions,
-  type TopikContentNode,
-} from "./content";
+  type FormatTopikContentFailure,
+  type FormatTopikContentOptions,
+  type FormatTopikContentResult,
+  type FormatTopikContentSuccess,
+} from "./format";
+export {
+  rewriteTopikAssetOccurrences,
+  type RewriteTopikAssetOccurrencesFailure,
+  type RewriteTopikAssetOccurrencesOptions,
+  type RewriteTopikAssetOccurrencesResult,
+  type RewriteTopikAssetOccurrencesSuccess,
+} from "./rewrite";
 export { assignTopikHeadingIds, type TopikHeading } from "./headings";
 export {
   analyzeTopikContent,

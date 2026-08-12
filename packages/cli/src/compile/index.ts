@@ -39,6 +39,7 @@ const COMPILATION_GENERATION_PREFIX = ".topik-compilation-generation-";
 const COMPILATION_PRIOR_PREFIX = ".topik-compilation-prior-";
 const COMPILATION_DIRECTORIES = ["blobs", "resources"] as const;
 const ownedDescriptorDecoder = new TextDecoder("utf-8", { fatal: true });
+const ownedDescriptorEncoder = new TextEncoder();
 
 export const compile = command({
   name: "compile",
@@ -344,7 +345,8 @@ function parseBoundCanonicalJson(
   const bytes = readBoundCompilationFileSync(root, tree, path);
   const text = ownedDescriptorDecoder.decode(bytes);
   const value = parseStrictTopikJson(text, Number.POSITIVE_INFINITY);
-  if (serializeTopikJson(value) !== text) {
+  const canonicalBytes = ownedDescriptorEncoder.encode(serializeTopikJson(value));
+  if (!Buffer.from(bytes).equals(canonicalBytes)) {
     throw new TypeError("Compilation descriptor is not canonical");
   }
   return value;

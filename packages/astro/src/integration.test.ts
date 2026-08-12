@@ -1,4 +1,6 @@
 import { execFile } from "node:child_process";
+import { createServer, request, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -74,6 +76,45 @@ async function dispatch(
   return { next, response };
 }
 
+async function requestRawDevelopmentServer(
+  port: number,
+  path: string,
+  method: "GET" | "HEAD",
+): Promise<{ body: Buffer; status: number }> {
+  return new Promise((resolve, reject) => {
+    const req = request({ hostname: "127.0.0.1", method, path, port }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on("data", (chunk: Buffer) => chunks.push(chunk));
+      res.on("end", () => resolve({ body: Buffer.concat(chunks), status: res.statusCode ?? 0 }));
+    });
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+async function startRawDevelopmentServer(
+  middleware: ReturnType<typeof createMiddleware>,
+): Promise<{ close: () => Promise<void>; port: number }> {
+  const server: Server = createServer((req, res) => {
+    middleware(req, res as never, () => {
+      res.statusCode = 404;
+      res.end("Not Found");
+    });
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address() as AddressInfo;
+  return {
+    port: address.port,
+    close: () =>
+      new Promise<void>((resolve, reject) =>
+        server.close((error) => (error === undefined ? resolve() : reject(error))),
+      ),
+  };
+}
+
 describe("topik integration", () => {
   let tempDir: string;
   let dir: string;
@@ -119,6 +160,64 @@ describe("topik integration", () => {
       );
       expect(delivered.response.end).toHaveBeenCalledWith(expectedBytes.get(asset.spec.mediaType));
       expect(loader.resolveAsset(asset.name)).toBe(`/${asset.spec.uri}`);
+    }
+  });
+
+  test("admits only literal raw development blob request targets", async () => {
+    await writeFile(join(dir, "collection.yaml"), "id: guides\ntitle: Guides\n");
+    await writeFile(join(dir, "hero.png"), PNG_BYTES);
+    await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](hero.png)\n");
+    const loader = topikGuidesLoader({ dir, sourceNamespace: "astro-raw-delivery" });
+    await loader.load(createMockContext());
+    const asset = loader.getAssets()[0];
+    const canonicalPath = `/${asset.spec.uri}`;
+    const digest = asset.spec.uri.slice("blobs/".length);
+    const encodedDigest = `%${digest.charCodeAt(0).toString(16).padStart(2, "0")}${digest.slice(1)}`;
+    const running = await startRawDevelopmentServer(createMiddleware([loader]));
+    try {
+      const paths = [
+        canonicalPath,
+        `${canonicalPath}?cache=off`,
+        `/blobs/../blobs/${digest}`,
+        `/blobs/%2e%2e/blobs/${digest}`,
+        `/blobs/..\\blobs/${digest}`,
+        `/blobs/%5c${digest}`,
+        `/blobs/${encodedDigest}`,
+        `/assets/sha256/${digest}`,
+      ] as const;
+      const statuses = Object.fromEntries(
+        await Promise.all(
+          paths.map(async (path) => {
+            const [get, head] = await Promise.all(
+              (["GET", "HEAD"] as const).map((method) =>
+                requestRawDevelopmentServer(running.port, path, method),
+              ),
+            );
+            return [
+              path,
+              { GET: get.status, HEAD: head.status, getBody: get.body, headBody: head.body },
+            ] as const;
+          }),
+        ),
+      );
+
+      for (const path of [canonicalPath, `${canonicalPath}?cache=off`]) {
+        expect(statuses[path]).toEqual({
+          GET: 200,
+          HEAD: 200,
+          getBody: PNG_BYTES,
+          headBody: Buffer.alloc(0),
+        });
+      }
+      expect(
+        Object.fromEntries(
+          paths
+            .slice(2)
+            .map((path) => [path, { GET: statuses[path].GET, HEAD: statuses[path].HEAD }]),
+        ),
+      ).toEqual(Object.fromEntries(paths.slice(2).map((path) => [path, { GET: 404, HEAD: 404 }])));
+    } finally {
+      await running.close();
     }
   });
 

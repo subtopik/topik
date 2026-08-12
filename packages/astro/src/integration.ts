@@ -57,13 +57,8 @@ export function topik(options: TopikOptions): AstroIntegration {
         server.middlewares.use((req, res, next) => {
           if (req.method !== "GET" && req.method !== "HEAD") return next();
           if (req.url === undefined) return next();
-
-          let pathname: string;
-          try {
-            pathname = new URL(req.url, "http://localhost").pathname;
-          } catch {
-            return next();
-          }
+          const queryOffset = req.url.indexOf("?");
+          const pathname = queryOffset === -1 ? req.url : req.url.slice(0, queryOffset);
           if (!PAYLOAD_PATH_PATTERN.test(pathname)) return next();
 
           const payload = findTopikAssetPayload(loaders, pathname.slice(1));

@@ -515,6 +515,48 @@ describe("compile command", () => {
     await expectOwnedGeneration(outDir, "replacement");
   });
 
+  test.each(
+    (
+      [
+        { treeKind: "empty", writeTree: writeEmptyOwnedTree },
+        {
+          treeKind: "populated",
+          writeTree: async (root: string) => writeOwnedTree(root, "existing"),
+        },
+      ] as const
+    ).flatMap(({ treeKind, writeTree }) =>
+      (["materialization.json", "semantic.json"] as const).map((marker) => ({
+        marker,
+        treeKind,
+        writeTree,
+      })),
+    ),
+  )(
+    "rejects and preserves a $treeKind prior compilation with a BOM-prefixed $marker",
+    async ({ treeKind, writeTree, marker }) => {
+      const outDir = join(dir, `bom-${treeKind}-${marker}`);
+      await writeTree(outDir);
+      const markerPath = join(outDir, marker);
+      await writeFile(
+        markerPath,
+        Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), await readFile(markerPath)]),
+      );
+      const before = await snapshotTree(outDir);
+
+      const outcome = await replaceCompilationTreePromptly(outDir);
+
+      expect(outcome).toEqual({ result: "rejected", timedOut: false });
+      expect(await snapshotTree(outDir)).toEqual(before);
+      expect(
+        (await readdir(dir)).filter(
+          (name) =>
+            name.startsWith(".topik-compilation-generation-") ||
+            name.startsWith(".topik-compilation-prior-"),
+        ),
+      ).toEqual([]);
+    },
+  );
+
   test.each(invalidOwnedTreeCases)(
     "rejects and preserves an owned-looking tree with %s",
     async (_label, invalidate) => {
@@ -779,4 +821,22 @@ async function replaceCompilationTreeBounded(
   await descriptor?.close();
   const settled = await operation;
   return { ...settled, timedOut: true };
+}
+
+async function replaceCompilationTreePromptly(
+  outDir: string,
+): Promise<{ result: "rejected" | "resolved" | "timeout"; timedOut: boolean }> {
+  const operation = replaceCompilationTree(outDir, ownedFiles("replacement")).then(
+    () => ({ result: "resolved" as const, timedOut: false }),
+    () => ({ result: "rejected" as const, timedOut: false }),
+  );
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const result = await Promise.race([
+    operation,
+    new Promise<{ result: "timeout"; timedOut: true }>((resolve) => {
+      timer = setTimeout(() => resolve({ result: "timeout", timedOut: true }), 750);
+    }),
+  ]);
+  if (timer !== undefined) clearTimeout(timer);
+  return result;
 }

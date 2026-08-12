@@ -117,16 +117,42 @@ describe("Astro production Asset delivery", () => {
       expect((await head.arrayBuffer()).byteLength).toBe(0);
     }
 
-    const legacy = await serverModule.fetch(
-      new Request(`http://example.test/assets/sha256/${"a".repeat(64)}`),
-    );
-    expect(legacy.status).toBe(404);
+    const canonicalUrl = urls[0];
+    const digest = canonicalUrl.slice("/blobs/".length);
+    for (const method of ["GET", "HEAD"] as const) {
+      const query = await serverModule.fetch(
+        new Request(`http://example.test${canonicalUrl}?cache=off`, { method }),
+      );
+      expect(query.status).toBe(200);
+      if (method === "HEAD") expect((await query.arrayBuffer()).byteLength).toBe(0);
+
+      for (const rawPath of [
+        `/blobs/%${digest.charCodeAt(0).toString(16)}${digest.slice(1)}`,
+        `/blobs/%5c${digest}`,
+        `/assets/sha256/${digest}`,
+      ]) {
+        const rejected = await serverModule.fetch(
+          new Request(`http://example.test${rawPath}`, { method }),
+        );
+        expect(rejected.status).toBe(404);
+      }
+    }
+
+    // The Fetch Request boundary has already erased these raw spellings. A server adapter
+    // must reject them before constructing the Request passed to generated middleware.
+    for (const rawPath of [
+      `/blobs/../blobs/${digest}`,
+      `/blobs/%2e%2e/blobs/${digest}`,
+      `/blobs/..\\blobs/${digest}`,
+    ]) {
+      expect(new URL(new Request(`http://example.test${rawPath}`).url).pathname).toBe(canonicalUrl);
+    }
 
     await writeFile(
       join(root, "content/guides/hero.png"),
       Buffer.concat([PNG_BYTES, Buffer.from([0])]),
     );
-    const immutable = await serverModule.fetch(new Request(`http://example.test${urls[0]}`));
+    const immutable = await serverModule.fetch(new Request(`http://example.test${canonicalUrl}`));
     expect(Buffer.from(await immutable.arrayBuffer())).toEqual(PNG_BYTES);
 
     for (const rawPath of [

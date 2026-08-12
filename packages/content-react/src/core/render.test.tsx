@@ -113,6 +113,13 @@ const ambiguousDiagnosticFiles = [
   "https://example.com/SENSITIVE_DIRECTORY%2Flesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL",
   "https://user:%46ILE_CREDENTIAL_SENTINEL@example.com/lesson.md",
   "https://user:%46ILE_CREDENTIAL_SENTINEL@[?token=%51UERY_SENTINEL#%46RAGMENT_SENTINEL",
+  "https ://user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+  "https&colon;//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+  "https&amp;colon;//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+  "https&#58;//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+  "\u0085/tmp/SENSITIVE_DIRECTORY/lesson.md",
+  "\u200B/tmp/SENSITIVE_DIRECTORY/lesson.md",
+  "\u202E/tmp/SENSITIVE_DIRECTORY/lesson.md",
 ] as const;
 
 describe("content-react core", () => {
@@ -208,6 +215,187 @@ describe("content-react core", () => {
     const html = renderToStaticMarkup(renderTopikContent(result));
     expect(html).toContain("Safe selected child");
     expect(html).not.toContain("ordinary child");
+  });
+
+  it("removes custom-prototype variable aliases between validation and transform", () => {
+    class Selection {
+      which = "safe.md";
+    }
+    const source = "{% attack /%}\n{% partial file=$selection.which /%}";
+    const selection = new Selection();
+    const config = {
+      variables: { selection },
+      partials: {
+        "safe.md": Markdoc.parse("Safe selected child"),
+        "bad.md": Markdoc.parse("{% quiz %}ordinary child{% /quiz %}"),
+      },
+      tags: {
+        attack: {
+          render: "span",
+          validate: (_node: unknown, effective: Config) => {
+            const variables = effective.variables as Record<string, unknown>;
+            (variables.selection as Selection).which = "bad.md";
+            return [];
+          },
+        },
+      },
+    };
+
+    const result = compileTopikContent(source, { config });
+
+    expect(result).toMatchObject({ ok: true, source, diagnostics: [] });
+    expect(selection.which).toBe("safe.md");
+    const html = renderToStaticMarkup(renderTopikContent(result));
+    expect(html).toContain("Safe selected child");
+    expect(html).not.toContain("ordinary child");
+  });
+
+  it("isolates transform-function retargeting from validated partial selection", () => {
+    const source = "{% callout title=retarget() /%}\n{% partial file=$which /%}";
+    const transform = vi.fn((_parameters: unknown, effective: Config) => {
+      if (effective.variables && typeof effective.variables !== "function") {
+        effective.variables.which = "bad.md";
+      }
+      return "Safe title";
+    });
+    const config = {
+      variables: { which: "safe.md" },
+      partials: {
+        "safe.md": Markdoc.parse("Safe selected child"),
+        "bad.md": Markdoc.parse("{% quiz %}ordinary child{% /quiz %}"),
+      },
+      functions: { retarget: { returns: String, transform } },
+    };
+
+    const result = compileTopikContent(source, { config });
+
+    expect(result).toMatchObject({ ok: true, source, diagnostics: [] });
+    expect(transform).toHaveBeenCalledOnce();
+    const html = renderToStaticMarkup(renderTopikContent(result));
+    expect(html).toContain("Safe selected child");
+    expect(html).not.toContain("ordinary child");
+    expect(config.variables.which).toBe("safe.md");
+  });
+
+  it("keeps canonical browser-reference identity stable across transform callbacks", () => {
+    const source = '{% callout title=retarget() /%}\n{% card title="Card" href=$unsafe /%}';
+    const received: unknown[] = [];
+    const transform = vi.fn((_parameters: unknown, effective: Config) => {
+      const card = effective.tags?.card as Record<string, unknown>;
+      card.render = "a";
+      return "Safe title";
+    });
+    const result = compileTopikContent(source, {
+      config: {
+        variables: { unsafe: "data:text/html,PRIVATE_VALUE_SENTINEL" },
+        functions: { retarget: { returns: String, transform } },
+      },
+    });
+
+    expect(result).toMatchObject({ ok: true, source, diagnostics: [] });
+    expect(() =>
+      renderToStaticMarkup(
+        renderTopikContent(result, {
+          components: {
+            TopikCard: (props) => {
+              received.push(props.href);
+              return <span>Card</span>;
+            },
+          },
+        }),
+      ),
+    ).not.toThrow();
+    expect(received).toEqual([undefined]);
+  });
+
+  it("converts transform callback exceptions to a tree-free typed failure", () => {
+    const source = "{% callout title=explode() /%}";
+    const diagnostics: unknown[] = [];
+    const result = compileTopikContent(source, {
+      config: {
+        functions: {
+          explode: {
+            returns: String,
+            transform: () => {
+              throw new Error("PRIVATE_VALUE_SENTINEL");
+            },
+          },
+        },
+      },
+      onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      source,
+      diagnostics: [
+        expect.objectContaining({
+          id: "topik-transform-failed",
+          message: "Content transformation failed.",
+        }),
+      ],
+    });
+    expect(result).not.toHaveProperty("tree");
+    expect(JSON.stringify([result.diagnostics, diagnostics])).not.toContain(
+      "PRIVATE_VALUE_SENTINEL",
+    );
+    expect(() => renderTopikContent(result)).toThrow(InvalidTopikContentError);
+  });
+
+  it.each(["constructor", "__proto__", "toString"])(
+    "renders explicitly own-registered inherited tag and function %s without contamination",
+    (name) => {
+      const tags = Object.create(null) as NonNullable<Config["tags"]>;
+      const functions = Object.create(null) as NonNullable<Config["functions"]>;
+      tags[name] = { render: "span", selfClosing: true };
+      functions[name] = { returns: String, transform: () => "Safe title" };
+      const source = `{% ${name} /%}\n{% callout title=${name}() /%}`;
+      const result = compileTopikContent(source, { config: { functions, tags } });
+
+      expect(result).toMatchObject({ ok: true, source, diagnostics: [] });
+      const html = renderToStaticMarkup(renderTopikContent(result));
+      expect(html).toContain("<span></span>");
+    },
+  );
+
+  it.each(["constructor", "hasOwnProperty", "valueOf", "__proto__"])(
+    "refuses unregistered inherited construct %s across compile and render",
+    (name) => {
+      const source = `{% ${name} %}ordinary child{% /${name} %}`;
+      const result = compileTopikContent(source);
+
+      expect(result).toMatchObject({ ok: false, source });
+      expect(result).not.toHaveProperty("tree");
+      expect(() => renderTopikMarkdown(source)).toThrow(InvalidTopikContentError);
+      expect(JSON.stringify(result.diagnostics)).not.toContain("ordinary child");
+    },
+  );
+
+  it.each([
+    "http://example.com/file.pdf",
+    "https://user:PRIVATE_VALUE_SENTINEL@example.com/file.pdf",
+    "https://[PRIVATE_VALUE_SENTINEL",
+  ])("refuses unsafe link %s in a reachable partial before rendering", (href) => {
+    const source = '{% partial file="part.md" /%}';
+    const config = { partials: { "part.md": Markdoc.parse(`[Download](${href})`) } };
+    const result = compileTopikContent(source, { config });
+
+    expect(result).toMatchObject({ ok: false, source });
+    expect(result).not.toHaveProperty("tree");
+    expect(() => renderTopikMarkdown(source, { config })).toThrow(InvalidTopikContentError);
+    expect(JSON.stringify(result.diagnostics)).not.toContain("PRIVATE_VALUE_SENTINEL");
+  });
+
+  it("allows a generated partial link only at the compiler output boundary", () => {
+    const generated = `asset:auto-v1-${"a".repeat(52)}`;
+    const source = '{% partial file="part.md" /%}';
+    const result = compileTopikContent(source, {
+      config: { partials: { "part.md": Markdoc.parse(`[Download](${generated})`) } },
+    });
+
+    expect(result).toMatchObject({ ok: true, source });
+    const html = renderToStaticMarkup(renderTopikContent(result));
+    expect(html).not.toContain(generated);
   });
 
   it("refuses invalid reachable partials before validation, transform, or rendering", () => {

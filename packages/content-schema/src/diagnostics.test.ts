@@ -17,6 +17,16 @@ describe("diagnostic file sanitization", () => {
     String.raw`\?\C:\SENSITIVE_DIRECTORY\lesson.md%253Ftoken%253DQUERY_SENTINEL%2523FRAGMENT_SENTINEL`,
     "https://example.com/SENSITIVE_DIRECTORY%2Flesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL",
     "https://user:%46ILE_CREDENTIAL_SENTINEL@example.com/lesson.md",
+    "https ://user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+    "https&colon;//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+    "https&amp;colon;//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+    "https&#58;//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+    "https&#x3a;//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+    "https&amp;#58;//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+    "\u0085/tmp/SENSITIVE_DIRECTORY/lesson.md",
+    "\u200B/tmp/SENSITIVE_DIRECTORY/lesson.md",
+    "\u2028/tmp/SENSITIVE_DIRECTORY/lesson.md",
+    "\u202E/tmp/SENSITIVE_DIRECTORY/lesson.md",
   ])("fails an encoded or whitespace-ambiguous label closed", (file) => {
     const label = sanitizeTopikDiagnosticFile(file);
 

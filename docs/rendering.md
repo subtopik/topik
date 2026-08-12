@@ -36,7 +36,11 @@ third fresh parse. The canonical preflight also validates the complete reachable
 closure and rejects malformed or cyclic partial graphs. Literal and variable-selected partial names
 use isolated variable data, including nested paths and partial-local variable scopes; callback-based
 selection is rejected rather than executed during preflight. Extension diagnostics are sanitized
-like canonical diagnostics.
+like canonical diagnostics. Tag, node, function, and partial registries use own registrations only,
+including names that also exist on JavaScript object prototypes. Extension callback phases receive
+isolated configuration, AST, parameter, and result graphs; they cannot retarget validated partials or
+replace canonical rendering identities for later content. Callback/configuration failures become
+typed content failures rather than partially transformed output.
 
 `renderTopikMarkdown`, `renderTopikContent`, and the default `TopikContent` component throw
 `InvalidTopikContentError` for a failure unless a safe placeholder is selected explicitly:

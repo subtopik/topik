@@ -15,6 +15,7 @@ import {
   type TopikAssetOccurrence,
   validateTopikAssetReference,
 } from "./asset-references";
+import { validateTopikHref } from "./links";
 
 export interface ValidateTopikContentOptions {
   /** Source file path used in Markdoc locations and diagnostics. */
@@ -36,8 +37,13 @@ export function validateTopikContent(
   source: string,
   options: ValidateTopikContentOptions = {},
 ): ValidateTopikContentResult {
+  let isolatedConfig: Config;
+  try {
+    isolatedConfig = mergeTopikMarkdocConfig(options.config);
+  } catch {
+    return validationResult(source, [configDiagnostic(options.file)]);
+  }
   const canonicalAst = parseTopikContent(source, { file: options.file, location: true });
-  const isolatedConfig = mergeTopikMarkdocConfig(options.config);
   const canonicalMarkdocErrors = Markdoc.validate(
     canonicalAst,
     canonicalTopikValidationConfig(canonicalAst, isolatedConfig),
@@ -53,8 +59,10 @@ export function validateTopikContent(
   );
   const canonicalErrors = uniqueDiagnostics(
     [
+      ...validateOwnRegistryReferences(canonicalAst, isolatedConfig),
       ...canonicalMarkdocErrors.map(toTopikContentDiagnostic),
       ...validatePartialClosure(canonicalAst, isolatedConfig, (partialRoot, scopedConfig) => [
+        ...validateOwnRegistryReferences(partialRoot, scopedConfig),
         ...Markdoc.validate(
           partialRoot,
           canonicalTopikValidationConfig(partialRoot, scopedConfig),
@@ -110,21 +118,97 @@ export function validateTopikContent(
   }
 
   const extensionAst = parseTopikContent(source, { file: options.file, location: true });
-  const extensionErrors = [
-    ...Markdoc.validate(extensionAst, mergeTopikMarkdocConfig(isolatedConfig)).map(
-      toTopikContentDiagnostic,
-    ),
-    ...validatePartialClosure(
-      parseTopikContent(source, { file: options.file, location: true }),
-      mergeTopikMarkdocConfig(isolatedConfig),
-      (partialRoot, scopedConfig) =>
-        Markdoc.validate(
-          isolateTopikMarkdocValue(partialRoot),
-          mergeTopikMarkdocConfig(scopedConfig),
-        ).map(toTopikContentDiagnostic),
-    ),
-  ];
+  let extensionErrors: TopikContentDiagnostic[];
+  try {
+    extensionErrors = [
+      ...Markdoc.validate(extensionAst, mergeTopikMarkdocConfig(isolatedConfig)).map(
+        toTopikContentDiagnostic,
+      ),
+      ...validatePartialClosure(
+        parseTopikContent(source, { file: options.file, location: true }),
+        mergeTopikMarkdocConfig(isolatedConfig),
+        (partialRoot, scopedConfig) =>
+          Markdoc.validate(
+            isolateTopikMarkdocValue(partialRoot),
+            mergeTopikMarkdocConfig(scopedConfig),
+          ).map(toTopikContentDiagnostic),
+      ),
+    ];
+  } catch {
+    extensionErrors = [extensionDiagnostic(options.file)];
+  }
   return validationResult(source, uniqueDiagnostics([...canonicalErrors, ...extensionErrors]));
+}
+
+function validateOwnRegistryReferences(root: Node, config: Config): TopikContentDiagnostic[] {
+  const diagnostics: TopikContentDiagnostic[] = [];
+  const seenValues = new WeakSet<object>();
+  const visitValue = (value: unknown, node: Node): void => {
+    if (Markdoc.Ast.isFunction(value)) {
+      if (
+        !Object.hasOwn(config.functions ?? {}, value.name) &&
+        !Object.hasOwn(Markdoc.functions, value.name)
+      ) {
+        diagnostics.push(registryDiagnostic("function-undefined", node));
+      }
+      for (const nested of Object.values(value.parameters)) visitValue(nested, node);
+      return;
+    }
+    if (Markdoc.Ast.isVariable(value) || value === null || typeof value !== "object") return;
+    if (seenValues.has(value)) return;
+    seenValues.add(value);
+    for (const nested of Array.isArray(value) ? value : Object.values(value)) {
+      visitValue(nested, node);
+    }
+  };
+
+  for (const node of [root, ...root.walk()]) {
+    const registered = node.tag
+      ? Object.hasOwn(config.tags ?? {}, node.tag) || Object.hasOwn(Markdoc.tags, node.tag)
+      : Object.hasOwn(config.nodes ?? {}, node.type) || Object.hasOwn(Markdoc.nodes, node.type);
+    if (!registered)
+      diagnostics.push(registryDiagnostic(node.tag ? "tag-undefined" : "node-undefined", node));
+    for (const value of [...Object.values(node.attributes), ...node.annotations]) {
+      visitValue(value, node);
+    }
+  }
+  return diagnostics;
+}
+
+function registryDiagnostic(
+  id: "function-undefined" | "node-undefined" | "tag-undefined",
+  node: Node,
+): TopikContentDiagnostic {
+  return sanitizeTopikContentDiagnostic({
+    id,
+    type: node.type,
+    level: "critical",
+    message: "",
+    lines: node.lines,
+    ...(node.location?.file === undefined ? {} : { file: node.location.file }),
+  });
+}
+
+function configDiagnostic(file: string | undefined): TopikContentDiagnostic {
+  return sanitizeTopikContentDiagnostic({
+    id: "topik-config-invalid",
+    type: "document",
+    level: "critical",
+    message: "",
+    lines: [],
+    ...(file === undefined ? {} : { file }),
+  });
+}
+
+function extensionDiagnostic(file: string | undefined): TopikContentDiagnostic {
+  return sanitizeTopikContentDiagnostic({
+    id: "topik-extension-failed",
+    type: "document",
+    level: "critical",
+    message: "",
+    lines: [],
+    ...(file === undefined ? {} : { file }),
+  });
 }
 
 function validationResult(
@@ -402,8 +486,46 @@ function validatePartialAssetReferences(
         }),
       );
     }
+    if (node.type === "link") {
+      const href: unknown = node.attributes.href;
+      const linkErrors = validatePartialLinkReference(href, allowCompiledAssetReferences);
+      for (const error of linkErrors) {
+        diagnostics.push(
+          sanitizeTopikContentDiagnostic({
+            id: error.id,
+            type: "link.href",
+            level: error.level,
+            message: error.message,
+            lines: node.lines,
+            ...(node.location?.file === undefined ? {} : { file: node.location.file }),
+          }),
+        );
+      }
+    }
   }
   return diagnostics;
+}
+
+function validatePartialLinkReference(
+  href: unknown,
+  allowCompiledAssetReferences: boolean,
+): ReturnType<typeof validateTopikHref> {
+  if (typeof href === "string") {
+    if (href.startsWith("asset:")) {
+      if (allowCompiledAssetReferences && validateTopikAssetReference(href).valid) return [];
+      return [
+        {
+          id: "TOPIK_ASSET_REFERENCE_MALFORMED",
+          level: "error",
+          message: "",
+        },
+      ];
+    }
+    if (/^http:/iu.test(href)) {
+      return [{ id: "TOPIK_EXTERNAL_REFERENCE_UNSAFE", level: "error", message: "" }];
+    }
+  }
+  return validateTopikHref(href);
 }
 
 /** Parsed HTTP(S) destinations remain policy-relevant when exact Markdown pairing is unavailable. */

@@ -25,9 +25,28 @@ const ambiguousDiagnosticFiles = [
   "https://example.com/SENSITIVE_DIRECTORY%2Flesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL",
   "https://user:%46ILE_CREDENTIAL_SENTINEL@example.com/lesson.md",
   "https://user:%46ILE_CREDENTIAL_SENTINEL@[?token=%51UERY_SENTINEL#%46RAGMENT_SENTINEL",
+  "https ://user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+  "https&colon;//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+  "https&amp;colon;//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+  "https&#58;//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+  "\u0085/tmp/SENSITIVE_DIRECTORY/lesson.md",
+  "\u200B/tmp/SENSITIVE_DIRECTORY/lesson.md",
+  "\u202E/tmp/SENSITIVE_DIRECTORY/lesson.md",
 ] as const;
 
 describe("Topik content formatting", () => {
+  test.each(["constructor", "hasOwnProperty", "valueOf", "__proto__"])(
+    "refuses an unregistered inherited tag %s without formatting",
+    (name) => {
+      const source = `  {% ${name} %}ordinary child{% /${name} %}  `;
+      const result = formatTopikContent(source);
+
+      expect(result).toMatchObject({ ok: false, source });
+      expect(result).not.toHaveProperty("formatted");
+      expect(JSON.stringify(result.diagnostics)).not.toContain("ordinary child");
+    },
+  );
+
   test.each([
     {
       source: "{% partial file=$which /%}",
@@ -92,6 +111,21 @@ describe("Topik content formatting", () => {
     expect(result).not.toHaveProperty("formatted");
     expect(JSON.stringify(result.diagnostics)).not.toContain("ordinary child");
     expect(extensionValidator).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    "http://example.com/file.pdf",
+    "https://user:PRIVATE_VALUE_SENTINEL@example.com/file.pdf",
+    `asset:auto-v1-${"a".repeat(52)}`,
+  ])("refuses an unsafe partial link without formatting", (href) => {
+    const source = '  {% partial file="part.md" /%}  ';
+    const result = formatTopikContent(source, {
+      config: { partials: { "part.md": Markdoc.parse(`[Download](${href})`) } },
+    });
+
+    expect(result).toMatchObject({ ok: false, source });
+    expect(result).not.toHaveProperty("formatted");
+    expect(JSON.stringify(result.diagnostics)).not.toContain("PRIVATE_VALUE_SENTINEL");
   });
 
   test("refuses canonical errors before an extension validator can enable formatting", () => {

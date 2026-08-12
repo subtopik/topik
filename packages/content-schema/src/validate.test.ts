@@ -43,7 +43,217 @@ const ambiguousDiagnosticFiles = [
   "https://user:%46ILE_CREDENTIAL_SENTINEL@[?token=%51UERY_SENTINEL#%46RAGMENT_SENTINEL",
 ] as const;
 
+const inheritedRegistryNames = Object.getOwnPropertyNames(Object.prototype);
+
+const roundFourAmbiguousDiagnosticFiles = [
+  "https ://user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+  "https&colon;//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+  "https&amp;colon;//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+  "https&#58;//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+  "https&#x3a;//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+  "\u200B/tmp/SENSITIVE_DIRECTORY/lesson.md",
+  "\u0085/tmp/SENSITIVE_DIRECTORY/lesson.md",
+  "\u2028/tmp/SENSITIVE_DIRECTORY/lesson.md",
+  "\u202E/tmp/SENSITIVE_DIRECTORY/lesson.md",
+] as const;
+
 describe("topik content schema", () => {
+  test.each(
+    inheritedRegistryNames.flatMap((name) => [
+      [name, `{% ${name} /%}`],
+      [name, `{% ${name} private="PRIVATE_VALUE_SENTINEL" /%}`],
+      [name, `Before {% ${name} /%} after`],
+      [name, `{% ${name} %}{% ${name} /%}{% /${name} %}`],
+    ]),
+  )("requires an own registration for inherited tag name %s", (_name, source) => {
+    const result = validateTopikContent(source);
+
+    expect(result).toMatchObject({ source, valid: false });
+    expect(result.errors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "tag-undefined", level: "critical" })]),
+    );
+    expect(JSON.stringify(result.errors)).not.toContain("PRIVATE_VALUE_SENTINEL");
+  });
+
+  test.each(
+    inheritedRegistryNames.flatMap((name) => [
+      [name, `{% callout title=${name}() /%}`],
+      [name, `{% callout title=${name}(private="PRIVATE_VALUE_SENTINEL") /%}`],
+    ]),
+  )("requires an own registration for inherited function name %s", (_name, source) => {
+    const result = validateTopikContent(source);
+
+    expect(result).toMatchObject({ source, valid: false });
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "function-undefined", level: "critical" }),
+      ]),
+    );
+    expect(JSON.stringify(result.errors)).not.toContain("PRIVATE_VALUE_SENTINEL");
+  });
+
+  test.each(inheritedRegistryNames)(
+    "requires own registrations for inherited name %s inside a partial closure",
+    (name) => {
+      const source = '{% partial file="part.md" /%}';
+      const result = validateTopikContent(source, {
+        config: {
+          partials: {
+            "part.md": Markdoc.parse(
+              `{% ${name} private="PRIVATE_VALUE_SENTINEL" /%}\n{% callout title=${name}() /%}`,
+            ),
+          },
+        },
+      });
+
+      expect(result).toMatchObject({ source, valid: false });
+      expect(result.errors).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "tag-undefined", level: "critical" }),
+          expect.objectContaining({ id: "function-undefined", level: "critical" }),
+        ]),
+      );
+      expect(JSON.stringify(result.errors)).not.toContain("PRIVATE_VALUE_SENTINEL");
+    },
+  );
+
+  test.each(inheritedRegistryNames)(
+    "preserves an explicitly own-registered inherited tag and function name %s",
+    (name) => {
+      const tags = Object.create(null) as NonNullable<Config["tags"]>;
+      const functions = Object.create(null) as NonNullable<Config["functions"]>;
+      tags[name] = { render: "span", selfClosing: true };
+      functions[name] = { returns: String, transform: () => "Safe title" };
+      const inherited = Object.prototype[name as keyof typeof Object.prototype] as unknown;
+      const hadAttributes =
+        (typeof inherited === "object" && inherited !== null) || typeof inherited === "function"
+          ? Object.hasOwn(inherited, "attributes")
+          : false;
+      const attributes = hadAttributes
+        ? (inherited as { attributes?: unknown }).attributes
+        : undefined;
+
+      try {
+        const tagSource = `{% ${name} /%}`;
+        const functionSource = `{% callout title=${name}() /%}`;
+        expect(validateTopikContent(tagSource, { config: { tags } })).toMatchObject({
+          source: tagSource,
+          valid: true,
+          errors: [],
+        });
+        expect(validateTopikContent(functionSource, { config: { functions } })).toMatchObject({
+          source: functionSource,
+          valid: true,
+          errors: [],
+        });
+        if (
+          ((typeof inherited === "object" && inherited !== null) ||
+            typeof inherited === "function") &&
+          !hadAttributes
+        ) {
+          expect(Object.hasOwn(inherited, "attributes")).toBe(false);
+        }
+      } finally {
+        if (
+          (typeof inherited === "object" && inherited !== null) ||
+          typeof inherited === "function"
+        ) {
+          if (hadAttributes) Reflect.set(inherited, "attributes", attributes);
+          else Reflect.deleteProperty(inherited, "attributes");
+        }
+      }
+    },
+  );
+
+  test("isolates plain, class, shared, array, cyclic, Map, Set, and Date variable graphs", () => {
+    class Selection {
+      which = "safe.md";
+    }
+    const shared = { value: "safe" };
+    const cyclic: Record<string, unknown> = { value: "safe" };
+    cyclic.self = cyclic;
+    const variables = {
+      selection: new Selection(),
+      shared,
+      array: [shared],
+      cyclic,
+      map: new Map([["value", shared]]),
+      set: new Set([shared]),
+      date: new Date(0),
+    };
+    const validator = vi.fn((_node: Node, config: Config) => {
+      const effective = config.variables as typeof variables;
+      effective.selection.which = "bad.md";
+      effective.shared.value = "changed";
+      effective.array[0].value = "changed";
+      effective.cyclic.value = "changed";
+      effective.map.get("value")!.value = "changed";
+      [...effective.set][0].value = "changed";
+      effective.date.setTime(1);
+      return [];
+    });
+    const source = "{% attack /%}\n{% partial file=$selection.which /%}";
+    const result = validateTopikContent(source, {
+      config: {
+        variables,
+        partials: {
+          "safe.md": Markdoc.parse("Safe child"),
+          "bad.md": Markdoc.parse("{% quiz %}ordinary child{% /quiz %}"),
+        },
+        tags: { attack: { render: "span", validate: validator } },
+      },
+    });
+
+    expect(result).toMatchObject({ source, valid: true, errors: [] });
+    expect(validator).toHaveBeenCalledOnce();
+    expect(variables.selection.which).toBe("safe.md");
+    expect(shared.value).toBe("safe");
+    expect(cyclic.value).toBe("safe");
+    expect(variables.date.getTime()).toBe(0);
+  });
+
+  test.each([new WeakMap(), new WeakSet(), Promise.resolve("PRIVATE_VALUE_SENTINEL")])(
+    "fails an unsupported variable graph closed",
+    (malformed) => {
+      const source = "{% callout title=$malformed /%}";
+      const result = validateTopikContent(source, { config: { variables: { malformed } } });
+
+      expect(result).toMatchObject({ source, valid: false });
+      expect(result.errors).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: "topik-config-invalid" })]),
+      );
+      expect(JSON.stringify(result.errors)).not.toContain("PRIVATE_VALUE_SENTINEL");
+    },
+  );
+
+  test("converts extension callback exceptions to a sanitized blocking diagnostic", () => {
+    const source = "{% attack /%}";
+    const result = validateTopikContent(source, {
+      config: {
+        tags: {
+          attack: {
+            render: "span",
+            validate: () => {
+              throw new Error("PRIVATE_VALUE_SENTINEL");
+            },
+          },
+        },
+      },
+    });
+
+    expect(result).toMatchObject({
+      source,
+      valid: false,
+      errors: [
+        expect.objectContaining({
+          id: "topik-extension-failed",
+          message: "Content extension validation failed.",
+        }),
+      ],
+    });
+    expect(JSON.stringify(result.errors)).not.toContain("PRIVATE_VALUE_SENTINEL");
+  });
+
   test("public config maps and nested schemas cannot mutate canonical validation authority", () => {
     const source = "{% quiz %}ordinary child{% /quiz %}";
     const publicConfig = topikMarkdocConfig as unknown as Record<string, unknown>;
@@ -297,6 +507,54 @@ describe("topik content schema", () => {
       expect(JSON.stringify(result.errors)).not.toMatch(/é\.png|SENSITIVE_DIRECTORY|\/tmp\//u);
     },
   );
+
+  test.each([
+    ["insecure HTTP", "http://example.com/file.pdf", false],
+    ["credentialed HTTPS", "https://user:PRIVATE_VALUE_SENTINEL@example.com/file.pdf", false],
+    ["malformed URL", "https://[PRIVATE_VALUE_SENTINEL", false],
+    ["generated Asset authoring reference", `asset:auto-v1-${"a".repeat(52)}`, false],
+    ["canonical local navigation", "guides/lesson.md", true],
+    ["canonical HTTPS navigation", "https://example.com/file.pdf", true],
+    ["ordinary fragment navigation", "#lesson", true],
+  ])("applies direct link policy to a partial $name", (_name, href, valid) => {
+    const source = '{% partial file="outer.md" /%}';
+    const result = validateTopikContent(source, {
+      config: {
+        partials: {
+          "outer.md": Markdoc.parse('{% partial file="part.md" /%}'),
+          "part.md": [Markdoc.parse("Shared"), Markdoc.parse(`[Download](${href})`)],
+        },
+      },
+    });
+
+    expect(result).toMatchObject({ source, valid });
+    if (!valid) {
+      expect(result.errors).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ level: expect.stringMatching(/^(?:error|critical)$/u) }),
+        ]),
+      );
+      expect(JSON.stringify(result.errors)).not.toContain("PRIVATE_VALUE_SENTINEL");
+    }
+  });
+
+  test("applies partial link policy through variable and local-variable selection", () => {
+    const source = '{% partial file="outer.md" variables={which: $target} /%}';
+    const result = validateTopikContent(source, {
+      config: {
+        variables: { target: "part.md" },
+        partials: {
+          "outer.md": Markdoc.parse("{% partial file=$which /%}"),
+          "part.md": Markdoc.parse("[Download](http://example.com/file.pdf)"),
+        },
+      },
+    });
+
+    expect(result).toMatchObject({ source, valid: false });
+    expect(result.errors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "TOPIK_EXTERNAL_REFERENCE_UNSAFE" })]),
+    );
+  });
 
   test.each([
     {
@@ -647,6 +905,21 @@ describe("topik content schema", () => {
       /PRIVATE_VALUE_SENTINEL|SENSITIVE_DIRECTORY|FILE_CREDENTIAL_SENTINEL|QUERY_SENTINEL|FRAGMENT_SENTINEL|%2F|%25/iu,
     );
   });
+
+  test.each(roundFourAmbiguousDiagnosticFiles)(
+    "fails a Unicode or HTML-ambiguous diagnostic label closed",
+    (file) => {
+      const source = '{% callout variant="PRIVATE_VALUE_SENTINEL" /%}';
+      const result = validateTopikContent(source, { file });
+
+      expect(result.errors).toEqual([
+        expect.objectContaining({ file: "content", message: "An attribute has an invalid value." }),
+      ]);
+      expect(JSON.stringify(result.errors)).not.toMatch(
+        /PRIVATE_VALUE_SENTINEL|SENSITIVE_DIRECTORY|FILE_CREDENTIAL_SENTINEL/u,
+      );
+    },
+  );
 
   test("exports component metadata for the initial schema surface", () => {
     expect(Object.keys(topikComponents).sort()).toEqual([

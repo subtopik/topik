@@ -46,6 +46,13 @@ const ambiguousDiagnosticFiles = [
   "https://example.com/SENSITIVE_DIRECTORY%2Flesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL",
   "https://user:%46ILE_CREDENTIAL_SENTINEL@example.com/lesson.md",
   "https://user:%46ILE_CREDENTIAL_SENTINEL@[?token=%51UERY_SENTINEL#%46RAGMENT_SENTINEL",
+  "https ://user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+  "https&colon;//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+  "https&amp;colon;//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+  "https&#58;//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+  "\u0085/tmp/SENSITIVE_DIRECTORY/lesson.md",
+  "\u200B/tmp/SENSITIVE_DIRECTORY/lesson.md",
+  "\u202E/tmp/SENSITIVE_DIRECTORY/lesson.md",
 ] as const;
 
 describe("compile error diagnostics", () => {

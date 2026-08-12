@@ -6,6 +6,7 @@ import {
   parseTopikContent,
   removeInvalidTopikAssetReferences,
   removeInvalidTopikNavigationReferences,
+  sanitizeTopikContentDiagnostic,
   validateTopikAssetReference,
   validateTopikContent,
   validateTopikHref,
@@ -89,8 +90,15 @@ function compileTopikContentInternal(
   content: string,
   options: CompileTopikContentOptions & Pick<RenderTopikContentOptions, "onAssetDiagnostic">,
 ): CompileTopikContentResult {
-  const configSnapshot =
-    options.config === undefined ? undefined : mergeTopikMarkdocConfig(options.config);
+  let configSnapshot: Config | undefined;
+  try {
+    configSnapshot =
+      options.config === undefined ? undefined : mergeTopikMarkdocConfig(options.config);
+  } catch {
+    const diagnostic = transformDiagnostic(options.file, "topik-config-invalid");
+    options.onDiagnostic?.(diagnostic);
+    return { ok: false, source: content, diagnostics: [diagnostic] };
+  }
   const validation = validateTopikContent(content, {
     file: options.file,
     config: configSnapshot,
@@ -113,12 +121,36 @@ function compileTopikContentInternal(
   removeInvalidTopikAssetReferences(ast, content);
   removeInvalidTopikNavigationReferences(ast);
   assignTopikHeadingIds(ast);
-  return {
-    ok: true,
-    source: content,
-    diagnostics: validation.errors,
-    tree: Markdoc.transform(ast, mergeTopikMarkdocConfig(configSnapshot)),
-  };
+  try {
+    return {
+      ok: true,
+      source: content,
+      diagnostics: validation.errors,
+      tree: Markdoc.transform(ast, mergeTopikMarkdocConfig(configSnapshot)),
+    };
+  } catch {
+    const diagnostic = transformDiagnostic(options.file, "topik-transform-failed");
+    options.onDiagnostic?.(diagnostic);
+    return {
+      ok: false,
+      source: content,
+      diagnostics: [...validation.errors, diagnostic],
+    };
+  }
+}
+
+function transformDiagnostic(
+  file: string | undefined,
+  id: "topik-config-invalid" | "topik-transform-failed",
+): TopikContentDiagnostic {
+  return sanitizeTopikContentDiagnostic({
+    id,
+    type: "document",
+    level: "critical",
+    message: "",
+    lines: [],
+    ...(file === undefined ? {} : { file }),
+  });
 }
 
 export function renderTopikContent(

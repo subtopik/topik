@@ -46,6 +46,7 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "heading-id-duplicate": "Explicit heading IDs must be unique within a document.",
   "missing-closing": "Content has a missing closing delimiter.",
   "missing-opening": "Content has a missing opening delimiter.",
+  "node-undefined": "A node is not supported.",
   "no-inline-annotations": "Inline annotations are not supported in this location.",
   "parameter-missing-required": "A required function parameter is missing.",
   "parameter-type-invalid": "A function parameter has an invalid type.",
@@ -62,6 +63,8 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "topik-code-tab-parent-required": "A code tab must be nested inside a code group.",
   "topik-code-tab-requires-fence": "A code tab requires a fenced code block.",
   "topik-columns-range": "Card grid columns must be an integer from 1 to 4.",
+  "topik-config-invalid": "Content configuration is invalid.",
+  "topik-extension-failed": "Content extension validation failed.",
   "topik-question-choice-count": "A question requires at least two choices.",
   "topik-question-children": "A question contains an unsupported child.",
   "topik-question-correct-choice-required":
@@ -79,6 +82,7 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "topik-tab-parent-required": "A tab must be nested inside tabs.",
   "topik-tabs-children": "Tabs contain an unsupported child.",
   "topik-tabs-requires-tab": "Tabs require at least one tab.",
+  "topik-transform-failed": "Content transformation failed.",
   "variable-undefined": "A referenced variable is not defined.",
 };
 
@@ -115,10 +119,10 @@ export function toTopikContentDiagnostic(error: ValidateError): TopikContentDiag
 /** Convert an untrusted diagnostic location to a browser-compatible safe label. */
 export function sanitizeTopikDiagnosticFile(file: string | undefined): string | undefined {
   if (file === undefined) return undefined;
-  if (file.trim() !== file || hasAsciiControl(file) || file.includes("%")) return "content";
+  if (hasAmbiguousDiagnosticCharacter(file) || hasHtmlCharacterReference(file)) return "content";
 
   if (WINDOWS_DRIVE_PREFIX.test(file) || file.startsWith("\\")) {
-    return diagnosticBasename(file);
+    return safeDiagnosticBasename(file);
   }
 
   if (
@@ -129,25 +133,30 @@ export function sanitizeTopikDiagnosticFile(file: string | undefined): string | 
   ) {
     try {
       const url = new URL(file, DIAGNOSTIC_URL_BASE);
-      return url.pathname.startsWith("/") ? diagnosticBasename(url.pathname) : "content";
+      return url.pathname.startsWith("/") ? safeDiagnosticBasename(url.pathname) : "content";
     } catch {
       return "content";
     }
   }
 
-  return file.startsWith("/") ? diagnosticBasename(file) : file;
+  if (file.startsWith("/")) return safeDiagnosticBasename(file);
+  return isSafeRelativeDiagnosticLabel(file) ? file : "content";
 }
 
-function hasAsciiControl(value: string): boolean {
-  for (let index = 0; index < value.length; index += 1) {
-    const code = value.charCodeAt(index);
-    if (code <= 0x1f || code === 0x7f) return true;
-  }
-  return false;
+function hasAmbiguousDiagnosticCharacter(value: string): boolean {
+  return /[%\p{Cc}\p{Cf}\p{Separator}\p{White_Space}]/u.test(value);
 }
 
-function diagnosticBasename(file: string): string {
+function hasHtmlCharacterReference(value: string): boolean {
+  return /&(?:#(?:x[0-9a-f]*|[0-9]*)|[a-z][a-z0-9]*);?/iu.test(value);
+}
+
+function safeDiagnosticBasename(file: string): string {
   const basename = file.replaceAll("\\", "/").split("/").at(-1);
   const label = basename?.split(/[?#]/u, 1)[0];
-  return !label || label === "." || label === ".." ? "content" : label;
+  return label !== undefined && isSafeRelativeDiagnosticLabel(label) ? label : "content";
+}
+
+function isSafeRelativeDiagnosticLabel(value: string): boolean {
+  return /^(?!\.\.?$)[a-z0-9._-]+(?:[\\/][a-z0-9._-]+)*$/iu.test(value);
 }

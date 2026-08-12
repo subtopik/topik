@@ -30,9 +30,30 @@ const ambiguousDiagnosticFiles = [
   "https://example.com/SENSITIVE_DIRECTORY%2Flesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL",
   "https://user:%46ILE_CREDENTIAL_SENTINEL@example.com/lesson.md",
   "https://user:%46ILE_CREDENTIAL_SENTINEL@[?token=%51UERY_SENTINEL#%46RAGMENT_SENTINEL",
+  "https ://user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+  "https&colon;//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+  "https&amp;colon;//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+  "https&#58;//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
+  "\u0085/tmp/SENSITIVE_DIRECTORY/lesson.md",
+  "\u200B/tmp/SENSITIVE_DIRECTORY/lesson.md",
+  "\u202E/tmp/SENSITIVE_DIRECTORY/lesson.md",
 ] as const;
 
 describe("topik-asset-reference-v1 occurrence registry", () => {
+  test.each(["constructor", "hasOwnProperty", "valueOf", "__proto__"])(
+    "refuses an unregistered inherited tag %s before replacement",
+    (name) => {
+      const source = `{% ${name} %}ordinary child{% /${name} %}\n![Asset](old.png)`;
+      const replace = vi.fn(() => "new.png");
+      const result = rewriteTopikAssetOccurrences(source, replace);
+
+      expect(result).toMatchObject({ ok: false, source });
+      expect(result).not.toHaveProperty("content");
+      expect(replace).not.toHaveBeenCalled();
+      expect(JSON.stringify(result.diagnostics)).not.toContain("ordinary child");
+    },
+  );
+
   test.each([
     {
       source: "{% partial file=$which /%}",
@@ -102,6 +123,23 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
     expect(JSON.stringify(result.diagnostics)).not.toContain("ordinary child");
     expect(extensionValidator).not.toHaveBeenCalled();
     expect(replace).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    "http://example.com/file.pdf",
+    "https://user:PRIVATE_VALUE_SENTINEL@example.com/file.pdf",
+    `asset:auto-v1-${"a".repeat(52)}`,
+  ])("refuses an unsafe partial link before replacement", (href) => {
+    const source = '{% partial file="part.md" /%}\n![Asset](old.png)';
+    const replace = vi.fn(() => "new.png");
+    const result = rewriteTopikAssetOccurrences(source, replace, {
+      config: { partials: { "part.md": Markdoc.parse(`[Download](${href})`) } },
+    });
+
+    expect(result).toMatchObject({ ok: false, source });
+    expect(result).not.toHaveProperty("content");
+    expect(replace).not.toHaveBeenCalled();
+    expect(JSON.stringify(result.diagnostics)).not.toContain("PRIVATE_VALUE_SENTINEL");
   });
 
   test("refuses canonical errors before extension validation, replacement, or formatting", () => {

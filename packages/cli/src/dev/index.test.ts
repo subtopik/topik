@@ -344,6 +344,32 @@ describe("dev command", () => {
       HEAD: 404,
     });
 
+    const digest = assetUri.slice(digestOffset);
+    const rawPaths = [
+      `/${assetUri}`,
+      `/${assetUri}?cache=off`,
+      `/blobs/../blobs/${digest}`,
+      `/blobs/%2e%2e/blobs/${digest}`,
+    ] as const;
+    const rawStatuses = Object.fromEntries(
+      await Promise.all(
+        rawPaths.map(async (path) => {
+          const [rawGet, rawHead] = await Promise.all(
+            (["GET", "HEAD"] as const).map((method) =>
+              requestServer(port, { host: `localhost:${port}`, method, path }),
+            ),
+          );
+          return [path, { GET: rawGet.status, HEAD: rawHead.status }] as const;
+        }),
+      ),
+    );
+    expect(rawStatuses).toEqual({
+      [`/${assetUri}`]: { GET: 200, HEAD: 200 },
+      [`/${assetUri}?cache=off`]: { GET: 200, HEAD: 200 },
+      [`/blobs/../blobs/${digest}`]: { GET: 404, HEAD: 404 },
+      [`/blobs/%2e%2e/blobs/${digest}`]: { GET: 404, HEAD: 404 },
+    });
+
     const rejectedAssetRes = await fetch(`http://127.0.0.1:${port}/${asset?.spec?.uri}`, {
       headers: { Origin: "https://attacker.example" },
     });

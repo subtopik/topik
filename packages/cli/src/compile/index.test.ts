@@ -18,6 +18,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
+import { serializeTopikJson } from "@topik/core";
 import { compile, replaceCompilationTree } from "./index";
 import { formatPublicCliError } from "../errors";
 
@@ -38,6 +39,100 @@ type CompileCommand = {
     sourceNamespace?: string;
   }) => Promise<void>;
 };
+
+const invalidOwnedTreeCases: readonly (readonly [string, (root: string) => Promise<void>])[] = [
+  [
+    "a duplicate materialization member",
+    async (root) => {
+      const path = join(root, "materialization.json");
+      const canonical = await readFile(path, "utf8");
+      await writeFile(
+        path,
+        canonical.replace(
+          '{\n  "descriptor":',
+          '{\n  "descriptor": "topik-materialization-v1",\n  "descriptor":',
+        ),
+      );
+    },
+  ],
+  [
+    "noncanonical semantic bytes",
+    async (root) => {
+      const path = join(root, "semantic.json");
+      await writeFile(path, JSON.stringify(JSON.parse(await readFile(path, "utf8"))));
+    },
+  ],
+  [
+    "an extra materialization field",
+    async (root) => {
+      const path = join(root, "materialization.json");
+      const record = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
+      record.unexpected = true;
+      await writeFile(path, serializeTopikJson(record));
+    },
+  ],
+  [
+    "a malformed materialization entry",
+    async (root) => {
+      const path = join(root, "materialization.json");
+      const record = JSON.parse(await readFile(path, "utf8")) as { resources: unknown[] };
+      record.resources[0] = null;
+      await writeFile(path, serializeTopikJson(record));
+    },
+  ],
+  [
+    "a malformed semantic entry",
+    async (root) => {
+      const path = join(root, "semantic.json");
+      const record = JSON.parse(await readFile(path, "utf8")) as { references: unknown[] };
+      record.references = [null];
+      await writeFile(path, serializeTopikJson(record));
+    },
+  ],
+  [
+    "a contradictory resource digest",
+    async (root) => {
+      const path = join(root, "materialization.json");
+      const record = JSON.parse(await readFile(path, "utf8")) as {
+        resources: Array<{ sha256: string }>;
+      };
+      record.resources[0].sha256 = "0".repeat(64);
+      await writeFile(path, serializeTopikJson(record));
+    },
+  ],
+  [
+    "an orphan payload inventory entry",
+    async (root) => {
+      const path = join(root, "materialization.json");
+      const record = JSON.parse(await readFile(path, "utf8")) as {
+        payloads: unknown[];
+      };
+      record.payloads.push({
+        assetNames: [],
+        path: `blobs/${"0".repeat(64)}`,
+        sha256: "0".repeat(64),
+        size: 0,
+      });
+      await writeFile(path, serializeTopikJson(record));
+    },
+  ],
+  [
+    "an orphan semantic Asset name",
+    async (root) => {
+      const path = join(root, "semantic.json");
+      const record = JSON.parse(await readFile(path, "utf8")) as { assetNames: string[] };
+      record.assetNames.push(`auto-v1-${"a".repeat(52)}`);
+      await writeFile(path, serializeTopikJson(record));
+    },
+  ],
+  [
+    "a missing resources directory",
+    async (root) => rm(join(root, "resources"), { recursive: true }),
+  ],
+  ["a missing blobs directory", async (root) => rm(join(root, "blobs"), { recursive: true })],
+  ["an unexpected file", async (root) => writeFile(join(root, "unexpected.txt"), "keep")],
+  ["an unexpected directory", async (root) => mkdir(join(root, "unexpected"))],
+];
 
 describe("compile command", () => {
   let dir: string;
@@ -209,11 +304,28 @@ describe("compile command", () => {
       .filter((path) => path !== "materialization.json" && path !== "semantic.json")
       .sort();
     expect(actualOutput).toEqual(recordedOutput);
-    await writeFile(join(outDir, "stale.bin"), "stale");
+
     await (compile as CompileCommand).handler?.(options);
     expect((await lstat(outDir)).isDirectory()).toBe(true);
     expect(await readFile(join(outDir, "materialization.json"))).toEqual(firstIdentity);
-    await expect(readFile(join(outDir, "stale.bin"))).rejects.toMatchObject({ code: "ENOENT" });
+
+    await writeFile(join(dir, "intro.md"), "# Intro\n\nThe Asset was removed.\n");
+    await (compile as CompileCommand).handler?.(options);
+    const replacementMaterialization = JSON.parse(
+      await readFile(join(outDir, "materialization.json"), "utf8"),
+    ) as {
+      resources: Array<{ path: string }>;
+      payloads: Array<{ path: string }>;
+    };
+    const replacementOutput = new Set([
+      ...replacementMaterialization.resources.map((record) => record.path),
+      ...replacementMaterialization.payloads.map((record) => record.path),
+    ]);
+    const prunedPaths = recordedOutput.filter((path) => !replacementOutput.has(path));
+    expect(prunedPaths.length).toBeGreaterThan(0);
+    for (const path of prunedPaths) {
+      await expect(readFile(join(outDir, path))).rejects.toMatchObject({ code: "ENOENT" });
+    }
     expect(
       (await readdir(dir)).filter(
         (name) =>
@@ -244,10 +356,8 @@ describe("compile command", () => {
     expect(await readdir(join(outDir, "blobs"))).toEqual([]);
     expect(await readdir(join(outDir, "resources", "Guide"))).toEqual(["docs-intro.json"]);
 
-    await writeFile(join(outDir, "ignored.md"), "# Generated output is never source\n");
     await (compile as CompileCommand).handler?.(options);
     expect(await snapshotTree(outDir)).toEqual(firstTree);
-    await expect(readFile(join(outDir, "ignored.md"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   test("rejects a symlinked output ancestor without writing outside", async () => {
@@ -372,14 +482,80 @@ describe("compile command", () => {
 
   test("replaces an existing owned directory and removes its stale files", async () => {
     const outDir = join(dir, "directory-output");
-    for (const file of ownedFiles("existing")) {
-      await mkdir(dirname(join(outDir, file.path)), { recursive: true });
-      await writeFile(join(outDir, file.path), file.bytes);
-    }
+    await writeOwnedTree(outDir, "existing");
 
     await replaceCompilationTree(outDir, ownedFiles("new"));
     expect((await lstat(outDir)).isDirectory()).toBe(true);
-    expect(await readFile(join(outDir, "generation.txt"), "utf8")).toBe("new");
+    await expectOwnedGeneration(outDir, "new");
+    await expect(readFile(join(outDir, ownedResourcePath("existing")))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  test.each(["blobs", "resources"] as const)(
+    "requires the empty %s directory in an otherwise valid empty prior compilation",
+    async (missingDirectory) => {
+      const outDir = join(dir, `missing-empty-${missingDirectory}`);
+      await writeEmptyOwnedTree(outDir);
+      await rm(join(outDir, missingDirectory), { recursive: true });
+      const before = await snapshotTree(outDir);
+
+      await expect(replaceCompilationTree(outDir, ownedFiles("replacement"))).rejects.toThrow(
+        /not recognized as owned/u,
+      );
+      expect(await snapshotTree(outDir)).toEqual(before);
+    },
+  );
+
+  test("replaces a genuinely valid empty prior compilation", async () => {
+    const outDir = join(dir, "valid-empty-compilation");
+    await writeEmptyOwnedTree(outDir);
+
+    await replaceCompilationTree(outDir, ownedFiles("replacement"));
+    await expectOwnedGeneration(outDir, "replacement");
+  });
+
+  test.each(invalidOwnedTreeCases)(
+    "rejects and preserves an owned-looking tree with %s",
+    async (_label, invalidate) => {
+      const outDir = join(dir, "invalid-owned-tree");
+      await writeOwnedTree(outDir, "existing");
+      await invalidate(outDir);
+      const before = await snapshotTree(outDir);
+
+      const result = await replaceCompilationTree(outDir, ownedFiles("replacement")).then(
+        () => "resolved" as const,
+        () => "rejected" as const,
+      );
+
+      expect({ preserved: await snapshotTree(outDir), result }).toEqual({
+        preserved: before,
+        result: "rejected",
+      });
+      expect(
+        (await readdir(dir)).filter(
+          (name) =>
+            name.startsWith(".topik-compilation-generation-") ||
+            name.startsWith(".topik-compilation-prior-"),
+        ),
+      ).toEqual([]);
+    },
+  );
+
+  test("rejects a nested symlink in an owned-looking tree without touching its target", async () => {
+    const outDir = join(dir, "symlinked-owned-tree");
+    const outside = join(dir, "outside-owned-tree.txt");
+    await writeOwnedTree(outDir, "existing");
+    await writeFile(outside, "unchanged");
+    const linkPath = join(outDir, "resources", "linked.txt");
+    await symlink(outside, linkPath);
+
+    await expect(replaceCompilationTree(outDir, ownedFiles("replacement"))).rejects.toThrow(
+      /link or special-node/u,
+    );
+    expect((await lstat(linkPath)).isSymbolicLink()).toBe(true);
+    expect(await readFile(outside, "utf8")).toBe("unchanged");
+    await expectOwnedGeneration(outDir, "existing");
   });
 
   test("rejects an invalid staged file set before publishing any generation", async () => {
@@ -428,7 +604,7 @@ describe("compile command", () => {
         expect(outcome.timedOut).toBe(false);
         expect(outcome.result).toBe("rejected");
         expect(outcome.error).toBeInstanceOf(Error);
-        expect(await readFile(join(outDir, "generation.txt"), "utf8")).toBe("existing");
+        await expectOwnedGeneration(outDir, "existing");
         expect(await listFiles(outDir)).toEqual(beforeFiles);
         expect(await readFile(outside, "utf8")).toBe("unchanged");
         expect(
@@ -461,43 +637,93 @@ describe("compile command", () => {
       if (previousPath === undefined) delete process.env.PATH;
       else process.env.PATH = previousPath;
     }
-    expect(await readFile(join(outDir, "generation.txt"), "utf8")).toBe("new");
+    await expectOwnedGeneration(outDir, "new");
   });
 });
 
 function ownedFiles(generation: string): Array<{ path: string; bytes: string }> {
-  const payload = `payload-${generation}`;
-  const payloadDigest = sha256(Buffer.from(payload));
+  const resource = {
+    apiVersion: "v1",
+    name: `guide-${generation}`,
+    spec: {
+      content: { format: "topik", value: `# ${generation}\n` },
+      slug: `guide-${generation}`,
+      title: generation,
+    },
+    type: "Guide",
+  };
+  const resourceBytes = serializeTopikJson(resource);
   return [
-    { path: "generation.txt", bytes: generation },
+    { path: ownedResourcePath(generation), bytes: resourceBytes },
     {
       path: "materialization.json",
-      bytes: `${JSON.stringify({
+      bytes: serializeTopikJson({
         descriptor: "topik-materialization-v1",
-        payloads: [
+        payloads: [],
+        resources: [
           {
-            assetNames: [],
-            path: `blobs/${payloadDigest}`,
-            sha256: payloadDigest,
-            size: Buffer.byteLength(payload),
+            path: ownedResourcePath(generation),
+            resource: `Guide/guide-${generation}`,
+            sha256: sha256(Buffer.from(resourceBytes)),
+            size: Buffer.byteLength(resourceBytes),
           },
         ],
-        resources: [],
-      })}\n`,
+      }),
     },
     {
       path: "semantic.json",
-      bytes: '{"assetNames":[],"descriptor":"topik-asset-semantic-v1","references":[]}\n',
+      bytes: serializeTopikJson({
+        assetNames: [],
+        descriptor: "topik-asset-semantic-v1",
+        references: [],
+      }),
     },
-    { path: `blobs/${payloadDigest}`, bytes: payload },
   ];
 }
 
 async function writeOwnedTree(root: string, generation: string): Promise<void> {
+  await mkdir(join(root, "blobs"), { recursive: true });
+  await mkdir(join(root, "resources"), { recursive: true });
   for (const file of ownedFiles(generation)) {
     await mkdir(dirname(join(root, file.path)), { recursive: true });
     await writeFile(join(root, file.path), file.bytes);
   }
+}
+
+async function writeEmptyOwnedTree(root: string): Promise<void> {
+  await mkdir(join(root, "blobs"), { recursive: true });
+  await mkdir(join(root, "resources"), { recursive: true });
+  for (const file of [
+    {
+      path: "materialization.json",
+      bytes: serializeTopikJson({
+        descriptor: "topik-materialization-v1",
+        payloads: [],
+        resources: [],
+      }),
+    },
+    {
+      path: "semantic.json",
+      bytes: serializeTopikJson({
+        assetNames: [],
+        descriptor: "topik-asset-semantic-v1",
+        references: [],
+      }),
+    },
+  ]) {
+    await writeFile(join(root, file.path), file.bytes);
+  }
+}
+
+function ownedResourcePath(generation: string): string {
+  return `resources/Guide/guide-${generation}.json`;
+}
+
+async function expectOwnedGeneration(root: string, generation: string): Promise<void> {
+  const resource = JSON.parse(
+    await readFile(join(root, ownedResourcePath(generation)), "utf8"),
+  ) as { name: string };
+  expect(resource.name).toBe(`guide-${generation}`);
 }
 
 function sha256(bytes: Uint8Array): string {
@@ -514,13 +740,18 @@ async function listFiles(root: string, prefix = ""): Promise<string[]> {
   return files;
 }
 
-async function snapshotTree(root: string): Promise<Array<[string, string]>> {
-  const files = (await listFiles(root)).sort();
-  return Promise.all(
-    files.map(
-      async (path): Promise<[string, string]> => [path, sha256(await readFile(join(root, path)))],
-    ),
-  );
+async function snapshotTree(root: string, prefix = ""): Promise<Array<[string, string]>> {
+  const snapshot: Array<[string, string]> = [];
+  for (const entry of await readdir(join(root, prefix), { withFileTypes: true })) {
+    const path = prefix.length === 0 ? entry.name : `${prefix}/${entry.name}`;
+    if (entry.isDirectory()) {
+      snapshot.push([`${path}/`, "directory"]);
+      snapshot.push(...(await snapshotTree(root, path)));
+    } else {
+      snapshot.push([path, sha256(await readFile(join(root, path)))]);
+    }
+  }
+  return snapshot.sort(([left], [right]) => left.localeCompare(right));
 }
 
 async function replaceCompilationTreeBounded(

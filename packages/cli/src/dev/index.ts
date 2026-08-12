@@ -66,16 +66,16 @@ function handleEvents(watcher: Watcher, res: ServerResponse, corsHeaders: Record
 
 function handleAssetPayload(
   watcher: Watcher,
-  url: URL,
+  rawPathname: string,
   method: "GET" | "HEAD",
   res: ServerResponse,
   corsHeaders: Record<string, string>,
 ): boolean {
-  if (!url.pathname.startsWith("/blobs/")) {
+  if (!rawPathname.startsWith("/blobs/")) {
     return false;
   }
 
-  const relativePath = url.pathname.slice(1);
+  const relativePath = rawPathname.slice(1);
   if (!/^blobs\/[0-9a-f]{64}$/u.test(relativePath)) {
     res.writeHead(404, corsHeaders);
     res.end();
@@ -204,9 +204,10 @@ function createRequestHandler(watcher: Watcher, getPort: () => number, allowedOr
       return;
     }
 
+    const requestTarget = req.url ?? "/";
     let url: URL;
     try {
-      url = new URL(req.url ?? "/", `http://localhost:${getPort()}`);
+      url = new URL(requestTarget, `http://localhost:${getPort()}`);
     } catch {
       res.writeHead(400, {
         "Content-Type": "text/plain",
@@ -235,9 +236,11 @@ function createRequestHandler(watcher: Watcher, getPort: () => number, allowedOr
       return;
     }
 
+    const queryOffset = requestTarget.indexOf("?");
+    const rawPathname = queryOffset === -1 ? requestTarget : requestTarget.slice(0, queryOffset);
     if (
       (req.method === "GET" || req.method === "HEAD") &&
-      handleAssetPayload(watcher, url, req.method, res, corsHeaders)
+      handleAssetPayload(watcher, rawPathname, req.method, res, corsHeaders)
     ) {
       return;
     }

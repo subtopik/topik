@@ -18,9 +18,13 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import { boolean, command, positional, string } from "@drizzle-team/brocli";
 import {
   compile as compileContent,
+  parseStrictTopikJson,
   serializeTopikJson,
+  validateTopikMaterializationRecord,
   validateResources,
   type LinkValidationPolicy,
+  type Resource,
+  type TopikMaterializationRecordV1,
 } from "@topik/core";
 import { printDiagnostics } from "../diagnostics";
 import { CliError } from "../errors";
@@ -34,6 +38,7 @@ import {
 const COMPILATION_GENERATION_PREFIX = ".topik-compilation-generation-";
 const COMPILATION_PRIOR_PREFIX = ".topik-compilation-prior-";
 const COMPILATION_DIRECTORIES = ["blobs", "resources"] as const;
+const ownedDescriptorDecoder = new TextDecoder("utf-8", { fatal: true });
 
 export const compile = command({
   name: "compile",
@@ -253,8 +258,8 @@ async function openOwnedCompilationOutput(
     throw new CliError("Compilation output directory could not be opened safely");
   }
   try {
-    await assertOwnedCompilationTree(directory);
     const tree = bindCompleteCompilationTreeSync(directory);
+    assertOwnedCompilationTree(directory, tree);
     return { handle: directory, name: target, path: targetPath, tree };
   } catch (error) {
     await directory.close().catch(() => undefined);
@@ -306,54 +311,131 @@ async function assertCompilationOutputScope(sourceDir: string, outDir: string): 
   }
 }
 
-async function assertOwnedCompilationTree(directory: FileHandle): Promise<void> {
-  const materialization = await readOwnedDescriptor(directory, "materialization.json");
-  const semantic = await readOwnedDescriptor(directory, "semantic.json");
-  if (
-    materialization?.descriptor !== "topik-materialization-v1" ||
-    !Array.isArray(materialization.resources) ||
-    !Array.isArray(materialization.payloads) ||
-    semantic?.descriptor !== "topik-asset-semantic-v1" ||
-    !Array.isArray(semantic.assetNames) ||
-    !Array.isArray(semantic.references)
-  ) {
+function assertOwnedCompilationTree(directory: FileHandle, tree: BoundCompilationTree): void {
+  try {
+    const materialization = parseBoundCanonicalJson(directory, tree, "materialization.json");
+    const semantic = parseBoundCanonicalJson(directory, tree, "semantic.json");
+    if (!isRecord(materialization) || !Array.isArray(materialization.resources)) {
+      throw new TypeError("Materialization resource inventory is unavailable");
+    }
+
+    const resources: unknown[] = materialization.resources.map((entry) => {
+      if (!isRecord(entry) || typeof entry.path !== "string") {
+        throw new TypeError("Materialization resource inventory is malformed");
+      }
+      return parseBoundCanonicalJson(directory, tree, entry.path);
+    });
+    if (!isValidResourceSet(resources)) {
+      throw new TypeError("Compiled resource inventory is invalid");
+    }
+    const closure = validateTopikMaterializationRecord(materialization, resources, semantic);
+    if (!closure.ok) throw new TypeError("Compilation identity records do not close");
+    assertBoundTreeMatchesInventory(tree, closure.value);
+  } catch {
     throw new CliError("Existing compilation output is populated but is not recognized as owned");
   }
 }
 
-async function readOwnedDescriptor(
+function parseBoundCanonicalJson(
   root: FileHandle,
-  relativePath: string,
-): Promise<Record<string, unknown> | undefined> {
-  const components = safeOutputComponents(relativePath);
-  const directories: FileHandle[] = [];
-  let parent = root;
-  let handle: FileHandle | undefined;
+  tree: BoundCompilationTree,
+  path: string,
+): unknown {
+  const bytes = readBoundCompilationFileSync(root, tree, path);
+  const text = ownedDescriptorDecoder.decode(bytes);
+  const value = parseStrictTopikJson(text, Number.POSITIVE_INFINITY);
+  if (serializeTopikJson(value) !== text) {
+    throw new TypeError("Compilation descriptor is not canonical");
+  }
+  return value;
+}
+
+function readBoundCompilationFileSync(
+  root: FileHandle,
+  tree: BoundCompilationTree,
+  path: string,
+): Uint8Array {
+  safeOutputComponents(path);
+  const expected = tree.entries.find(
+    (entry): entry is Extract<BoundCompilationTreeEntry, { kind: "file" }> =>
+      entry.kind === "file" && entry.path === path,
+  );
+  if (expected === undefined) throw new TypeError("Compilation descriptor is unavailable");
+
+  let fileFd: number | undefined;
   try {
-    for (const component of components.slice(0, -1)) {
-      const child = await openAnchoredChildDirectory(parent, component, false);
-      if (child === undefined) return undefined;
-      directories.push(child);
-      parent = child;
-    }
-    handle = await open(
-      procFdChild(parent.fd, components.at(-1) ?? ""),
+    const anchoredPath = `${procFd(root.fd)}/${path}`;
+    fileFd = openSync(
+      anchoredPath,
       constants.O_RDONLY |
         constants.O_NOFOLLOW |
         (typeof constants.O_NONBLOCK === "number" ? constants.O_NONBLOCK : 0),
     );
-    const stat = await handle.stat({ bigint: true });
-    if (!stat.isFile() || stat.nlink !== 1n) return undefined;
-    const value = JSON.parse(await handle.readFile({ encoding: "utf8" })) as unknown;
-    return typeof value === "object" && value !== null && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : undefined;
-  } catch {
-    return undefined;
+    const before = fstatSync(fileFd, { bigint: true });
+    if (
+      !before.isFile() ||
+      !sameStoredOutputIdentity(toBoundOutputIdentity(before), expected.identity)
+    ) {
+      throw new TypeError("Compilation descriptor identity changed");
+    }
+    const bytes = readFileSync(fileFd);
+    const after = fstatSync(fileFd, { bigint: true });
+    if (!sameBoundOutputIdentity(before, after) || sha256OutputBytes(bytes) !== expected.digest) {
+      throw new TypeError("Compilation descriptor bytes changed");
+    }
+    assertPathStillBindsIdentitySync(anchoredPath, after, "file");
+    return Uint8Array.from(bytes);
   } finally {
-    await handle?.close().catch(() => undefined);
-    await Promise.all(directories.map((entry) => entry.close().catch(() => undefined)));
+    if (fileFd !== undefined) closeSync(fileFd);
   }
+}
+
+function assertBoundTreeMatchesInventory(
+  tree: BoundCompilationTree,
+  materialization: TopikMaterializationRecordV1,
+): void {
+  const expectedDirectories = new Set<string>(["", ...COMPILATION_DIRECTORIES]);
+  const expectedFiles = new Map<string, { sha256?: string; size?: number }>([
+    ["materialization.json", {}],
+    ["semantic.json", {}],
+  ]);
+  for (const entry of [...materialization.resources, ...materialization.payloads]) {
+    safeOutputComponents(entry.path);
+    if (expectedFiles.has(entry.path)) throw new TypeError("Compilation inventory repeats a path");
+    expectedFiles.set(entry.path, { sha256: entry.sha256, size: entry.size });
+    const components = entry.path.split("/");
+    for (let index = 1; index < components.length; index++) {
+      expectedDirectories.add(components.slice(0, index).join("/"));
+    }
+  }
+
+  if (tree.entries.length !== expectedDirectories.size + expectedFiles.size) {
+    throw new TypeError("Compilation tree contains an unexpected path");
+  }
+  for (const entry of tree.entries) {
+    if (entry.kind === "directory") {
+      if (!expectedDirectories.has(entry.path)) {
+        throw new TypeError("Compilation tree contains an unexpected directory");
+      }
+      continue;
+    }
+    const expected = expectedFiles.get(entry.path);
+    if (
+      expected === undefined ||
+      (expected.size !== undefined && entry.identity.size !== BigInt(expected.size)) ||
+      (expected.sha256 !== undefined && entry.digest !== expected.sha256)
+    ) {
+      throw new TypeError("Compilation tree does not match its inventory");
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isValidResourceSet(resources: readonly unknown[]): resources is readonly Resource[] {
+  return validateResources(resources).valid;
 }
 
 async function openAnchoredOutputDirectory(

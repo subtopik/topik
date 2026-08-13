@@ -1,5 +1,6 @@
 import Markdoc, {
   type Config,
+  type CustomAttributeType,
   type Node,
   type Schema,
   type ValidationError,
@@ -247,6 +248,91 @@ const validationAttackFactories: Array<[string, () => ValidationAttack]> = [
     },
   ],
 ];
+
+type InstanceValidationTypeFactory = (
+  callback: (value: unknown, config: Config) => ValidationError[],
+) => CustomAttributeType;
+
+const instanceValidationTypeFactories: Array<[string, InstanceValidationTypeFactory]> = [
+  [
+    "class-field custom attribute type",
+    (callback) =>
+      class AttackType {
+        validate = callback;
+      },
+  ],
+  [
+    "inherited class-field custom attribute type",
+    (callback) => {
+      class BaseAttackType {
+        validate = callback;
+      }
+      return class AttackType extends BaseAttackType {};
+    },
+  ],
+  [
+    "constructor-returned custom attribute type",
+    (callback) => {
+      function AttackType() {
+        return { validate: callback };
+      }
+      return AttackType as unknown as CustomAttributeType;
+    },
+  ],
+];
+
+for (const [name, createType] of instanceValidationTypeFactories) {
+  validationAttackFactories.push(
+    [
+      name,
+      () => {
+        const callback = vi.fn((_value: unknown, config: Config) => {
+          mutateLaterVictim(config);
+          return [];
+        });
+        const AttackType = createType(callback);
+        return {
+          callback,
+          source: '{% attack value="safe" /%}\n{% victim bad=true /%}',
+          config: {
+            tags: {
+              attack: {
+                render: "span",
+                selfClosing: true,
+                attributes: { value: { type: AttackType } },
+              },
+              victim: victimSchema(),
+            },
+          },
+        };
+      },
+    ],
+    [
+      `function-parameter ${name}`,
+      () => {
+        const callback = vi.fn((_value: unknown, config: Config) => {
+          mutateLaterVictim(config);
+          return [];
+        });
+        const AttackType = createType(callback);
+        return {
+          callback,
+          source: '{% callout title=attack(value="safe") /%}\n{% victim bad=true /%}',
+          config: {
+            functions: {
+              attack: {
+                returns: String,
+                parameters: { value: { type: AttackType, required: true } },
+                transform: () => "safe",
+              },
+            },
+            tags: { victim: victimSchema() },
+          },
+        };
+      },
+    ],
+  );
+}
 
 describe("topik content schema", () => {
   test.each(
@@ -596,6 +682,359 @@ describe("topik content schema", () => {
     );
     expect(Object.hasOwn(victimValidator, "allow")).toBe(false);
     expect(Reflect.get(VictimType.prototype, "validate")).toBe(originalTypeValidate);
+  });
+
+  test.each([
+    [String, 'value="safe"'],
+    [Number, "value=1"],
+    [Boolean, "value=true"],
+    [Object, 'value={safe: "value"}'],
+    [Array, 'value=["safe"]'],
+    ["String", 'value="safe"'],
+    ["Number", "value=1"],
+    ["Boolean", "value=true"],
+    ["Object", 'value={safe: "value"}'],
+    ["Array", 'value=["safe"]'],
+  ] as const)("keeps native attribute type %s unchanged", (type, attribute) => {
+    const source = `{% notice ${attribute} /%}`;
+    const config: Config = {
+      tags: {
+        notice: {
+          render: "span",
+          selfClosing: true,
+          attributes: { value: { type } },
+        },
+      },
+    };
+    const merged = mergeTopikMarkdocConfig(config);
+
+    expect(merged.tags?.notice?.attributes?.value?.type).toBe(type);
+    expect(validateTopikContent(source, { config })).toMatchObject({
+      source,
+      valid: true,
+      errors: [],
+    });
+  });
+
+  test("constructs a custom type once per Markdoc phase and invokes each present callback once", () => {
+    let constructions = 0;
+    const validate = vi.fn(() => []);
+    const transform = vi.fn((value: unknown) => value as string);
+    class BothType {
+      constructor() {
+        constructions += 1;
+      }
+
+      validate = validate;
+      transform = transform;
+    }
+    const config = mergeTopikMarkdocConfig({
+      tags: {
+        notice: {
+          render: "span",
+          selfClosing: true,
+          attributes: { value: { type: BothType } },
+        },
+      },
+    });
+    const content = Markdoc.parse('{% notice value="safe" /%}');
+
+    expect(constructions).toBe(0);
+    expect(Markdoc.validate(content, config)).toEqual([]);
+    expect(constructions).toBe(1);
+    expect(validate).toHaveBeenCalledOnce();
+    expect(transform).not.toHaveBeenCalled();
+    Markdoc.transform(content, config);
+    expect(constructions).toBe(2);
+    expect(validate).toHaveBeenCalledOnce();
+    expect(transform).toHaveBeenCalledOnce();
+  });
+
+  test("isolates a custom type's receiver graph and constructor identity", () => {
+    const shared = { value: "caller" };
+    let usedPrivateReceiver = false;
+    class StatefulType {
+      state = shared;
+      map = new Map([[shared, shared]]);
+      set = new Set([shared]);
+      self = this;
+
+      validate(value: unknown): ValidationError[] {
+        usedPrivateReceiver = !(this instanceof StatefulType);
+        expect(this.self).toBe(this);
+        expect(this.map.keys().next().value).toBe(this.state);
+        expect(this.map.get(this.state)).toBe(this.state);
+        expect(this.set.has(this.state)).toBe(true);
+        expect(this.constructor).not.toBe(StatefulType);
+        this.state.value = String(value);
+        return [];
+      }
+    }
+    const originalValidate = Reflect.get(StatefulType.prototype, "validate");
+    const source = '{% notice value="safe" /%}';
+    const result = validateTopikContent(source, {
+      config: {
+        tags: {
+          notice: {
+            render: "span",
+            selfClosing: true,
+            attributes: { value: { type: StatefulType } },
+          },
+        },
+      },
+    });
+
+    expect(result).toMatchObject({ source, valid: true, errors: [] });
+    expect(usedPrivateReceiver).toBe(true);
+    expect(shared).toEqual({ value: "caller" });
+    expect(Reflect.get(StatefulType.prototype, "validate")).toBe(originalValidate);
+  });
+
+  test("preserves a valid transform-only instance field without activating validation", () => {
+    let constructions = 0;
+    const transform = vi.fn((value: unknown) => String(value).toUpperCase());
+    class TransformType {
+      constructor() {
+        constructions += 1;
+      }
+
+      transform = transform;
+    }
+    const config = mergeTopikMarkdocConfig({
+      variables: { input: "safe" },
+      tags: {
+        notice: {
+          render: "span",
+          selfClosing: true,
+          attributes: { value: { type: TransformType } },
+        },
+      },
+    });
+    const content = Markdoc.parse("{% notice value=$input /%}");
+
+    expect(Markdoc.validate(content, config)).toEqual([]);
+    expect(constructions).toBe(0);
+    const tree = Markdoc.transform(content, config);
+    expect(constructions).toBe(1);
+    expect(transform).toHaveBeenCalledOnce();
+    expect(JSON.stringify(tree)).toContain("SAFE");
+  });
+
+  test("preserves nominal custom return-type identity through repeated merges", () => {
+    class NominalType {}
+    const extension: Config = {
+      functions: {
+        make: { returns: NominalType, transform: () => new NominalType() },
+      },
+      tags: {
+        notice: {
+          render: "span",
+          selfClosing: true,
+          attributes: { value: { type: NominalType } },
+        },
+      },
+    };
+    const once = mergeTopikMarkdocConfig(extension);
+    const twice = mergeTopikMarkdocConfig(once);
+    const onceType = once.tags?.notice?.attributes?.value?.type;
+    const twiceType = twice.tags?.notice?.attributes?.value?.type;
+    const content = Markdoc.parse("{% notice value=make() /%}");
+
+    expect(onceType).toBe(twiceType);
+    expect(once.functions?.make?.returns).toBe(onceType);
+    expect(twice.functions?.make?.returns).toBe(twiceType);
+    expect(Markdoc.validate(content, twice)).toEqual([]);
+  });
+
+  test.each(instanceValidationTypeFactories)("preserves valid %s behavior", (_name, createType) => {
+    const callback = vi.fn(() => []);
+    const AttackType = createType(callback);
+    const source = '{% notice value="safe" /%}';
+    const result = validateTopikContent(source, {
+      config: {
+        tags: {
+          notice: {
+            render: "span",
+            selfClosing: true,
+            attributes: { value: { type: AttackType } },
+          },
+        },
+      },
+    });
+
+    expect(result).toMatchObject({ source, valid: true, errors: [] });
+    expect(callback).toHaveBeenCalledOnce();
+  });
+
+  test("fails an accessor-provided custom type callback closed without invoking the accessor", () => {
+    const getter = vi.fn(() => () => []);
+    class AccessorType {
+      get validate() {
+        return getter();
+      }
+    }
+    const source = '{% notice value="safe" /%}';
+    const result = validateTopikContent(source, {
+      config: {
+        tags: {
+          notice: {
+            render: "span",
+            selfClosing: true,
+            attributes: { value: { type: AccessorType } },
+          },
+        },
+      },
+    });
+
+    expect(result).toMatchObject({
+      source,
+      valid: false,
+      errors: [expect.objectContaining({ id: "topik-extension-failed", level: "critical" })],
+    });
+    expect(getter).not.toHaveBeenCalled();
+  });
+
+  test("fails a truthy non-function custom type callback closed", () => {
+    class InvalidType {
+      validate = "unsupported";
+    }
+    const source = '{% notice value="safe" /%}';
+    const result = validateTopikContent(source, {
+      config: {
+        tags: {
+          notice: {
+            render: "span",
+            selfClosing: true,
+            attributes: { value: { type: InvalidType as unknown as CustomAttributeType } },
+          },
+        },
+      },
+    });
+
+    expect(result).toMatchObject({
+      source,
+      valid: false,
+      errors: [expect.objectContaining({ id: "topik-extension-failed", level: "critical" })],
+    });
+  });
+
+  test("fails a dynamic proxy callback shape closed", () => {
+    function DynamicType() {
+      return new Proxy(
+        {},
+        {
+          get(_target, key) {
+            return key === "validate" ? () => [] : undefined;
+          },
+        },
+      );
+    }
+    const source = '{% notice value="safe" /%}';
+    const result = validateTopikContent(source, {
+      config: {
+        tags: {
+          notice: {
+            render: "span",
+            selfClosing: true,
+            attributes: {
+              value: { type: DynamicType as unknown as CustomAttributeType },
+            },
+          },
+        },
+      },
+    });
+
+    expect(result).toMatchObject({
+      source,
+      valid: false,
+      errors: [expect.objectContaining({ id: "topik-extension-failed", level: "critical" })],
+    });
+  });
+
+  test("fails a throwing custom type constructor closed", () => {
+    class ThrowingType {
+      constructor() {
+        throw new Error("PRIVATE_VALUE_SENTINEL");
+      }
+    }
+    const source = '{% notice value="safe" /%}';
+    const result = validateTopikContent(source, {
+      config: {
+        tags: {
+          notice: {
+            render: "span",
+            selfClosing: true,
+            attributes: { value: { type: ThrowingType } },
+          },
+        },
+      },
+    });
+
+    expect(result).toMatchObject({
+      source,
+      valid: false,
+      errors: [expect.objectContaining({ id: "topik-extension-failed", level: "critical" })],
+    });
+    expect(JSON.stringify(result.errors)).not.toContain("PRIVATE_VALUE_SENTINEL");
+  });
+
+  test("fails an asynchronous instance validator closed and consumes its rejection", async () => {
+    class AsyncType {
+      validate = async () => {
+        await Promise.resolve();
+        throw new Error("PRIVATE_VALUE_SENTINEL");
+      };
+    }
+    const source = '{% notice value="safe" /%}';
+    const result = validateTopikContent(source, {
+      config: {
+        tags: {
+          notice: {
+            render: "span",
+            selfClosing: true,
+            attributes: { value: { type: AsyncType as unknown as CustomAttributeType } },
+          },
+        },
+      },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(result).toMatchObject({
+      source,
+      valid: false,
+      errors: [expect.objectContaining({ id: "topik-extension-failed", level: "critical" })],
+    });
+    expect(JSON.stringify(result.errors)).not.toContain("PRIVATE_VALUE_SENTINEL");
+  });
+
+  test("fails a constructor-returned thenable closed and consumes its rejection", async () => {
+    function ThenableType() {
+      return Promise.reject(new Error("PRIVATE_VALUE_SENTINEL"));
+    }
+    const source = '{% notice value="safe" /%}';
+    const result = validateTopikContent(source, {
+      config: {
+        tags: {
+          notice: {
+            render: "span",
+            selfClosing: true,
+            attributes: {
+              value: { type: ThenableType as unknown as CustomAttributeType },
+            },
+          },
+        },
+      },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(result).toMatchObject({
+      source,
+      valid: false,
+      errors: [expect.objectContaining({ id: "topik-extension-failed", level: "critical" })],
+    });
+    expect(JSON.stringify(result.errors)).not.toContain("PRIVATE_VALUE_SENTINEL");
   });
 
   test.each([/^safe$/gu, /^safe$/uy])(

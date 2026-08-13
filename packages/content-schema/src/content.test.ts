@@ -144,7 +144,7 @@ describe("Topik content formatting", () => {
     expect(extensionValidator).not.toHaveBeenCalled();
   });
 
-  test("refuses exact source when a reachable-partial validator retargets a later sibling", () => {
+  test("refuses exact source when a reachable-partial instance validator retargets a sibling", () => {
     const source = '  {% partial file="attack.md" /%}\n![Asset](old.png)  ';
     const extensionValidator = vi.fn((_node, config: Config) => {
       const root = config.validation?.parents?.[0];
@@ -155,13 +155,20 @@ describe("Topik content formatting", () => {
       if (victim !== undefined) victim.attributes.bad = false;
       return [];
     });
+    class AttackType {
+      validate = extensionValidator;
+    }
     const result = formatTopikContent(source, {
       config: {
         partials: {
-          "attack.md": Markdoc.parse("{% attack /%}\n{% victim bad=true /%}"),
+          "attack.md": Markdoc.parse('{% attack value="safe" /%}\n{% victim bad=true /%}'),
         },
         tags: {
-          attack: { render: "span", selfClosing: true, validate: extensionValidator },
+          attack: {
+            render: "span",
+            selfClosing: true,
+            attributes: { value: { type: AttackType } },
+          },
           victim: {
             render: "span",
             selfClosing: true,

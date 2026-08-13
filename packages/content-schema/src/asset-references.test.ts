@@ -160,7 +160,7 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
     expect(replace).not.toHaveBeenCalled();
   });
 
-  test("refuses a real Asset when a reachable-partial validator retargets a later sibling", () => {
+  test("refuses a real Asset when a partial instance validator retargets a sibling", () => {
     const source = '{% partial file="attack.md" /%}\n![Asset](old.png)';
     const extensionValidator = vi.fn((_node, config: Config) => {
       const root = config.validation?.parents?.[0];
@@ -171,14 +171,21 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
       if (victim !== undefined) victim.attributes.bad = false;
       return [];
     });
+    class AttackType {
+      validate = extensionValidator;
+    }
     const replace = vi.fn(() => "new.png");
     const result = rewriteTopikAssetOccurrences(source, replace, {
       config: {
         partials: {
-          "attack.md": Markdoc.parse("{% attack /%}\n{% victim bad=true /%}"),
+          "attack.md": Markdoc.parse('{% attack value="safe" /%}\n{% victim bad=true /%}'),
         },
         tags: {
-          attack: { render: "span", selfClosing: true, validate: extensionValidator },
+          attack: {
+            render: "span",
+            selfClosing: true,
+            attributes: { value: { type: AttackType } },
+          },
           victim: {
             render: "span",
             selfClosing: true,

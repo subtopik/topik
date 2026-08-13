@@ -1,10 +1,7 @@
 import Markdoc, {
   type Config,
-  type CustomAttributeType,
   type Node,
-  type Scalar,
   type Schema,
-  type ValidationError,
   type ValidationType,
 } from "@markdoc/markdoc";
 import { calloutTag } from "./tags/callout";
@@ -235,7 +232,6 @@ const isolatedAttributeMatches = new WeakMap<
   Function,
   Extract<NonNullable<NonNullable<Schema["attributes"]>[string]["matches"]>, Function>
 >();
-const isolatedAttributeTypes = new WeakMap<Function, ValidationType>();
 
 function isolateSchemaAttribute(
   attribute: NonNullable<Schema["attributes"]>[string],
@@ -358,338 +354,26 @@ function isolateAttributeMatchesCallback(
 
 function isolateAttributeType(
   type: NonNullable<Schema["attributes"]>[string]["type"],
+  activeArrays = new WeakSet<object>(),
 ): NonNullable<Schema["attributes"]>[string]["type"] {
   if (Array.isArray(type)) {
-    return type.map((entry) => isolateAttributeType(entry) as ValidationType);
+    if (activeArrays.has(type)) throw unsupportedAttributeType();
+    activeArrays.add(type);
+    try {
+      return type.map((entry) => isolateAttributeType(entry, activeArrays) as ValidationType);
+    } finally {
+      activeArrays.delete(type);
+    }
   }
   if (typeof type !== "function") return type;
   if (nativeAttributeTypes.has(type)) return type;
-  const existing = isolatedAttributeTypes.get(type);
-  if (existing !== undefined) return existing;
-  const Original = type as CustomAttributeType;
-  function IsolatedAttributeType(this: unknown) {
-    return createIsolatedAttributeTypeFacade(
-      Original,
-      IsolatedAttributeType as unknown as CustomAttributeType,
-    );
-  }
-  Object.freeze(IsolatedAttributeType.prototype);
-  Object.freeze(IsolatedAttributeType);
-  const isolated = IsolatedAttributeType as unknown as CustomAttributeType;
-  isolatedAttributeTypes.set(type, isolated);
-  isolatedAttributeTypes.set(IsolatedAttributeType, isolated);
-  return isolated;
+  throw unsupportedAttributeType();
 }
 
 const nativeAttributeTypes = new Set<Function>([String, Number, Boolean, Object, Array]);
 
-type AttributeTypeCallbackName = "transform" | "validate";
-
-function createIsolatedAttributeTypeFacade(
-  Original: CustomAttributeType,
-  IsolatedAttributeType: CustomAttributeType,
-): object {
-  const instance = Reflect.construct(Original, []) as unknown;
-  if (instance === null || (typeof instance !== "object" && typeof instance !== "function")) {
-    throw new TypeError("Unsupported custom attribute type instance");
-  }
-  if (typeof instance === "function") {
-    throw new TypeError("Unsupported custom attribute type instance");
-  }
-  rejectConstructedThenable(instance);
-
-  let validateInitialized = false;
-  let isolatedValidate: CallableFunction | undefined;
-  let transformInitialized = false;
-  let isolatedTransform: CallableFunction | undefined;
-  const facade = Object.create(null) as Record<AttributeTypeCallbackName, unknown>;
-
-  Object.defineProperties(facade, {
-    validate: {
-      configurable: false,
-      enumerable: false,
-      get() {
-        if (!validateInitialized) {
-          const callback = stableAttributeTypeCallback(instance, "validate");
-          isolatedValidate =
-            callback === undefined
-              ? function nominalValidate(value: unknown): boolean {
-                  return (
-                    value !== null &&
-                    value !== undefined &&
-                    Reflect.get(Object(value), "constructor") === Original
-                  );
-                }
-              : function isolatedCustomTypeValidate(
-                  value: unknown,
-                  config: Config,
-                  key: string,
-                ): ValidationError[] {
-                  return invokeIsolatedAttributeTypeCallback(
-                    callback,
-                    instance,
-                    Original,
-                    IsolatedAttributeType,
-                    "validate",
-                    [value, config, key],
-                  );
-                };
-          Object.freeze(isolatedValidate);
-          validateInitialized = true;
-        }
-        return isolatedValidate;
-      },
-    },
-    transform: {
-      configurable: false,
-      enumerable: false,
-      get() {
-        if (!transformInitialized) {
-          const callback = stableAttributeTypeCallback(instance, "transform");
-          isolatedTransform =
-            callback === undefined
-              ? undefined
-              : function isolatedCustomTypeTransform(value: unknown, config: Config): Scalar {
-                  return invokeIsolatedAttributeTypeCallback(
-                    callback,
-                    instance,
-                    Original,
-                    IsolatedAttributeType,
-                    "transform",
-                    [value, config],
-                  );
-                };
-          if (isolatedTransform !== undefined) Object.freeze(isolatedTransform);
-          transformInitialized = true;
-        }
-        return isolatedTransform;
-      },
-    },
-  });
-
-  return Object.freeze(facade);
-}
-
-function stableAttributeTypeCallback(
-  instance: object,
-  name: AttributeTypeCallbackName,
-): CallableFunction | undefined {
-  const property = stableDataProperty(instance, name);
-  if (!property.found || !property.value) return undefined;
-  if (typeof property.value !== "function") {
-    throw new TypeError("Unsupported custom attribute type callback");
-  }
-  return property.value;
-}
-
-function stableDataProperty(
-  instance: object,
-  name: PropertyKey,
-): { found: boolean; value?: unknown } {
-  const visited = new Set<object>();
-  let current: object | null = instance;
-  while (current !== null) {
-    if (visited.has(current)) throw new TypeError("Unsupported custom attribute type prototype");
-    visited.add(current);
-    const descriptor = Object.getOwnPropertyDescriptor(current, name);
-    if (descriptor !== undefined) {
-      if (!("value" in descriptor)) {
-        throw new TypeError("Unsupported custom attribute type accessor");
-      }
-      const observed = Reflect.get(instance, name, instance);
-      if (observed !== descriptor.value) {
-        throw new TypeError("Unstable custom attribute type callback");
-      }
-      return { found: true, value: descriptor.value };
-    }
-    current = Object.getPrototypeOf(current) as object | null;
-  }
-
-  if (Reflect.get(instance, name, instance) !== undefined) {
-    throw new TypeError("Dynamic custom attribute type callback");
-  }
-  return { found: false };
-}
-
-function rejectConstructedThenable(instance: object): void {
-  const then = stableDataProperty(instance, "then");
-  if (!then.found || typeof then.value !== "function") return;
-  try {
-    void Promise.resolve(instance as PromiseLike<unknown>).catch(() => undefined);
-  } catch {
-    // The constructed value is rejected below whether assimilation succeeds or fails.
-  }
-  throw new TypeError("Asynchronous custom attribute types are unsupported");
-}
-
-function invokeIsolatedAttributeTypeCallback<TResult>(
-  callback: CallableFunction,
-  instance: object,
-  Original: CustomAttributeType,
-  IsolatedAttributeType: CustomAttributeType,
-  name: AttributeTypeCallbackName,
-  args: unknown[],
-): TResult {
-  const invocation = cloneAttributeTypeInvocation(
-    callback,
-    instance,
-    Original,
-    IsolatedAttributeType,
-    name,
-    args,
-  );
-  const result = Reflect.apply(callback, invocation.receiver, invocation.args) as TResult;
-  if (consumePromiseLike(result)) {
-    throw new TypeError("Asynchronous extension callbacks are unsupported");
-  }
-  return cloneConfig(result);
-}
-
-function cloneAttributeTypeInvocation(
-  callback: CallableFunction,
-  instance: object,
-  Original: CustomAttributeType,
-  IsolatedAttributeType: CustomAttributeType,
-  name: AttributeTypeCallbackName,
-  args: unknown[],
-): { receiver: object; args: unknown[] } {
-  const receiver = Object.create(null) as Record<PropertyKey, unknown>;
-  const seen = new WeakMap<object, unknown>([[instance, receiver]]);
-  const chain = stablePrototypeChain(instance);
-
-  for (const current of chain.toReversed()) {
-    for (const key of Reflect.ownKeys(current)) {
-      if (key === "constructor" || key === "transform" || key === "validate") continue;
-      const descriptor = Object.getOwnPropertyDescriptor(current, key);
-      if (descriptor === undefined) continue;
-      if (!("value" in descriptor)) {
-        throw new TypeError("Unsupported custom attribute type receiver accessor");
-      }
-      Object.defineProperty(receiver, key, {
-        configurable: true,
-        enumerable: descriptor.enumerable,
-        value: cloneRestrictedAttributeTypeValue(descriptor.value, seen),
-        writable: true,
-      });
-    }
-  }
-
-  Object.defineProperty(receiver, "constructor", {
-    configurable: true,
-    value: IsolatedAttributeType,
-    writable: true,
-  });
-  const callbackFacade = function (...nestedArgs: unknown[]): unknown {
-    return invokeIsolatedAttributeTypeCallback(
-      callback,
-      instance,
-      Original,
-      IsolatedAttributeType,
-      name,
-      nestedArgs,
-    );
-  };
-  Object.freeze(callbackFacade);
-  Object.defineProperty(receiver, name, {
-    configurable: true,
-    value: callbackFacade,
-    writable: true,
-  });
-
-  return { receiver, args: cloneConfig(args, seen) };
-}
-
-function stablePrototypeChain(instance: object): object[] {
-  const chain: object[] = [];
-  const visited = new Set<object>();
-  let current: object | null = instance;
-  while (current !== null && current !== Object.prototype) {
-    if (visited.has(current)) throw new TypeError("Unsupported custom attribute type prototype");
-    visited.add(current);
-    chain.push(current);
-    current = Object.getPrototypeOf(current) as object | null;
-  }
-  return chain;
-}
-
-function cloneRestrictedAttributeTypeValue<T>(value: T, seen: WeakMap<object, unknown>): T {
-  if (typeof value === "function") {
-    throw new TypeError("Unsupported custom attribute type receiver function");
-  }
-  if (value === null || typeof value !== "object") return value;
-  const existing = seen.get(value);
-  if (existing !== undefined) return existing as T;
-
-  if (Array.isArray(value)) {
-    const clone: unknown[] = [];
-    seen.set(value, clone);
-    for (const nested of value) clone.push(cloneRestrictedAttributeTypeValue(nested, seen));
-    return clone as T;
-  }
-  if (value instanceof RegExp) {
-    const clone = new RegExp(value.source, value.flags);
-    clone.lastIndex = value.lastIndex;
-    seen.set(value, clone);
-    return clone as T;
-  }
-  if (value instanceof Date) {
-    const clone = new Date(value.getTime());
-    seen.set(value, clone);
-    return clone as T;
-  }
-  if (value instanceof Map) {
-    const clone = new Map();
-    seen.set(value, clone);
-    for (const [key, nested] of value) {
-      clone.set(
-        cloneRestrictedAttributeTypeValue(key, seen),
-        cloneRestrictedAttributeTypeValue(nested, seen),
-      );
-    }
-    return clone as T;
-  }
-  if (value instanceof Set) {
-    const clone = new Set();
-    seen.set(value, clone);
-    for (const nested of value) clone.add(cloneRestrictedAttributeTypeValue(nested, seen));
-    return clone as T;
-  }
-  if (value instanceof URL) {
-    const clone = new URL(value.href);
-    seen.set(value, clone);
-    return clone as T;
-  }
-  if (
-    value instanceof WeakMap ||
-    value instanceof WeakSet ||
-    value instanceof Promise ||
-    value instanceof Markdoc.Ast.Node ||
-    Markdoc.Ast.isVariable(value) ||
-    Markdoc.Ast.isFunction(value) ||
-    value instanceof Markdoc.Tag
-  ) {
-    throw new TypeError("Unsupported custom attribute type receiver value");
-  }
-
-  const clone = Object.create(null) as Record<PropertyKey, unknown>;
-  seen.set(value, clone);
-  for (const current of stablePrototypeChain(value).toReversed()) {
-    for (const key of Reflect.ownKeys(current)) {
-      if (key === "constructor") continue;
-      const descriptor = Object.getOwnPropertyDescriptor(current, key);
-      if (descriptor === undefined) continue;
-      if (!("value" in descriptor)) {
-        throw new TypeError("Unsupported custom attribute type receiver accessor");
-      }
-      Object.defineProperty(clone, key, {
-        configurable: true,
-        enumerable: descriptor.enumerable,
-        value: cloneRestrictedAttributeTypeValue(descriptor.value, seen),
-        writable: true,
-      });
-    }
-  }
-  return clone as T;
+function unsupportedAttributeType(): TypeError {
+  return new TypeError("Unsupported attribute type configuration");
 }
 
 function invokeIsolatedCallback<TResult>(
@@ -707,10 +391,35 @@ function invokeIsolatedCallback<TResult>(
 
 function consumePromiseLike(value: unknown): boolean {
   if (value === null || (typeof value !== "object" && typeof value !== "function")) return false;
-  const then = stableDataProperty(value, "then");
+  const then = stableCallbackResultProperty(value, "then");
   if (!then.found || typeof then.value !== "function") return false;
   void Promise.resolve(value as PromiseLike<unknown>).catch(() => undefined);
   return true;
+}
+
+function stableCallbackResultProperty(
+  value: object,
+  name: PropertyKey,
+): { found: boolean; value?: unknown } {
+  const visited = new Set<object>();
+  let current: object | null = value;
+  while (current !== null) {
+    if (visited.has(current)) throw new TypeError("Unsupported callback result prototype");
+    visited.add(current);
+    const descriptor = Object.getOwnPropertyDescriptor(current, name);
+    if (descriptor !== undefined) {
+      if (!("value" in descriptor)) throw new TypeError("Unsupported callback result accessor");
+      const observed = Reflect.get(value, name, value);
+      if (observed !== descriptor.value) throw new TypeError("Unstable callback result");
+      return { found: true, value: descriptor.value };
+    }
+    current = Object.getPrototypeOf(current) as object | null;
+  }
+
+  if (Reflect.get(value, name, value) !== undefined) {
+    throw new TypeError("Dynamic callback result property");
+  }
+  return { found: false };
 }
 
 function ownEntries<T>(value: Record<string, T> | undefined): Array<[string, T]> {

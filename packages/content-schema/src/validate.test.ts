@@ -4,6 +4,7 @@ import Markdoc, {
   type Node,
   type Schema,
   type ValidationError,
+  type ValidationType,
 } from "@markdoc/markdoc";
 import { describe, expect, test, vi } from "vite-plus/test";
 import { topikComponents } from "./components";
@@ -191,148 +192,240 @@ const validationAttackFactories: Array<[string, () => ValidationAttack]> = [
       };
     },
   ],
+];
+
+type UnsupportedAttributeTypeCase = {
+  observed: Array<ReturnType<typeof vi.fn>>;
+  type: CustomAttributeType;
+};
+
+const unsupportedAttributeTypeCases: Array<[string, () => UnsupportedAttributeTypeCase]> = [
   [
-    "validation-only custom attribute type",
+    "prototype method",
     () => {
-      const callback = vi.fn((_value: unknown, config: Config) => {
-        mutateLaterVictim(config);
-        return [];
-      });
-      class AttackType {
-        validate(value: unknown, config: Config) {
-          return callback(value, config);
+      const constructed = vi.fn();
+      const validate = vi.fn(() => []);
+      class UnsupportedType {
+        constructor() {
+          constructed();
+        }
+
+        validate() {
+          return validate();
         }
       }
+      return { observed: [constructed, validate], type: UnsupportedType };
+    },
+  ],
+  [
+    "own arrow field",
+    () => {
+      const constructed = vi.fn();
+      const validate = vi.fn(() => []);
+      class UnsupportedType {
+        constructor() {
+          constructed();
+        }
+
+        validate = validate;
+      }
+      return { observed: [constructed, validate], type: UnsupportedType };
+    },
+  ],
+  [
+    "inherited arrow field",
+    () => {
+      const constructed = vi.fn();
+      const validate = vi.fn(() => []);
+      class BaseType {
+        validate = validate;
+      }
+      class UnsupportedType extends BaseType {
+        constructor() {
+          constructed();
+          super();
+        }
+      }
+      return { observed: [constructed, validate], type: UnsupportedType };
+    },
+  ],
+  [
+    "constructor-returned object",
+    () => {
+      const constructed = vi.fn();
+      const validate = vi.fn(() => []);
+      function UnsupportedType() {
+        constructed();
+        return { validate };
+      }
       return {
-        callback,
-        source: '{% attack value="safe" /%}\n{% victim bad=true /%}',
-        config: {
-          tags: {
-            attack: {
-              render: "span",
-              selfClosing: true,
-              attributes: { value: { type: AttackType } },
-            },
-            victim: victimSchema(),
-          },
-        },
+        observed: [constructed, validate],
+        type: UnsupportedType as unknown as CustomAttributeType,
       };
     },
   ],
   [
-    "function-parameter custom attribute type",
+    "constructor-returned singleton",
     () => {
-      const callback = vi.fn((_value: unknown, config: Config) => {
-        mutateLaterVictim(config);
-        return [];
-      });
-      class AttackType {
-        validate(value: unknown, config: Config) {
-          return callback(value, config);
-        }
+      const constructed = vi.fn();
+      const validate = vi.fn(() => []);
+      const singleton = { validate };
+      function UnsupportedType() {
+        constructed();
+        return singleton;
       }
       return {
-        callback,
-        source: '{% callout title=attack(value="safe") /%}\n{% victim bad=true /%}',
-        config: {
-          functions: {
-            attack: {
-              returns: String,
-              parameters: { value: { type: AttackType, required: true } },
-              transform: () => "safe",
-            },
-          },
-          tags: { victim: victimSchema() },
+        observed: [constructed, validate],
+        type: UnsupportedType as unknown as CustomAttributeType,
+      };
+    },
+  ],
+  [
+    "arrow alias",
+    () => {
+      const constructed = vi.fn();
+      const validate = vi.fn(() => []);
+      const alias = (..._args: unknown[]) => validate();
+      function UnsupportedType() {
+        constructed();
+        return { validate: alias };
+      }
+      return {
+        observed: [constructed, validate],
+        type: UnsupportedType as unknown as CustomAttributeType,
+      };
+    },
+  ],
+  [
+    "bound alias",
+    () => {
+      const constructed = vi.fn();
+      const validate = vi.fn(function () {
+        return [];
+      });
+      const alias = validate.bind({ state: "caller" });
+      function UnsupportedType() {
+        constructed();
+        return { validate: alias };
+      }
+      return {
+        observed: [constructed, validate],
+        type: UnsupportedType as unknown as CustomAttributeType,
+      };
+    },
+  ],
+  [
+    "ordinary function alias",
+    () => {
+      const constructed = vi.fn();
+      const validate = vi.fn(function () {
+        return [];
+      });
+      function UnsupportedType() {
+        constructed();
+        return { validate };
+      }
+      return {
+        observed: [constructed, validate],
+        type: UnsupportedType as unknown as CustomAttributeType,
+      };
+    },
+  ],
+  [
+    "transform-only field",
+    () => {
+      const constructed = vi.fn();
+      const transform = vi.fn((value: unknown) => value);
+      class UnsupportedType {
+        constructor() {
+          constructed();
+        }
+
+        transform = transform;
+      }
+      return {
+        observed: [constructed, transform],
+        type: UnsupportedType as unknown as CustomAttributeType,
+      };
+    },
+  ],
+  [
+    "prototype accessor",
+    () => {
+      const constructed = vi.fn();
+      const accessor = vi.fn(() => () => []);
+      class UnsupportedType {
+        constructor() {
+          constructed();
+        }
+
+        get validate() {
+          return accessor();
+        }
+      }
+      return { observed: [constructed, accessor], type: UnsupportedType };
+    },
+  ],
+  [
+    "native-looking function",
+    () => {
+      const constructed = vi.fn();
+      const sourceRead = vi.fn(() => "function String() { [native code] }");
+      function UnsupportedType() {
+        constructed();
+      }
+      Object.defineProperty(UnsupportedType, "toString", { value: sourceRead });
+      return {
+        observed: [constructed, sourceRead],
+        type: UnsupportedType as unknown as CustomAttributeType,
+      };
+    },
+  ],
+  [
+    "nominal class",
+    () => {
+      const constructed = vi.fn();
+      class UnsupportedType {
+        constructor() {
+          constructed();
+        }
+      }
+      return { observed: [constructed], type: UnsupportedType };
+    },
+  ],
+  [
+    "callable proxy",
+    () => {
+      const observed = vi.fn();
+      const UnsupportedType = new Proxy(function UnsupportedType() {}, {
+        apply() {
+          observed();
+          return {};
         },
+        construct() {
+          observed();
+          return {};
+        },
+        get() {
+          observed();
+          return undefined;
+        },
+        getOwnPropertyDescriptor() {
+          observed();
+          return undefined;
+        },
+        getPrototypeOf() {
+          observed();
+          return null;
+        },
+      });
+      return {
+        observed: [observed],
+        type: UnsupportedType as unknown as CustomAttributeType,
       };
     },
   ],
 ];
-
-type InstanceValidationTypeFactory = (
-  callback: (value: unknown, config: Config) => ValidationError[],
-) => CustomAttributeType;
-
-const instanceValidationTypeFactories: Array<[string, InstanceValidationTypeFactory]> = [
-  [
-    "class-field custom attribute type",
-    (callback) =>
-      class AttackType {
-        validate = callback;
-      },
-  ],
-  [
-    "inherited class-field custom attribute type",
-    (callback) => {
-      class BaseAttackType {
-        validate = callback;
-      }
-      return class AttackType extends BaseAttackType {};
-    },
-  ],
-  [
-    "constructor-returned custom attribute type",
-    (callback) => {
-      function AttackType() {
-        return { validate: callback };
-      }
-      return AttackType as unknown as CustomAttributeType;
-    },
-  ],
-];
-
-for (const [name, createType] of instanceValidationTypeFactories) {
-  validationAttackFactories.push(
-    [
-      name,
-      () => {
-        const callback = vi.fn((_value: unknown, config: Config) => {
-          mutateLaterVictim(config);
-          return [];
-        });
-        const AttackType = createType(callback);
-        return {
-          callback,
-          source: '{% attack value="safe" /%}\n{% victim bad=true /%}',
-          config: {
-            tags: {
-              attack: {
-                render: "span",
-                selfClosing: true,
-                attributes: { value: { type: AttackType } },
-              },
-              victim: victimSchema(),
-            },
-          },
-        };
-      },
-    ],
-    [
-      `function-parameter ${name}`,
-      () => {
-        const callback = vi.fn((_value: unknown, config: Config) => {
-          mutateLaterVictim(config);
-          return [];
-        });
-        const AttackType = createType(callback);
-        return {
-          callback,
-          source: '{% callout title=attack(value="safe") /%}\n{% victim bad=true /%}',
-          config: {
-            functions: {
-              attack: {
-                returns: String,
-                parameters: { value: { type: AttackType, required: true } },
-                transform: () => "safe",
-              },
-            },
-            tags: { victim: victimSchema() },
-          },
-        };
-      },
-    ],
-  );
-}
 
 describe("topik content schema", () => {
   test.each(
@@ -620,70 +713,6 @@ describe("topik content schema", () => {
     expect(config.tags?.victim?.attributes?.bad?.matches).toEqual([false]);
   });
 
-  test("prevents callback and custom-type function aliases from changing later validation", () => {
-    const source = "{% attack /%}\n{% victim bad=true /%}";
-    class VictimType {
-      validate(value: unknown): ValidationError[] {
-        return value === false
-          ? []
-          : [
-              {
-                id: "victim-type-invalid",
-                level: "error",
-                message: "Victim type rejected the value.",
-              },
-            ];
-      }
-    }
-    const originalTypeValidate = Reflect.get(VictimType.prototype, "validate");
-    const victimValidator = function (this: Schema): ValidationError[] {
-      const wrapped = Reflect.get(this, "validate") as { allow?: boolean };
-      return wrapped.allow
-        ? []
-        : [
-            {
-              id: "victim-schema-invalid",
-              level: "error",
-              message: "Victim schema rejected the node.",
-            },
-          ];
-    };
-    const callback = vi.fn((_node: Node, config: Config) => {
-      const victim = config.tags?.victim;
-      const type = victim?.attributes?.bad?.type as
-        | { prototype?: { validate?: unknown } }
-        | undefined;
-      const validate = Reflect.get(victim as object, "validate") as object;
-      expect(Reflect.set(validate, "allow", true)).toBe(false);
-      expect(Reflect.set(type?.prototype as object, "validate", () => [])).toBe(false);
-      return [];
-    });
-    const result = validateTopikContent(source, {
-      config: {
-        tags: {
-          attack: { render: "span", selfClosing: true, validate: callback },
-          victim: {
-            render: "span",
-            selfClosing: true,
-            validate: victimValidator,
-            attributes: { bad: { type: VictimType, required: true } },
-          },
-        },
-      },
-    });
-
-    expect(callback).toHaveBeenCalledOnce();
-    expect(result).toMatchObject({ source, valid: false });
-    expect(result.errors).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: "victim-schema-invalid" }),
-        expect.objectContaining({ id: "victim-type-invalid" }),
-      ]),
-    );
-    expect(Object.hasOwn(victimValidator, "allow")).toBe(false);
-    expect(Reflect.get(VictimType.prototype, "validate")).toBe(originalTypeValidate);
-  });
-
   test.each([
     [String, 'value="safe"'],
     [Number, "value=1"],
@@ -707,8 +736,10 @@ describe("topik content schema", () => {
       },
     };
     const merged = mergeTopikMarkdocConfig(config);
+    const mergedAgain = mergeTopikMarkdocConfig(merged);
 
     expect(merged.tags?.notice?.attributes?.value?.type).toBe(type);
+    expect(mergedAgain.tags?.notice?.attributes?.value?.type).toBe(type);
     expect(validateTopikContent(source, { config })).toMatchObject({
       source,
       valid: true,
@@ -716,325 +747,194 @@ describe("topik content schema", () => {
     });
   });
 
-  test("constructs a custom type once per Markdoc phase and invokes each present callback once", () => {
-    let constructions = 0;
-    const validate = vi.fn(() => []);
-    const transform = vi.fn((value: unknown) => value as string);
-    class BothType {
-      constructor() {
-        constructions += 1;
-      }
-
-      validate = validate;
-      transform = transform;
-    }
-    const config = mergeTopikMarkdocConfig({
-      tags: {
-        notice: {
-          render: "span",
-          selfClosing: true,
-          attributes: { value: { type: BothType } },
-        },
-      },
-    });
-    const content = Markdoc.parse('{% notice value="safe" /%}');
-
-    expect(constructions).toBe(0);
-    expect(Markdoc.validate(content, config)).toEqual([]);
-    expect(constructions).toBe(1);
-    expect(validate).toHaveBeenCalledOnce();
-    expect(transform).not.toHaveBeenCalled();
-    Markdoc.transform(content, config);
-    expect(constructions).toBe(2);
-    expect(validate).toHaveBeenCalledOnce();
-    expect(transform).toHaveBeenCalledOnce();
-  });
-
-  test("isolates a custom type's receiver graph and constructor identity", () => {
-    const shared = { value: "caller" };
-    let usedPrivateReceiver = false;
-    class StatefulType {
-      state = shared;
-      map = new Map([[shared, shared]]);
-      set = new Set([shared]);
-      self = this;
-
-      validate(value: unknown): ValidationError[] {
-        usedPrivateReceiver = !(this instanceof StatefulType);
-        expect(this.self).toBe(this);
-        expect(this.map.keys().next().value).toBe(this.state);
-        expect(this.map.get(this.state)).toBe(this.state);
-        expect(this.set.has(this.state)).toBe(true);
-        expect(this.constructor).not.toBe(StatefulType);
-        this.state.value = String(value);
-        return [];
-      }
-    }
-    const originalValidate = Reflect.get(StatefulType.prototype, "validate");
-    const source = '{% notice value="safe" /%}';
-    const result = validateTopikContent(source, {
-      config: {
+  test.each(unsupportedAttributeTypeCases)(
+    "rejects unsupported function attribute type %s before observing executable state",
+    (_name, createCase) => {
+      const { observed, type } = createCase();
+      const source = '{% notice value="safe" /%}';
+      const config: Config = {
         tags: {
           notice: {
             render: "span",
             selfClosing: true,
-            attributes: { value: { type: StatefulType } },
+            attributes: { value: { type } },
           },
         },
-      },
-    });
+      };
 
-    expect(result).toMatchObject({ source, valid: true, errors: [] });
-    expect(usedPrivateReceiver).toBe(true);
-    expect(shared).toEqual({ value: "caller" });
-    expect(Reflect.get(StatefulType.prototype, "validate")).toBe(originalValidate);
-  });
-
-  test("preserves a valid transform-only instance field without activating validation", () => {
-    let constructions = 0;
-    const transform = vi.fn((value: unknown) => String(value).toUpperCase());
-    class TransformType {
-      constructor() {
-        constructions += 1;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        expect(() => mergeTopikMarkdocConfig(config)).toThrowError(
+          "Unsupported attribute type configuration",
+        );
       }
+      expect(validateTopikContent(source, { config })).toMatchObject({
+        source,
+        valid: false,
+        errors: [
+          expect.objectContaining({
+            id: "topik-config-invalid",
+            level: "critical",
+            message: "Content configuration is invalid.",
+          }),
+        ],
+      });
+      for (const observer of observed) expect(observer).not.toHaveBeenCalled();
+    },
+  );
 
-      transform = transform;
-    }
-    const config = mergeTopikMarkdocConfig({
-      variables: { input: "safe" },
-      tags: {
-        notice: {
-          render: "span",
-          selfClosing: true,
-          attributes: { value: { type: TransformType } },
-        },
-      },
+  test("rejects paired singleton validation state before either field is observed", () => {
+    const constructed = vi.fn();
+    const validate = vi.fn(function (this: { primed: boolean }, value: unknown) {
+      if (value === "prime") {
+        this.primed = true;
+        return [];
+      }
+      return this.primed ? [] : [{ id: "field-rejected", level: "error", message: "Rejected" }];
     });
-    const content = Markdoc.parse("{% notice value=$input /%}");
-
-    expect(Markdoc.validate(content, config)).toEqual([]);
-    expect(constructions).toBe(0);
-    const tree = Markdoc.transform(content, config);
-    expect(constructions).toBe(1);
-    expect(transform).toHaveBeenCalledOnce();
-    expect(JSON.stringify(tree)).toContain("SAFE");
-  });
-
-  test("preserves nominal custom return-type identity through repeated merges", () => {
-    class NominalType {}
-    const extension: Config = {
-      functions: {
-        make: { returns: NominalType, transform: () => new NominalType() },
-      },
+    const singleton = {
+      primed: false,
+      validate: (value: unknown) => validate.call(singleton, value),
+    };
+    function StatefulType() {
+      constructed();
+      return singleton;
+    }
+    const type = StatefulType as unknown as CustomAttributeType;
+    const config: Config = {
       tags: {
         notice: {
           render: "span",
           selfClosing: true,
-          attributes: { value: { type: NominalType } },
+          attributes: {
+            first: { type },
+            second: { type },
+          },
         },
       },
     };
-    const once = mergeTopikMarkdocConfig(extension);
-    const twice = mergeTopikMarkdocConfig(once);
-    const onceType = once.tags?.notice?.attributes?.value?.type;
-    const twiceType = twice.tags?.notice?.attributes?.value?.type;
-    const content = Markdoc.parse("{% notice value=make() /%}");
+    const control = '{% notice second="reject" /%}';
+    const combined = '{% notice first="prime" second="reject" /%}';
 
-    expect(onceType).toBe(twiceType);
-    expect(once.functions?.make?.returns).toBe(onceType);
-    expect(twice.functions?.make?.returns).toBe(twiceType);
-    expect(Markdoc.validate(content, twice)).toEqual([]);
+    for (const source of [control, combined]) {
+      expect(validateTopikContent(source, { config })).toMatchObject({
+        source,
+        valid: false,
+        errors: [expect.objectContaining({ id: "topik-config-invalid", level: "critical" })],
+      });
+    }
+    expect(constructed).not.toHaveBeenCalled();
+    expect(validate).not.toHaveBeenCalled();
+    expect(singleton.primed).toBe(false);
   });
 
-  test.each(instanceValidationTypeFactories)("preserves valid %s behavior", (_name, createType) => {
-    const callback = vi.fn(() => []);
-    const AttackType = createType(callback);
-    const source = '{% notice value="safe" /%}';
-    const result = validateTopikContent(source, {
-      config: {
-        tags: {
-          notice: {
-            render: "span",
-            selfClosing: true,
-            attributes: { value: { type: AttackType } },
-          },
-        },
-      },
-    });
+  test.each(["parameter", "return"] as const)(
+    "rejects unsupported function %s types before validation or transformation",
+    (position) => {
+      const constructed = vi.fn();
+      const callback = vi.fn(() => []);
+      const transform = vi.fn(() => "safe");
+      class UnsupportedType {
+        constructor() {
+          constructed();
+        }
 
-    expect(result).toMatchObject({ source, valid: true, errors: [] });
-    expect(callback).toHaveBeenCalledOnce();
-  });
-
-  test("fails an accessor-provided custom type callback closed without invoking the accessor", () => {
-    const getter = vi.fn(() => () => []);
-    class AccessorType {
-      get validate() {
-        return getter();
+        validate = callback;
       }
-    }
-    const source = '{% notice value="safe" /%}';
-    const result = validateTopikContent(source, {
-      config: {
-        tags: {
-          notice: {
-            render: "span",
-            selfClosing: true,
-            attributes: { value: { type: AccessorType } },
-          },
-        },
-      },
-    });
+      const functionSchema =
+        position === "parameter"
+          ? {
+              returns: String,
+              parameters: { value: { type: UnsupportedType, required: true } },
+              transform,
+            }
+          : {
+              returns: UnsupportedType,
+              transform,
+            };
+      const source =
+        position === "parameter"
+          ? '{% callout title=custom(value="safe") /%}'
+          : "{% callout title=custom() /%}";
+      const result = validateTopikContent(source, {
+        config: { functions: { custom: functionSchema } },
+      });
 
-    expect(result).toMatchObject({
-      source,
-      valid: false,
-      errors: [expect.objectContaining({ id: "topik-extension-failed", level: "critical" })],
-    });
-    expect(getter).not.toHaveBeenCalled();
-  });
+      expect(result).toMatchObject({
+        source,
+        valid: false,
+        errors: [expect.objectContaining({ id: "topik-config-invalid", level: "critical" })],
+      });
+      expect(constructed).not.toHaveBeenCalled();
+      expect(callback).not.toHaveBeenCalled();
+      expect(transform).not.toHaveBeenCalled();
+    },
+  );
 
-  test("fails a truthy non-function custom type callback closed", () => {
-    class InvalidType {
-      validate = "unsupported";
-    }
-    const source = '{% notice value="safe" /%}';
-    const result = validateTopikContent(source, {
-      config: {
-        tags: {
-          notice: {
-            render: "span",
-            selfClosing: true,
-            attributes: { value: { type: InvalidType as unknown as CustomAttributeType } },
-          },
-        },
-      },
-    });
-
-    expect(result).toMatchObject({
-      source,
-      valid: false,
-      errors: [expect.objectContaining({ id: "topik-extension-failed", level: "critical" })],
-    });
-  });
-
-  test("fails a dynamic proxy callback shape closed", () => {
-    function DynamicType() {
-      return new Proxy(
-        {},
-        {
-          get(_target, key) {
-            return key === "validate" ? () => [] : undefined;
-          },
-        },
-      );
-    }
-    const source = '{% notice value="safe" /%}';
-    const result = validateTopikContent(source, {
-      config: {
-        tags: {
-          notice: {
-            render: "span",
-            selfClosing: true,
-            attributes: {
-              value: { type: DynamicType as unknown as CustomAttributeType },
-            },
-          },
-        },
-      },
-    });
-
-    expect(result).toMatchObject({
-      source,
-      valid: false,
-      errors: [expect.objectContaining({ id: "topik-extension-failed", level: "critical" })],
-    });
-  });
-
-  test("fails a throwing custom type constructor closed", () => {
-    class ThrowingType {
+  test("rejects unsupported nested and cyclic type arrays deterministically", () => {
+    const constructed = vi.fn();
+    class UnsupportedType {
       constructor() {
-        throw new Error("PRIVATE_VALUE_SENTINEL");
+        constructed();
       }
     }
-    const source = '{% notice value="safe" /%}';
-    const result = validateTopikContent(source, {
-      config: {
+    const nested = [String, [Number, UnsupportedType]] as unknown as ValidationType;
+    const cyclic: unknown[] = [String];
+    cyclic.push(cyclic);
+
+    for (const type of [nested, cyclic as unknown as ValidationType]) {
+      const config: Config = {
         tags: {
           notice: {
             render: "span",
             selfClosing: true,
-            attributes: { value: { type: ThrowingType } },
+            attributes: { value: { type } },
           },
         },
-      },
-    });
-
-    expect(result).toMatchObject({
-      source,
-      valid: false,
-      errors: [expect.objectContaining({ id: "topik-extension-failed", level: "critical" })],
-    });
-    expect(JSON.stringify(result.errors)).not.toContain("PRIVATE_VALUE_SENTINEL");
-  });
-
-  test("fails an asynchronous instance validator closed and consumes its rejection", async () => {
-    class AsyncType {
-      validate = async () => {
-        await Promise.resolve();
-        throw new Error("PRIVATE_VALUE_SENTINEL");
       };
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        expect(() => mergeTopikMarkdocConfig(config)).toThrowError(
+          "Unsupported attribute type configuration",
+        );
+        expect(validateTopikContent('{% notice value="safe" /%}', { config })).toMatchObject({
+          valid: false,
+          errors: [expect.objectContaining({ id: "topik-config-invalid" })],
+        });
+      }
     }
-    const source = '{% notice value="safe" /%}';
-    const result = validateTopikContent(source, {
-      config: {
-        tags: {
-          notice: {
-            render: "span",
-            selfClosing: true,
-            attributes: { value: { type: AsyncType as unknown as CustomAttributeType } },
-          },
-        },
-      },
-    });
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(result).toMatchObject({
-      source,
-      valid: false,
-      errors: [expect.objectContaining({ id: "topik-extension-failed", level: "critical" })],
-    });
-    expect(JSON.stringify(result.errors)).not.toContain("PRIVATE_VALUE_SENTINEL");
+    expect(constructed).not.toHaveBeenCalled();
   });
 
-  test("fails a constructor-returned thenable closed and consumes its rejection", async () => {
-    function ThenableType() {
-      return Promise.reject(new Error("PRIVATE_VALUE_SENTINEL"));
+  test("rejects unsupported types in reachable partials before construction or callbacks", () => {
+    const constructed = vi.fn();
+    const validate = vi.fn(() => []);
+    class UnsupportedType {
+      constructor() {
+        constructed();
+      }
+
+      validate = validate;
     }
-    const source = '{% notice value="safe" /%}';
+    const source = '{% partial file="part.md" /%}';
     const result = validateTopikContent(source, {
       config: {
+        partials: { "part.md": Markdoc.parse('{% notice value="safe" /%}') },
         tags: {
           notice: {
             render: "span",
             selfClosing: true,
-            attributes: {
-              value: { type: ThenableType as unknown as CustomAttributeType },
-            },
+            attributes: { value: { type: UnsupportedType } },
           },
         },
       },
     });
-    await Promise.resolve();
-    await Promise.resolve();
 
     expect(result).toMatchObject({
       source,
       valid: false,
-      errors: [expect.objectContaining({ id: "topik-extension-failed", level: "critical" })],
+      errors: [expect.objectContaining({ id: "topik-config-invalid", level: "critical" })],
     });
-    expect(JSON.stringify(result.errors)).not.toContain("PRIVATE_VALUE_SENTINEL");
+    expect(constructed).not.toHaveBeenCalled();
+    expect(validate).not.toHaveBeenCalled();
   });
 
   test.each([/^safe$/gu, /^safe$/uy])(

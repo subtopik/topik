@@ -492,8 +492,16 @@ describe("content-react core", () => {
       const formatting = formatTopikContent(source, { config });
       const rewriting = rewriteTopikAssetOccurrences(source, replace, { config });
 
-      expect(validation).toMatchObject({ source, valid: false });
-      expect(result).toMatchObject({ ok: false, source });
+      expect(validation).toMatchObject({
+        source,
+        valid: false,
+        errors: [expect.objectContaining({ id: "topik-config-invalid", level: "critical" })],
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        source,
+        diagnostics: [expect.objectContaining({ id: "topik-config-invalid", level: "critical" })],
+      });
       expect(result).not.toHaveProperty("tree");
       expect(formatting).toMatchObject({ ok: false, source });
       expect(formatting).not.toHaveProperty("formatted");
@@ -511,7 +519,7 @@ describe("content-react core", () => {
       expect(placeholder).toContain('role="alert"');
       expect(placeholder).not.toContain("ordinary child");
       expect(placeholder).not.toContain("old.png");
-      expect(extensionValidator).toHaveBeenCalledTimes(7);
+      expect(extensionValidator).not.toHaveBeenCalled();
       expect(extensionTransform).not.toHaveBeenCalled();
       expect(renderVictim).not.toHaveBeenCalled();
       expect(transform).not.toHaveBeenCalled();
@@ -520,7 +528,7 @@ describe("content-react core", () => {
     }
   });
 
-  it("isolates an instance-field transform from later partial selection", () => {
+  it("rejects an instance-field transform before it can retarget partial selection", () => {
     const source = "{% attack value=$input /%}\n{% partial file=$which /%}";
     const retarget = vi.fn((value: unknown, config: Config) => {
       if (config.variables !== undefined) config.variables.which = "retargeted.md";
@@ -546,12 +554,22 @@ describe("content-react core", () => {
 
     const result = compileTopikContent(source, { config });
 
-    expect(result).toMatchObject({ ok: true, source });
-    if (!result.ok) return;
-    expect(renderToStaticMarkup(renderTopikContent(result))).toContain("Safe child");
-    expect(renderToStaticMarkup(renderTopikContent(result))).not.toContain("retargeted child");
+    expect(result).toMatchObject({
+      ok: false,
+      source,
+      diagnostics: [expect.objectContaining({ id: "topik-config-invalid", level: "critical" })],
+    });
+    expect(result).not.toHaveProperty("tree");
+    expect(() => renderTopikContent(result)).toThrow(InvalidTopikContentError);
+    expect(() => renderTopikMarkdown(source, { config })).toThrow(InvalidTopikContentError);
+    const placeholder = renderToStaticMarkup(
+      renderTopikMarkdown(source, { config, invalidContent: "placeholder" }),
+    );
+    expect(placeholder).toContain('role="alert"');
+    expect(placeholder).not.toContain("Safe child");
+    expect(placeholder).not.toContain("retargeted child");
     expect(config.variables.which).toBe("safe.md");
-    expect(retarget).toHaveBeenCalledOnce();
+    expect(retarget).not.toHaveBeenCalled();
   });
 
   it("renders a valid partial and custom function from isolated transform state", () => {

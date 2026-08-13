@@ -42,6 +42,14 @@ isolated configuration, AST, parameter, and result graphs; they cannot retarget 
 replace canonical rendering identities for later content. Callback/configuration failures become
 typed content failures rather than partially transformed output.
 
+Attribute schemas on normal source APIs are declarative: they may use Markdoc's built-in
+`String`, `Number`, `Boolean`, `Object`, and `Array` types (or the corresponding string names),
+including arrays composed from those types. Caller-defined attribute-type constructors are rejected
+before construction, validation, or transformation. JavaScript functions can retain hidden lexical
+or bound state that cannot be isolated by cloning their visible receiver, so executable custom
+attribute types cannot provide the same fail-closed guarantee. Custom tags, nodes, functions,
+variables, and partials remain additive within the validation boundaries above.
+
 `renderTopikMarkdown`, `renderTopikContent`, and the default `TopikContent` component throw
 `InvalidTopikContentError` for a failure unless a safe placeholder is selected explicitly:
 
@@ -118,6 +126,9 @@ This API and default-behavior change is breaking under the Topik compatibility p
 - Callers that passed an AST to `formatTopikContent` must pass the original source string and handle
   the discriminated result.
 - Callers of `rewriteTopikAssetOccurrences` must handle its success and failure branches.
+- Callers using a Markdoc `CustomAttributeType` constructor must migrate the attribute to the
+  declarative built-in types above and express additional constraints in the surrounding extension
+  schema. Normal source APIs do not execute custom attribute-type constructors or their callbacks.
 - `ValidateTopikContentResult` exposes only normalized `errors`; raw Markdoc validation objects are
   intentionally not public because their messages and locations can contain authored values or
   absolute directory paths.

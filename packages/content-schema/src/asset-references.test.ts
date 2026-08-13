@@ -201,8 +201,12 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
       },
     });
 
-    expect(extensionValidator).toHaveBeenCalledOnce();
-    expect(result).toMatchObject({ ok: false, source });
+    expect(extensionValidator).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: false,
+      source,
+      diagnostics: [expect.objectContaining({ id: "topik-config-invalid", level: "critical" })],
+    });
     expect(result).not.toHaveProperty("content");
     expect(replace).not.toHaveBeenCalled();
   });

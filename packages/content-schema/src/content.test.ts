@@ -184,8 +184,12 @@ describe("Topik content formatting", () => {
       },
     });
 
-    expect(extensionValidator).toHaveBeenCalledOnce();
-    expect(result).toMatchObject({ ok: false, source });
+    expect(extensionValidator).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: false,
+      source,
+      diagnostics: [expect.objectContaining({ id: "topik-config-invalid", level: "critical" })],
+    });
     expect(result).not.toHaveProperty("formatted");
   });
 

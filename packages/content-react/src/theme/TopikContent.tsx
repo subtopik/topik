@@ -67,12 +67,15 @@ export function TopikContent({
         components: mergedComponents,
         resolveAsset: effectiveResolveAsset,
       }),
+    // Keep every RenderTopikMarkdownOptions field read above in this manually maintained list.
     [
       compileOptions.config,
       compileOptions.file,
+      compileOptions.invalidContent,
+      compileOptions.invalidContentPlaceholder,
       compileOptions.onAssetDiagnostic,
       compileOptions.onDiagnostic,
-      compileOptions.validate,
+      compileOptions.onNavigationDiagnostic,
       content,
       effectiveResolveAsset,
       mergedComponents,

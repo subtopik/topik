@@ -4,6 +4,145 @@ title: Rendering
 
 # Rendering
 
+## Invalid and unsupported content
+
+Topik source is validated before it is transformed. `compileTopikContent` returns a discriminated
+result and retains the exact caller-supplied string in both branches:
+
+```ts
+import { compileTopikContent, renderTopikContent } from "@topik/content-react";
+
+const compiled = compileTopikContent(source);
+if (!compiled.ok) {
+  showSourceForRecovery(compiled.source);
+  showDiagnostics(compiled.diagnostics);
+  return;
+}
+
+const rendered = renderTopikContent(compiled);
+```
+
+A failure has no `tree`. Error- or critical-level content is never passed to Markdoc
+transformation. Warnings and informational diagnostics may accompany a successful result.
+
+`config` may add custom tags, nodes, variables, functions, and partials. Canonical Topik node and
+tag schemas always take precedence on normal validation, compile, render, format, and rewrite APIs,
+so configuration cannot replace or weaken required validation. The exported canonical config is an
+immutable snapshot, and merged configs receive isolated canonical schema copies; normal APIs use a
+separate private canonical authority. Validation is phased: a private canonical preflight first
+recognizes additive constructs without running their validators or transforms. Only accepted source
+continues to extension validation on a separate parse and isolated config; compilation transforms a
+third fresh parse. The canonical preflight also validates the complete reachable configured partial
+closure and rejects malformed or cyclic partial graphs. Literal and variable-selected partial names
+use isolated variable data, including nested paths and partial-local variable scopes; callback-based
+selection is rejected rather than executed during preflight. Extension diagnostics are sanitized
+like canonical diagnostics. Tag, node, function, and partial registries use own registrations only,
+including names that also exist on JavaScript object prototypes. Extension callback phases receive
+isolated configuration, AST, parameter, and result graphs; they cannot retarget validated partials or
+replace canonical rendering identities for later content. Callback/configuration failures become
+typed content failures rather than partially transformed output.
+
+Attribute schemas on normal source APIs are declarative. They may use only the exact built-in
+`String`, `Number`, `Boolean`, `Object`, and `Array` constructors, the corresponding exact
+case-sensitive string names, or finite dense acyclic arrays composed recursively from those values.
+Nullish values, arbitrary strings or runtime objects, caller-defined constructors, sparse arrays,
+and cyclic arrays are refused as invalid configuration before validation or transformation.
+JavaScript functions can retain hidden lexical or bound state that cannot be isolated by cloning
+their visible receiver, so executable custom attribute types cannot provide the same fail-closed
+guarantee. Custom tags, nodes, functions, variables, and partials remain additive within the
+validation boundaries above.
+
+`renderTopikMarkdown`, `renderTopikContent`, and the default `TopikContent` component throw
+`InvalidTopikContentError` for a failure unless a safe placeholder is selected explicitly:
+
+```tsx
+<TopikContent content={source} invalidContent="placeholder" />
+```
+
+The placeholder has alert semantics and never renders transformed children, source, or diagnostic
+text. Its presentation can be replaced without changing that boundary:
+
+```tsx
+<TopikContent
+  content={source}
+  invalidContent="placeholder"
+  invalidContentPlaceholder={() => <p>This content cannot be previewed.</p>}
+/>
+```
+
+Server rendering has the same outcomes: the default throws, while the explicit placeholder emits
+stable safe markup.
+
+### Trusted transformed trees
+
+`renderTrustedTopikTree` is the deliberately separate escape hatch for callers that already own a
+validated Markdoc render tree:
+
+```ts
+import { renderTrustedTopikTree } from "@topik/content-react";
+
+const rendered = renderTrustedTopikTree(tree);
+```
+
+The caller owns validation when using this API. Post-transform link and Asset sanitization still
+applies. A trusted tree cannot be supplied through `TopikContent` props.
+
+## Formatting and rewriting
+
+The public formatter accepts source rather than an AST so it can refuse invalid input without
+losing the original spelling:
+
+```ts
+import { formatTopikContent, rewriteTopikAssetOccurrences } from "@topik/content-schema";
+
+const formatted = formatTopikContent(source);
+if (!formatted.ok) {
+  preserveExactly(formatted.source);
+} else {
+  save(formatted.formatted);
+}
+
+const rewritten = rewriteTopikAssetOccurrences(source, (occurrence) =>
+  replacements.get(occurrence.position),
+);
+if (!rewritten.ok) {
+  preserveExactly(rewritten.source);
+} else {
+  save(rewritten.content);
+}
+```
+
+Both operations validate before formatting or replacement. A failure contains the exact original
+source and actionable diagnostics, and contains no normalized or partially rewritten output.
+
+## Migration and compatibility
+
+This API and default-behavior change is breaking under the Topik compatibility policy:
+
+- Callers that expected `compileTopikContent(source)` to return a raw tree must branch on `ok` and
+  read `tree` only from the success result.
+- Callers that passed a raw tree to `renderTopikContent` must pass the compile result, or use
+  `renderTrustedTopikTree` when they independently own validation.
+- The former `validate: false` option has no replacement on the normal compile, render, or
+  component path. Validation is mandatory.
+- Callers that passed an AST to `formatTopikContent` must pass the original source string and handle
+  the discriminated result.
+- Callers of `rewriteTopikAssetOccurrences` must handle its success and failure branches.
+- Callers using a Markdoc `CustomAttributeType` constructor must migrate the attribute to the
+  declarative built-in types above and express additional constraints in the surrounding extension
+  schema. Normal source APIs do not execute custom attribute-type constructors or their callbacks.
+- `ValidateTopikContentResult` exposes only normalized `errors`; raw Markdoc validation objects are
+  intentionally not public because their messages and locations can contain authored values or
+  absolute directory paths.
+
+The grammar meaning is unchanged, so `TOPIK_CONTENT_SCHEMA_VERSION` is not changed. Publication
+requires a new package compatibility line and the coordinated release, deprecation, and migration
+gate. This source change does not publish or bump a package version. The compatibility process,
+including deprecation in at least one published release and a migration window of at least 30
+calendar days, still applies.
+
+## Navigation helpers
+
 `@topik/schema` exports browser-safe navigation helpers. Consumers should use them instead of reconstructing paths independently.
 
 ```ts

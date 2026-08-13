@@ -1,10 +1,125 @@
+import Markdoc, { type Config } from "@markdoc/markdoc";
 import { describe, expect, it, vi } from "vite-plus/test";
+import { mergeTopikMarkdocConfig } from "@topik/content-schema";
 import { renderToStaticMarkup } from "react-dom/server";
 import { TopikContentProvider } from "../core/context";
 import type { TopikLinkRenderProps } from "../core/components";
+import { InvalidTopikContentError } from "../core/render";
 import { TopikContent } from "./TopikContent";
 
 describe("TopikContent", () => {
+  it("refuses an invalid reachable partial before default or custom SSR", () => {
+    const source = '{% partial file="bad.md" /%}';
+    const renderQuiz = vi.fn(() => <span>must not render</span>);
+    const config = {
+      partials: { "bad.md": Markdoc.parse("{% quiz %}ordinary child{% /quiz %}") },
+    };
+
+    expect(() => renderToStaticMarkup(<TopikContent config={config} content={source} />)).toThrow(
+      InvalidTopikContentError,
+    );
+    expect(() =>
+      renderToStaticMarkup(
+        <TopikContent components={{ TopikQuiz: renderQuiz }} config={config} content={source} />,
+      ),
+    ).toThrow(InvalidTopikContentError);
+    const placeholder = renderToStaticMarkup(
+      <TopikContent config={config} content={source} invalidContent="placeholder" />,
+    );
+    expect(placeholder).toContain('role="alert"');
+    expect(placeholder).not.toContain("ordinary child");
+    expect(renderQuiz).not.toHaveBeenCalled();
+  });
+
+  it("refuses canonical errors before an additive validator can affect SSR", () => {
+    const source = "{% attack /%}\n{% quiz %}ordinary child{% /quiz %}";
+    const extensionValidator = vi.fn((_node, config: Config) => {
+      const quiz = config.tags?.quiz as Record<string, unknown>;
+      Reflect.set(quiz, "validate", () => []);
+      return [];
+    });
+
+    expect(() =>
+      renderToStaticMarkup(
+        <TopikContent
+          config={{ tags: { attack: { render: "div", validate: extensionValidator } } }}
+          content={source}
+        />,
+      ),
+    ).toThrow(InvalidTopikContentError);
+    expect(extensionValidator).not.toHaveBeenCalled();
+
+    const placeholder = renderToStaticMarkup(
+      <TopikContent
+        config={{ tags: { attack: { render: "div", validate: extensionValidator } } }}
+        content={source}
+        invalidContent="placeholder"
+      />,
+    );
+    expect(placeholder).toContain('role="alert"');
+    expect(placeholder).not.toContain("ordinary child");
+    expect(extensionValidator).not.toHaveBeenCalled();
+  });
+
+  it("cannot render through a mutated merged canonical schema", () => {
+    const source = "{% quiz %}ordinary child{% /quiz %}";
+    const config = mergeTopikMarkdocConfig();
+    const renderQuiz = vi.fn(() => <span>must not render</span>);
+    const quiz = config.tags?.quiz as Record<string, unknown>;
+    const originalValidate = quiz.validate;
+
+    try {
+      Reflect.set(quiz, "validate", () => []);
+      Reflect.set(config, "tags", { quiz: { render: "TopikQuiz", validate: () => [] } });
+
+      expect(() =>
+        renderToStaticMarkup(
+          <TopikContent components={{ TopikQuiz: renderQuiz }} config={config} content={source} />,
+        ),
+      ).toThrow(InvalidTopikContentError);
+      expect(renderQuiz).not.toHaveBeenCalled();
+    } finally {
+      Reflect.set(quiz, "validate", originalValidate);
+    }
+  });
+
+  it("cannot replace canonical validation through the default component", () => {
+    const renderQuiz = vi.fn(() => <span>must not render</span>);
+
+    expect(() =>
+      renderToStaticMarkup(
+        <TopikContent
+          components={{ TopikQuiz: renderQuiz }}
+          config={{ tags: { quiz: { render: "TopikQuiz" } } }}
+          content="{% quiz %}{% /quiz %}"
+        />,
+      ),
+    ).toThrow(InvalidTopikContentError);
+    expect(renderQuiz).not.toHaveBeenCalled();
+  });
+
+  it("throws for unsupported content by default", () => {
+    expect(() =>
+      renderToStaticMarkup(
+        <TopikContent content='{% mystery private="opaque" %}leaked child{% /mystery %}' />,
+      ),
+    ).toThrow(InvalidTopikContentError);
+  });
+
+  it("renders the accessible invalid-content placeholder without unsupported children", () => {
+    const html = renderToStaticMarkup(
+      <TopikContent
+        content='{% mystery private="opaque" %}leaked child{% /mystery %}'
+        invalidContent="placeholder"
+      />,
+    );
+
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("Unsupported or invalid Topik content");
+    expect(html).not.toContain("leaked child");
+    expect(html).not.toContain("opaque");
+  });
+
   it("renders styled default components with portable asset paths", () => {
     const html = renderToStaticMarkup(
       <TopikContent content='{% callout title="Asset" %}{% figure src="assets/hero.webp" alt="Hero" /%}{% /callout %}' />,
@@ -15,36 +130,31 @@ describe("TopikContent", () => {
     expect(html).toContain('src="assets/hero.webp"');
   });
 
-  it.each([true, false])(
-    "preserves mixed-case credential-free HTTPS in the default renderer with validation=%s",
-    (validate) => {
-      const references = [
-        "HtTpS://example.com/image.png",
-        "hTTps://example.com/manual.pdf",
-        "HTTPS://example.com/autolink.pdf",
-        "HTtPs://example.com/light.png",
-        "htTPs://example.com/dark.png",
-      ];
-      const html = renderToStaticMarkup(
-        <TopikContent
-          content={[
-            `![Image](${references[0]})`,
-            `[Download](${references[1]})`,
-            `<${references[2]}>`,
-            `{% figure src="${references[3]}" darkSrc="${references[4]}" alt="Theme" /%}`,
-          ].join("\n\n")}
-          validate={validate}
-        />,
-      );
+  it("preserves mixed-case credential-free HTTPS in the default renderer", () => {
+    const references = [
+      "HtTpS://example.com/image.png",
+      "hTTps://example.com/manual.pdf",
+      "HTTPS://example.com/autolink.pdf",
+      "HTtPs://example.com/light.png",
+      "htTPs://example.com/dark.png",
+    ];
+    const html = renderToStaticMarkup(
+      <TopikContent
+        content={[
+          `![Image](${references[0]})`,
+          `[Download](${references[1]})`,
+          `<${references[2]}>`,
+          `{% figure src="${references[3]}" darkSrc="${references[4]}" alt="Theme" /%}`,
+        ].join("\n\n")}
+      />,
+    );
 
-      for (const reference of references) expect(html).toContain(reference);
-    },
-  );
+    for (const reference of references) expect(html).toContain(reference);
+  });
 
-  it.each([true, false])(
-    "removes mixed-case unsafe external media in the default renderer with validation=%s",
-    (validate) => {
-      const html = renderToStaticMarkup(
+  it("rejects mixed-case unsafe external media in the default renderer", () => {
+    expect(() =>
+      renderToStaticMarkup(
         <TopikContent
           content={[
             "![HTTP](HtTp://example.com/image.png)",
@@ -54,112 +164,95 @@ describe("TopikContent", () => {
             "![Protocol relative](//example.com/image.png)",
             '{% figure src="HtTpS://[invalid" alt="Malformed" /%}',
           ].join("\n\n")}
-          validate={validate}
         />,
-      );
+      ),
+    ).toThrow(InvalidTopikContentError);
+  });
 
-      expect(html).not.toContain('src="HtTp:');
-      expect(html).not.toContain('href="hTtP:');
-      expect(html).not.toContain('href="HTtp:');
-      expect(html).not.toContain("user:secret");
-      expect(html).not.toContain('src="//example.com');
-      expect(html).not.toContain('src="HtTpS://[invalid');
-      expect(html).not.toMatch(/\b(?:src|href)="/iu);
-    },
-  );
+  it("removes unsafe evaluated Asset-slot values in the default renderer", () => {
+    const diagnostics: string[] = [];
+    const html = renderToStaticMarkup(
+      <TopikContent
+        config={{
+          functions: { unsafe: { transform: () => "javascript:alert(1)" } },
+          tags: {
+            evaluatedImage: {
+              render: "TopikImage",
+              attributes: { alt: { type: String }, src: { type: String } },
+            },
+            evaluatedLink: {
+              render: "TopikLink",
+              attributes: { href: { type: String } },
+            },
+          },
+          variables: {
+            allowed: "HtTpS://example.com/dark.png",
+            unsafe: "https://user:secret@example.com/file.png",
+          },
+        }}
+        content={[
+          '{% evaluatedImage src=$unsafe alt="Image" /%}',
+          '{% figure src=$allowed darkSrc=unsafe() alt="Figure" /%}',
+          "{% evaluatedLink href=$unsafe %}Download{% /evaluatedLink %}",
+        ].join("\n\n")}
+        onAssetDiagnostic={(diagnostic) => diagnostics.push(diagnostic.id)}
+      />,
+    );
 
-  it.each([true, false])(
-    "removes unsafe evaluated Asset-slot values in the default renderer with validation=%s",
-    (validate) => {
-      const diagnostics: string[] = [];
-      const html = renderToStaticMarkup(
-        <TopikContent
-          config={{
-            functions: { unsafe: { transform: () => "javascript:alert(1)" } },
-            tags: {
-              evaluatedImage: {
-                render: "TopikImage",
-                attributes: { alt: { type: String }, src: { type: String } },
-              },
-              evaluatedLink: {
-                render: "TopikLink",
-                attributes: { href: { type: String } },
-              },
-            },
-            variables: {
-              allowed: "HtTpS://example.com/dark.png",
-              unsafe: "https://user:secret@example.com/file.png",
-            },
-          }}
-          content={[
-            '{% evaluatedImage src=$unsafe alt="Image" /%}',
-            '{% figure src=$allowed darkSrc=unsafe() alt="Figure" /%}',
-            "{% evaluatedLink href=$unsafe %}Download{% /evaluatedLink %}",
-          ].join("\n\n")}
-          onAssetDiagnostic={(diagnostic) => diagnostics.push(diagnostic.id)}
-          validate={validate}
-        />,
-      );
+    expect(diagnostics).toEqual(Array(3).fill("TOPIK_ASSET_REFERENCE_MALFORMED"));
+    expect(html).toContain("HtTpS://example.com/dark.png");
+    expect(html).not.toContain("user:secret");
+    expect(html).not.toContain("javascript:");
+    expect(html).not.toContain("href=");
+  });
 
-      expect(diagnostics).toEqual(Array(3).fill("TOPIK_ASSET_REFERENCE_MALFORMED"));
-      expect(html).toContain("HtTpS://example.com/dark.png");
-      expect(html).not.toContain("user:secret");
-      expect(html).not.toContain("javascript:");
-      expect(html).not.toContain("href=");
-    },
-  );
+  it("omits non-string evaluated Asset-slot values in the themed renderer", () => {
+    const unsafe = "https://user:secret@example.com/file.png";
+    const diagnostics: string[] = [];
+    const html = renderToStaticMarkup(
+      <TopikContent
+        config={{
+          functions: {
+            boxed: { transform: () => Object(unsafe) },
+            nil: { transform: () => null },
+            number: { transform: () => 42 },
+          },
+          tags: {
+            evaluatedImage: {
+              render: "TopikImage",
+              attributes: { alt: { type: String }, src: { type: Object } },
+            },
+            evaluatedLink: {
+              render: "TopikLink",
+              attributes: { href: { type: Object } },
+            },
+          },
+          variables: {
+            allowed: "images/allowed.png",
+            array: [unsafe],
+            boolean: true,
+            object: { toString: () => unsafe },
+          },
+        }}
+        content={[
+          '{% evaluatedImage src=$object alt="Object" /%}',
+          '{% figure src=boxed() darkSrc=$array alt="Figure" /%}',
+          "{% evaluatedLink href=number() %}Number{% /evaluatedLink %}",
+          '{% evaluatedImage src=$boolean alt="Boolean" /%}',
+          "{% evaluatedLink href=nil() %}Null{% /evaluatedLink %}",
+          '{% evaluatedImage src=$allowed alt="Allowed" /%}',
+        ].join("\n\n")}
+        onAssetDiagnostic={(diagnostic) => diagnostics.push(diagnostic.id)}
+      />,
+    );
 
-  it.each([true, false])(
-    "omits non-string evaluated Asset-slot values in the themed renderer with validation=%s",
-    (validate) => {
-      const unsafe = "https://user:secret@example.com/file.png";
-      const diagnostics: string[] = [];
-      const html = renderToStaticMarkup(
-        <TopikContent
-          config={{
-            functions: {
-              boxed: { transform: () => Object(unsafe) },
-              nil: { transform: () => null },
-              number: { transform: () => 42 },
-            },
-            tags: {
-              evaluatedImage: {
-                render: "TopikImage",
-                attributes: { alt: { type: String }, src: { type: Object } },
-              },
-              evaluatedLink: {
-                render: "TopikLink",
-                attributes: { href: { type: Object } },
-              },
-            },
-            variables: {
-              allowed: "images/allowed.png",
-              array: [unsafe],
-              boolean: true,
-              object: { toString: () => unsafe },
-            },
-          }}
-          content={[
-            '{% evaluatedImage src=$object alt="Object" /%}',
-            '{% figure src=boxed() darkSrc=$array alt="Figure" /%}',
-            "{% evaluatedLink href=number() %}Number{% /evaluatedLink %}",
-            '{% evaluatedImage src=$boolean alt="Boolean" /%}',
-            "{% evaluatedLink href=nil() %}Null{% /evaluatedLink %}",
-            '{% evaluatedImage src=$allowed alt="Allowed" /%}',
-          ].join("\n\n")}
-          onAssetDiagnostic={(diagnostic) => diagnostics.push(diagnostic.id)}
-          validate={validate}
-        />,
-      );
-
-      expect(diagnostics).toEqual(Array(6).fill("TOPIK_ASSET_REFERENCE_MALFORMED"));
-      expect(html).toContain('src="images/allowed.png"');
-      expect(html).not.toContain("user:secret");
-      expect(html).not.toContain('href="42"');
-      expect(html).not.toContain('href="null"');
-      expect(html).not.toContain('src="true"');
-    },
-  );
+    expect(diagnostics).toEqual(Array(6).fill("TOPIK_ASSET_REFERENCE_MALFORMED"));
+    expect(html).toContain('src="images/allowed.png"');
+    expect(html).not.toContain("user:secret");
+    expect(html).not.toContain('href="42"');
+    expect(html).not.toContain('href="null"');
+    expect(html).not.toContain('src="true"');
+  });
 
   it("passes an explicit color scheme to figures", () => {
     const html = renderToStaticMarkup(
@@ -199,6 +292,7 @@ describe("TopikContent", () => {
     const html = renderToStaticMarkup(
       <TopikContent
         content={`{% figure src="${reference}" alt="Unsafe" /%}`}
+        invalidContent="placeholder"
         onDiagnostic={(diagnostic) => diagnostics.push(diagnostic.id)}
       />,
     );
@@ -267,45 +361,27 @@ describe("TopikContent", () => {
     expect(html).toContain('href="/card"');
   });
 
-  it("renders unsafe cards as non-interactive when validation is disabled", () => {
-    const html = renderToStaticMarkup(
-      <TopikContent
-        content='{% card title="Unsafe" href="javascript:alert(1)" /%}'
-        validate={false}
-      />,
-    );
-
-    expect(html).toContain('<div class="topik-card">');
-    expect(html).not.toContain("javascript:");
-    expect(html).not.toContain("href=");
+  it("rejects unsafe cards before rendering", () => {
+    expect(() =>
+      renderToStaticMarkup(
+        <TopikContent content='{% card title="Unsafe" href="javascript:alert(1)" /%}' />,
+      ),
+    ).toThrow(InvalidTopikContentError);
   });
 
-  it("never emits named Asset URLs from default or custom navigation-only cards", () => {
+  it("rejects named Asset URLs from navigation-only cards", () => {
     const reference = `asset:auto-v1-${"a".repeat(52)}`;
     const content = `{% card title="Asset" href="${reference}" /%}`;
     const diagnostics: string[] = [];
-    const defaultHtml = renderToStaticMarkup(
-      <TopikContent
-        content={content}
-        onDiagnostic={(diagnostic) => diagnostics.push(diagnostic.id)}
-      />,
-    );
-    const customHtml = renderToStaticMarkup(
-      <TopikContent
-        components={{
-          TopikCard: ({ href }) =>
-            typeof href === "string" ? <a href={href}>Asset</a> : <span>No target</span>,
-        }}
-        content={content}
-        validate={false}
-      />,
-    );
+    expect(() =>
+      renderToStaticMarkup(
+        <TopikContent
+          content={content}
+          onDiagnostic={(diagnostic) => diagnostics.push(diagnostic.id)}
+        />,
+      ),
+    ).toThrow(InvalidTopikContentError);
     expect(diagnostics).toContain("link-asset-navigation-unsupported");
-    expect(defaultHtml).not.toContain(reference);
-    expect(defaultHtml).not.toContain("href=");
-    expect(customHtml).toContain("No target");
-    expect(customHtml).not.toContain(reference);
-    expect(customHtml).not.toContain("href=");
   });
 
   it.each([
@@ -315,89 +391,56 @@ describe("TopikContent", () => {
     `asset&#58;auto-v1-${"a".repeat(52)}`,
     "asset:auto-v1-short",
   ])("never passes reserved download alias %s to default or custom renderers", (reference) => {
-    for (const validate of [true, false]) {
-      const resolver = vi.fn(() => "/must-not-resolve");
-      const diagnostics: string[] = [];
-      const content = `[Download](${reference})`;
-      const defaultHtml = renderToStaticMarkup(
+    const resolver = vi.fn(() => "/must-not-resolve");
+    const diagnostics: string[] = [];
+    const content = `[Download](${reference})`;
+    expect(() =>
+      renderToStaticMarkup(
         <TopikContent
           content={content}
-          onAssetDiagnostic={(diagnostic) => diagnostics.push(diagnostic.id)}
+          onDiagnostic={(diagnostic) => diagnostics.push(diagnostic.id)}
           resolveAsset={resolver}
-          validate={validate}
         />,
-      );
-      const customHtml = renderToStaticMarkup(
-        <TopikContent
-          components={{
-            TopikLink: ({ children, href }) =>
-              typeof href === "string" ? (
-                <a data-custom href={href}>
-                  {children}
-                </a>
-              ) : (
-                <span data-no-target>{children}</span>
-              ),
-          }}
-          content={content}
-          onAssetDiagnostic={(diagnostic) => diagnostics.push(diagnostic.id)}
-          resolveAsset={resolver}
-          validate={validate}
-        />,
-      );
-
-      expect(resolver).not.toHaveBeenCalled();
-      expect(diagnostics).toEqual([
-        "TOPIK_ASSET_REFERENCE_MALFORMED",
-        "TOPIK_ASSET_REFERENCE_MALFORMED",
-      ]);
-      expect(defaultHtml).not.toContain("href=");
-      expect(defaultHtml).not.toContain(reference);
-      expect(customHtml).toContain("data-no-target");
-      expect(customHtml).not.toContain("href=");
-      expect(customHtml).not.toContain(reference);
-    }
+      ),
+    ).toThrow(InvalidTopikContentError);
+    expect(resolver).not.toHaveBeenCalled();
+    expect(diagnostics).toContain("TOPIK_ASSET_REFERENCE_MALFORMED");
   });
 
-  it.each([true, false])(
-    "resolves a canonical compiled download for default and custom renderers with validation %s",
-    (validate) => {
-      const name = `auto-v1-${"a".repeat(52)}`;
-      const resolver = vi.fn(() => `/compiled/${name}`);
-      const diagnostics: string[] = [];
-      const content = `[Download](asset:${name})`;
-      const defaultHtml = renderToStaticMarkup(
-        <TopikContent
-          content={content}
-          onAssetDiagnostic={(diagnostic) => diagnostics.push(diagnostic.id)}
-          resolveAsset={resolver}
-          validate={validate}
-        />,
-      );
-      const customHtml = renderToStaticMarkup(
-        <TopikContent
-          components={{
-            TopikLink: ({ children, href }) => (
-              <a data-custom href={String(href)}>
-                {children}
-              </a>
-            ),
-          }}
-          content={content}
-          onAssetDiagnostic={(diagnostic) => diagnostics.push(diagnostic.id)}
-          resolveAsset={resolver}
-          validate={validate}
-        />,
-      );
+  it("resolves a canonical compiled download for default and custom renderers", () => {
+    const name = `auto-v1-${"a".repeat(52)}`;
+    const resolver = vi.fn(() => `/compiled/${name}`);
+    const diagnostics: string[] = [];
+    const content = `[Download](asset:${name})`;
+    const defaultHtml = renderToStaticMarkup(
+      <TopikContent
+        content={content}
+        onAssetDiagnostic={(diagnostic) => diagnostics.push(diagnostic.id)}
+        resolveAsset={resolver}
+      />,
+    );
+    const customHtml = renderToStaticMarkup(
+      <TopikContent
+        components={{
+          TopikLink: ({ children, href }) => (
+            <a data-custom href={String(href)}>
+              {children}
+            </a>
+          ),
+        }}
+        content={content}
+        onAssetDiagnostic={(diagnostic) => diagnostics.push(diagnostic.id)}
+        resolveAsset={resolver}
+      />,
+    );
 
-      expect(resolver).toHaveBeenCalledTimes(2);
-      expect(resolver).toHaveBeenNthCalledWith(1, name);
-      expect(resolver).toHaveBeenNthCalledWith(2, name);
-      expect(diagnostics).toEqual([]);
-      expect(defaultHtml).toContain(`href="/compiled/${name}"`);
-      expect(customHtml).toContain(`href="/compiled/${name}"`);
-    },
-  );
+    expect(resolver).toHaveBeenCalledTimes(2);
+    expect(resolver).toHaveBeenNthCalledWith(1, name);
+    expect(resolver).toHaveBeenNthCalledWith(2, name);
+    expect(diagnostics).toEqual([]);
+    expect(defaultHtml).toContain(`href="/compiled/${name}"`);
+    expect(customHtml).toContain(`href="/compiled/${name}"`);
+  });
 
   it("uses provider component overrides with portable paths", () => {
     const html = renderToStaticMarkup(

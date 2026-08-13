@@ -2,13 +2,15 @@ import Markdoc, { type Config, type RenderableTreeNode } from "@markdoc/markdoc"
 import {
   assignTopikHeadingIds,
   extractTopikAssetOccurrences,
+  mergeTopikMarkdocConfig,
   parseTopikContent,
   removeInvalidTopikAssetReferences,
   removeInvalidTopikNavigationReferences,
-  topikMarkdocConfig,
+  sanitizeTopikContentDiagnostic,
   validateTopikAssetReference,
   validateTopikContent,
   validateTopikHref,
+  validateTopikNavigationHref,
   type TopikContentDiagnostic,
 } from "@topik/content-schema";
 import * as React from "react";
@@ -21,14 +23,44 @@ import {
 export interface CompileTopikContentOptions {
   file?: string;
   config?: Config;
-  validate?: boolean;
   onDiagnostic?: (diagnostic: TopikContentDiagnostic) => void;
 }
 
-export interface RenderTopikContentOptions {
+export interface RenderTrustedTopikTreeOptions {
   components?: TopikComponentOverrides;
   resolveAsset?: TopikAssetResolver;
   onAssetDiagnostic?: (diagnostic: TopikAssetResolutionDiagnostic) => void;
+  onNavigationDiagnostic?: (diagnostic: TopikNavigationResolutionDiagnostic) => void;
+}
+
+export interface RenderTopikContentOptions extends RenderTrustedTopikTreeOptions {
+  onDiagnostic?: (diagnostic: TopikContentDiagnostic) => void;
+  invalidContent?: "placeholder";
+  invalidContentPlaceholder?: React.ComponentType;
+}
+
+export interface CompileTopikContentSuccess {
+  ok: true;
+  /** Exact caller-supplied source. */
+  source: string;
+  diagnostics: TopikContentDiagnostic[];
+  tree: RenderableTreeNode;
+}
+
+export interface CompileTopikContentFailure {
+  ok: false;
+  /** Exact caller-supplied source, unchanged and never transformed. */
+  source: string;
+  diagnostics: TopikContentDiagnostic[];
+}
+
+export type CompileTopikContentResult = CompileTopikContentSuccess | CompileTopikContentFailure;
+
+export class InvalidTopikContentError extends Error {
+  constructor(public readonly result: CompileTopikContentFailure) {
+    super("Topik content is unsupported or invalid");
+    this.name = "InvalidTopikContentError";
+  }
 }
 
 export interface TopikAssetResolutionDiagnostic {
@@ -38,32 +70,48 @@ export interface TopikAssetResolutionDiagnostic {
   slot: "image.src" | "figure.src" | "figure.darkSrc" | "link.href";
 }
 
+export interface TopikNavigationResolutionDiagnostic {
+  id: "TOPIK_NAVIGATION_REFERENCE_UNSAFE";
+  message: string;
+  slot: "card.href";
+}
+
 export interface RenderTopikMarkdownOptions
   extends CompileTopikContentOptions, RenderTopikContentOptions {}
 
 export function compileTopikContent(
   content: string,
   options: CompileTopikContentOptions = {},
-): RenderableTreeNode {
+): CompileTopikContentResult {
   return compileTopikContentInternal(content, options);
 }
 
 function compileTopikContentInternal(
   content: string,
   options: CompileTopikContentOptions & Pick<RenderTopikContentOptions, "onAssetDiagnostic">,
-): RenderableTreeNode {
-  const shouldValidate = options.validate ?? true;
-
-  if (shouldValidate) {
-    const result = validateTopikContent(content, {
-      file: options.file,
-      config: options.config,
-      allowCompiledAssetReferences: true,
-    });
-    for (const diagnostic of result.errors) options.onDiagnostic?.(diagnostic);
+): CompileTopikContentResult {
+  let configSnapshot: Config | undefined;
+  let transformConfig: Config;
+  try {
+    configSnapshot =
+      options.config === undefined ? undefined : mergeTopikMarkdocConfig(options.config);
+    transformConfig = configSnapshot ?? mergeTopikMarkdocConfig();
+  } catch {
+    const diagnostic = transformDiagnostic(options.file, "topik-config-invalid");
+    options.onDiagnostic?.(diagnostic);
+    return { ok: false, source: content, diagnostics: [diagnostic] };
+  }
+  const validation = validateTopikContent(content, {
+    file: options.file,
+    config: configSnapshot,
+    allowCompiledAssetReferences: true,
+  });
+  for (const diagnostic of validation.errors) options.onDiagnostic?.(diagnostic);
+  if (!validation.valid) {
+    return { ok: false, source: content, diagnostics: validation.errors };
   }
 
-  const ast = parseTopikContent(content, { file: options.file, location: shouldValidate });
+  const ast = parseTopikContent(content, { file: options.file, location: true });
   for (const occurrence of extractTopikAssetOccurrences(content)) {
     if (occurrence.kind !== "reserved-asset") continue;
     options.onAssetDiagnostic?.({
@@ -75,26 +123,83 @@ function compileTopikContentInternal(
   removeInvalidTopikAssetReferences(ast, content);
   removeInvalidTopikNavigationReferences(ast);
   assignTopikHeadingIds(ast);
-  return Markdoc.transform(ast, mergeConfigs(topikMarkdocConfig, options.config));
+  try {
+    return {
+      ok: true,
+      source: content,
+      diagnostics: validation.errors,
+      tree: Markdoc.transform(ast, transformConfig),
+    };
+  } catch {
+    const diagnostic = transformDiagnostic(options.file, "topik-transform-failed");
+    options.onDiagnostic?.(diagnostic);
+    return {
+      ok: false,
+      source: content,
+      diagnostics: [...validation.errors, diagnostic],
+    };
+  }
+}
+
+function transformDiagnostic(
+  file: string | undefined,
+  id: "topik-config-invalid" | "topik-transform-failed",
+): TopikContentDiagnostic {
+  return sanitizeTopikContentDiagnostic({
+    id,
+    type: "document",
+    level: "critical",
+    message: "",
+    lines: [],
+    ...(file === undefined ? {} : { file }),
+  });
 }
 
 export function renderTopikContent(
-  tree: RenderableTreeNode,
+  result: CompileTopikContentResult,
   options: RenderTopikContentOptions = {},
+): React.ReactNode {
+  if (!result.ok) {
+    for (const diagnostic of result.diagnostics) options.onDiagnostic?.(diagnostic);
+    if (options.invalidContent === "placeholder") {
+      return renderInvalidTopikContent(options.invalidContentPlaceholder);
+    }
+    throw new InvalidTopikContentError(result);
+  }
+  return renderTrustedTopikTree(result.tree, options);
+}
+
+/**
+ * Render a caller-trusted Markdoc tree. The caller owns validation and this API remains separate
+ * from normal source rendering. Post-transform link and Asset sanitization still applies.
+ */
+export function renderTrustedTopikTree(
+  tree: RenderableTreeNode,
+  options: RenderTrustedTopikTreeOptions = {},
 ): React.ReactNode {
   const resolved = resolveTopikAssetReferences(tree, options.resolveAsset, {
     onDiagnostic: options.onAssetDiagnostic,
+    onNavigationDiagnostic: options.onNavigationDiagnostic,
   });
   return Markdoc.renderers.react(resolved, React, {
     components: getTopikComponents(options.components),
   });
 }
 
-interface ResolveTopikAssetReferencesOptions {
-  onDiagnostic?: (diagnostic: TopikAssetResolutionDiagnostic) => void;
+function renderInvalidTopikContent(Placeholder: React.ComponentType | undefined): React.ReactNode {
+  return (
+    <div role="alert">
+      {Placeholder === undefined ? "Unsupported or invalid Topik content" : <Placeholder />}
+    </div>
+  );
 }
 
-/** Resolve only schema-declared rendered Asset slots; arbitrary nested strings are untouched. */
+interface ResolveTopikAssetReferencesOptions {
+  onDiagnostic?: (diagnostic: TopikAssetResolutionDiagnostic) => void;
+  onNavigationDiagnostic?: (diagnostic: TopikNavigationResolutionDiagnostic) => void;
+}
+
+/** Resolve and sanitize only schema-declared browser-facing references. */
 export function resolveTopikAssetReferences<T>(
   value: T,
   resolveAsset?: TopikAssetResolver,
@@ -106,10 +211,27 @@ export function resolveTopikAssetReferences<T>(
   if (!(value instanceof Markdoc.Tag)) return value;
 
   const attributes = { ...value.attributes };
-  const slots = renderedAssetSlots(value.name);
-  for (const [attribute, slot] of slots) {
+  const slots = renderedReferenceSlots(value.name);
+  for (const definition of slots) {
+    const { attribute } = definition;
     if (!Object.hasOwn(attributes, attribute)) continue;
     const reference = attributes[attribute];
+    if (definition.kind === "navigation") {
+      if (
+        typeof reference !== "string" ||
+        usesReservedAssetScheme(reference) ||
+        validateTopikNavigationHref(reference).length > 0
+      ) {
+        delete attributes[attribute];
+        options.onNavigationDiagnostic?.({
+          id: "TOPIK_NAVIGATION_REFERENCE_UNSAFE",
+          message: "Card navigation target is unsafe or invalid",
+          slot: definition.slot,
+        });
+      }
+      continue;
+    }
+    const { slot } = definition;
     if (typeof reference !== "string") {
       delete attributes[attribute];
       malformedReference(options, slot);
@@ -214,17 +336,31 @@ function usesReservedAssetScheme(value: string): boolean {
   return /^asset:/iu.test(prefix);
 }
 
-function renderedAssetSlots(
-  name: string,
-): ReadonlyArray<readonly [string, TopikAssetResolutionDiagnostic["slot"]]> {
-  if (name === "TopikImage") return [["src", "image.src"]];
+type RenderedReferenceSlot =
+  | {
+      kind: "asset";
+      attribute: string;
+      slot: TopikAssetResolutionDiagnostic["slot"];
+    }
+  | {
+      kind: "navigation";
+      attribute: "href";
+      slot: TopikNavigationResolutionDiagnostic["slot"];
+    };
+
+/** Closed registry for every canonical browser-facing URL or Asset attribute. */
+function renderedReferenceSlots(name: string): readonly RenderedReferenceSlot[] {
+  if (name === "TopikCard") return [{ kind: "navigation", attribute: "href", slot: "card.href" }];
+  if (name === "TopikImage") return [{ kind: "asset", attribute: "src", slot: "image.src" }];
   if (name === "TopikFigure") {
     return [
-      ["src", "figure.src"],
-      ["darkSrc", "figure.darkSrc"],
+      { kind: "asset", attribute: "src", slot: "figure.src" },
+      { kind: "asset", attribute: "darkSrc", slot: "figure.darkSrc" },
     ];
   }
-  if (name === "TopikLink") return [["href", "link.href"]];
+  if (name === "TopikLink") {
+    return [{ kind: "asset", attribute: "href", slot: "link.href" }];
+  }
   return [];
 }
 
@@ -232,18 +368,6 @@ export function renderTopikMarkdown(
   content: string,
   options: RenderTopikMarkdownOptions = {},
 ): React.ReactNode {
-  return renderTopikContent(compileTopikContentInternal(content, options), options);
-}
-
-function mergeConfigs(base: Config, override: Config = {}): Config {
-  return {
-    ...base,
-    ...override,
-    nodes: { ...base.nodes, ...override.nodes },
-    tags: { ...base.tags, ...override.tags },
-    variables: { ...base.variables, ...override.variables },
-    functions: { ...base.functions, ...override.functions },
-    partials: { ...base.partials, ...override.partials },
-    validation: { ...base.validation, ...override.validation },
-  };
+  const result = compileTopikContentInternal(content, options);
+  return renderTopikContent(result, { ...options, onDiagnostic: undefined });
 }

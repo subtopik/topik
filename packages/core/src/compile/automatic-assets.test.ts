@@ -232,6 +232,65 @@ describe("compilation-wide automatic Assets", () => {
     expect(result.semantic).toMatchObject({ assetNames: [], references: [] });
   });
 
+  test.each(CONTENT_RESOURCE_FACTORIES)(
+    "rejects invalid %s Topik content without an Asset replacement",
+    async (_resourceType, createResource) => {
+      const resource = createResource(
+        "page",
+        '{% mystery private="PRIVATE_VALUE_SENTINEL" %}child{% /mystery %}',
+      );
+
+      await expect(
+        compileAssetResources({
+          rootDir: dir,
+          resources: [resource],
+          sourcePathsByResource: { [`${resource.type}/${resource.name}`]: "page.md" },
+        }),
+      ).rejects.toMatchObject({
+        diagnostics: [
+          expect.objectContaining({
+            id: "TOPIK_ASSET_SCHEMA_INVALID",
+            location: expect.objectContaining({ path: "page.md", contentPosition: "line 1" }),
+            message: "A tag is not supported.",
+          }),
+        ],
+      });
+    },
+  );
+
+  test("preserves validation detail when invalid content also contains an Asset replacement", async () => {
+    await writeFile(join(dir, "hero.png"), PNG_BYTES);
+    const sentinel = "PRIVATE_VALUE_SENTINEL";
+    const resource = guide(
+      "guide",
+      `{% mystery private="${sentinel}" %}child{% /mystery %}\n\n![Hero](hero.png)`,
+    );
+
+    let failure: unknown;
+    try {
+      await compileAssetResources({
+        rootDir: dir,
+        resources: [resource],
+        sourcePathsByResource: { "Guide/guide": "guide.md" },
+        sourceNamespace: "refused-rewrite",
+      });
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(AssetCompilationError);
+    expect(failure).toMatchObject({
+      diagnostics: [
+        expect.objectContaining({
+          id: "TOPIK_ASSET_SCHEMA_INVALID",
+          location: expect.objectContaining({ path: "guide.md", contentPosition: "line 1" }),
+          message: "A tag is not supported.",
+        }),
+      ],
+    });
+    expect(JSON.stringify(failure)).not.toContain(sentinel);
+  });
+
   test("preserves mixed-case credential-free HTTPS across every supported form", async () => {
     const content = [
       "![Image](HtTpS://example.com/image.png)",
@@ -305,9 +364,13 @@ describe("compilation-wide automatic Assets", () => {
         resources: [guide("guide", content)],
         sourcePathsByResource: { "Guide/guide": "guide.md" },
       }),
-    ).rejects.toMatchObject({
-      diagnostics: [expect.objectContaining({ id: "TOPIK_EXTERNAL_REFERENCE_UNSAFE" })],
-    });
+    ).rejects.toEqual(
+      expect.objectContaining({
+        diagnostics: expect.arrayContaining([
+          expect.objectContaining({ id: "TOPIK_EXTERNAL_REFERENCE_UNSAFE" }),
+        ]),
+      }),
+    );
   });
 
   test("excludes programmatic Asset declarations from the public input type and rejects injection", async () => {
@@ -354,9 +417,13 @@ describe("compilation-wide automatic Assets", () => {
         resources: [guide("guide", content)],
         sourcePathsByResource: { "Guide/guide": "guide.md" },
       }),
-    ).rejects.toMatchObject({
-      diagnostics: [expect.objectContaining({ id: "TOPIK_ASSET_REFERENCE_MALFORMED" })],
-    });
+    ).rejects.toEqual(
+      expect.objectContaining({
+        diagnostics: expect.arrayContaining([
+          expect.objectContaining({ id: "TOPIK_ASSET_REFERENCE_MALFORMED" }),
+        ]),
+      }),
+    );
   });
 
   test("preserves ordinary relative navigation without synthesizing an Asset", async () => {

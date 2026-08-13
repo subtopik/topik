@@ -1,12 +1,332 @@
-import { describe, expect, test } from "vite-plus/test";
+import Markdoc, { type Config } from "@markdoc/markdoc";
+import { describe, expect, test, vi } from "vite-plus/test";
 import {
   extractTopikAssetOccurrences,
-  rewriteTopikAssetOccurrences,
   topikAssetReferenceSlots,
   validateTopikAssetReference,
 } from "./asset-references";
+import { mergeTopikMarkdocConfig } from "./config";
+import { rewriteTopikAssetOccurrences } from "./rewrite";
+import {
+  allAmbiguousDiagnosticFiles as ambiguousDiagnosticFiles,
+  unsafeDiagnosticFiles,
+} from "./test-fixtures/diagnostic-files";
 
 describe("topik-asset-reference-v1 occurrence registry", () => {
+  test.each(["constructor", null, ["String", "constructor"]] as const)(
+    "refuses reviewed unsupported attribute type %# before replacement",
+    (type) => {
+      const source = "{% notice value={x: 1} /%}\n![Asset](old.png)";
+      const replace = vi.fn(() => "new.png");
+      const result = rewriteTopikAssetOccurrences(source, replace, {
+        config: {
+          tags: {
+            notice: {
+              render: "span",
+              selfClosing: true,
+              attributes: { value: { type: type as never } },
+            },
+          },
+        },
+      });
+
+      expect(result).toMatchObject({
+        ok: false,
+        source,
+        diagnostics: [expect.objectContaining({ id: "topik-config-invalid", level: "critical" })],
+      });
+      expect(result).not.toHaveProperty("content");
+      expect(replace).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each(["constructor", "hasOwnProperty", "valueOf", "__proto__"])(
+    "refuses an unregistered inherited tag %s before replacement",
+    (name) => {
+      const source = `{% ${name} %}ordinary child{% /${name} %}\n![Asset](old.png)`;
+      const replace = vi.fn(() => "new.png");
+      const result = rewriteTopikAssetOccurrences(source, replace);
+
+      expect(result).toMatchObject({ ok: false, source });
+      expect(result).not.toHaveProperty("content");
+      expect(replace).not.toHaveBeenCalled();
+      expect(JSON.stringify(result.diagnostics)).not.toContain("ordinary child");
+    },
+  );
+
+  test.each([
+    {
+      source: "{% partial file=$which /%}",
+      config: {
+        variables: { which: "part.md" },
+        partials: { "part.md": Markdoc.parse("Top-level child") },
+      },
+    },
+    {
+      source: "{% partial file=$selection.which /%}",
+      config: {
+        variables: { selection: { which: "part.md" } },
+        partials: { "part.md": Markdoc.parse("Nested-path child") },
+      },
+    },
+    {
+      source: '{% partial file="outer.md" variables={which: $target} /%}',
+      config: {
+        variables: { target: "inner.md" },
+        partials: {
+          "outer.md": Markdoc.parse("{% partial file=$which /%}"),
+          "inner.md": Markdoc.parse("Scoped child"),
+        },
+      },
+    },
+  ])("rewrites valid variable-selected partial source", ({ config, source }) => {
+    const input = `${source}\n![Asset](old.png)`;
+    const replace = vi.fn(() => "replacement");
+    const result = rewriteTopikAssetOccurrences(input, replace, { config });
+
+    expect(result).toMatchObject({ ok: true, source: input });
+    expect(replace).toHaveBeenCalledOnce();
+    if (!result.ok) return;
+    expect(result.content).toContain("![Asset](replacement)");
+    expect(result.content).not.toContain("old.png");
+  });
+
+  test.each([undefined, 42, "missing.md"])(
+    "refuses an unresolved variable-selected partial before replacement",
+    (which) => {
+      const source = "{% partial file=$which /%}\n![Asset](old.png)";
+      const replace = vi.fn(() => "replacement");
+      const result = rewriteTopikAssetOccurrences(source, replace, {
+        config: {
+          variables: { which },
+          partials: { "part.md": Markdoc.parse("Safe") },
+        },
+      });
+
+      expect(result).toMatchObject({ ok: false, source });
+      expect(result).not.toHaveProperty("content");
+      expect(replace).not.toHaveBeenCalled();
+    },
+  );
+
+  test("refuses an invalid reachable partial before replacement or formatting", () => {
+    const source = '{% partial file="bad.md" /%}\n![Asset](old.png)';
+    const extensionValidator = vi.fn(() => []);
+    const replace = vi.fn(() => "new.png");
+    const result = rewriteTopikAssetOccurrences(source, replace, {
+      config: {
+        partials: {
+          "bad.md": Markdoc.parse("{% attack /%}\n{% quiz %}ordinary child{% /quiz %}"),
+        },
+        tags: { attack: { render: "div", validate: extensionValidator } },
+      },
+    });
+
+    expect(result).toMatchObject({ ok: false, source });
+    expect(result).not.toHaveProperty("content");
+    expect(JSON.stringify(result.diagnostics)).not.toContain("ordinary child");
+    expect(extensionValidator).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    "http://example.com/file.pdf",
+    "https://user:PRIVATE_VALUE_SENTINEL@example.com/file.pdf",
+    `asset:auto-v1-${"a".repeat(52)}`,
+  ])("refuses an unsafe partial link before replacement", (href) => {
+    const source = '{% partial file="part.md" /%}\n![Asset](old.png)';
+    const replace = vi.fn(() => "new.png");
+    const result = rewriteTopikAssetOccurrences(source, replace, {
+      config: { partials: { "part.md": Markdoc.parse(`[Download](${href})`) } },
+    });
+
+    expect(result).toMatchObject({ ok: false, source });
+    expect(result).not.toHaveProperty("content");
+    expect(replace).not.toHaveBeenCalled();
+    expect(JSON.stringify(result.diagnostics)).not.toContain("PRIVATE_VALUE_SENTINEL");
+  });
+
+  test("refuses canonical errors before extension validation, replacement, or formatting", () => {
+    const source = "{% attack /%}\n{% quiz %}ordinary child{% /quiz %}";
+    const extensionValidator = vi.fn((_node, config: Config) => {
+      const quiz = config.tags?.quiz as Record<string, unknown>;
+      Reflect.set(quiz, "validate", () => []);
+      return [];
+    });
+    const replace = vi.fn(() => "new.png");
+    const result = rewriteTopikAssetOccurrences(source, replace, {
+      config: { tags: { attack: { render: "div", validate: extensionValidator } } },
+    });
+
+    expect(result).toMatchObject({ ok: false, source });
+    expect(result).not.toHaveProperty("content");
+    expect(extensionValidator).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  test("refuses a real Asset when a partial instance validator retargets a sibling", () => {
+    const source = '{% partial file="attack.md" /%}\n![Asset](old.png)';
+    const extensionValidator = vi.fn((_node, config: Config) => {
+      const root = config.validation?.parents?.[0];
+      const victim =
+        root === undefined
+          ? undefined
+          : [root, ...root.walk()].find((node) => node.tag === "victim");
+      if (victim !== undefined) victim.attributes.bad = false;
+      return [];
+    });
+    class AttackType {
+      validate = extensionValidator;
+    }
+    const replace = vi.fn(() => "new.png");
+    const result = rewriteTopikAssetOccurrences(source, replace, {
+      config: {
+        partials: {
+          "attack.md": Markdoc.parse('{% attack value="safe" /%}\n{% victim bad=true /%}'),
+        },
+        tags: {
+          attack: {
+            render: "span",
+            selfClosing: true,
+            attributes: { value: { type: AttackType } },
+          },
+          victim: {
+            render: "span",
+            selfClosing: true,
+            attributes: {
+              bad: {
+                type: Boolean,
+                required: true,
+                matches: [false] as unknown as string[],
+              },
+            },
+          },
+        },
+      },
+    });
+
+    expect(extensionValidator).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: false,
+      source,
+      diagnostics: [expect.objectContaining({ id: "topik-config-invalid", level: "critical" })],
+    });
+    expect(result).not.toHaveProperty("content");
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  test("mutated merged schemas cannot weaken validation before rewrite or replacement", () => {
+    const source = "{% quiz %}ordinary child{% /quiz %}";
+    const config = mergeTopikMarkdocConfig();
+    const replace = vi.fn(() => "new.png");
+    const quiz = config.tags?.quiz as Record<string, unknown>;
+    const originalValidate = quiz.validate;
+
+    try {
+      Reflect.set(quiz, "validate", () => []);
+      Reflect.set(config, "tags", { quiz: { render: "TopikQuiz", validate: () => [] } });
+
+      const result = rewriteTopikAssetOccurrences(source, replace, { config });
+
+      expect(result).toMatchObject({ ok: false, source });
+      expect(result).not.toHaveProperty("content");
+      expect(replace).not.toHaveBeenCalled();
+    } finally {
+      Reflect.set(quiz, "validate", originalValidate);
+    }
+  });
+
+  test("canonical validation cannot be replaced before rewrite or replacement", () => {
+    const source = "{% quiz %}{% /quiz %}";
+    const replace = vi.fn(() => "new.png");
+    const result = rewriteTopikAssetOccurrences(source, replace, {
+      config: { tags: { quiz: { render: "TopikQuiz" } } },
+    });
+
+    expect(result).toMatchObject({ ok: false, source });
+    expect(result).not.toHaveProperty("content");
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  test("refuses unsupported source before replacement or formatting", () => {
+    const source = '  {% mystery private="opaque" %}\r\n![child](old.png)\r\n{% /mystery %}  ';
+    const replace = vi.fn(() => "new.png");
+
+    const result = rewriteTopikAssetOccurrences(source, replace);
+
+    expect(result).toMatchObject({ ok: false, source });
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "tag-undefined", level: "critical" })]),
+    );
+    expect(result).not.toHaveProperty("content");
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  test("keeps sensitive source and absolute paths out of rewrite-refusal diagnostics", () => {
+    const sentinel = "SENSITIVE_DIRECTORY";
+    const source = "![x](é.png)";
+    const replace = vi.fn(() => "new.png");
+    const result = rewriteTopikAssetOccurrences(source, replace, {
+      file: `/tmp/${sentinel}/lesson.md`,
+    });
+
+    expect(result).toMatchObject({ ok: false, source });
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "TOPIK_ASSET_PATH_INVALID", file: "lesson.md" }),
+      ]),
+    );
+    expect(JSON.stringify(result.diagnostics)).not.toContain(sentinel);
+    expect(JSON.stringify(result.diagnostics)).not.toContain("/tmp/");
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  test("does not expose invalid authored enum values through rewrite refusal", () => {
+    const sentinel = "PRIVATE_VALUE_SENTINEL";
+    const source = `{% callout variant="${sentinel}" %}child{% /callout %}`;
+    const replace = vi.fn(() => "new.png");
+    const result = rewriteTopikAssetOccurrences(source, replace, {
+      file: "/tmp/SENSITIVE_DIRECTORY/lesson.md",
+    });
+
+    expect(result).toMatchObject({ ok: false, source });
+    expect(result).not.toHaveProperty("content");
+    expect(replace).not.toHaveBeenCalled();
+    expect(JSON.stringify(result.diagnostics)).not.toContain(sentinel);
+    expect(JSON.stringify(result.diagnostics)).not.toContain("SENSITIVE_DIRECTORY");
+    expect(JSON.stringify(result.diagnostics)).not.toContain(source);
+  });
+
+  test.each(unsafeDiagnosticFiles)("sanitizes rewrite-refusal file label %s", (file) => {
+    const source = '{% callout variant="PRIVATE_VALUE_SENTINEL" %}child{% /callout %}';
+    const replace = vi.fn(() => "new.png");
+    const result = rewriteTopikAssetOccurrences(source, replace, { file });
+
+    expect(result).toMatchObject({ ok: false, source });
+    expect(result).not.toHaveProperty("content");
+    expect(replace).not.toHaveBeenCalled();
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({ file: "lesson.md", message: "An attribute has an invalid value." }),
+    ]);
+    expect(JSON.stringify(result.diagnostics)).not.toMatch(
+      /PRIVATE_VALUE_SENTINEL|SENSITIVE_DIRECTORY|FILE_CREDENTIAL_SENTINEL|QUERY_SENTINEL|FRAGMENT_SENTINEL/u,
+    );
+  });
+
+  test.each(ambiguousDiagnosticFiles)("fails an ambiguous rewrite label closed", (file) => {
+    const source = '{% callout variant="PRIVATE_VALUE_SENTINEL" /%}';
+    const replace = vi.fn(() => "new.png");
+    const result = rewriteTopikAssetOccurrences(source, replace, { file });
+
+    expect(result).toMatchObject({ ok: false, source });
+    expect(result).not.toHaveProperty("content");
+    expect(replace).not.toHaveBeenCalled();
+    expect(result.diagnostics).toEqual([expect.objectContaining({ file: "content" })]);
+    expect(JSON.stringify(result.diagnostics)).not.toMatch(
+      /PRIVATE_VALUE_SENTINEL|SENSITIVE_DIRECTORY|FILE_CREDENTIAL_SENTINEL|QUERY_SENTINEL|FRAGMENT_SENTINEL|%2F|%25/iu,
+    );
+  });
+
   test("retains duplicate occurrences and occurrence-specific semantics", () => {
     const source = [
       '![First](assets/hero.png "First title")',
@@ -62,8 +382,10 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
         occurrence.slot === "image.src" ? "compiled-hero.png" : "compiled-manual.bin",
       options,
     );
-    expect(rewritten).toContain(`![Hero](compiled-hero.png "${title}")`);
-    expect(rewritten).toContain(`[Manual](compiled-manual.bin "${title}")`);
+    expect(rewritten.ok).toBe(true);
+    if (!rewritten.ok) return;
+    expect(rewritten.content).toContain(`![Hero](compiled-hero.png "${title}")`);
+    expect(rewritten.content).toContain(`[Manual](compiled-manual.bin "${title}")`);
   });
 
   test.each([
@@ -91,7 +413,9 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
         occurrence.slot === "image.src" ? "compiled-hero.png" : "compiled-manual.bin",
       { provenDownloadPaths: ["manual.bin"] },
     );
-    const after = extractTopikAssetOccurrences(rewritten, {
+    expect(rewritten.ok).toBe(true);
+    if (!rewritten.ok) return;
+    const after = extractTopikAssetOccurrences(rewritten.content, {
       provenDownloadPaths: ["compiled-manual.bin"],
     });
     expect(after).toMatchObject([
@@ -113,7 +437,9 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
         occurrence.slot === "image.src" ? "compiled-hero.png" : occurrence.reference,
       { includeGenericLinkCandidates: true },
     );
-    const after = extractTopikAssetOccurrences(rewritten, {
+    expect(rewritten.ok).toBe(true);
+    if (!rewritten.ok) return;
+    const after = extractTopikAssetOccurrences(rewritten.content, {
       includeGenericLinkCandidates: true,
     });
 
@@ -430,8 +756,10 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
       { reference: "%C3%A9.png", parsedReference: "%C3%A9.png", kind: "local" },
     ]);
     const rewritten = rewriteTopikAssetOccurrences(source, () => "replacement.png");
-    expect(rewritten).toContain("![real](replacement.png)");
-    expect(rewritten).toContain('title="![attribute](other.png)"');
+    expect(rewritten.ok).toBe(true);
+    if (!rewritten.ok) return;
+    expect(rewritten.content).toContain("![real](replacement.png)");
+    expect(rewritten.content).toContain('title="![attribute](other.png)"');
   });
 
   test.each(["before", "after"])(
@@ -621,11 +949,13 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
   });
 
   test("rewrites only declared slots", () => {
-    const source = '![image](old.png)\n\n{% card title="leave" href="custom:leave" /%}';
+    const source = '![image](old.png)\n\n{% card title="leave" href="/leave" /%}';
     const rewritten = rewriteTopikAssetOccurrences(source, () => "new.png");
-    expect(rewritten).toContain("![image](new.png)");
-    expect(rewritten).toContain('title="leave"');
-    expect(rewritten).toContain('href="custom:leave"');
+    expect(rewritten.ok).toBe(true);
+    if (!rewritten.ok) return;
+    expect(rewritten.content).toContain("![image](new.png)");
+    expect(rewritten.content).toContain('title="leave"');
+    expect(rewritten.content).toContain('href="/leave"');
   });
 
   test("rewrites light and dark figure slots independently", () => {
@@ -634,7 +964,9 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
     const rewritten = rewriteTopikAssetOccurrences(source, (occurrence) =>
       occurrence.slot === "figure.src" ? "images/light.png" : "images/dark.png",
     );
-    expect(rewritten).toContain('src="images/light.png"');
-    expect(rewritten).toContain('darkSrc="images/dark.png"');
+    expect(rewritten.ok).toBe(true);
+    if (!rewritten.ok) return;
+    expect(rewritten.content).toContain('src="images/light.png"');
+    expect(rewritten.content).toContain('darkSrc="images/dark.png"');
   });
 });

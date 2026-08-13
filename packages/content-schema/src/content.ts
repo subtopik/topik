@@ -16,6 +16,7 @@ export function parseTopikContent(
   return Markdoc.parse(source, options);
 }
 
-export function formatTopikContent(ast: TopikContentNode): string {
+/** @internal AST formatting cannot preserve invalid source and is not a package export. */
+export function formatTopikContentAst(ast: TopikContentNode): string {
   return Markdoc.format(ast);
 }

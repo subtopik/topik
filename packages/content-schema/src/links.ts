@@ -2,7 +2,11 @@ import type { Node, ValidationError } from "@markdoc/markdoc";
 import { isGeneratedAssetName } from "@topik/schema";
 import { assignTopikHeadingIds, type TopikHeading } from "./headings";
 import { parseTopikContent } from "./content";
-import { topikLinkDiagnosticMessage, type TopikContentDiagnostic } from "./diagnostics";
+import {
+  sanitizeTopikContentDiagnostic,
+  topikLinkDiagnosticMessage,
+  type TopikContentDiagnostic,
+} from "./diagnostics";
 
 const ALLOWED_SCHEMES = new Set(["asset", "http", "https", "mailto", "tel"]);
 const UNSAFE_SCHEMES = new Set(["data", "javascript", "vbscript"]);
@@ -77,7 +81,11 @@ export function analyzeTopikContent(
     links.push({ href, kind, ...locationFields(node, options.file) });
   }
 
-  return { diagnostics, headings, links };
+  return {
+    diagnostics: diagnostics.map(sanitizeTopikContentDiagnostic),
+    headings,
+    links,
+  };
 }
 
 export function validateTopikHref(value: unknown): ValidationError[] {

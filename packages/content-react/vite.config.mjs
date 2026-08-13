@@ -44,6 +44,7 @@ export default defineConfig({
       "@topik/schema": schemaSource,
     },
     environment: "jsdom",
+    restoreMocks: true,
   },
   fmt: {},
 });

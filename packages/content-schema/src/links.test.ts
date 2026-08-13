@@ -1,5 +1,9 @@
 import { describe, expect, test } from "vite-plus/test";
 import { analyzeTopikContent, validateTopikHref } from "./links";
+import {
+  allAmbiguousDiagnosticFiles as ambiguousDiagnosticFiles,
+  unsafeDiagnosticFiles,
+} from "./test-fixtures/diagnostic-files";
 
 describe("Topik links", () => {
   test("accepts supported internal, external, and contact links", () => {
@@ -145,4 +149,52 @@ describe("Topik links", () => {
       expect.objectContaining({ id: "heading-id-duplicate", level: "error", type: "heading" }),
     ]);
   });
+
+  test.each(unsafeDiagnosticFiles)(
+    "sanitizes duplicate-heading diagnostics for %s without changing structured analysis data",
+    (file) => {
+      const sentinel = "PRIVATE_VALUE_SENTINEL";
+      const href = `https://example.com/?token=${sentinel}`;
+      const source = [
+        `## One {% #${sentinel} %}`,
+        "",
+        `[Reference](${href})`,
+        "",
+        `## Two {% #${sentinel} %}`,
+      ].join("\n");
+      const result = analyzeTopikContent(source, { file });
+
+      expect(result.diagnostics).toEqual([
+        expect.objectContaining({
+          file: "lesson.md",
+          id: "heading-id-duplicate",
+          message: "Explicit heading IDs must be unique within a document.",
+        }),
+      ]);
+      expect(JSON.stringify(result.diagnostics)).not.toContain(sentinel);
+      expect(JSON.stringify(result.diagnostics)).not.toContain("SENSITIVE_DIRECTORY");
+      expect(JSON.stringify(result.diagnostics)).not.toMatch(
+        /FILE_CREDENTIAL_SENTINEL|QUERY_SENTINEL|FRAGMENT_SENTINEL/u,
+      );
+      expect(result.headings).toEqual([
+        expect.objectContaining({ file, id: sentinel, title: "One" }),
+        expect.objectContaining({ file, id: sentinel, title: "Two" }),
+      ]);
+      expect(result.links).toEqual([expect.objectContaining({ file, href })]);
+    },
+  );
+
+  test.each(ambiguousDiagnosticFiles)(
+    "fails an ambiguous analysis diagnostic label closed: %s",
+    (file) => {
+      const result = analyzeTopikContent("## One {% #same %}\n\n## Two {% #same %}", { file });
+
+      expect(result.diagnostics).toEqual([
+        expect.objectContaining({ file: "content", id: "heading-id-duplicate" }),
+      ]);
+      expect(JSON.stringify(result.diagnostics)).not.toMatch(
+        /SENSITIVE_DIRECTORY|FILE_CREDENTIAL_SENTINEL|QUERY_SENTINEL|FRAGMENT_SENTINEL|%2F|%25/iu,
+      );
+    },
+  );
 });

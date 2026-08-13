@@ -6,7 +6,7 @@ import {
   type GeneratedAssetName,
 } from "@topik/schema";
 import type { TopikContentNode } from "./content";
-import { formatTopikContent, parseTopikContent } from "./content";
+import { formatTopikContentAst, parseTopikContent } from "./content";
 import type { TopikAssetReferenceRole } from "./components";
 
 export const TOPIK_ASSET_REFERENCE_VERSION = "topik-asset-reference-v1" as const;
@@ -97,52 +97,35 @@ export function extractTopikAssetOccurrences(
   source: string,
   options: ExtractTopikAssetOccurrencesOptions = {},
 ): TopikAssetOccurrence[] {
-  const ast = parseTopikContent(source);
-  const provenDownloadPaths = toSet(options.provenDownloadPaths);
   const occurrences: TopikAssetOccurrence[] = [];
-  const exactReferences = exactMarkdownReferences(source);
-
-  walk(ast, [], (node, treePath) => {
-    for (const definition of matchingSlots(node)) {
-      const position = formatPosition(treePath, definition.attribute);
-      const parsedReference = stringAttribute(node, definition.attribute);
-      if (parsedReference == null) continue;
-      const reference =
-        definition.node === "image"
-          ? (takeExactMarkdownReference(exactReferences, node, "image") ?? "")
-          : definition.node === "link"
-            ? (takeExactMarkdownReference(exactReferences, node, "link") ?? "")
-            : parsedReference;
-      if (
-        definition.conditional === "proven-download" &&
-        options.includeGenericLinkCandidates !== true &&
-        !provenDownloadsUnambiguouslyContain(reference, provenDownloadPaths) &&
-        !isCanonicalAssetReference(reference) &&
-        !usesReservedAssetScheme(reference, parsedReference)
-      ) {
-        continue;
-      }
-      occurrences.push({
-        position,
-        treePath,
-        slot: definition.slot,
-        role: definition.role,
-        parsedReference,
-        reference,
-        kind: classifyExactReference(reference, parsedReference),
-        semantics: occurrenceSemantics(node, definition),
-      });
-    }
-  });
-
+  visitTopikAssetOccurrences(source, options, (occurrence) => occurrences.push(occurrence));
   return occurrences;
 }
 
-export function rewriteTopikAssetOccurrences(
+/** @internal Tree mutation used only after the public serializer has validated exact source. */
+export function rewriteTopikAssetOccurrencesUnchecked(
   source: string,
   replace: (occurrence: TopikAssetOccurrence) => string | undefined,
   options: ExtractTopikAssetOccurrencesOptions = {},
 ): string {
+  const ast = visitTopikAssetOccurrences(source, options, (occurrence, node, attribute) => {
+    const replacement = replace(occurrence);
+    if (replacement !== undefined) node.attributes[attribute] = replacement;
+  });
+
+  escapeMarkdownInlineTitlesForFormatting(ast);
+  return formatTopikContentAst(ast);
+}
+
+function visitTopikAssetOccurrences(
+  source: string,
+  options: ExtractTopikAssetOccurrencesOptions,
+  visit: (
+    occurrence: TopikAssetOccurrence,
+    node: TopikContentNode,
+    attribute: TopikAssetReferenceSlot["attribute"],
+  ) => void,
+): TopikContentNode {
   const ast = parseTopikContent(source);
   const provenDownloadPaths = toSet(options.provenDownloadPaths);
   const exactReferences = exactMarkdownReferences(source);
@@ -167,23 +150,24 @@ export function rewriteTopikAssetOccurrences(
       ) {
         continue;
       }
-      const occurrence: TopikAssetOccurrence = {
-        position,
-        treePath,
-        slot: definition.slot,
-        role: definition.role,
-        parsedReference,
-        reference,
-        kind: classifyExactReference(reference, parsedReference),
-        semantics: occurrenceSemantics(node, definition),
-      };
-      const replacement = replace(occurrence);
-      if (replacement !== undefined) node.attributes[definition.attribute] = replacement;
+      visit(
+        {
+          position,
+          treePath,
+          slot: definition.slot,
+          role: definition.role,
+          parsedReference,
+          reference,
+          kind: classifyExactReference(reference, parsedReference),
+          semantics: occurrenceSemantics(node, definition),
+        },
+        node,
+        definition.attribute,
+      );
     }
   });
 
-  escapeMarkdownInlineTitlesForFormatting(ast);
-  return formatTopikContent(ast);
+  return ast;
 }
 
 function escapeMarkdownInlineTitlesForFormatting(root: TopikContentNode): void {

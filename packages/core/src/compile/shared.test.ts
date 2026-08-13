@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vite-plus/test";
 import type { TopikContentDiagnostic } from "@topik/content-schema";
 import {
+  allAmbiguousDiagnosticFiles as ambiguousDiagnosticFiles,
+  unsafeDiagnosticFiles,
+} from "../../../content-schema/src/test-fixtures/diagnostic-files";
+import {
   CompileError,
   extractMarkdownTitle,
   hasCompileErrors,
@@ -28,14 +32,29 @@ describe("compile error diagnostics", () => {
     expect(hasCompileErrors([diagnostic(level)])).toBe(false);
   });
 
-  test("sanitizes absolute diagnostic paths in public CompileError state and text", () => {
-    const error = new CompileError([
-      { ...diagnostic("error"), file: "/var/redacted/docs/page.md" },
-    ]);
+  test.each(unsafeDiagnosticFiles)(
+    "sanitizes diagnostic path %s in public CompileError state and text",
+    (file) => {
+      const error = new CompileError([{ ...diagnostic("error"), file }]);
 
-    expect(error.diagnostics).toEqual([expect.objectContaining({ file: "page.md" })]);
-    expect(`${error.message}\n${JSON.stringify(error)}`).not.toContain("/var/redacted");
-  });
+      expect(error.diagnostics).toEqual([expect.objectContaining({ file: "lesson.md" })]);
+      expect(`${error.message}\n${JSON.stringify(error)}`).not.toMatch(
+        /SENSITIVE_DIRECTORY|FILE_CREDENTIAL_SENTINEL|QUERY_SENTINEL|FRAGMENT_SENTINEL/u,
+      );
+    },
+  );
+
+  test.each(ambiguousDiagnosticFiles)(
+    "fails an ambiguous CompileError label closed: %s",
+    (file) => {
+      const error = new CompileError([{ ...diagnostic("error"), file }]);
+
+      expect(error.diagnostics).toEqual([expect.objectContaining({ file: "content" })]);
+      expect(`${error.message}\n${JSON.stringify(error)}`).not.toMatch(
+        /SENSITIVE_DIRECTORY|FILE_CREDENTIAL_SENTINEL|QUERY_SENTINEL|FRAGMENT_SENTINEL|%2F|%25/iu,
+      );
+    },
+  );
 });
 
 describe("parseMarkdownFrontmatter", () => {

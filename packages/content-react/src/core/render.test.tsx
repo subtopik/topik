@@ -443,6 +443,85 @@ describe("content-react core", () => {
     transform.mockRestore();
   });
 
+  it.each(["root", "partial"] as const)(
+    "refuses unsupported runtime attribute types across the %s source boundary",
+    (boundary) => {
+      const invalidTag =
+        "{% notice value={x: 1} %}ordinary child that must not render{% /notice %}";
+      const source =
+        boundary === "root"
+          ? `  ${invalidTag}\r\n![Asset](old.png)  `
+          : '  {% partial file="invalid.md" /%}\r\n![Asset](old.png)  ';
+      const renderUnsafeNotice = vi.fn(() => <span>ordinary child that must not render</span>);
+      const config = {
+        ...(boundary === "partial"
+          ? { partials: { "invalid.md": Markdoc.parse(invalidTag) } }
+          : {}),
+        tags: {
+          notice: {
+            render: "TopikCallout",
+            attributes: {
+              value: {
+                type:
+                  boundary === "root"
+                    ? ("constructor" as never)
+                    : (["String", "constructor"] as never),
+              },
+            },
+          },
+        },
+      };
+      const replace = vi.fn(() => "new.png");
+      const transform = vi.spyOn(Markdoc, "transform");
+
+      try {
+        const validation = validateTopikContent(source, { config });
+        const compilation = compileTopikContent(source, { config });
+        const formatting = formatTopikContent(source, { config });
+        const rewriting = rewriteTopikAssetOccurrences(source, replace, { config });
+
+        expect(validation).toMatchObject({
+          source,
+          valid: false,
+          errors: [expect.objectContaining({ id: "topik-config-invalid", level: "critical" })],
+        });
+        expect(compilation).toMatchObject({
+          ok: false,
+          source,
+          diagnostics: [expect.objectContaining({ id: "topik-config-invalid", level: "critical" })],
+        });
+        expect(compilation).not.toHaveProperty("tree");
+        expect(formatting).toMatchObject({ ok: false, source });
+        expect(formatting).not.toHaveProperty("formatted");
+        expect(rewriting).toMatchObject({ ok: false, source });
+        expect(rewriting).not.toHaveProperty("content");
+        expect(replace).not.toHaveBeenCalled();
+        expect(() => renderTopikContent(compilation)).toThrow(InvalidTopikContentError);
+        expect(() => renderToString(renderTopikMarkdown(source, { config }))).toThrow(
+          InvalidTopikContentError,
+        );
+        expect(() =>
+          renderToString(
+            renderTopikMarkdown(source, {
+              components: { TopikCallout: renderUnsafeNotice },
+              config,
+            }),
+          ),
+        ).toThrow(InvalidTopikContentError);
+        const placeholder = renderToStaticMarkup(
+          renderTopikMarkdown(source, { config, invalidContent: "placeholder" }),
+        );
+        expect(placeholder).toContain('role="alert"');
+        expect(placeholder).not.toContain("ordinary child");
+        expect(placeholder).not.toContain("old.png");
+        expect(renderUnsafeNotice).not.toHaveBeenCalled();
+        expect(transform).not.toHaveBeenCalled();
+      } finally {
+        transform.mockRestore();
+      }
+    },
+  );
+
   it("refuses a reachable-partial instance validator before compile or rendering", () => {
     const partial = Markdoc.parse(
       ['{% attack value="safe" /%}', "{% victim bad=true %}ordinary child{% /victim %}"].join("\n"),

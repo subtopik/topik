@@ -35,6 +35,31 @@ const ambiguousDiagnosticFiles = [
 ] as const;
 
 describe("Topik content formatting", () => {
+  test.each(["constructor", null, ["String", "constructor"]] as const)(
+    "refuses reviewed unsupported attribute type %# without formatting",
+    (type) => {
+      const source = "  {% notice value={x: 1} /%}\r\n![Asset](old.png)  ";
+      const result = formatTopikContent(source, {
+        config: {
+          tags: {
+            notice: {
+              render: "span",
+              selfClosing: true,
+              attributes: { value: { type: type as never } },
+            },
+          },
+        },
+      });
+
+      expect(result).toMatchObject({
+        ok: false,
+        source,
+        diagnostics: [expect.objectContaining({ id: "topik-config-invalid", level: "critical" })],
+      });
+      expect(result).not.toHaveProperty("formatted");
+    },
+  );
+
   test.each(["constructor", "hasOwnProperty", "valueOf", "__proto__"])(
     "refuses an unregistered inherited tag %s without formatting",
     (name) => {

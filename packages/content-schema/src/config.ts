@@ -53,20 +53,18 @@ export const topikMarkdocConfig = deepFreeze(cloneConfig(canonicalTopikMarkdocCo
  * Canonical validation always wins on normal source APIs.
  */
 export function mergeTopikMarkdocConfig(extension: Config = {}): Config {
-  const isolatedExtension: Config = cloneConfig(extension);
   const canonical: Config = cloneConfig(canonicalTopikMarkdocConfig);
-  const nodes = additiveSchemas(isolatedExtension.nodes, canonical.nodes);
-  const tags = additiveSchemas(isolatedExtension.tags, canonical.tags);
-  const functions = additiveFunctions(isolatedExtension.functions);
+  const nodes = additiveSchemas(extension.nodes, canonical.nodes);
+  const tags = additiveSchemas(extension.tags, canonical.tags);
+  const functions = additiveFunctions(extension.functions);
   return {
-    ...isolatedExtension,
     ...canonical,
     nodes: registry(nodes, canonical.nodes),
     tags: registry(tags, canonical.tags),
-    variables: cloneConfig(isolatedExtension.variables ?? canonical.variables ?? {}),
+    variables: cloneConfig(extension.variables ?? canonical.variables ?? {}),
     functions: registry(functions, canonical.functions),
-    partials: registry(isolatedExtension.partials, canonical.partials),
-    validation: registry(isolatedExtension.validation, canonical.validation),
+    partials: registry(cloneConfig(extension.partials), canonical.partials),
+    validation: registry(cloneConfig(extension.validation), canonical.validation),
   };
 }
 
@@ -168,21 +166,30 @@ function additiveFunctions(functions: Config["functions"]): NonNullable<Config["
 }
 
 function isolateSchemaCallbacks(schema: Schema): Schema {
-  const isolated = cloneConfig(schema);
+  const attributes = schema.attributes;
+  const isolatedAttributes = isolateSchemaAttributes(attributes);
+  const replacements = new WeakMap<object, unknown>();
+  rememberCloneReplacement(replacements, attributes, isolatedAttributes);
+  const isolated = cloneConfig(schema, replacements);
   const transform = Reflect.get(schema, "transform") as Schema["transform"];
   const validate = Reflect.get(schema, "validate") as Schema["validate"];
+  if (isolatedAttributes !== undefined) isolated.attributes = isolatedAttributes;
   if (typeof validate === "function") {
     isolated.validate = isolateSchemaValidate(validate);
   }
   if (typeof transform === "function") {
     isolated.transform = isolateSchemaTransform(transform);
   }
-  for (const [name, attribute] of Object.entries(isolated.attributes ?? {})) {
-    if (schema.attributes?.[name] !== undefined) {
-      isolated.attributes![name] = isolateSchemaAttribute(schema.attributes[name]);
-    } else {
-      attribute.type = isolateAttributeType(attribute.type);
-    }
+  return isolated;
+}
+
+function isolateSchemaAttributes(
+  attributes: Schema["attributes"],
+): Schema["attributes"] | undefined {
+  if (attributes === undefined) return undefined;
+  const isolated = registry<NonNullable<Schema["attributes"]>[string]>();
+  for (const [name, attribute] of ownEntries(attributes)) {
+    isolated[name] = isolateSchemaAttribute(attribute);
   }
   return isolated;
 }
@@ -190,26 +197,25 @@ function isolateSchemaCallbacks(schema: Schema): Schema {
 function isolateFunctionCallback(
   schema: NonNullable<Config["functions"]>[string],
 ): NonNullable<Config["functions"]>[string] {
-  const isolated = cloneConfig(schema);
+  const parameters = schema.parameters;
+  const isolatedParameters = isolateSchemaAttributes(parameters);
+  const returns = readOptionalOwnType(schema, "returns");
+  const isolatedReturns = returns.present ? isolateAttributeType(returns.value) : undefined;
+  const replacements = new WeakMap<object, unknown>();
+  rememberCloneReplacement(replacements, parameters, isolatedParameters);
+  if (returns.present) rememberCloneReplacement(replacements, returns.value, isolatedReturns);
+  const isolated = cloneConfig(schema, replacements);
   const transform = Reflect.get(schema, "transform") as typeof schema.transform;
   const validate = Reflect.get(schema, "validate") as typeof schema.validate;
+  if (isolatedParameters !== undefined) isolated.parameters = isolatedParameters;
+  if (returns.present) {
+    isolated.returns = isolatedReturns as ValidationType | ValidationType[];
+  }
   if (typeof validate === "function") {
     isolated.validate = isolateFunctionValidate(validate);
   }
   if (typeof transform === "function") {
     isolated.transform = isolateFunctionTransform(transform);
-  }
-  if (schema.parameters !== undefined) {
-    const parameters = registry<NonNullable<typeof schema.parameters>[string]>();
-    for (const [name, parameter] of ownEntries(schema.parameters)) {
-      parameters[name] = isolateSchemaAttribute(parameter);
-    }
-    isolated.parameters = parameters;
-  }
-  if (schema.returns !== undefined) {
-    isolated.returns = Array.isArray(schema.returns)
-      ? schema.returns.map((type) => isolateAttributeType(type) as ValidationType)
-      : isolateAttributeType(schema.returns);
   }
   return isolated;
 }
@@ -236,10 +242,16 @@ const isolatedAttributeMatches = new WeakMap<
 function isolateSchemaAttribute(
   attribute: NonNullable<Schema["attributes"]>[string],
 ): NonNullable<Schema["attributes"]>[string] {
-  const isolated = cloneConfig(attribute);
-  isolated.type = isolateAttributeType(attribute.type);
+  const type = readOptionalOwnType(attribute, "type");
+  const isolatedType = type.present ? isolateAttributeType(type.value) : undefined;
+  const replacements = new WeakMap<object, unknown>();
+  if (type.present) rememberCloneReplacement(replacements, type.value, isolatedType);
+  const isolated = cloneConfig(attribute, replacements);
   const matches = Reflect.get(attribute, "matches") as typeof attribute.matches;
   const validate = Reflect.get(attribute, "validate") as typeof attribute.validate;
+  if (type.present) {
+    isolated.type = isolatedType as ValidationType | ValidationType[];
+  }
   if (typeof validate === "function") {
     isolated.validate = isolateAttributeValidate(validate);
   }
@@ -352,25 +364,92 @@ function isolateAttributeMatchesCallback(
   return isolated;
 }
 
-function isolateAttributeType(
-  type: NonNullable<Schema["attributes"]>[string]["type"],
-  activeArrays = new WeakSet<object>(),
-): NonNullable<Schema["attributes"]>[string]["type"] {
-  if (Array.isArray(type)) {
-    if (activeArrays.has(type)) throw unsupportedAttributeType();
-    activeArrays.add(type);
-    try {
-      return type.map((entry) => isolateAttributeType(entry, activeArrays) as ValidationType);
-    } finally {
-      activeArrays.delete(type);
-    }
+function isolateAttributeType(type: unknown): NonNullable<Schema["attributes"]>[string]["type"] {
+  try {
+    return admitAttributeType(type, new WeakSet<object>()) as NonNullable<
+      Schema["attributes"]
+    >[string]["type"];
+  } catch {
+    throw unsupportedAttributeType();
   }
-  if (typeof type !== "function") return type;
-  if (nativeAttributeTypes.has(type)) return type;
-  throw unsupportedAttributeType();
 }
 
-const nativeAttributeTypes = new Set<Function>([String, Number, Boolean, Object, Array]);
+function admitAttributeType(type: unknown, activeArrays: WeakSet<object>): unknown {
+  if (nativeAttributeTypes.has(type)) return type;
+  if (nativeAttributeTypeNames.has(type)) return type;
+
+  // A transparent Proxy<Array> is indistinguishable from its target in portable ECMAScript.
+  // Descriptor-only traversal minimizes executable observation and no input array is retained.
+  if (!Array.isArray(type)) throw unsupportedAttributeType();
+  if (activeArrays.has(type)) throw unsupportedAttributeType();
+
+  const lengthDescriptor = Object.getOwnPropertyDescriptor(type, "length");
+  if (
+    lengthDescriptor === undefined ||
+    !("value" in lengthDescriptor) ||
+    !Number.isSafeInteger(lengthDescriptor.value) ||
+    lengthDescriptor.value < 0 ||
+    lengthDescriptor.value > 0xffff_ffff
+  ) {
+    throw unsupportedAttributeType();
+  }
+
+  activeArrays.add(type);
+  try {
+    const admitted: ValidationType[] = [];
+    for (let index = 0; index < lengthDescriptor.value; index += 1) {
+      const descriptor = Object.getOwnPropertyDescriptor(type, String(index));
+      if (descriptor === undefined || !("value" in descriptor)) {
+        throw unsupportedAttributeType();
+      }
+      admitted.push(admitAttributeType(descriptor.value, activeArrays) as ValidationType);
+    }
+    return admitted;
+  } finally {
+    activeArrays.delete(type);
+  }
+}
+
+const nativeAttributeTypes = new Set<unknown>([String, Number, Boolean, Object, Array]);
+const nativeAttributeTypeNames = new Set<unknown>([
+  "String",
+  "Number",
+  "Boolean",
+  "Object",
+  "Array",
+]);
+
+type OptionalTypeProperty = { present: false } | { present: true; value: unknown };
+
+function readOptionalOwnType(value: object, key: "returns" | "type"): OptionalTypeProperty {
+  const descriptor = Object.getOwnPropertyDescriptor(value, key);
+  if (descriptor !== undefined) {
+    if (!("value" in descriptor)) throw unsupportedAttributeType();
+    return { present: true, value: descriptor.value };
+  }
+
+  const visited = new Set<object>();
+  let prototype = Object.getPrototypeOf(value) as object | null;
+  while (prototype !== null) {
+    if (visited.has(prototype)) throw unsupportedAttributeType();
+    visited.add(prototype);
+    if (Object.getOwnPropertyDescriptor(prototype, key) !== undefined) {
+      throw unsupportedAttributeType();
+    }
+    prototype = Object.getPrototypeOf(prototype) as object | null;
+  }
+  return { present: false };
+}
+
+function rememberCloneReplacement(
+  replacements: WeakMap<object, unknown>,
+  source: unknown,
+  replacement: unknown,
+): void {
+  if (source !== null && (typeof source === "object" || typeof source === "function")) {
+    replacements.set(source, replacement);
+  }
+}
 
 function unsupportedAttributeType(): TypeError {
   return new TypeError("Unsupported attribute type configuration");

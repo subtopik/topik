@@ -6,6 +6,7 @@ import Markdoc, {
   type ValidationError,
   type ValidationType,
 } from "@markdoc/markdoc";
+import { runInNewContext } from "node:vm";
 import { describe, expect, test, vi } from "vite-plus/test";
 import { topikComponents } from "./components";
 import { mergeTopikMarkdocConfig, topikMarkdocConfig } from "./config";
@@ -51,6 +52,32 @@ const ambiguousDiagnosticFiles = [
 ] as const;
 
 const inheritedRegistryNames = Object.getOwnPropertyNames(Object.prototype);
+
+const rejectedAttributeTypeValues: Array<[string, unknown]> = [
+  ["undefined", undefined],
+  ["null", null],
+  ["false", false],
+  ["true", true],
+  ["zero", 0],
+  ["number", 1],
+  ["NaN", Number.NaN],
+  ["bigint", 1n],
+  ["symbol", Symbol("type")],
+  ["plain object", {}],
+  ["null-prototype object", Object.create(null)],
+  ["boxed string", new String("String")],
+  ["boxed number", new Number(1)],
+  ["boxed boolean", new Boolean(true)],
+  ["date", new Date(0)],
+  ["regular expression", /String/u],
+  ["empty string", ""],
+  ["lowercase name", "string"],
+  ["uppercase name", "STRING"],
+  ["leading whitespace", " String"],
+  ["trailing whitespace", "Array "],
+  ["arbitrary name", "CustomType"],
+  ...inheritedRegistryNames.map((name) => [`Object.prototype.${name}`, name] as [string, string]),
+];
 
 const roundFourAmbiguousDiagnosticFiles = [
   "https ://user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
@@ -731,7 +758,7 @@ describe("topik content schema", () => {
         notice: {
           render: "span",
           selfClosing: true,
-          attributes: { value: { type } },
+          attributes: { value: { type: type as unknown as ValidationType } },
         },
       },
     };
@@ -746,6 +773,410 @@ describe("topik content schema", () => {
       errors: [],
     });
   });
+
+  test.each(rejectedAttributeTypeValues)(
+    "rejects unsupported runtime attribute type %s as configuration",
+    (_name, type) => {
+      const source = '{% notice value="safe" /%}';
+      const config: Config = {
+        tags: {
+          notice: {
+            render: "span",
+            selfClosing: true,
+            attributes: { value: { type: type as ValidationType } },
+          },
+        },
+      };
+
+      expect(() => mergeTopikMarkdocConfig(config)).toThrowError(
+        "Unsupported attribute type configuration",
+      );
+      expect(validateTopikContent(source, { config })).toMatchObject({
+        source,
+        valid: false,
+        errors: [
+          expect.objectContaining({
+            id: "topik-config-invalid",
+            level: "critical",
+            message: "Content configuration is invalid.",
+          }),
+        ],
+      });
+    },
+  );
+
+  test.each(["constructor", null, ["String", "constructor"]] as const)(
+    "rejects reviewed unsupported attribute type %# before Markdoc validation",
+    (type) => {
+      const source = "{% notice value={x: 1} /%}\n![Asset](old.png)";
+      const config: Config = {
+        tags: {
+          notice: {
+            render: "span",
+            selfClosing: true,
+            attributes: { value: { type: type as unknown as ValidationType } },
+          },
+        },
+      };
+
+      expect(validateTopikContent(source, { config })).toMatchObject({
+        source,
+        valid: false,
+        errors: [expect.objectContaining({ id: "topik-config-invalid", level: "critical" })],
+      });
+    },
+  );
+
+  test("preserves omitted attribute and return types but rejects present undefined values", () => {
+    const source = '{% notice value="safe" label=label(value="safe") /%}';
+    const transform = vi.fn(() => "safe");
+    const omitted: Config = {
+      functions: {
+        label: {
+          parameters: { value: { required: true } },
+          transform,
+        },
+      },
+      tags: {
+        notice: {
+          render: "span",
+          selfClosing: true,
+          attributes: { label: {}, value: {} },
+        },
+      },
+    };
+    const merged = mergeTopikMarkdocConfig(omitted);
+
+    expect(Object.hasOwn(merged.tags?.notice?.attributes?.value ?? {}, "type")).toBe(false);
+    expect(Object.hasOwn(merged.functions?.label ?? {}, "returns")).toBe(false);
+    expect(Object.hasOwn(merged.functions?.label?.parameters?.value ?? {}, "type")).toBe(false);
+    expect(validateTopikContent(source, { config: omitted })).toMatchObject({
+      source,
+      valid: true,
+      errors: [],
+    });
+
+    for (const config of [
+      {
+        tags: {
+          notice: {
+            render: "span",
+            selfClosing: true,
+            attributes: { value: { type: undefined } },
+          },
+        },
+      },
+      {
+        functions: { label: { returns: undefined, transform } },
+      },
+      {
+        functions: {
+          label: { parameters: { value: { type: undefined } }, transform },
+        },
+      },
+    ] satisfies Config[]) {
+      expect(() => mergeTopikMarkdocConfig(config)).toThrowError(
+        "Unsupported attribute type configuration",
+      );
+      expect(validateTopikContent(source, { config })).toMatchObject({
+        source,
+        valid: false,
+        errors: [expect.objectContaining({ id: "topik-config-invalid" })],
+      });
+    }
+    expect(transform).not.toHaveBeenCalled();
+  });
+
+  test.each(["attribute", "parameter", "return"] as const)(
+    "rejects inherited and accessor-backed %s type fields without invoking accessors",
+    (position) => {
+      for (const field of ["inherited", "accessor"] as const) {
+        const getter = vi.fn(() => String);
+        const typed =
+          field === "inherited"
+            ? Object.create({ type: String })
+            : Object.defineProperty({}, "type", { get: getter });
+        const returned =
+          field === "inherited"
+            ? Object.create({ returns: String })
+            : Object.defineProperty({}, "returns", { get: getter });
+        Object.defineProperty(returned, "transform", {
+          configurable: true,
+          enumerable: true,
+          value: () => "safe",
+          writable: true,
+        });
+        const config = (
+          position === "return"
+            ? { functions: { label: returned } }
+            : position === "parameter"
+              ? {
+                  functions: {
+                    label: {
+                      returns: String,
+                      parameters: { value: typed },
+                      transform: () => "safe",
+                    },
+                  },
+                }
+              : {
+                  tags: {
+                    notice: {
+                      render: "span",
+                      selfClosing: true,
+                      attributes: { value: typed },
+                    },
+                  },
+                }
+        ) as Config;
+
+        expect(() => mergeTopikMarkdocConfig(config)).toThrowError(
+          "Unsupported attribute type configuration",
+        );
+        expect(getter).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  test("admits fresh dense snapshots of recursively supported type arrays", () => {
+    const shared = [String, "Number"] as ValidationType[];
+    const type = [shared, [Boolean, ["Object", Array]], shared] as unknown as ValidationType;
+    const config: Config = {
+      tags: {
+        notice: {
+          render: "span",
+          selfClosing: true,
+          attributes: { value: { type } },
+        },
+      },
+    };
+    const merged = mergeTopikMarkdocConfig(config);
+    const mergedAgain = mergeTopikMarkdocConfig(merged);
+    const admitted = merged.tags?.notice?.attributes?.value?.type as unknown[];
+    const admittedAgain = mergedAgain.tags?.notice?.attributes?.value?.type as unknown[];
+
+    expect(admitted).toEqual(type);
+    expect(admitted).not.toBe(type);
+    expect(admitted[0]).not.toBe(shared);
+    expect(admitted[0]).not.toBe(admitted[2]);
+    expect(admittedAgain).toEqual(type);
+    expect(admittedAgain).not.toBe(admitted);
+    shared[0] = Number;
+    expect(admitted[0]).toEqual([String, "Number"]);
+
+    const emptyConfig: Config = {
+      tags: {
+        notice: {
+          render: "span",
+          selfClosing: true,
+          attributes: { value: { type: [] } },
+        },
+      },
+    };
+    expect(() => mergeTopikMarkdocConfig(emptyConfig)).not.toThrow();
+  });
+
+  test.each(["attribute", "parameter", "return"] as const)(
+    "preserves recursively supported arrays in %s type positions",
+    (position) => {
+      const type = [String, ["Number", [Boolean, "Object", Array]]] as unknown as ValidationType;
+      const transform = vi.fn(() => "safe");
+      const source =
+        position === "attribute"
+          ? '{% notice value="safe" /%}'
+          : position === "parameter"
+            ? '{% callout title=custom(value="safe") /%}'
+            : "{% callout title=custom() /%}";
+      const config: Config =
+        position === "attribute"
+          ? {
+              tags: {
+                notice: {
+                  render: "span",
+                  selfClosing: true,
+                  attributes: { value: { type } },
+                },
+              },
+            }
+          : {
+              functions: {
+                custom:
+                  position === "parameter"
+                    ? { returns: String, parameters: { value: { type } }, transform }
+                    : { returns: type, transform },
+              },
+            };
+
+      expect(() => mergeTopikMarkdocConfig(config)).not.toThrow();
+      expect(validateTopikContent(source, { config })).toMatchObject({
+        source,
+        valid: true,
+        errors: [],
+      });
+      expect(transform).not.toHaveBeenCalled();
+    },
+  );
+
+  test("rejects sparse, accessor-backed, cyclic, and nested unsupported type arrays", () => {
+    const getter = vi.fn(() => String);
+    const sparse: ValidationType[] = [String, Number];
+    Reflect.deleteProperty(sparse, "0");
+    const nestedHole: ValidationType[] = [String];
+    Reflect.deleteProperty(nestedHole, "0");
+    const nestedSparse = [String, nestedHole] as unknown as ValidationType;
+    const accessor: unknown[] = [String];
+    Object.defineProperty(accessor, "0", { get: getter });
+    const selfCycle: unknown[] = [String];
+    selfCycle.push(selfCycle);
+    const left: unknown[] = [String];
+    const right: unknown[] = [Number, left];
+    left.push(right);
+
+    for (const type of [
+      sparse,
+      nestedSparse,
+      accessor,
+      selfCycle,
+      left,
+      [String, ["constructor"]],
+    ]) {
+      const config: Config = {
+        tags: {
+          notice: {
+            render: "span",
+            selfClosing: true,
+            attributes: { value: { type: type as ValidationType } },
+          },
+        },
+      };
+      expect(() => mergeTopikMarkdocConfig(config)).toThrowError(
+        "Unsupported attribute type configuration",
+      );
+    }
+    expect(getter).not.toHaveBeenCalled();
+  });
+
+  test("rejects an array proxy that reports an invalid length with a fixed error", () => {
+    const descriptorTrap = vi.fn((_target: unknown[], key: PropertyKey) =>
+      key === "length"
+        ? { configurable: false, enumerable: false, value: -1, writable: true }
+        : undefined,
+    );
+    const type = new Proxy([], { getOwnPropertyDescriptor: descriptorTrap });
+    const config: Config = {
+      tags: {
+        notice: {
+          render: "span",
+          selfClosing: true,
+          attributes: { value: { type: type as unknown as ValidationType } },
+        },
+      },
+    };
+
+    expect(() => mergeTopikMarkdocConfig(config)).toThrowError(
+      "Unsupported attribute type configuration",
+    );
+    expect(descriptorTrap).toHaveBeenCalledOnce();
+    expect(descriptorTrap).toHaveBeenCalledWith(expect.any(Array), "length");
+  });
+
+  test("rejects non-native constructors and non-array proxies without observing them", () => {
+    const constructed = vi.fn();
+    const trapped = vi.fn();
+    const CrossRealmString = runInNewContext("String") as typeof String;
+    class CustomType {
+      constructor() {
+        constructed();
+      }
+    }
+    const proxiedNative = new Proxy(String, {
+      apply() {
+        trapped();
+        return "";
+      },
+      construct() {
+        trapped();
+        return {};
+      },
+      get() {
+        trapped();
+        return undefined;
+      },
+      getOwnPropertyDescriptor() {
+        trapped();
+        return undefined;
+      },
+      getPrototypeOf() {
+        trapped();
+        return null;
+      },
+    });
+    const proxiedObject = new Proxy(
+      {},
+      {
+        get() {
+          trapped();
+          return undefined;
+        },
+        getOwnPropertyDescriptor() {
+          trapped();
+          return undefined;
+        },
+        getPrototypeOf() {
+          trapped();
+          return null;
+        },
+        ownKeys() {
+          trapped();
+          return [];
+        },
+      },
+    );
+
+    for (const type of [CustomType, CrossRealmString, proxiedNative, proxiedObject]) {
+      const config: Config = {
+        tags: {
+          notice: {
+            render: "span",
+            selfClosing: true,
+            attributes: { value: { type: type as ValidationType } },
+          },
+        },
+      };
+      expect(() => mergeTopikMarkdocConfig(config)).toThrowError(
+        "Unsupported attribute type configuration",
+      );
+    }
+    expect(constructed).not.toHaveBeenCalled();
+    expect(trapped).not.toHaveBeenCalled();
+  });
+
+  test.each(["parameter", "return"] as const)(
+    "applies closed runtime admission to function %s types",
+    (position) => {
+      const transform = vi.fn(() => "safe");
+      const schema =
+        position === "parameter"
+          ? {
+              returns: String,
+              parameters: { value: { type: "constructor" as ValidationType } },
+              transform,
+            }
+          : { returns: [String, null] as unknown as ValidationType[], transform };
+      const source =
+        position === "parameter"
+          ? '{% callout title=custom(value="safe") /%}'
+          : "{% callout title=custom() /%}";
+      const config: Config = { functions: { custom: schema } };
+
+      expect(validateTopikContent(source, { config })).toMatchObject({
+        source,
+        valid: false,
+        errors: [expect.objectContaining({ id: "topik-config-invalid", level: "critical" })],
+      });
+      expect(transform).not.toHaveBeenCalled();
+    },
+  );
 
   test.each(unsupportedAttributeTypeCases)(
     "rejects unsupported function attribute type %s before observing executable state",

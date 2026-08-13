@@ -40,6 +40,33 @@ const ambiguousDiagnosticFiles = [
 ] as const;
 
 describe("topik-asset-reference-v1 occurrence registry", () => {
+  test.each(["constructor", null, ["String", "constructor"]] as const)(
+    "refuses reviewed unsupported attribute type %# before replacement",
+    (type) => {
+      const source = "{% notice value={x: 1} /%}\n![Asset](old.png)";
+      const replace = vi.fn(() => "new.png");
+      const result = rewriteTopikAssetOccurrences(source, replace, {
+        config: {
+          tags: {
+            notice: {
+              render: "span",
+              selfClosing: true,
+              attributes: { value: { type: type as never } },
+            },
+          },
+        },
+      });
+
+      expect(result).toMatchObject({
+        ok: false,
+        source,
+        diagnostics: [expect.objectContaining({ id: "topik-config-invalid", level: "critical" })],
+      });
+      expect(result).not.toHaveProperty("content");
+      expect(replace).not.toHaveBeenCalled();
+    },
+  );
+
   test.each(["constructor", "hasOwnProperty", "valueOf", "__proto__"])(
     "refuses an unregistered inherited tag %s before replacement",
     (name) => {

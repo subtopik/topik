@@ -11,6 +11,7 @@ export interface RewriteTopikAssetOccurrencesSuccess {
   /** Exact caller-supplied source before rewriting. */
   source: string;
   diagnostics: TopikContentDiagnostic[];
+  /** Rewritten content. Only the input source is validated; replacements are not revalidated. */
   content: string;
 }
 

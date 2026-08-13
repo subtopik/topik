@@ -27,7 +27,7 @@ describe("diagnostic file sanitization", () => {
     "\u200B/tmp/SENSITIVE_DIRECTORY/lesson.md",
     "\u2028/tmp/SENSITIVE_DIRECTORY/lesson.md",
     "\u202E/tmp/SENSITIVE_DIRECTORY/lesson.md",
-  ])("fails an encoded or whitespace-ambiguous label closed", (file) => {
+  ])("fails an encoded or whitespace-ambiguous label closed: %s", (file) => {
     const label = sanitizeTopikDiagnosticFile(file);
 
     expect(label).toBe("content");
@@ -55,7 +55,7 @@ describe("diagnostic file sanitization", () => {
     String.raw`\\server\SENSITIVE_DIRECTORY\#FRAGMENT_SENTINEL`,
     "https://user:FILE_CREDENTIAL_SENTINEL@[?token=QUERY_SENTINEL#FRAGMENT_SENTINEL",
     "https://user:%46ILE_CREDENTIAL_SENTINEL@[?token=%51UERY_SENTINEL#%46RAGMENT_SENTINEL",
-  ])("fails a malformed private file label closed", (file) => {
+  ])("fails a malformed private file label closed: %s", (file) => {
     const label = sanitizeTopikDiagnosticFile(file);
 
     expect(label).toBe("content");

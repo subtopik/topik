@@ -10,6 +10,11 @@ import { runInNewContext } from "node:vm";
 import { describe, expect, test, vi } from "vite-plus/test";
 import { topikComponents } from "./components";
 import { mergeTopikMarkdocConfig, topikMarkdocConfig } from "./config";
+import {
+  ambiguousDiagnosticFiles,
+  roundFourAmbiguousDiagnosticFiles,
+  unsafeDiagnosticFiles,
+} from "./test-fixtures/diagnostic-files";
 import { validateTopikContent } from "./validate";
 
 function idsFor(source: string): string[] {
@@ -19,37 +24,6 @@ function idsFor(source: string): string[] {
 function findTag(root: Node | undefined, tag: string): Node | undefined {
   return root === undefined ? undefined : [root, ...root.walk()].find((node) => node.tag === tag);
 }
-
-const unsafeDiagnosticFiles = [
-  "/tmp/SENSITIVE_DIRECTORY/lesson.md",
-  String.raw`C:\SENSITIVE_DIRECTORY\lesson.md`,
-  String.raw`\\server\SENSITIVE_DIRECTORY\lesson.md`,
-  String.raw`\Users\SENSITIVE_DIRECTORY\lesson.md`,
-  String.raw`\?\C:\SENSITIVE_DIRECTORY\lesson.md`,
-  String.raw`\\?\C:\SENSITIVE_DIRECTORY\lesson.md`,
-  String.raw`\Device\HarddiskVolume1\SENSITIVE_DIRECTORY\lesson.md`,
-  String.raw`C:\SENSITIVE_DIRECTORY\lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL`,
-  String.raw`\Users\SENSITIVE_DIRECTORY\lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL`,
-  String.raw`\\user:FILE_CREDENTIAL_SENTINEL@server\SENSITIVE_DIRECTORY\lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL`,
-  String.raw`\?\C:\SENSITIVE_DIRECTORY\lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL`,
-  String.raw`\\?\C:\SENSITIVE_DIRECTORY\lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL`,
-  "https://user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL",
-  "//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL",
-] as const;
-
-const ambiguousDiagnosticFiles = [
-  " https://user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
-  "https%3A%2F%2Fuser%3AFILE_CREDENTIAL_SENTINEL%40example.com%2FSENSITIVE_DIRECTORY%2Flesson.md%3Ftoken%3DQUERY_SENTINEL%23FRAGMENT_SENTINEL",
-  "https%253A%252F%252Fuser%253AFILE_CREDENTIAL_SENTINEL%2540example.com%252FSENSITIVE_DIRECTORY%252Flesson.md%253Ftoken%253DQUERY_SENTINEL%2523FRAGMENT_SENTINEL",
-  "/tmp/SENSITIVE_DIRECTORY%2Flesson.md%3Ftoken%3DQUERY_SENTINEL%23FRAGMENT_SENTINEL",
-  String.raw`C:\SENSITIVE_DIRECTORY%5Clesson.md%3Ftoken%3DQUERY_SENTINEL%23FRAGMENT_SENTINEL`,
-  String.raw`\\server\SENSITIVE_DIRECTORY%5Clesson.md%253Ftoken%253DQUERY_SENTINEL%2523FRAGMENT_SENTINEL`,
-  String.raw`\Users\SENSITIVE_DIRECTORY\lesson.md%3Ftoken%3DQUERY_SENTINEL%23FRAGMENT_SENTINEL`,
-  String.raw`\?\C:\SENSITIVE_DIRECTORY\lesson.md%253Ftoken%253DQUERY_SENTINEL%2523FRAGMENT_SENTINEL`,
-  "https://example.com/SENSITIVE_DIRECTORY%2Flesson.md?token=QUERY_SENTINEL#FRAGMENT_SENTINEL",
-  "https://user:%46ILE_CREDENTIAL_SENTINEL@example.com/lesson.md",
-  "https://user:%46ILE_CREDENTIAL_SENTINEL@[?token=%51UERY_SENTINEL#%46RAGMENT_SENTINEL",
-] as const;
 
 const inheritedRegistryNames = Object.getOwnPropertyNames(Object.prototype);
 
@@ -78,18 +52,6 @@ const rejectedAttributeTypeValues: Array<[string, unknown]> = [
   ["arbitrary name", "CustomType"],
   ...inheritedRegistryNames.map((name) => [`Object.prototype.${name}`, name] as [string, string]),
 ];
-
-const roundFourAmbiguousDiagnosticFiles = [
-  "https ://user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
-  "https&colon;//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
-  "https&amp;colon;//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
-  "https&#58;//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
-  "https&#x3a;//user:FILE_CREDENTIAL_SENTINEL@example.com/SENSITIVE_DIRECTORY/lesson.md",
-  "\u200B/tmp/SENSITIVE_DIRECTORY/lesson.md",
-  "\u0085/tmp/SENSITIVE_DIRECTORY/lesson.md",
-  "\u2028/tmp/SENSITIVE_DIRECTORY/lesson.md",
-  "\u202E/tmp/SENSITIVE_DIRECTORY/lesson.md",
-] as const;
 
 function victimSchema(): Schema {
   return {
@@ -609,19 +571,26 @@ describe("topik content schema", () => {
     expect(variables.date.getTime()).toBe(0);
   });
 
-  test.each([new WeakMap(), new WeakSet(), Promise.resolve("PRIVATE_VALUE_SENTINEL")])(
-    "fails an unsupported variable graph closed",
-    (malformed) => {
-      const source = "{% callout title=$malformed /%}";
-      const result = validateTopikContent(source, { config: { variables: { malformed } } });
+  test.each([
+    ["WeakMap", new WeakMap()],
+    ["WeakSet", new WeakSet()],
+    ["Promise", Promise.resolve("PRIVATE_VALUE_SENTINEL")],
+    ["ArrayBuffer", new ArrayBuffer(8)],
+    ["SharedArrayBuffer", new SharedArrayBuffer(8)],
+    ["DataView", new DataView(new ArrayBuffer(8))],
+    ["typed array", new Uint8Array(8)],
+    ["WeakRef", new WeakRef({})],
+    ["Error", new Error("PRIVATE_VALUE_SENTINEL")],
+  ])("fails an unsupported %s variable graph closed", (_name, malformed) => {
+    const source = "{% callout title=$malformed /%}";
+    const result = validateTopikContent(source, { config: { variables: { malformed } } });
 
-      expect(result).toMatchObject({ source, valid: false });
-      expect(result.errors).toEqual(
-        expect.arrayContaining([expect.objectContaining({ id: "topik-config-invalid" })]),
-      );
-      expect(JSON.stringify(result.errors)).not.toContain("PRIVATE_VALUE_SENTINEL");
-    },
-  );
+    expect(result).toMatchObject({ source, valid: false });
+    expect(result.errors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "topik-config-invalid" })]),
+    );
+    expect(JSON.stringify(result.errors)).not.toContain("PRIVATE_VALUE_SENTINEL");
+  });
 
   test("converts extension callback exceptions to a sanitized blocking diagnostic", () => {
     const source = "{% attack /%}";

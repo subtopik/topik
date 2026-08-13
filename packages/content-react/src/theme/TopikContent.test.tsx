@@ -103,7 +103,7 @@ describe("TopikContent", () => {
       renderToStaticMarkup(
         <TopikContent content='{% mystery private="opaque" %}leaked child{% /mystery %}' />,
       ),
-    ).toThrow();
+    ).toThrow(InvalidTopikContentError);
   });
 
   it("renders the accessible invalid-content placeholder without unsupported children", () => {

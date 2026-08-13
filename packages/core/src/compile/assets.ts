@@ -152,19 +152,13 @@ async function compileAssetResourcesWithReader(
   }
   for (const resource of topikContentResources) {
     const sourcePath = sourcePaths.get(resourceKey(resource)) as string;
-    const navigationDiagnostics = validateTopikContent(resource.spec.content.value, {
+    const validation = validateTopikContent(resource.spec.content.value, {
       file: sourcePath,
-    }).errors.filter(isUnsupportedAssetNavigationDiagnostic);
-    if (navigationDiagnostics.length > 0) {
+    });
+    if (!validation.valid) {
       throw new AssetCompilationError(
-        "Source content cannot use Asset locators for navigation-only targets",
-        navigationDiagnostics.map((diagnostic) =>
-          topikAssetDiagnostic(
-            "TOPIK_ASSET_REFERENCE_MALFORMED",
-            "Navigation-only targets cannot use Asset locators",
-            { location: { path: diagnostic.file ?? sourcePath } },
-          ),
-        ),
+        "Asset compilation received invalid Topik content",
+        contentValidationDiagnostics(validation.errors, sourcePath),
       );
     }
   }
@@ -362,21 +356,19 @@ async function compileAssetResourcesWithReader(
   const rewritten = sourceResources.map((resource): Resource => {
     if (!isContentBearingResource(resource)) return resource;
     const key = resourceKey(resource);
+    const sourcePath = sourcePaths.get(key) as string;
     const byPosition = replacements.get(key);
     if (byPosition === undefined || byPosition.size === 0) return resource;
     const rewrittenContent = rewriteTopikAssetOccurrences(
       resource.spec.content.value,
       (occurrence) => byPosition.get(occurrence.position),
-      { includeGenericLinkCandidates: true },
+      { includeGenericLinkCandidates: true, file: sourcePath },
     );
     if (!rewrittenContent.ok) {
-      throw new AssetCompilationError("Asset compilation could not rewrite invalid content", [
-        topikAssetDiagnostic(
-          "TOPIK_ASSET_SCHEMA_INVALID",
-          "Asset compilation could not rewrite invalid content",
-          { location: { path: sourcePaths.get(key) } },
-        ),
-      ]);
+      throw new AssetCompilationError(
+        "Asset compilation could not rewrite invalid content",
+        contentValidationDiagnostics(rewrittenContent.diagnostics, sourcePath),
+      );
     }
     return {
       ...resource,
@@ -489,8 +481,35 @@ function resourceValidationDiagnostics(
   });
 }
 
-function isTopikAssetDiagnosticId(value: ValidationError["id"]): value is TopikAssetDiagnosticId {
+function isTopikAssetDiagnosticId(value: string | undefined): value is TopikAssetDiagnosticId {
   return TOPIK_ASSET_DIAGNOSTIC_IDS.some((id) => id === value);
+}
+
+function contentValidationDiagnostics(
+  diagnostics: readonly TopikContentDiagnostic[],
+  sourcePath: string,
+): TopikAssetDiagnostic[] {
+  return diagnostics.map((diagnostic) => {
+    const lines = diagnostic.lines.filter((line) => line > 0);
+    const unsupportedNavigation = diagnostic.id === "link-asset-navigation-unsupported";
+    const id = unsupportedNavigation
+      ? "TOPIK_ASSET_REFERENCE_MALFORMED"
+      : isTopikAssetDiagnosticId(diagnostic.id)
+        ? diagnostic.id
+        : "TOPIK_ASSET_SCHEMA_INVALID";
+    return topikAssetDiagnostic(
+      id,
+      unsupportedNavigation
+        ? "Navigation-only targets cannot use Asset locators"
+        : diagnostic.message,
+      {
+        location: {
+          path: diagnostic.file ?? sourcePath,
+          ...(lines.length === 0 ? {} : { contentPosition: `line ${lines.join(",")}` }),
+        },
+      },
+    );
+  });
 }
 
 const KNOWN_RESOURCE_TYPES = new Set([
@@ -598,10 +617,6 @@ function isContentBearingResource(resource: Resource): resource is ContentBearin
 
 function isTopikContentResource(resource: ContentBearingResource): boolean {
   return resource.spec.content.format === "topik";
-}
-
-function isUnsupportedAssetNavigationDiagnostic(diagnostic: TopikContentDiagnostic): boolean {
-  return diagnostic.id === "link-asset-navigation-unsupported";
 }
 
 function requirePath(path: string, message: string): string {

@@ -1,12 +1,8 @@
-import {
-  sanitizeTopikContentDiagnostic,
-  sanitizeTopikDiagnosticFile,
-  type TopikContentDiagnostic,
-} from "@topik/content-schema";
+import { sanitizeTopikContentDiagnostic, type TopikContentDiagnostic } from "@topik/content-schema";
 
 export function formatDiagnostic(diagnostic: TopikContentDiagnostic): string {
   const sanitized = sanitizeTopikContentDiagnostic(diagnostic);
-  const file = sanitizeTopikDiagnosticFile(sanitized.file) ?? "content";
+  const file = sanitized.file ?? "content";
   const lines = sanitized.lines.length > 0 ? `:${sanitized.lines.join(",")}` : "";
   return `${file}${lines} ${sanitized.level} ${sanitized.id}: ${sanitized.message}`;
 }

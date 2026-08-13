@@ -91,9 +91,11 @@ function compileTopikContentInternal(
   options: CompileTopikContentOptions & Pick<RenderTopikContentOptions, "onAssetDiagnostic">,
 ): CompileTopikContentResult {
   let configSnapshot: Config | undefined;
+  let transformConfig: Config;
   try {
     configSnapshot =
       options.config === undefined ? undefined : mergeTopikMarkdocConfig(options.config);
+    transformConfig = configSnapshot ?? mergeTopikMarkdocConfig();
   } catch {
     const diagnostic = transformDiagnostic(options.file, "topik-config-invalid");
     options.onDiagnostic?.(diagnostic);
@@ -126,7 +128,7 @@ function compileTopikContentInternal(
       ok: true,
       source: content,
       diagnostics: validation.errors,
-      tree: Markdoc.transform(ast, mergeTopikMarkdocConfig(configSnapshot)),
+      tree: Markdoc.transform(ast, transformConfig),
     };
   } catch {
     const diagnostic = transformDiagnostic(options.file, "topik-transform-failed");

@@ -98,13 +98,7 @@ export function validateTopikContent(
                   : "TOPIK_ASSET_PATH_INVALID",
               type: occurrence.slot,
               level: "error",
-              message: namedReference
-                ? compiledAsset
-                  ? "Compiler-generated Asset references are not valid authoring input"
-                  : "Asset reference has an invalid generated name"
-                : external
-                  ? "Asset reference requires credential-free HTTPS"
-                  : "Local asset reference is not canonical topik-asset-reference-v1",
+              message: "",
               lines: [],
               ...(options.file === undefined ? {} : { file: options.file }),
             },

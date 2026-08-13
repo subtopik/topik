@@ -593,7 +593,16 @@ function cloneConfig<T>(value: T, seen = new WeakMap<object, unknown>()): T {
     return clone as T;
   }
 
-  if (value instanceof WeakMap || value instanceof WeakSet || value instanceof Promise) {
+  if (
+    value instanceof WeakMap ||
+    value instanceof WeakSet ||
+    value instanceof WeakRef ||
+    value instanceof Promise ||
+    value instanceof ArrayBuffer ||
+    (typeof SharedArrayBuffer !== "undefined" && value instanceof SharedArrayBuffer) ||
+    ArrayBuffer.isView(value) ||
+    value instanceof Error
+  ) {
     throw new TypeError("Unsupported configuration value");
   }
 
@@ -624,8 +633,13 @@ function cloneConfig<T>(value: T, seen = new WeakMap<object, unknown>()): T {
   return clone as T;
 }
 
-function deepFreeze<T>(value: T): T {
-  if (value === null || typeof value !== "object" || Object.isFrozen(value)) return value;
-  for (const nested of Object.values(value)) deepFreeze(nested);
-  return Object.freeze(value);
+function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
+  if (value === null || typeof value !== "object") return value;
+  if (seen.has(value)) return value;
+  seen.add(value);
+  for (const key of Reflect.ownKeys(value)) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor !== undefined && "value" in descriptor) deepFreeze(descriptor.value, seen);
+  }
+  return Object.isFrozen(value) ? value : Object.freeze(value);
 }

@@ -172,11 +172,20 @@ function additiveFunctions(functions: Config["functions"]): NonNullable<Config["
 
 function isolateSchemaCallbacks(schema: Schema): Schema {
   const isolated = cloneConfig(schema);
-  if (typeof schema.transform === "function") {
-    isolated.transform = isolateSchemaTransform(schema.transform.bind(schema));
+  const transform = Reflect.get(schema, "transform") as Schema["transform"];
+  const validate = Reflect.get(schema, "validate") as Schema["validate"];
+  if (typeof validate === "function") {
+    isolated.validate = isolateSchemaValidate(validate);
   }
-  for (const attribute of Object.values(isolated.attributes ?? {})) {
-    attribute.type = isolateAttributeType(attribute.type);
+  if (typeof transform === "function") {
+    isolated.transform = isolateSchemaTransform(transform);
+  }
+  for (const [name, attribute] of Object.entries(isolated.attributes ?? {})) {
+    if (schema.attributes?.[name] !== undefined) {
+      isolated.attributes![name] = isolateSchemaAttribute(schema.attributes[name]);
+    } else {
+      attribute.type = isolateAttributeType(attribute.type);
+    }
   }
   return isolated;
 }
@@ -185,28 +194,106 @@ function isolateFunctionCallback(
   schema: NonNullable<Config["functions"]>[string],
 ): NonNullable<Config["functions"]>[string] {
   const isolated = cloneConfig(schema);
-  if (typeof schema.transform === "function") {
-    isolated.transform = isolateFunctionTransform(schema.transform.bind(schema));
+  const transform = Reflect.get(schema, "transform") as typeof schema.transform;
+  const validate = Reflect.get(schema, "validate") as typeof schema.validate;
+  if (typeof validate === "function") {
+    isolated.validate = isolateFunctionValidate(validate);
+  }
+  if (typeof transform === "function") {
+    isolated.transform = isolateFunctionTransform(transform);
+  }
+  if (schema.parameters !== undefined) {
+    const parameters = registry<NonNullable<typeof schema.parameters>[string]>();
+    for (const [name, parameter] of ownEntries(schema.parameters)) {
+      parameters[name] = isolateSchemaAttribute(parameter);
+    }
+    isolated.parameters = parameters;
   }
   return isolated;
 }
 
 const isolatedSchemaTransforms = new WeakMap<Function, NonNullable<Schema["transform"]>>();
+const isolatedSchemaValidators = new WeakMap<Function, NonNullable<Schema["validate"]>>();
 const isolatedFunctionTransforms = new WeakMap<
   Function,
   NonNullable<NonNullable<Config["functions"]>[string]["transform"]>
 >();
+const isolatedFunctionValidators = new WeakMap<
+  Function,
+  NonNullable<NonNullable<Config["functions"]>[string]["validate"]>
+>();
+const isolatedAttributeValidators = new WeakMap<
+  Function,
+  NonNullable<NonNullable<Schema["attributes"]>[string]["validate"]>
+>();
+const isolatedAttributeMatches = new WeakMap<
+  Function,
+  Extract<NonNullable<NonNullable<Schema["attributes"]>[string]["matches"]>, Function>
+>();
 const isolatedAttributeTypes = new WeakMap<Function, ValidationType>();
+
+function isolateSchemaAttribute(
+  attribute: NonNullable<Schema["attributes"]>[string],
+): NonNullable<Schema["attributes"]>[string] {
+  const isolated = cloneConfig(attribute);
+  isolated.type = isolateAttributeType(attribute.type);
+  const matches = Reflect.get(attribute, "matches") as typeof attribute.matches;
+  const validate = Reflect.get(attribute, "validate") as typeof attribute.validate;
+  if (typeof validate === "function") {
+    isolated.validate = isolateAttributeValidate(validate);
+  }
+  if (typeof matches === "function") {
+    isolated.matches = isolateAttributeMatchesCallback(matches);
+  } else if (matches instanceof RegExp) {
+    const { flags, source } = matches;
+    isolated.matches = () => new RegExp(source, flags);
+  }
+  return isolated;
+}
+
+function isolateSchemaValidate(
+  validate: NonNullable<Schema["validate"]>,
+): NonNullable<Schema["validate"]> {
+  const existing = isolatedSchemaValidators.get(validate);
+  if (existing !== undefined) return existing;
+  const isolated: NonNullable<Schema["validate"]> = function (this: Schema, node, config) {
+    return invokeIsolatedCallback(validate, this, [node, config]);
+  };
+  Object.freeze(isolated);
+  isolatedSchemaValidators.set(validate, isolated);
+  isolatedSchemaValidators.set(isolated, isolated);
+  return isolated;
+}
 
 function isolateSchemaTransform(
   transform: NonNullable<Schema["transform"]>,
 ): NonNullable<Schema["transform"]> {
   const existing = isolatedSchemaTransforms.get(transform);
   if (existing !== undefined) return existing;
-  const isolated: NonNullable<Schema["transform"]> = (node, config) =>
-    cloneConfig(transform(cloneConfig(node), cloneConfig(config)));
+  const isolated: NonNullable<Schema["transform"]> = function (this: Schema, node, config) {
+    return invokeIsolatedCallback(transform, this, [node, config]);
+  };
+  Object.freeze(isolated);
   isolatedSchemaTransforms.set(transform, isolated);
   isolatedSchemaTransforms.set(isolated, isolated);
+  return isolated;
+}
+
+function isolateFunctionValidate(
+  validate: NonNullable<NonNullable<Config["functions"]>[string]["validate"]>,
+): NonNullable<NonNullable<Config["functions"]>[string]["validate"]> {
+  const existing = isolatedFunctionValidators.get(validate);
+  if (existing !== undefined) return existing;
+  const isolated: NonNullable<NonNullable<Config["functions"]>[string]["validate"]> = function (
+    this: NonNullable<Config["functions"]>[string],
+    fn,
+    config,
+  ) {
+    return invokeIsolatedCallback(validate, this, [fn, config]);
+  };
+  Object.freeze(isolated);
+  isolatedFunctionValidators.set(validate, isolated);
+  isolatedFunctionValidators.set(isolated, isolated);
   return isolated;
 }
 
@@ -215,10 +302,52 @@ function isolateFunctionTransform(
 ): NonNullable<NonNullable<Config["functions"]>[string]["transform"]> {
   const existing = isolatedFunctionTransforms.get(transform);
   if (existing !== undefined) return existing;
-  const isolated = (parameters: Record<string, unknown>, config: Config) =>
-    cloneConfig(transform(cloneConfig(parameters), cloneConfig(config)));
+  const isolated: NonNullable<NonNullable<Config["functions"]>[string]["transform"]> = function (
+    this: NonNullable<Config["functions"]>[string],
+    parameters,
+    config,
+  ) {
+    return invokeIsolatedCallback(transform, this, [parameters, config]);
+  };
+  Object.freeze(isolated);
   isolatedFunctionTransforms.set(transform, isolated);
   isolatedFunctionTransforms.set(isolated, isolated);
+  return isolated;
+}
+
+function isolateAttributeValidate(
+  validate: NonNullable<NonNullable<Schema["attributes"]>[string]["validate"]>,
+): NonNullable<NonNullable<Schema["attributes"]>[string]["validate"]> {
+  const existing = isolatedAttributeValidators.get(validate);
+  if (existing !== undefined) return existing;
+  const isolated: NonNullable<NonNullable<Schema["attributes"]>[string]["validate"]> = function (
+    this: NonNullable<Schema["attributes"]>[string],
+    value,
+    config,
+    key,
+  ) {
+    return invokeIsolatedCallback(validate, this, [value, config, key]);
+  };
+  Object.freeze(isolated);
+  isolatedAttributeValidators.set(validate, isolated);
+  isolatedAttributeValidators.set(isolated, isolated);
+  return isolated;
+}
+
+function isolateAttributeMatchesCallback(
+  matches: Extract<NonNullable<NonNullable<Schema["attributes"]>[string]["matches"]>, Function>,
+): Extract<NonNullable<NonNullable<Schema["attributes"]>[string]["matches"]>, Function> {
+  const existing = isolatedAttributeMatches.get(matches);
+  if (existing !== undefined) return existing;
+  const isolated: Extract<
+    NonNullable<NonNullable<Schema["attributes"]>[string]["matches"]>,
+    Function
+  > = function (this: NonNullable<Schema["attributes"]>[string], config: Config) {
+    return invokeIsolatedCallback<ReturnType<typeof matches>>(matches, this, [config]);
+  };
+  Object.freeze(isolated);
+  isolatedAttributeMatches.set(matches, isolated);
+  isolatedAttributeMatches.set(isolated, isolated);
   return isolated;
 }
 
@@ -229,27 +358,61 @@ function isolateAttributeType(
     return type.map((entry) => isolateAttributeType(entry) as ValidationType);
   }
   if (typeof type !== "function") return type;
-  const prototype = type.prototype as { transform?: unknown } | undefined;
-  if (typeof prototype?.transform !== "function") return type;
+  const prototype = type.prototype as { transform?: unknown; validate?: unknown } | undefined;
+  const hasTransform = typeof prototype?.transform === "function";
+  const hasValidate = typeof prototype?.validate === "function";
+  if (!hasTransform && !hasValidate) return type;
   const existing = isolatedAttributeTypes.get(type);
   if (existing !== undefined) return existing;
   const Original = type as CustomAttributeType;
-  class IsolatedAttributeType {
-    validate(value: unknown, config: Config, key: string): ValidationError[] {
-      const instance = new Original();
-      return typeof instance.validate === "function"
-        ? instance.validate(cloneConfig(value), cloneConfig(config), key)
-        : [];
-    }
-
-    transform(value: unknown, config: Config): Scalar {
-      const instance = new Original();
-      return cloneConfig(instance.transform?.(cloneConfig(value), cloneConfig(config))) as Scalar;
-    }
+  class IsolatedAttributeType {}
+  if (hasValidate) {
+    Object.defineProperty(IsolatedAttributeType.prototype, "validate", {
+      configurable: true,
+      value(value: unknown, config: Config, key: string): ValidationError[] {
+        const instance = new Original();
+        const validate = Reflect.get(instance, "validate") as typeof instance.validate;
+        return invokeIsolatedCallback(validate!, instance, [value, config, key]);
+      },
+    });
   }
+  if (hasTransform) {
+    Object.defineProperty(IsolatedAttributeType.prototype, "transform", {
+      configurable: true,
+      value(value: unknown, config: Config): Scalar {
+        const instance = new Original();
+        const transform = Reflect.get(instance, "transform") as typeof instance.transform;
+        return invokeIsolatedCallback(transform!, instance, [value, config]);
+      },
+    });
+  }
+  Object.freeze(IsolatedAttributeType.prototype);
+  Object.freeze(IsolatedAttributeType);
   isolatedAttributeTypes.set(type, IsolatedAttributeType);
   isolatedAttributeTypes.set(IsolatedAttributeType, IsolatedAttributeType);
   return IsolatedAttributeType;
+}
+
+function invokeIsolatedCallback<TResult>(
+  callback: CallableFunction,
+  receiver: unknown,
+  args: unknown[],
+): TResult {
+  const invocation = cloneConfig({ receiver, args });
+  const result = Reflect.apply(callback, invocation.receiver, invocation.args) as TResult;
+  if (isPromiseLike(result)) {
+    void Promise.resolve(result).catch(() => undefined);
+    throw new TypeError("Asynchronous extension callbacks are unsupported");
+  }
+  return cloneConfig(result);
+}
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  return (
+    value !== null &&
+    (typeof value === "object" || typeof value === "function") &&
+    typeof (value as { then?: unknown }).then === "function"
+  );
 }
 
 function ownEntries<T>(value: Record<string, T> | undefined): Array<[string, T]> {

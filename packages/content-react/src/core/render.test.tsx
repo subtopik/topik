@@ -1,7 +1,7 @@
 import Markdoc, { type Config } from "@markdoc/markdoc";
 import { renderToStaticMarkup, renderToString } from "react-dom/server";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { mergeTopikMarkdocConfig } from "@topik/content-schema";
+import { mergeTopikMarkdocConfig, validateTopikContent } from "@topik/content-schema";
 import { TopikContentProvider, useTopikComponents } from "./context";
 import { getTopikComponents } from "./components";
 import {
@@ -436,6 +436,72 @@ describe("content-react core", () => {
     expect(renderQuiz).not.toHaveBeenCalled();
     expect(transform).not.toHaveBeenCalled();
     transform.mockRestore();
+  });
+
+  it("refuses a reachable-partial retargeting validator before compile or rendering", () => {
+    const partial = Markdoc.parse(
+      ["{% attack /%}", "{% victim bad=true %}ordinary child{% /victim %}"].join("\n"),
+    );
+    const source = ['{% partial file="attack.md" /%}', "![Asset](old.png)"].join("\n");
+    const extensionValidator = vi.fn((_node, config: Config) => {
+      const root = config.validation?.parents?.[0];
+      const victim =
+        root === undefined
+          ? undefined
+          : [root, ...root.walk()].find((node) => node.tag === "victim");
+      if (victim !== undefined) victim.attributes.bad = false;
+      return [];
+    });
+    const extensionTransform = vi.fn(() => new Markdoc.Tag("span", {}, ["must not render"]));
+    const renderVictim = vi.fn(() => <span>must not render</span>);
+    const config = {
+      partials: { "attack.md": partial },
+      tags: {
+        attack: {
+          render: "span",
+          selfClosing: true,
+          validate: extensionValidator,
+          transform: extensionTransform,
+        },
+        victim: {
+          render: "TopikCallout",
+          attributes: {
+            bad: {
+              type: Boolean,
+              required: true,
+              matches: [false] as unknown as string[],
+            },
+          },
+        },
+      },
+    };
+    const transform = vi.spyOn(Markdoc, "transform");
+
+    try {
+      const validation = validateTopikContent(source, { config });
+      const result = compileTopikContent(source, { config });
+
+      expect(validation).toMatchObject({ source, valid: false });
+      expect(result).toMatchObject({ ok: false, source });
+      expect(result).not.toHaveProperty("tree");
+      expect(() => renderTopikContent(result)).toThrow(InvalidTopikContentError);
+      expect(() => renderTopikMarkdown(source, { config })).toThrow(InvalidTopikContentError);
+      expect(() =>
+        renderTopikMarkdown(source, { components: { TopikCallout: renderVictim }, config }),
+      ).toThrow(InvalidTopikContentError);
+      const placeholder = renderToStaticMarkup(
+        renderTopikMarkdown(source, { config, invalidContent: "placeholder" }),
+      );
+      expect(placeholder).toContain('role="alert"');
+      expect(placeholder).not.toContain("ordinary child");
+      expect(placeholder).not.toContain("old.png");
+      expect(extensionValidator).toHaveBeenCalledTimes(5);
+      expect(extensionTransform).not.toHaveBeenCalled();
+      expect(renderVictim).not.toHaveBeenCalled();
+      expect(transform).not.toHaveBeenCalled();
+    } finally {
+      transform.mockRestore();
+    }
   });
 
   it("renders a valid partial and custom function from isolated transform state", () => {

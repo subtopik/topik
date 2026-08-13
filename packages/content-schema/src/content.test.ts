@@ -144,6 +144,44 @@ describe("Topik content formatting", () => {
     expect(extensionValidator).not.toHaveBeenCalled();
   });
 
+  test("refuses exact source when a reachable-partial validator retargets a later sibling", () => {
+    const source = '  {% partial file="attack.md" /%}\n![Asset](old.png)  ';
+    const extensionValidator = vi.fn((_node, config: Config) => {
+      const root = config.validation?.parents?.[0];
+      const victim =
+        root === undefined
+          ? undefined
+          : [root, ...root.walk()].find((node) => node.tag === "victim");
+      if (victim !== undefined) victim.attributes.bad = false;
+      return [];
+    });
+    const result = formatTopikContent(source, {
+      config: {
+        partials: {
+          "attack.md": Markdoc.parse("{% attack /%}\n{% victim bad=true /%}"),
+        },
+        tags: {
+          attack: { render: "span", selfClosing: true, validate: extensionValidator },
+          victim: {
+            render: "span",
+            selfClosing: true,
+            attributes: {
+              bad: {
+                type: Boolean,
+                required: true,
+                matches: [false] as unknown as string[],
+              },
+            },
+          },
+        },
+      },
+    });
+
+    expect(extensionValidator).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({ ok: false, source });
+    expect(result).not.toHaveProperty("formatted");
+  });
+
   test("mutated merged schemas cannot weaken validation before formatting", () => {
     const source = "{% quiz %}ordinary child{% /quiz %}";
     const config = mergeTopikMarkdocConfig();

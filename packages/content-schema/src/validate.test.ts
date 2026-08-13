@@ -1,4 +1,9 @@
-import Markdoc, { type Config, type Node } from "@markdoc/markdoc";
+import Markdoc, {
+  type Config,
+  type Node,
+  type Schema,
+  type ValidationError,
+} from "@markdoc/markdoc";
 import { describe, expect, test, vi } from "vite-plus/test";
 import { topikComponents } from "./components";
 import { mergeTopikMarkdocConfig, topikMarkdocConfig } from "./config";
@@ -56,6 +61,192 @@ const roundFourAmbiguousDiagnosticFiles = [
   "\u2028/tmp/SENSITIVE_DIRECTORY/lesson.md",
   "\u202E/tmp/SENSITIVE_DIRECTORY/lesson.md",
 ] as const;
+
+function victimSchema(): Schema {
+  return {
+    render: "span",
+    selfClosing: true,
+    attributes: {
+      bad: { type: Boolean, required: true, matches: [false] as unknown as string[] },
+    },
+  };
+}
+
+function mutateLaterVictim(config: Config): void {
+  const victim = findTag(config.validation?.parents?.[0], "victim");
+  if (victim !== undefined) victim.attributes.bad = false;
+}
+
+type ValidationAttack = {
+  callback: unknown;
+  config: Config;
+  source: string;
+};
+
+const validationAttackFactories: Array<[string, () => ValidationAttack]> = [
+  [
+    "tag schema validate",
+    () => {
+      const callback = vi.fn((_node: Node, config: Config) => {
+        mutateLaterVictim(config);
+        return [];
+      });
+      return {
+        callback,
+        source: "{% attack /%}\n{% victim bad=true /%}",
+        config: {
+          tags: {
+            attack: { render: "span", selfClosing: true, validate: callback },
+            victim: victimSchema(),
+          },
+        },
+      };
+    },
+  ],
+  [
+    "node schema validate",
+    () => {
+      const callback = vi.fn((_node: Node, config: Config) => {
+        mutateLaterVictim(config);
+        return [];
+      });
+      return {
+        callback,
+        source: "Attack paragraph\n\n{% victim bad=true /%}",
+        config: {
+          nodes: { paragraph: { render: "p", validate: callback } },
+          tags: { victim: victimSchema() },
+        },
+      };
+    },
+  ],
+  [
+    "attribute validate",
+    () => {
+      const callback = vi.fn((_value: unknown, config: Config) => {
+        mutateLaterVictim(config);
+        return [];
+      });
+      return {
+        callback,
+        source: "{% attack run=true /%}\n{% victim bad=true /%}",
+        config: {
+          tags: {
+            attack: {
+              render: "span",
+              selfClosing: true,
+              attributes: { run: { type: Boolean, validate: callback } },
+            },
+            victim: victimSchema(),
+          },
+        },
+      };
+    },
+  ],
+  [
+    "functional matches",
+    () => {
+      const callback = vi.fn((config: Config) => {
+        mutateLaterVictim(config);
+        return [true] as unknown as string[];
+      });
+      return {
+        callback,
+        source: "{% attack run=true /%}\n{% victim bad=true /%}",
+        config: {
+          tags: {
+            attack: {
+              render: "span",
+              selfClosing: true,
+              attributes: { run: { type: Boolean, matches: callback } },
+            },
+            victim: victimSchema(),
+          },
+        },
+      };
+    },
+  ],
+  [
+    "function validate",
+    () => {
+      const callback = vi.fn((_fn: unknown, config: Config) => {
+        mutateLaterVictim(config);
+        return [];
+      });
+      return {
+        callback,
+        source: '{% callout title=attack(value="safe") /%}\n{% victim bad=true /%}',
+        config: {
+          functions: {
+            attack: {
+              returns: String,
+              parameters: { value: { type: String, required: true } },
+              validate: callback,
+              transform: () => "safe",
+            },
+          },
+          tags: { victim: victimSchema() },
+        },
+      };
+    },
+  ],
+  [
+    "validation-only custom attribute type",
+    () => {
+      const callback = vi.fn((_value: unknown, config: Config) => {
+        mutateLaterVictim(config);
+        return [];
+      });
+      class AttackType {
+        validate(value: unknown, config: Config) {
+          return callback(value, config);
+        }
+      }
+      return {
+        callback,
+        source: '{% attack value="safe" /%}\n{% victim bad=true /%}',
+        config: {
+          tags: {
+            attack: {
+              render: "span",
+              selfClosing: true,
+              attributes: { value: { type: AttackType } },
+            },
+            victim: victimSchema(),
+          },
+        },
+      };
+    },
+  ],
+  [
+    "function-parameter custom attribute type",
+    () => {
+      const callback = vi.fn((_value: unknown, config: Config) => {
+        mutateLaterVictim(config);
+        return [];
+      });
+      class AttackType {
+        validate(value: unknown, config: Config) {
+          return callback(value, config);
+        }
+      }
+      return {
+        callback,
+        source: '{% callout title=attack(value="safe") /%}\n{% victim bad=true /%}',
+        config: {
+          functions: {
+            attack: {
+              returns: String,
+              parameters: { value: { type: AttackType, required: true } },
+              transform: () => "safe",
+            },
+          },
+          tags: { victim: victimSchema() },
+        },
+      };
+    },
+  ],
+];
 
 describe("topik content schema", () => {
   test.each(
@@ -254,6 +445,300 @@ describe("topik content schema", () => {
     expect(JSON.stringify(result.errors)).not.toContain("PRIVATE_VALUE_SENTINEL");
   });
 
+  test("retains the static victim-only rejection control", () => {
+    const source = "{% victim bad=true /%}";
+    const result = validateTopikContent(source, {
+      config: { tags: { victim: victimSchema() } },
+    });
+
+    expect(result).toMatchObject({ source, valid: false });
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "attribute-value-invalid", level: "error" }),
+      ]),
+    );
+  });
+
+  test.each(validationAttackFactories)(
+    "isolates each sibling %s invocation from later validation state",
+    (_name, createAttack) => {
+      const { callback, config, source } = createAttack();
+      const result = validateTopikContent(source, { config });
+
+      expect(callback).toHaveBeenCalledOnce();
+      expect(result).toMatchObject({ source, valid: false });
+      expect(result.errors).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "attribute-value-invalid", level: "error" }),
+        ]),
+      );
+      expect(findTag(Markdoc.parse(source), "victim")?.attributes.bad).toBe(true);
+      const victim = config.tags?.victim?.attributes?.bad as { matches?: unknown[] } | undefined;
+      expect(victim?.matches).toEqual([false]);
+    },
+  );
+
+  test.each(validationAttackFactories)(
+    "isolates each reachable-partial %s invocation from later validation state",
+    (_name, createAttack) => {
+      const { callback, config, source: partialSource } = createAttack();
+      const source = '{% partial file="attack.md" /%}';
+      const partial = Markdoc.parse(partialSource, {
+        file: "/tmp/SENSITIVE_DIRECTORY/attack.md",
+      });
+      const result = validateTopikContent(source, {
+        config: {
+          ...config,
+          partials: { ...config.partials, "attack.md": partial },
+        },
+      });
+
+      expect(callback).toHaveBeenCalledOnce();
+      expect(result).toMatchObject({ source, valid: false });
+      expect(result.errors).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: "attribute-value-invalid",
+            level: "error",
+            file: "attack.md",
+          }),
+        ]),
+      );
+      expect(findTag(partial, "victim")?.attributes.bad).toBe(true);
+      const victim = config.tags?.victim?.attributes?.bad as { matches?: unknown[] } | undefined;
+      expect(victim?.matches).toEqual([false]);
+      expect(JSON.stringify(result.errors)).not.toContain("SENSITIVE_DIRECTORY");
+    },
+  );
+
+  test("isolates a callback's configuration graph from later custom schema validation", () => {
+    const source = "{% attack /%}\n{% victim bad=true /%}";
+    const callback = vi.fn((_node: Node, config: Config) => {
+      const bad = config.tags?.victim?.attributes?.bad;
+      if (bad !== undefined) bad.matches = [true] as unknown as string[];
+      return [];
+    });
+    const config: Config = {
+      tags: {
+        attack: { render: "span", selfClosing: true, validate: callback },
+        victim: victimSchema(),
+      },
+    };
+    const result = validateTopikContent(source, { config });
+
+    expect(callback).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({ source, valid: false });
+    expect(result.errors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "attribute-value-invalid" })]),
+    );
+    expect(config.tags?.victim?.attributes?.bad?.matches).toEqual([false]);
+  });
+
+  test("prevents callback and custom-type function aliases from changing later validation", () => {
+    const source = "{% attack /%}\n{% victim bad=true /%}";
+    class VictimType {
+      validate(value: unknown): ValidationError[] {
+        return value === false
+          ? []
+          : [
+              {
+                id: "victim-type-invalid",
+                level: "error",
+                message: "Victim type rejected the value.",
+              },
+            ];
+      }
+    }
+    const originalTypeValidate = Reflect.get(VictimType.prototype, "validate");
+    const victimValidator = function (this: Schema): ValidationError[] {
+      const wrapped = Reflect.get(this, "validate") as { allow?: boolean };
+      return wrapped.allow
+        ? []
+        : [
+            {
+              id: "victim-schema-invalid",
+              level: "error",
+              message: "Victim schema rejected the node.",
+            },
+          ];
+    };
+    const callback = vi.fn((_node: Node, config: Config) => {
+      const victim = config.tags?.victim;
+      const type = victim?.attributes?.bad?.type as
+        | { prototype?: { validate?: unknown } }
+        | undefined;
+      const validate = Reflect.get(victim as object, "validate") as object;
+      expect(Reflect.set(validate, "allow", true)).toBe(false);
+      expect(Reflect.set(type?.prototype as object, "validate", () => [])).toBe(false);
+      return [];
+    });
+    const result = validateTopikContent(source, {
+      config: {
+        tags: {
+          attack: { render: "span", selfClosing: true, validate: callback },
+          victim: {
+            render: "span",
+            selfClosing: true,
+            validate: victimValidator,
+            attributes: { bad: { type: VictimType, required: true } },
+          },
+        },
+      },
+    });
+
+    expect(callback).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({ source, valid: false });
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "victim-schema-invalid" }),
+        expect.objectContaining({ id: "victim-type-invalid" }),
+      ]),
+    );
+    expect(Object.hasOwn(victimValidator, "allow")).toBe(false);
+    expect(Reflect.get(VictimType.prototype, "validate")).toBe(originalTypeValidate);
+  });
+
+  test.each([/^safe$/gu, /^safe$/uy])(
+    "evaluates stateful static matches independently for every attribute",
+    (matches) => {
+      const source = ['{% notice value="safe" /%}', '{% notice value="safe" /%}'].join("\n");
+      const result = validateTopikContent(source, {
+        config: {
+          tags: {
+            notice: {
+              render: "span",
+              selfClosing: true,
+              attributes: { value: { type: String, matches } },
+            },
+          },
+        },
+      });
+
+      expect(result).toMatchObject({ source, valid: true, errors: [] });
+      expect(matches.lastIndex).toBe(0);
+    },
+  );
+
+  test("preserves receiver, node, ancestry, and config identity inside one private snapshot", () => {
+    const source = "{% notice /%}";
+    const callback = vi.fn(function (this: unknown, node: Node, config: Config) {
+      const root = config.validation?.parents?.[0];
+      expect(this).toBe(config.tags?.notice);
+      expect(findTag(root, "notice")).toBe(node);
+      expect(root?.type).toBe("document");
+      return [];
+    });
+    const schema = { render: "span", selfClosing: true, validate: callback };
+
+    expect(validateTopikContent(source, { config: { tags: { notice: schema } } })).toMatchObject({
+      source,
+      valid: true,
+      errors: [],
+    });
+    expect(callback).toHaveBeenCalledOnce();
+    expect(schema).toEqual({ render: "span", selfClosing: true, validate: callback });
+  });
+
+  test("preserves readable ancestry and invokes a valid partial extension exactly once", () => {
+    const source = '{% partial file="notice.md" /%}';
+    const partial = Markdoc.parse("{% notice /%}");
+    const callback = vi.fn(function (this: unknown, node: Node, config: Config) {
+      const root = config.validation?.parents?.[0];
+      expect(this).toBe(config.tags?.notice);
+      expect(findTag(root, "notice")).toBe(node);
+      expect(root?.type).toBe("document");
+      return [];
+    });
+    const result = validateTopikContent(source, {
+      config: {
+        partials: { "notice.md": partial },
+        tags: { notice: { render: "span", selfClosing: true, validate: callback } },
+      },
+    });
+
+    expect(result).toMatchObject({ source, valid: true, errors: [] });
+    expect(callback).toHaveBeenCalledOnce();
+    expect(findTag(partial, "notice")).toBeDefined();
+  });
+
+  test("isolates extension validation return values before Markdoc annotates them", () => {
+    const source = "{% notice /%}";
+    const returnedError: ValidationError = {
+      id: "extension-warning",
+      level: "warning",
+      message: "Safe extension warning.",
+    };
+    const callback = vi.fn(() => [returnedError]);
+    const result = validateTopikContent(source, {
+      config: { tags: { notice: { render: "span", selfClosing: true, validate: callback } } },
+    });
+
+    expect(callback).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({ source, valid: true });
+    expect(result.errors).toEqual([
+      expect.objectContaining({ id: "extension-warning", level: "warning" }),
+    ]);
+    expect(returnedError).not.toHaveProperty("location");
+  });
+
+  test("fails an unsupported extension validation return graph closed", () => {
+    const source = "{% notice /%}";
+    const callback = vi.fn(
+      () =>
+        [
+          {
+            id: "extension-warning",
+            level: "warning",
+            message: "PRIVATE_VALUE_SENTINEL",
+            unsupported: new WeakMap(),
+          },
+        ] as unknown as ValidationError[],
+    );
+    const result = validateTopikContent(source, {
+      config: { tags: { notice: { render: "span", selfClosing: true, validate: callback } } },
+    });
+
+    expect(callback).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({
+      source,
+      valid: false,
+      errors: [expect.objectContaining({ id: "topik-extension-failed", level: "critical" })],
+    });
+    expect(JSON.stringify(result.errors)).not.toContain("PRIVATE_VALUE_SENTINEL");
+  });
+
+  test("fails unsupported asynchronous extension validation closed without leaking rejection", async () => {
+    const source = "{% attack /%}";
+    const result = validateTopikContent(source, {
+      config: {
+        tags: {
+          attack: {
+            render: "span",
+            selfClosing: true,
+            validate: async () => {
+              await Promise.resolve();
+              throw new Error("PRIVATE_VALUE_SENTINEL");
+            },
+          },
+        },
+      },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(result).toMatchObject({
+      source,
+      valid: false,
+      errors: [
+        expect.objectContaining({
+          id: "topik-extension-failed",
+          message: "Content extension validation failed.",
+        }),
+      ],
+    });
+    expect(JSON.stringify(result.errors)).not.toContain("PRIVATE_VALUE_SENTINEL");
+  });
+
   test("public config maps and nested schemas cannot mutate canonical validation authority", () => {
     const source = "{% quiz %}ordinary child{% /quiz %}";
     const publicConfig = topikMarkdocConfig as unknown as Record<string, unknown>;
@@ -401,21 +886,23 @@ describe("topik content schema", () => {
   test("isolates caller and returned extension graphs from extension validation", () => {
     const source = '{% attack value="original" /%}';
     const attribute = { type: String };
+    const extensionValidator = vi.fn((_node: Node, config: Config) => {
+      const effectiveAttack = config.tags?.attack as Record<string, unknown>;
+      const effectiveAttributes = effectiveAttack.attributes as Record<string, unknown>;
+      Reflect.set(effectiveAttack, "render", "mutated");
+      Reflect.set(effectiveAttributes, "value", { type: Number });
+      return [];
+    });
     const schema = {
       render: "div",
       attributes: { value: attribute },
-      validate: (_node: Node, config: Config) => {
-        const effectiveAttack = config.tags?.attack as Record<string, unknown>;
-        const effectiveAttributes = effectiveAttack.attributes as Record<string, unknown>;
-        Reflect.set(effectiveAttack, "render", "mutated");
-        Reflect.set(effectiveAttributes, "value", { type: Number });
-        return [];
-      },
+      validate: extensionValidator,
     };
     const extension = { tags: { attack: schema } };
     const returned = mergeTopikMarkdocConfig(extension);
 
     expect(validateTopikContent(source, { config: returned })).toMatchObject({ valid: true });
+    expect(extensionValidator).toHaveBeenCalledOnce();
     expect(schema.render).toBe("div");
     expect(schema.attributes.value).toBe(attribute);
     expect(returned.tags?.attack).toMatchObject({

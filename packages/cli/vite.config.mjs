@@ -4,9 +4,7 @@ export default defineConfig({
   pack: {
     entry: "src/cli.ts",
     tsconfig: "tsconfig.build.json",
-    dts: {
-      tsgo: true,
-    },
+    dts: true,
     exports: {
       bin: {
         topik: "src/cli.ts",

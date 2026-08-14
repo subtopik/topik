@@ -1,13 +1,10 @@
 import { describe, expect, test } from "vite-plus/test";
-import {
-  parseGeneratedAssetName,
-  parseAssetBlobUri,
-  type Asset,
-  type CoursePage,
-  type Guide,
-  type WikiPage,
-} from "@topik/schema";
+import type { Asset } from "@topik/schema/asset/v1";
+import type { CoursePage } from "@topik/schema/course-page/v1";
+import type { Guide } from "@topik/schema/guide/v1";
+import type { WikiPage } from "@topik/schema/wiki-page/v1";
 import type { Resource } from "../resource";
+import { parseAssetBlobUri, parseGeneratedAssetName } from "./asset";
 import {
   createTopikAssetSemanticRecord,
   createTopikMaterializationRecord,

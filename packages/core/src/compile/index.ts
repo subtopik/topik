@@ -22,6 +22,7 @@ export {
   type AssetCompilationResult,
   type AssetPayload,
   type CompileAssetResourcesInput,
+  type CompiledResource,
   type ContentBearingResource,
 } from "./assets";
 export type { Resource } from "../resource";

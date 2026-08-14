@@ -29,12 +29,34 @@ export {
   type AssetCompilationResult,
   type AssetPayload,
   type CompileAssetResourcesInput,
+  type CompiledResource,
   type ContentBearingResource,
 } from "./compile";
 export { CompileError } from "./compile";
 export type { Resource, ResourceType, SourceResource } from "./resource";
 
 export { validateResources, type ValidationError, type ValidationResult } from "./validate";
+
+export {
+  findFirstWikiPage,
+  findWikiPageAncestors,
+  hasWikiNavChildren,
+  isExternalWikiDropdown,
+  isExternalWikiTab,
+  isInternalWikiDropdown,
+  isInternalWikiTab,
+  joinWikiPath,
+  resolveWikiContentHref,
+  resolveWikiNavigation,
+  type ExternalWikiDropdown,
+  type ExternalWikiTab,
+  type InternalWikiDropdown,
+  type InternalWikiTab,
+  type ResolvedWikiContentLink,
+  type ResolvedWikiNavigation,
+  type ResolvedWikiPage,
+  type WikiSwitcherNode,
+} from "./wiki-navigation";
 
 export { watch, type WatchOptions, type Watcher } from "./watch";
 

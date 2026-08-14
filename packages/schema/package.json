@@ -13,18 +13,23 @@
   ],
   "type": "module",
   "exports": {
-    ".": "./dist/index.mjs",
     "./package.json": "./package.json",
-    "./asset/v1.json": "./dist/asset-v1.json"
+    "./*.json": "./dist/*.json",
+    "./*": {
+      "types": "./dist/*.d.mts",
+      "import": "./dist/*.mjs"
+    }
   },
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "build": "vp pack && cp src/asset-v1.json dist/asset-v1.json",
-    "dev": "vp pack --watch",
+    "build": "vp run generate && vp pack",
+    "check:generated": "node scripts/generate-types.mjs --check",
+    "dev": "vp run generate && vp pack --watch",
+    "generate": "node scripts/generate-types.mjs",
     "test": "vp test",
-    "check": "vp check",
+    "check": "vp run check:generated && vp check src scripts package.json vite.config.mjs",
     "prepublishOnly": "vp run build"
   },
   "devDependencies": {
@@ -32,13 +37,9 @@
     "@typescript/native-preview": "catalog:",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
-    "json-schema-to-ts": "^3.1.1",
+    "json-schema-to-typescript": "catalog:",
     "typescript": "catalog:",
     "vite-plus": "catalog:",
     "yaml": "^2.9.0"
-  },
-  "inlinedDependencies": {
-    "json-schema-to-ts": "3.1.1",
-    "ts-algebra": "2.0.0"
   }
 }

@@ -2,19 +2,19 @@ import {
   validateStableSourceNamespace,
   type AssetCompilationResult,
   type AssetPayload,
+  type CompiledAsset,
 } from "@topik/core";
-import type { Asset } from "@topik/schema";
 import type { Loader } from "astro/loaders";
 
 interface TopikAssetSnapshot {
-  assets: readonly Asset[];
-  assetsByName: ReadonlyMap<string, Asset>;
+  assets: readonly CompiledAsset[];
+  assetsByName: ReadonlyMap<string, CompiledAsset>;
   payloadsByPath: ReadonlyMap<string, AssetPayload>;
 }
 
 interface TopikAssetAccess {
   /** Current compiler-emitted independent Asset descriptors. */
-  getAssets(): readonly Asset[];
+  getAssets(): readonly CompiledAsset[];
   /** Resolve a compiler-generated Asset name to its canonical digest URL. */
   resolveAsset(name: string): string | undefined;
 }
@@ -167,7 +167,7 @@ function createSnapshot(
   result: Pick<AssetCompilationResult, "payloads" | "resources">,
 ): TopikAssetSnapshot {
   const assets = result.resources
-    .filter((resource): resource is Asset => resource.type === "Asset")
+    .filter((resource): resource is CompiledAsset => resource.type === "Asset")
     .map((asset) => Object.freeze({ ...asset, spec: Object.freeze({ ...asset.spec }) }));
   const payloads = result.payloads.map((payload) =>
     Object.freeze({

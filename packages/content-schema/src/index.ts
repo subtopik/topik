@@ -4,6 +4,8 @@ export {
   TOPIK_GENERATED_ASSET_NAME_PATTERN,
   extractTopikAssetOccurrences,
   removeInvalidTopikAssetReferences,
+  isTopikGeneratedAssetName,
+  parseTopikGeneratedAssetName,
   topikAssetReferenceSlots,
   validateTopikAssetReference,
   type ExtractTopikAssetOccurrencesOptions,

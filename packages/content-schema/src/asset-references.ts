@@ -1,17 +1,32 @@
 import Markdoc from "@markdoc/markdoc";
 import { decodeHTMLStrict } from "entities";
-import {
-  GENERATED_ASSET_NAME_PATTERN,
-  isGeneratedAssetName,
-  type GeneratedAssetName,
-} from "@topik/schema";
 import type { TopikContentNode } from "./content";
 import { formatTopikContentAst, parseTopikContent } from "./content";
 import type { TopikAssetReferenceRole } from "./components";
 
 export const TOPIK_ASSET_REFERENCE_VERSION = "topik-asset-reference-v1" as const;
-export const TOPIK_GENERATED_ASSET_NAME_PATTERN = GENERATED_ASSET_NAME_PATTERN;
-export type TopikGeneratedAssetName = GeneratedAssetName;
+const TOPIK_GENERATED_ASSET_NAME_VALIDATOR = /^auto-v1-[a-z2-7]{51}[aq]$/u;
+
+/** Public grammar descriptor. Runtime admission uses an isolated boundary. */
+export const TOPIK_GENERATED_ASSET_NAME_PATTERN = /^auto-v1-[a-z2-7]{51}[aq]$/u;
+
+declare const topikGeneratedAssetNameBrand: unique symbol;
+
+/** Compiler-generated name used by the compiled-content Asset reference protocol. */
+export type TopikGeneratedAssetName = string & {
+  readonly [topikGeneratedAssetNameBrand]: "TopikGeneratedAssetName";
+};
+
+export function isTopikGeneratedAssetName(value: unknown): value is TopikGeneratedAssetName {
+  return typeof value === "string" && TOPIK_GENERATED_ASSET_NAME_VALIDATOR.test(value);
+}
+
+export function parseTopikGeneratedAssetName(value: string): TopikGeneratedAssetName {
+  if (!isTopikGeneratedAssetName(value)) {
+    throw new TypeError("Generated Asset name is not canonical");
+  }
+  return value;
+}
 
 export interface TopikAssetReferenceSlot {
   node: "image" | "tag" | "link";
@@ -296,7 +311,7 @@ export function validateTopikAssetReference(reference: string): TopikAssetRefere
   }
   if (reference.startsWith("asset:")) {
     const name = reference.slice("asset:".length);
-    return isGeneratedAssetName(name)
+    return isTopikGeneratedAssetName(name)
       ? { valid: true, kind: "asset", name }
       : { valid: false, kind: "unsafe", failureKind: "local" };
   }

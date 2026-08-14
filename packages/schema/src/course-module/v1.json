@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://topik.dev/schemas/course-module/v1.json",
+  "title": "CourseModule",
+  "type": "object",
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "const": "v1"
+    },
+    "type": {
+      "type": "string",
+      "const": "CourseModule"
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "maxLength": 63
+    },
+    "labels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "spec": {
+      "type": "object",
+      "properties": {
+        "course": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "maxLength": 63
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "slug": {
+          "type": "string",
+          "maxLength": 256,
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "description": {
+          "type": ["string", "null"],
+          "maxLength": 1024
+        }
+      },
+      "required": ["course", "title", "slug", "order"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["apiVersion", "type", "name", "spec"],
+  "additionalProperties": false
+}

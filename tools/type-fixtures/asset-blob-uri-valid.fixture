@@ -2,10 +2,11 @@ import {
   isAssetBlobUri,
   parseAssetBlobUri,
   parseGeneratedAssetName,
-  type Asset,
   type AssetBlobUri,
-} from "@topik/schema";
-import { validateAssetUri, type AssetCompilationResult } from "@topik/core";
+  validateAssetBlobUri,
+  type AssetCompilationResult,
+} from "@topik/core";
+import type { Asset } from "@topik/schema/asset/v1";
 
 const parsed: AssetBlobUri = parseAssetBlobUri(
   "blobs/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -28,7 +29,7 @@ if (isAssetBlobUri(candidate)) {
   void narrowed;
 }
 
-const coreValidation = validateAssetUri(String(parsed));
+const coreValidation = validateAssetBlobUri(String(parsed));
 if (coreValidation.ok) {
   const coreUri: AssetBlobUri = coreValidation.value.uri;
   void coreUri;
@@ -37,7 +38,7 @@ if (coreValidation.ok) {
 declare const compilation: AssetCompilationResult;
 for (const resource of compilation.resources) {
   if (resource.type === "Asset") {
-    const compilerUri: AssetBlobUri = resource.spec.uri;
+    const compilerUri: string = resource.spec.uri;
     void compilerUri;
   }
 }

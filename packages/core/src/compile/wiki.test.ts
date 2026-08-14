@@ -4,18 +4,15 @@ import { tmpdir } from "node:os";
 import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import Ajv2020 from "ajv/dist/2020";
 import addFormats from "ajv-formats";
-import {
-  resolveWikiContentHref,
-  resolveWikiNavigation,
-  wikiSchema,
-  wikiPageSchema,
-} from "@topik/schema";
+import wikiV1Schema from "@topik/schema/wiki/v1.json" with { type: "json" };
+import wikiPageV1Schema from "@topik/schema/wiki-page/v1.json" with { type: "json" };
+import { resolveWikiContentHref, resolveWikiNavigation } from "../wiki-navigation";
 import { compileWiki, pagePathToName } from "./wiki";
 
 const ajv = new Ajv2020({ strict: true, discriminator: true });
 addFormats(ajv);
-const validateWiki = ajv.compile(wikiSchema);
-const validateWikiPage = ajv.compile(wikiPageSchema);
+const validateWiki = ajv.compile(wikiV1Schema);
+const validateWikiPage = ajv.compile(wikiPageV1Schema);
 
 const pageName = (wikiId: string, pagePath: string) => pagePathToName(wikiId, pagePath);
 
@@ -159,7 +156,7 @@ navigation:
 
     const result = await compileWiki({ dir });
     const wiki = result.resources.find((r) => r.type === "Wiki");
-    const nav = wiki!.spec.navigation as Array<Record<string, unknown>>;
+    const nav = wiki!.spec.navigation!;
     expect(nav[0]).toMatchObject({
       page: pageName("tw", "index"),
       slug: "",
@@ -289,8 +286,10 @@ navigation:
 
     const result = await compileWiki({ dir });
     const wiki = result.resources.find((r) => r.type === "Wiki");
-    const nav = wiki!.spec.navigation as Array<Record<string, unknown>>;
-    const group = nav[0] as { children: Array<Record<string, unknown>> };
+    const nav = wiki!.spec.navigation!;
+    const group = nav[0];
+    expect(group?.type).toBe("group");
+    if (group?.type !== "group") throw new Error("Expected a group navigation node");
     expect(group.children[0]).toMatchObject({
       type: "page",
       page: pageName("test", "runtime/http/server"),
@@ -411,7 +410,7 @@ navigation:
 
     const result = await compileWiki({ dir });
     const wiki = result.resources.find((r) => r.type === "Wiki");
-    const nav = wiki!.spec.navigation as Array<Record<string, unknown>>;
+    const nav = wiki!.spec.navigation!;
     expect(nav[0]).toMatchObject({
       type: "page",
       page: pageName("test", "getting-started"),
@@ -432,7 +431,7 @@ navigation:
 
     const result = await compileWiki({ dir });
     const wiki = result.resources.find((r) => r.type === "Wiki");
-    const nav = wiki!.spec.navigation as Array<Record<string, unknown>>;
+    const nav = wiki!.spec.navigation!;
     expect(nav[0]).toMatchObject({
       type: "group",
       title: "Getting Started",
@@ -453,7 +452,7 @@ navigation:
 
     const result = await compileWiki({ dir });
     const wiki = result.resources.find((r) => r.type === "Wiki");
-    const nav = wiki!.spec.navigation as Array<Record<string, unknown>>;
+    const nav = wiki!.spec.navigation!;
     expect(nav[0]).toMatchObject({
       type: "link",
       title: "Example",

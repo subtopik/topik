@@ -1,0 +1,10 @@
+apiVersion: v1
+type: Asset
+name: labeled
+labels:
+  topic: manuals
+spec:
+  uri: https://cdn.example.com/assets/manual.pdf
+  integrity: sha512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  size: 48123
+  mediaType: application/pdf

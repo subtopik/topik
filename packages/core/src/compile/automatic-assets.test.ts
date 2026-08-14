@@ -16,18 +16,19 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 import { extractTopikAssetOccurrences } from "@topik/content-schema";
-import { parseAssetBlobUri, parseGeneratedAssetName } from "@topik/schema";
-import type {
-  Asset,
-  Course,
-  CourseModule,
-  CoursePage,
-  GeneratedAssetName,
-  Guide,
-  Wiki,
-  WikiPage,
-} from "@topik/schema";
+import type { Asset } from "@topik/schema/asset/v1";
+import type { Course } from "@topik/schema/course/v1";
+import type { CourseModule } from "@topik/schema/course-module/v1";
+import type { CoursePage } from "@topik/schema/course-page/v1";
+import type { Guide } from "@topik/schema/guide/v1";
+import type { Wiki } from "@topik/schema/wiki/v1";
+import type { WikiPage } from "@topik/schema/wiki-page/v1";
 import type { SourceResource } from "../resource";
+import {
+  parseAssetBlobUri,
+  parseGeneratedAssetName,
+  type GeneratedAssetName,
+} from "../assets/asset";
 import { TOPIK_ASSET_LIMITS } from "../assets/constants";
 import {
   AssetCompilationError,

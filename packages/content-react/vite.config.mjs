@@ -5,7 +5,7 @@ const contentSchemaSource = fileURLToPath(
   new URL("../content-schema/src/index.ts", import.meta.url),
 );
 const coreSource = fileURLToPath(new URL("../core/src/index.ts", import.meta.url));
-const schemaSource = fileURLToPath(new URL("../schema/src/index.ts", import.meta.url));
+const schemaSource = fileURLToPath(new URL("../schema/src", import.meta.url));
 
 export default defineConfig({
   pack: {

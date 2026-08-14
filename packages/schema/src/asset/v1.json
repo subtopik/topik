@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://topik.dev/schemas/asset/v1.json",
+  "title": "Asset",
+  "type": "object",
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "const": "v1"
+    },
+    "type": {
+      "type": "string",
+      "const": "Asset"
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "maxLength": 63
+    },
+    "labels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "spec": {
+      "$ref": "#/$defs/AssetSpec"
+    }
+  },
+  "required": ["apiVersion", "type", "name", "spec"],
+  "additionalProperties": false,
+  "$defs": {
+    "AssetSpec": {
+      "type": "object",
+      "properties": {
+        "uri": {
+          "type": "string"
+        },
+        "integrity": {
+          "type": "string"
+        },
+        "mediaType": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 268435456
+        }
+      },
+      "required": ["uri"],
+      "additionalProperties": false
+    }
+  }
+}

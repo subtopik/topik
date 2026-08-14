@@ -1,6 +1,8 @@
 import { describe, test, expect } from "vite-plus/test";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import Ajv2020 from "ajv/dist/2020";
+import addFormats from "ajv-formats";
 import { parse as parseYaml } from "yaml";
 
 const fixturesPath = join(import.meta.dirname, "..", "fixtures");
@@ -23,6 +25,12 @@ function listYamlFiles(dir: string): string[] {
 interface FixtureValidator {
   (data: unknown): unknown;
   errors?: unknown;
+}
+
+export function createValidator({ formats = false }: { formats?: boolean } = {}) {
+  const validator = new Ajv2020({ strict: true });
+  if (formats) addFormats(validator);
+  return validator;
 }
 
 export function testSchema(resourceName: string, validate: FixtureValidator) {

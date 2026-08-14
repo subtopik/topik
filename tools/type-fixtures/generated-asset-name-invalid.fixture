@@ -1,4 +1,4 @@
-import type { GeneratedAssetName } from "@topik/schema";
+import type { GeneratedAssetName } from "@topik/core";
 import type { TopikGeneratedAssetName } from "@topik/content-schema";
 
 // @ts-expect-error generated names cannot be constructed from unchecked strings

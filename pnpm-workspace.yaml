@@ -14,17 +14,21 @@ catalog:
   "@typescript/native-preview": 7.0.0-dev.20260707.2
   entities: 4.5.0
   github-slugger: ^2.0.0
+  json-schema-to-typescript: ^15.0.4
   typescript: ^6.0.3
   vite: npm:@voidzero-dev/vite-plus-core@0.1.21
   vite-plus: 0.1.21
 
 catalogMode: prefer
+
 minimumReleaseAgeExclude:
   - astro@6.4.4
+
 overrides:
   jsdom: 28.1.0
   vite: "catalog:"
   vitest: 4.1.10
+
 peerDependencyRules:
   allowAny:
     - vite

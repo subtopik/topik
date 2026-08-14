@@ -8,17 +8,17 @@ import {
   type TopikAssetOccurrence,
   type TopikContentDiagnostic,
 } from "@topik/content-schema";
-import {
-  parseAssetBlobUri,
-  type Asset,
-  type AssetBlobUri,
-  type CoursePage,
-  type GeneratedAssetName,
-  type Guide,
-  type WikiPage,
-} from "@topik/schema";
+import type { CoursePage } from "@topik/schema/course-page/v1";
+import type { Guide } from "@topik/schema/guide/v1";
+import type { WikiPage } from "@topik/schema/wiki-page/v1";
 import type { Resource, SourceResource } from "../resource";
-import { generateAutomaticAssetName } from "../assets/asset";
+import {
+  generateAutomaticAssetName,
+  parseAssetBlobUri,
+  type AssetBlobUri,
+  type CompiledAsset,
+  type GeneratedAssetName,
+} from "../assets/asset";
 import { TOPIK_ASSET_LIMITS, TOPIK_BLOB_OUTPUT_PREFIX } from "../assets/constants";
 import {
   TOPIK_ASSET_DIAGNOSTIC_IDS,
@@ -74,11 +74,13 @@ export interface AssetPayload {
 }
 
 export interface AssetCompilationResult {
-  resources: Resource[];
+  resources: CompiledResource[];
   payloads: AssetPayload[];
   semantic: TopikAssetSemanticRecordV1;
   materialization: TopikMaterializationRecordV1;
 }
+
+export type CompiledResource = SourceResource | CompiledAsset;
 
 export class AssetCompilationError extends Error {
   constructor(
@@ -312,7 +314,7 @@ async function compileAssetResourcesWithReader(
     throw new AssetCompilationError("Compilation paths collide", completePathSet.diagnostics);
   }
 
-  const resolvedAssets: Asset[] = [];
+  const resolvedAssets: CompiledAsset[] = [];
   const payloadsByDigest = new Map<
     string,
     { bytes: Uint8Array; mediaType: string; names: Set<string> }
@@ -353,7 +355,7 @@ async function compileAssetResourcesWithReader(
     }
   }
 
-  const rewritten = sourceResources.map((resource): Resource => {
+  const rewritten = sourceResources.map((resource): SourceResource => {
     if (!isContentBearingResource(resource)) return resource;
     const key = resourceKey(resource);
     const sourcePath = sourcePaths.get(key) as string;
@@ -376,9 +378,9 @@ async function compileAssetResourcesWithReader(
         ...resource.spec,
         content: { ...resource.spec.content, value: rewrittenContent.content },
       },
-    } as Resource;
+    } as SourceResource;
   });
-  const resources = [...rewritten, ...resolvedAssets].sort(compareResources);
+  const resources: CompiledResource[] = [...rewritten, ...resolvedAssets].sort(compareResources);
   const finalValidation = validateResources(resources);
   if (!finalValidation.valid) {
     throw new AssetCompilationError(

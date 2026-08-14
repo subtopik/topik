@@ -1,7 +1,7 @@
 import { readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { analyzeTopikContent, validateTopikContent } from "@topik/content-schema";
-import type { Guide } from "@topik/schema";
+import type { Guide } from "@topik/schema/guide/v1";
 import type { SourceResource } from "../resource";
 import { parseCollectionConfig } from "../config/collection";
 import { compileAssetResources, type AssetCompilationOptions } from "./assets";

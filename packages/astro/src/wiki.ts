@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
-import { compileWiki } from "@topik/core";
-import { resolveWikiNavigation, type Wiki, type WikiPage, type WikiNavNode } from "@topik/schema";
+import { compileWiki, resolveWikiNavigation } from "@topik/core";
+import type { Wiki, WikiNavNode } from "@topik/schema/wiki/v1";
+import type { WikiPage } from "@topik/schema/wiki-page/v1";
 import type { LoaderContext } from "astro/loaders";
 import {
   compileTopikAssetLoader,

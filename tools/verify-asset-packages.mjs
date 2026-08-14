@@ -12,39 +12,60 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { discoverSchemaTargets } from "../packages/schema/scripts/schema-targets.mjs";
 
 const root = join(import.meta.dirname, "..");
 const schemaRoot = join(root, "packages", "schema");
 const coreRoot = join(root, "packages", "core");
 const contentSchemaRoot = join(root, "packages", "content-schema");
 const contentReactRoot = join(root, "packages", "content-react");
-const generatedNamePattern = "^auto-v1-[a-z2-7]{51}[aq]$";
-const blobUriPattern = "^blobs/[0-9a-f]{64}$";
+const resourceNamePattern = "^[a-z0-9]+(?:-[a-z0-9]+)*$";
+const schemaTargets = await discoverSchemaTargets(schemaRoot);
 const typeFixtureRoot = join(root, "tools", "type-fixtures");
 
-const sourceSchema = readFileSync(join(schemaRoot, "src", "asset-v1.json"));
-const builtSchema = readFileSync(join(schemaRoot, "dist", "asset-v1.json"));
-if (!sourceSchema.equals(builtSchema))
-  throw new Error("Asset/v1 source and packaged schemas differ");
-if (JSON.parse(sourceSchema).properties?.name?.pattern !== generatedNamePattern) {
-  throw new Error("Asset/v1 generated-name grammar is not canonical");
-}
-if (JSON.parse(sourceSchema).properties?.spec?.properties?.uri?.pattern !== blobUriPattern) {
-  throw new Error("Asset/v1 blob URI grammar is not canonical");
+for (const target of schemaTargets) {
+  const { resource, version } = target;
+  const source = readFileSync(join(schemaRoot, target.schema));
+  const built = readFileSync(join(schemaRoot, "dist", resource, `${version}.json`));
+  if (!source.equals(built)) {
+    throw new Error(`${resource}/${version} source and packaged schemas differ`);
+  }
+  if (JSON.parse(source).$id !== `https://topik.dev/schemas/${resource}/${version}.json`) {
+    throw new Error(`${resource}/${version} schema identifier is not canonical`);
+  }
+  const schemaRuntime = await import(
+    pathToFileURL(join(schemaRoot, "dist", resource, `${version}.mjs`))
+  );
+  if (Object.keys(schemaRuntime).length !== 0) {
+    throw new Error(`${resource}/${version} unexpectedly exposes a runtime API`);
+  }
 }
 
-const schemaRuntime = await import(pathToFileURL(join(schemaRoot, "dist", "index.mjs")));
+const sourceSchema = readFileSync(join(schemaRoot, "src", "asset", "v1.json"));
+const parsedSourceSchema = JSON.parse(sourceSchema);
+if (parsedSourceSchema.properties?.name?.pattern !== resourceNamePattern) {
+  throw new Error("Asset/v1 resource-name grammar is not canonical");
+}
+const assetSpecSchema = resolveLocalSchemaReference(
+  parsedSourceSchema,
+  parsedSourceSchema.properties?.spec,
+);
+if (
+  assetSpecSchema.properties?.uri?.type !== "string" ||
+  assetSpecSchema.properties?.uri?.pattern !== undefined
+) {
+  throw new Error("Asset/v1 URI is not an unrestricted string");
+}
+
 const contentSchemaRuntime = await import(
   pathToFileURL(join(contentSchemaRoot, "dist", "index.mjs"))
 );
 const coreRuntime = await import(pathToFileURL(join(coreRoot, "dist", "index.mjs")));
-verifyGeneratedNameRuntime("schema", (name) => schemaRuntime.isGeneratedAssetName(name));
-verifyGeneratedNameRuntime(
-  "content-schema",
-  (name) => contentSchemaRuntime.validateTopikAssetReference(`asset:${name}`).valid,
+verifyGeneratedNameRuntime("content-schema", (name) =>
+  contentSchemaRuntime.isTopikGeneratedAssetName(name),
 );
 verifyGeneratedNameRuntime("core", (name) => coreRuntime.isGeneratedAssetName(name));
-verifyBlobRuntime(schemaRuntime, coreRuntime);
+verifyBlobRuntime(coreRuntime);
 verifyBlobDeclarations();
 
 const contentReactOutput = readdirSync(join(contentReactRoot, "dist"))
@@ -61,14 +82,31 @@ if (
 verifyPackedTypeBoundaries();
 
 const schemaPackage = JSON.parse(readFileSync(join(schemaRoot, "package.json"), "utf8"));
-if (schemaPackage.exports?.["./asset/v1.json"] !== "./dist/asset-v1.json") {
-  throw new Error("Asset/v1 schema export is missing or incorrect");
+if (schemaPackage.exports?.["."] !== undefined) {
+  throw new Error("Schema resources must not be exported through an unversioned root entry");
+}
+if (schemaPackage.exports?.["./*.json"] !== "./dist/*.json") {
+  throw new Error("Versioned JSON Schema wildcard export is missing or incorrect");
+}
+if (
+  schemaPackage.exports?.["./*"]?.types !== "./dist/*.d.mts" ||
+  schemaPackage.exports?.["./*"]?.import !== "./dist/*.mjs"
+) {
+  throw new Error("Versioned type wildcard export is missing or incorrect");
 }
 
 const expected = new Map([
   [
     schemaRoot,
-    ["LICENSE", "dist/asset-v1.json", "dist/index.d.mts", "dist/index.mjs", "package.json"],
+    [
+      "LICENSE",
+      ...schemaTargets.flatMap(({ resource, version }) => [
+        `dist/${resource}/${version}.json`,
+        `dist/${resource}/${version}.d.mts`,
+        `dist/${resource}/${version}.mjs`,
+      ]),
+      "package.json",
+    ].sort(),
   ],
   [coreRoot, ["LICENSE", "dist/index.d.mts", "dist/index.mjs", "package.json"]],
 ]);
@@ -85,7 +123,30 @@ for (const [directory, expectedFiles] of expected) {
   }
 }
 
-console.log("Asset package exports, packlists, and schema parity verified");
+console.log("Schema exports, packlists, and Asset package boundaries verified");
+
+function resolveLocalSchemaReference(rootSchema, schema) {
+  let resolved = schema;
+  const visited = new Set();
+
+  while (typeof resolved?.$ref === "string") {
+    const reference = resolved.$ref;
+    if (!reference.startsWith("#/")) {
+      throw new Error(`Asset/v1 contains unsupported schema reference ${reference}`);
+    }
+    if (visited.has(reference)) {
+      throw new Error(`Asset/v1 contains a cyclic reference at ${reference}`);
+    }
+    visited.add(reference);
+    resolved = reference
+      .slice(2)
+      .split("/")
+      .map((segment) => segment.replaceAll("~1", "/").replaceAll("~0", "~"))
+      .reduce((value, segment) => value?.[segment], rootSchema);
+  }
+
+  return resolved;
+}
 
 function verifyPackedTypeBoundaries() {
   const temporary = mkdtempSync(join(tmpdir(), "topik-packed-types-"));
@@ -160,7 +221,7 @@ function verifyPackedTypeBoundaries() {
           2,
         )}\n`,
       );
-      execFileSync(join(root, "node_modules", ".bin", "tsc"), ["--project", config], {
+      execFileSync(join(schemaRoot, "node_modules", ".bin", "tsc"), ["--project", config], {
         cwd: temporary,
         stdio: "pipe",
       });
@@ -193,7 +254,7 @@ function verifyGeneratedNameRuntime(packageName, accepts) {
   }
 }
 
-function verifyBlobRuntime(schemaRuntime, coreRuntime) {
+function verifyBlobRuntime(coreRuntime) {
   const digest = "0".repeat(64);
   const canonicalUri = `blobs/${digest}`;
   const asset = {
@@ -207,14 +268,12 @@ function verifyBlobRuntime(schemaRuntime, coreRuntime) {
       size: 0,
     },
   };
-  if (!schemaRuntime.hasMatchingAssetDigests(asset) || !coreRuntime.validateAssetValue(asset).ok) {
-    throw new Error("Packaged runtimes reject the canonical blob URI");
-  }
+  if (!coreRuntime.validateAssetValue(asset).ok) throw new Error("Core rejects canonical blob URI");
   if (
-    !schemaRuntime.isAssetBlobUri(canonicalUri) ||
-    schemaRuntime.parseAssetBlobUri(canonicalUri) !== canonicalUri
+    !coreRuntime.isAssetBlobUri(canonicalUri) ||
+    coreRuntime.parseAssetBlobUri(canonicalUri) !== canonicalUri
   ) {
-    throw new Error("Packaged schema runtime rejects canonical blob-URI admission");
+    throw new Error("Packaged core runtime rejects canonical blob-URI admission");
   }
   for (const invalid of [
     `blobs/${"0".repeat(63)}`,
@@ -224,23 +283,21 @@ function verifyBlobRuntime(schemaRuntime, coreRuntime) {
     `blob/${digest}`,
     `assets/sha256/${digest}`,
   ]) {
-    if (schemaRuntime.isAssetBlobUri(invalid)) {
-      throw new Error("Packaged schema runtime admits a noncanonical blob URI");
+    if (coreRuntime.isAssetBlobUri(invalid)) {
+      throw new Error("Packaged core runtime admits a noncanonical blob URI");
     }
     try {
-      schemaRuntime.parseAssetBlobUri(invalid);
-      throw new Error("Packaged schema parser admits a noncanonical blob URI");
+      coreRuntime.parseAssetBlobUri(invalid);
+      throw new Error("Packaged core parser admits a noncanonical blob URI");
     } catch (error) {
       if (!(error instanceof TypeError)) throw error;
     }
   }
-  const legacy = {
+  const alternate = {
     ...asset,
-    spec: { ...asset.spec, uri: `assets/sha256/${digest}` },
+    spec: { ...asset.spec, uri: `https://cdn.example.com/${digest}` },
   };
-  if (schemaRuntime.hasMatchingAssetDigests(legacy) || coreRuntime.validateAssetValue(legacy).ok) {
-    throw new Error("Packaged runtimes accept the removed Asset payload URI");
-  }
+  if (!coreRuntime.validateAssetValue(alternate).ok) throw new Error("Core rejects general URI");
   if (
     coreRuntime.TOPIK_BLOB_OUTPUT_PREFIX !== "blobs" ||
     Object.hasOwn(coreRuntime, "TOPIK_ASSET_OUTPUT_PREFIX")
@@ -250,27 +307,24 @@ function verifyBlobRuntime(schemaRuntime, coreRuntime) {
 }
 
 function verifyBlobDeclarations() {
-  const schemaDeclarations = readFileSync(join(schemaRoot, "dist", "index.d.mts"), "utf8");
+  const schemaDeclarations = readFileSync(join(schemaRoot, "dist", "asset", "v1.d.mts"), "utf8");
   if (
-    !schemaDeclarations.includes("type AssetBlobUri = string & {") ||
-    !schemaDeclarations.includes("uri: AssetBlobUri;") ||
-    !schemaDeclarations.includes(
-      "declare function isAssetBlobUri(value: unknown): value is AssetBlobUri;",
-    ) ||
-    !schemaDeclarations.includes(
-      "declare function parseAssetBlobUri(value: string): AssetBlobUri;",
-    ) ||
+    !schemaDeclarations.includes("uri: string;") ||
+    schemaDeclarations.includes("AssetBlobUri") ||
+    schemaDeclarations.includes("GeneratedAssetName") ||
+    schemaDeclarations.includes("hasMatchingAssetDigests") ||
     schemaDeclarations.includes("uri: `blobs/${string}`;") ||
     schemaDeclarations.includes("assets/sha256")
   ) {
-    throw new Error("Packaged schema declarations do not expose opaque blob-URI admission");
+    throw new Error("Packaged schema declarations contain compiler-specific Asset APIs");
   }
 
   const coreDeclarations = readFileSync(join(coreRoot, "dist", "index.d.mts"), "utf8");
   if (
     !coreDeclarations.includes("AssetBlobUri") ||
+    !coreDeclarations.includes("resolveWikiNavigation") ||
     !coreDeclarations.includes("path: AssetBlobUri;") ||
-    !/declare function validateAssetUri[\s\S]+?uri: AssetBlobUri;/u.test(coreDeclarations) ||
+    !/declare function validateAssetBlobUri[\s\S]+?uri: AssetBlobUri;/u.test(coreDeclarations) ||
     coreDeclarations.includes("uri: `blobs/${string}`;") ||
     coreDeclarations.includes("assets/sha256")
   ) {

@@ -1,0 +1,425 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://topik.dev/schemas/wiki/v1.json",
+  "title": "Wiki",
+  "type": "object",
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "const": "v1"
+    },
+    "type": {
+      "type": "string",
+      "const": "Wiki"
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "maxLength": 63
+    },
+    "labels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "spec": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "description": {
+          "type": ["string", "null"],
+          "maxLength": 1024
+        },
+        "navigation": {
+          "$ref": "#/$defs/navigation"
+        },
+        "theme": {
+          "$ref": "#/$defs/theme"
+        }
+      },
+      "required": ["title"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["apiVersion", "type", "name", "spec"],
+  "additionalProperties": false,
+  "$defs": {
+    "navigation": {
+      "title": "WikiNavigation",
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/tabNode"
+          }
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/dropdownNode"
+          }
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/sidebarNode"
+          }
+        }
+      ]
+    },
+    "sidebarNode": {
+      "title": "WikiSidebarNavNode",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/groupNode"
+        },
+        {
+          "$ref": "#/$defs/pageNode"
+        },
+        {
+          "$ref": "#/$defs/linkNode"
+        }
+      ]
+    },
+    "internalTabNode": {
+      "title": "WikiInternalTabNavNode",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "tab"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "slug": {
+          "type": "string",
+          "maxLength": 256,
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "icon": {
+          "type": "string",
+          "maxLength": 256,
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "hidden": {
+          "type": "boolean"
+        },
+        "children": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/dropdownNode"
+              }
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/sidebarNode"
+              }
+            }
+          ]
+        }
+      },
+      "required": ["type", "title", "children"],
+      "additionalProperties": false
+    },
+    "externalTabNode": {
+      "title": "WikiExternalTabNavNode",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "tab"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "icon": {
+          "type": "string",
+          "maxLength": 256,
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "hidden": {
+          "type": "boolean"
+        },
+        "href": {
+          "type": "string",
+          "maxLength": 2048,
+          "format": "uri",
+          "pattern": "^https?://[^\\s/?#]+"
+        }
+      },
+      "required": ["type", "title", "href"],
+      "additionalProperties": false
+    },
+    "internalDropdownNode": {
+      "title": "WikiInternalDropdownNavNode",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "dropdown"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "slug": {
+          "type": "string",
+          "maxLength": 256,
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "icon": {
+          "type": "string",
+          "maxLength": 256,
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "hidden": {
+          "type": "boolean"
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/sidebarNode"
+          }
+        }
+      },
+      "required": ["type", "title", "children"],
+      "additionalProperties": false
+    },
+    "externalDropdownNode": {
+      "title": "WikiExternalDropdownNavNode",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "dropdown"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "icon": {
+          "type": "string",
+          "maxLength": 256,
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "hidden": {
+          "type": "boolean"
+        },
+        "href": {
+          "type": "string",
+          "maxLength": 2048,
+          "format": "uri",
+          "pattern": "^https?://[^\\s/?#]+"
+        }
+      },
+      "required": ["type", "title", "href"],
+      "additionalProperties": false
+    },
+    "groupNode": {
+      "title": "WikiGroupNavNode",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "group"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "slug": {
+          "type": "string",
+          "maxLength": 256,
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "icon": {
+          "type": "string",
+          "maxLength": 256,
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "expanded": {
+          "type": "boolean"
+        },
+        "hidden": {
+          "type": "boolean"
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/sidebarNode"
+          }
+        }
+      },
+      "required": ["type", "title", "children"],
+      "additionalProperties": false
+    },
+    "tabNode": {
+      "title": "WikiTabNavNode",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/internalTabNode"
+        },
+        {
+          "$ref": "#/$defs/externalTabNode"
+        }
+      ]
+    },
+    "dropdownNode": {
+      "title": "WikiDropdownNavNode",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/internalDropdownNode"
+        },
+        {
+          "$ref": "#/$defs/externalDropdownNode"
+        }
+      ]
+    },
+    "navContainerNode": {
+      "title": "WikiNavContainerNode",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/groupNode"
+        },
+        {
+          "$ref": "#/$defs/internalDropdownNode"
+        },
+        {
+          "$ref": "#/$defs/internalTabNode"
+        }
+      ]
+    },
+    "navNode": {
+      "title": "WikiNavNode",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/tabNode"
+        },
+        {
+          "$ref": "#/$defs/dropdownNode"
+        },
+        {
+          "$ref": "#/$defs/sidebarNode"
+        }
+      ]
+    },
+    "pageNode": {
+      "title": "WikiPageNavNode",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "page"
+        },
+        "page": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "maxLength": 63
+        },
+        "slug": {
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^([a-z0-9]+(?:[-/][a-z0-9]+)*)?$"
+        },
+        "sourcePath": {
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^[a-z0-9]+(?:[-/][a-z0-9]+)*$"
+        },
+        "icon": {
+          "type": "string",
+          "maxLength": 256,
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "hidden": {
+          "type": "boolean"
+        }
+      },
+      "required": ["type", "page", "slug"],
+      "additionalProperties": false
+    },
+    "linkNode": {
+      "title": "WikiLinkNavNode",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "link"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "icon": {
+          "type": "string",
+          "maxLength": 256,
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "hidden": {
+          "type": "boolean"
+        },
+        "href": {
+          "type": "string",
+          "maxLength": 2048,
+          "format": "uri",
+          "pattern": "^https?://[^\\s/?#]+"
+        }
+      },
+      "required": ["type", "title", "href"],
+      "additionalProperties": false
+    },
+    "theme": {
+      "title": "WikiTheme",
+      "type": "object",
+      "properties": {
+        "colors": {
+          "type": "object",
+          "properties": {
+            "primary": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            "light": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            "dark": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            }
+          },
+          "required": ["primary"],
+          "additionalProperties": false
+        },
+        "appearance": {
+          "type": "object",
+          "properties": {
+            "default": {
+              "type": "string",
+              "enum": ["light", "dark", "system"]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

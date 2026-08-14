@@ -1,8 +1,10 @@
 import { z } from "zod";
-import { WIKI_EXTERNAL_HREF_PATTERN, WIKI_NAV_ICON_PATTERN } from "@topik/schema";
+import wikiV1Schema from "@topik/schema/wiki/v1.json" with { type: "json" };
 
-const wikiNavIconPattern = new RegExp(WIKI_NAV_ICON_PATTERN);
-const wikiExternalHrefPattern = new RegExp(WIKI_EXTERNAL_HREF_PATTERN);
+const wikiNavIconPattern = new RegExp(wikiV1Schema.$defs.groupNode.properties.icon.pattern);
+const wikiExternalHrefPattern = new RegExp(
+  wikiV1Schema.$defs.externalTabNode.properties.href.pattern,
+);
 
 type WikiPageNavNode = {
   type: "page";

@@ -1,9 +1,8 @@
-import Ajv2020 from "ajv/dist/2020";
 import { describe, expect, test } from "vite-plus/test";
-import { testSchema } from "../test-utils";
+import { createValidator, testSchema } from "../test-utils";
 import rawAssetV1Schema from "./v1.json" with { type: "json" };
 
-const ajv = new Ajv2020({ strict: true, strictRequired: false });
+const ajv = createValidator();
 const validateAsset = ajv.compile(rawAssetV1Schema);
 testSchema("asset", validateAsset);
 

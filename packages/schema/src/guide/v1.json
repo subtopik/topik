@@ -31,6 +31,7 @@
       "properties": {
         "title": {
           "type": "string",
+          "minLength": 1,
           "maxLength": 256,
           "description": "Title of the guide"
         },

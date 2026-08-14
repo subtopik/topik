@@ -1,9 +1,11 @@
 import { describe, expect, test } from "vite-plus/test";
-import { parseAssetBlobUri, parseGeneratedAssetName, type Asset } from "@topik/schema";
+import type { Asset } from "@topik/schema/asset/v1";
 import {
   generateAutomaticAssetName,
   isGeneratedAssetName,
   parseAsset,
+  parseAssetBlobUri,
+  parseGeneratedAssetName,
   serializeAsset,
   validateAssetValue,
   validateStableSourceNamespace,
@@ -56,22 +58,45 @@ describe("Asset/v1 strict JSON", () => {
     });
   });
 
-  test("rejects incomplete output, user-selected names, user metadata, and non-payload URIs", () => {
-    expect(validateAssetValue({ ...complete, name: "company-logo" })).toMatchObject({ ok: false });
+  test("accepts resource names, integrity algorithms, and URI forms", () => {
+    expect(validateAssetValue({ ...complete, name: "company-logo" })).toMatchObject({ ok: true });
+    expect(
+      validateAssetValue({
+        apiVersion: "v1",
+        type: "Asset",
+        name: "minimal",
+        spec: { uri: "https://cdn.example.com/minimal" },
+      }),
+    ).toMatchObject({ ok: true });
+    expect(
+      validateAssetValue({
+        ...complete,
+        spec: { ...complete.spec, integrity: `sha512:${"a".repeat(128)}` },
+      }),
+    ).toMatchObject({ ok: true });
+    expect(
+      validateAssetValue({
+        ...complete,
+        spec: { ...complete.spec, uri: "https://cdn.example.com/company-logo.png" },
+      }),
+    ).toMatchObject({ ok: true });
+    for (const name of ["Company-logo", "company_logo", "company--logo", "a".repeat(64)]) {
+      expect(validateAssetValue({ ...complete, name })).toMatchObject({ ok: false });
+    }
     expect(validateAssetValue({ ...complete, labels: { topic: "brand" } })).toMatchObject({
-      ok: false,
+      ok: true,
     });
-    expect(validateAssetValue({ ...complete, spec: { uri: "images/logo.png" } })).toMatchObject({
-      ok: false,
-    });
+    expect(
+      validateAssetValue({ ...complete, spec: { ...complete.spec, uri: "images/logo.png" } }),
+    ).toMatchObject({ ok: true });
     expect(
       validateAssetValue({
         ...complete,
         spec: { ...complete.spec, uri: `assets/sha256/${"0".repeat(64)}` },
       }),
-    ).toMatchObject({ ok: false });
+    ).toMatchObject({ ok: true });
     expect(validateAssetValue({ ...complete, spec: { uri: complete.spec.uri } })).toMatchObject({
-      ok: false,
+      ok: true,
     });
   });
 
@@ -129,7 +154,6 @@ describe("automatic Asset identity", () => {
       const name = `auto-v1-${"a".repeat(51)}${finalSymbol}`;
       const expected = finalSymbol === "a" || finalSymbol === "q";
       expect(isGeneratedAssetName(name), name).toBe(expected);
-      expect(validateAssetValue({ ...complete, name }).ok, name).toBe(expected);
     }
     for (const name of [
       `auto-v1-${"a".repeat(51)}`,
@@ -140,7 +164,6 @@ describe("automatic Asset identity", () => {
       `AUTO-v1-${"a".repeat(52)}`,
     ]) {
       expect(isGeneratedAssetName(name), name).toBe(false);
-      expect(validateAssetValue({ ...complete, name }).ok, name).toBe(false);
     }
   });
 

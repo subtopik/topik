@@ -4,12 +4,13 @@ import { tmpdir } from "node:os";
 import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import Ajv2020 from "ajv/dist/2020";
 import addFormats from "ajv-formats";
-import { guideSchema, type Guide } from "@topik/schema";
+import type { Guide } from "@topik/schema/guide/v1";
+import guideV1Schema from "@topik/schema/guide/v1.json" with { type: "json" };
 import { compileGuides } from "./guide";
 
 const ajv = new Ajv2020({ strict: true, discriminator: true });
 addFormats(ajv);
-const validateGuide = ajv.compile(guideSchema);
+const validateGuide = ajv.compile(guideV1Schema);
 
 describe("compileGuides", () => {
   let dir: string;

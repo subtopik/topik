@@ -27,6 +27,9 @@ catalogs:
     github-slugger:
       specifier: ^2.0.0
       version: 2.0.0
+    json-schema-to-typescript:
+      specifier: ^15.0.4
+      version: 15.0.4
     typescript:
       specifier: ^6.0.3
       version: 6.0.3
@@ -145,10 +148,10 @@ importers:
     devDependencies:
       '@storybook/addon-docs':
         specifier: ^10.5.0
-        version: 10.5.0(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(esbuild@0.28.2)(storybook@10.5.0(@types/react@19.2.17)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))
+        version: 10.5.0(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(esbuild@0.28.2)(storybook@10.5.0(@types/react@19.2.17)(prettier@3.9.6)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))
       '@storybook/react-vite':
         specifier: ^10.5.7
-        version: 10.5.7(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(esbuild@0.28.2)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(storybook@10.5.0(@types/react@19.2.17)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))
+        version: 10.5.7(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(esbuild@0.28.2)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(storybook@10.5.0(@types/react@19.2.17)(prettier@3.9.6)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))
       '@topik/core':
         specifier: workspace:*
         version: link:../core
@@ -181,7 +184,7 @@ importers:
         version: 19.2.7(react@19.2.7)
       storybook:
         specifier: ^10.5.0
-        version: 10.5.0(@types/react@19.2.17)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0))
+        version: 10.5.0(@types/react@19.2.17)(prettier@3.9.6)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0))
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
@@ -194,9 +197,6 @@ importers:
       '@markdoc/markdoc':
         specifier: 'catalog:'
         version: 0.5.9(@types/react@19.2.17)(react@19.2.7)
-      '@topik/schema':
-        specifier: workspace:*
-        version: link:../schema
       entities:
         specifier: 'catalog:'
         version: 4.5.0
@@ -268,9 +268,9 @@ importers:
       ajv-formats:
         specifier: ^3.0.1
         version: 3.0.1(ajv@8.20.0)
-      json-schema-to-ts:
-        specifier: ^3.1.1
-        version: 3.1.1
+      json-schema-to-typescript:
+        specifier: 'catalog:'
+        version: 15.0.4
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
@@ -291,6 +291,10 @@ packages:
 
   '@antfu/install-pkg@1.1.0':
     resolution: {integrity: sha512-MGQsmw10ZyI+EJo45CdSER4zEb+p31LpDAFp2Z3gkSd1yqVZGi0Ebx++YTEMonJy4oChEMLsxZ64j8FH6sSqtQ==}
+
+  '@apidevtools/json-schema-ref-parser@11.9.3':
+    resolution: {integrity: sha512-60vepv88RwcJtSHrD6MjIL6Ta3SOYbgfnkHb+ppAVK+o9mXprRtulx7VlRl3lN3bbvysAfCS7WMVfhUYemB0IQ==}
+    engines: {node: '>= 16'}
 
   '@asamuzakjp/css-color@5.1.11':
     resolution: {integrity: sha512-KVw6qIiCTUQhByfTd78h2yD1/00waTmm9uy/R7Ck/ctUyAPj+AEDLkQIdJW0T8+qGgj3j5bpNKK7Q3G+LedJWg==}
@@ -1106,6 +1110,9 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@jsdevtools/ono@7.1.3':
+    resolution: {integrity: sha512-4JQNk+3mVzK3xh2rqd6RB4J46qUR19azEHBneZyTZM+c456qOrbbM/5xcR8huNCCcbVt7+UmizG6GuUvPvKUYg==}
 
   '@markdoc/markdoc@0.5.9':
     resolution: {integrity: sha512-req3Wpi1xXIs7C+n2nsKv7oGeC0xREkpd+D+JRGZ/pIMXEuQSlT+s/I760fqdmiysvkx10EC3MGlScokRRcaSQ==}
@@ -2098,8 +2105,14 @@ packages:
   '@types/hast@3.0.5':
     resolution: {integrity: sha512-rp/ezSWaD1m44dPKICGhiskI13nVr7qTloFwDa/IYkhhf5nzwP+zIQcIJh3WIFSBOy/H1PzB40jPjMDksN4F+g==}
 
+  '@types/json-schema@7.0.15':
+    resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
+
   '@types/linkify-it@3.0.5':
     resolution: {integrity: sha512-yg6E+u0/+Zjva+buc3EIb+29XEg4wltq7cSmd4Uc2EE/1nUVmxyzpX6gUXD0V8jIrG0r7YeOGVIbYRkxeooCtw==}
+
+  '@types/lodash@4.17.25':
+    resolution: {integrity: sha512-+K1NIO8I+F9/wNulfVvu23QYd0Pe9/OCqRrim4NoYIf1VoEDL90Ve4ClzpyqBLc7NpGGWRvYNCKZ1BE/Jpf8dQ==}
 
   '@types/markdown-it@12.2.3':
     resolution: {integrity: sha512-GKMHFfv3458yYy+v/N8gjufHO6MSZKCOXpZc5GXIWWy8uldwfmPn98vp81gZ5f9SVw8YYBctgfJ22a2d7AOMeQ==}
@@ -3008,6 +3021,14 @@ packages:
     engines: {node: '>=20'}
     hasBin: true
 
+  is-extglob@2.1.1:
+    resolution: {integrity: sha512-SbKbANkN603Vi4jEZv49LeVJMn4yGwsbzZworEoyEiutsN3nJYdbO36zfhGJ6QEDpOZIFkDtnq5JRxmvl3jsoQ==}
+    engines: {node: '>=0.10.0'}
+
+  is-glob@4.0.3:
+    resolution: {integrity: sha512-xelSayHH36ZgE7ZWhli7pW34hNbNl8Ojv5KVmkJD4hBdD3th8Tfk9vYasLM+mXWOZhFkgZfxhLSnrwRr4elSSg==}
+    engines: {node: '>=0.10.0'}
+
   is-inside-container@1.0.0:
     resolution: {integrity: sha512-KIYLCCJghfHZxqjYBE7rEy0OBuTd5xCHS7tHVgvCLkx7StIoaxwNW3hCALgEUjFfeRk+MG/Qxmp/vtETEF3tRA==}
     engines: {node: '>=14.16'}
@@ -3045,9 +3066,10 @@ packages:
     engines: {node: '>=6'}
     hasBin: true
 
-  json-schema-to-ts@3.1.1:
-    resolution: {integrity: sha512-+DWg8jCJG2TEnpy7kOm/7/AxaYoaRbjVB4LFZLySZlWn8exGs3A4OLJR966cVvU26N7X9TWxl+Jsw7dzAqKT6g==}
-    engines: {node: '>=16'}
+  json-schema-to-typescript@15.0.4:
+    resolution: {integrity: sha512-Su9oK8DR4xCmDsLlyvadkXzX6+GGXJpbhwoLtOGArAG61dvbW4YQmSEno2y66ahpIdmLMg6YUf/QHLgiwvkrHQ==}
+    engines: {node: '>=16.0.0'}
+    hasBin: true
 
   json-schema-traverse@1.0.0:
     resolution: {integrity: sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug==}
@@ -3149,6 +3171,9 @@ packages:
 
   lodash-es@4.18.1:
     resolution: {integrity: sha512-J8xewKD/Gk22OZbhpOVSwcs60zhd95ESDwezOFuA3/099925PdHJ7OFHNTGtajL3AlZkykD32HykiMo+BIBI8A==}
+
+  lodash@4.18.1:
+    resolution: {integrity: sha512-dMInicTPVE8d1e5otfwmmjlxkZoUpiVLwyeTdUsi/Caj/gfzzblBcCE5sRHV/AsjuCmxWrte2TNGSYuCeCq+0Q==}
 
   loupe@3.2.1:
     resolution: {integrity: sha512-CdzqowRJCeLU72bHvWqwRBBlLcMEtIvGrlvef74kMnV2AolS9Y8xUv1I0U/MNAWMhBlKIoyuEgoJ0t/bbwHbLQ==}
@@ -3365,6 +3390,11 @@ packages:
   postcss@8.5.26:
     resolution: {integrity: sha512-u82N74LFzG8ca+dD8puPnplTXoGH4fTPpVGuIbt36G3qvNlkvfD0lEAZSxaly3KX8TS/L1A1gsCEmvKmBcVbkQ==}
     engines: {node: ^10 || ^12 || >=14}
+
+  prettier@3.9.6:
+    resolution: {integrity: sha512-OpN0zzVdiaiAhxpuuj5efpIS4sY9j7bY6uR5mnj5yPzGkdkjNKSJeUThPb60Jw29QuAZgA4o+/iB49kFiaBX6g==}
+    engines: {node: '>=14'}
+    hasBin: true
 
   pretty-format@27.5.1:
     resolution: {integrity: sha512-Qb1gy5OrP5+zDf2Bvnzdl3jsTf1qXVMazbvCoKhtKqVs4/YK4ozX4gKQJJVyNe+cajNPn0KoC0MC3FUmaHWEmQ==}
@@ -3633,9 +3663,6 @@ packages:
 
   trough@2.2.0:
     resolution: {integrity: sha512-tmMpK00BjZiUyVyvrBK7knerNgmgvcV/KLVyuma/SC+TQN167GrMRciANTz09+k3zW8L8t60jWO1GpfkZdjTaw==}
-
-  ts-algebra@2.0.0:
-    resolution: {integrity: sha512-FPAhNPFMrkwz76P7cdjdmiShwMynZYN6SgOujD1urY4oNm80Ou9oMdmbR45LotcKOXoy7wSmHkRFE6Mxbrhefw==}
 
   ts-dedent@2.3.0:
     resolution: {integrity: sha512-JfJeIHke7y2egdGGgRAvpCwYFUsHlM2gPcrVOxFkznt/4uzQ7HFmvE63iFHVLBJNDuyDOQgijDK/tXH/f6Msjg==}
@@ -3923,6 +3950,12 @@ snapshots:
     dependencies:
       package-manager-detector: 1.8.0
       tinyexec: 1.3.0
+
+  '@apidevtools/json-schema-ref-parser@11.9.3':
+    dependencies:
+      '@jsdevtools/ono': 7.1.3
+      '@types/json-schema': 7.0.15
+      js-yaml: 4.3.1
 
   '@asamuzakjp/css-color@5.1.11':
     dependencies:
@@ -4559,6 +4592,8 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
+  '@jsdevtools/ono@7.1.3': {}
+
   '@markdoc/markdoc@0.5.9(@types/react@19.2.17)(react@19.2.7)':
     optionalDependencies:
       '@types/linkify-it': 3.0.5
@@ -5017,15 +5052,15 @@ snapshots:
 
   '@standard-schema/spec@1.1.0': {}
 
-  '@storybook/addon-docs@10.5.0(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(esbuild@0.28.2)(storybook@10.5.0(@types/react@19.2.17)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))':
+  '@storybook/addon-docs@10.5.0(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(esbuild@0.28.2)(storybook@10.5.0(@types/react@19.2.17)(prettier@3.9.6)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))':
     dependencies:
       '@mdx-js/react': 3.1.1(@types/react@19.2.17)(react@19.2.7)
-      '@storybook/csf-plugin': 10.5.0(esbuild@0.28.2)(storybook@10.5.0(@types/react@19.2.17)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))
+      '@storybook/csf-plugin': 10.5.0(esbuild@0.28.2)(storybook@10.5.0(@types/react@19.2.17)(prettier@3.9.6)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))
       '@storybook/icons': 2.1.0(react@19.2.7)
-      '@storybook/react-dom-shim': 10.5.0(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(storybook@10.5.0(@types/react@19.2.17)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))
+      '@storybook/react-dom-shim': 10.5.0(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(storybook@10.5.0(@types/react@19.2.17)(prettier@3.9.6)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))
       react: 19.2.7
       react-dom: 19.2.7(react@19.2.7)
-      storybook: 10.5.0(@types/react@19.2.17)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0))
+      storybook: 10.5.0(@types/react@19.2.17)(prettier@3.9.6)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0))
       ts-dedent: 2.3.0
     optionalDependencies:
       '@types/react': 19.2.17
@@ -5036,10 +5071,10 @@ snapshots:
       - vite
       - webpack
 
-  '@storybook/builder-vite@10.5.7(esbuild@0.28.2)(storybook@10.5.0(@types/react@19.2.17)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))':
+  '@storybook/builder-vite@10.5.7(esbuild@0.28.2)(storybook@10.5.0(@types/react@19.2.17)(prettier@3.9.6)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))':
     dependencies:
-      '@storybook/csf-plugin': 10.5.7(esbuild@0.28.2)(storybook@10.5.0(@types/react@19.2.17)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))
-      storybook: 10.5.0(@types/react@19.2.17)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0))
+      '@storybook/csf-plugin': 10.5.7(esbuild@0.28.2)(storybook@10.5.0(@types/react@19.2.17)(prettier@3.9.6)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))
+      storybook: 10.5.0(@types/react@19.2.17)(prettier@3.9.6)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0))
       ts-dedent: 2.3.0
       vite: 8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0)
     transitivePeerDependencies:
@@ -5047,17 +5082,17 @@ snapshots:
       - rollup
       - webpack
 
-  '@storybook/csf-plugin@10.5.0(esbuild@0.28.2)(storybook@10.5.0(@types/react@19.2.17)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))':
+  '@storybook/csf-plugin@10.5.0(esbuild@0.28.2)(storybook@10.5.0(@types/react@19.2.17)(prettier@3.9.6)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))':
     dependencies:
-      storybook: 10.5.0(@types/react@19.2.17)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0))
+      storybook: 10.5.0(@types/react@19.2.17)(prettier@3.9.6)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0))
       unplugin: 2.3.11
     optionalDependencies:
       esbuild: 0.28.2
       vite: 8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0)
 
-  '@storybook/csf-plugin@10.5.7(esbuild@0.28.2)(storybook@10.5.0(@types/react@19.2.17)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))':
+  '@storybook/csf-plugin@10.5.7(esbuild@0.28.2)(storybook@10.5.0(@types/react@19.2.17)(prettier@3.9.6)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))':
     dependencies:
-      storybook: 10.5.0(@types/react@19.2.17)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0))
+      storybook: 10.5.0(@types/react@19.2.17)(prettier@3.9.6)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0))
       unplugin: 2.3.11
     optionalDependencies:
       esbuild: 0.28.2
@@ -5069,37 +5104,37 @@ snapshots:
     dependencies:
       react: 19.2.7
 
-  '@storybook/react-dom-shim@10.5.0(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(storybook@10.5.0(@types/react@19.2.17)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))':
+  '@storybook/react-dom-shim@10.5.0(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(storybook@10.5.0(@types/react@19.2.17)(prettier@3.9.6)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))':
     dependencies:
       react: 19.2.7
       react-dom: 19.2.7(react@19.2.7)
-      storybook: 10.5.0(@types/react@19.2.17)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0))
+      storybook: 10.5.0(@types/react@19.2.17)(prettier@3.9.6)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0))
     optionalDependencies:
       '@types/react': 19.2.17
       '@types/react-dom': 19.2.3(@types/react@19.2.17)
 
-  '@storybook/react-dom-shim@10.5.7(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(storybook@10.5.0(@types/react@19.2.17)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))':
+  '@storybook/react-dom-shim@10.5.7(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(storybook@10.5.0(@types/react@19.2.17)(prettier@3.9.6)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))':
     dependencies:
       react: 19.2.7
       react-dom: 19.2.7(react@19.2.7)
-      storybook: 10.5.0(@types/react@19.2.17)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0))
+      storybook: 10.5.0(@types/react@19.2.17)(prettier@3.9.6)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0))
     optionalDependencies:
       '@types/react': 19.2.17
       '@types/react-dom': 19.2.3(@types/react@19.2.17)
 
-  '@storybook/react-vite@10.5.7(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(esbuild@0.28.2)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(storybook@10.5.0(@types/react@19.2.17)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))':
+  '@storybook/react-vite@10.5.7(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(esbuild@0.28.2)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(storybook@10.5.0(@types/react@19.2.17)(prettier@3.9.6)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))':
     dependencies:
       '@joshwooding/vite-plugin-react-docgen-typescript': 0.7.0(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))
       '@rollup/pluginutils': 5.4.0
-      '@storybook/builder-vite': 10.5.7(esbuild@0.28.2)(storybook@10.5.0(@types/react@19.2.17)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))
-      '@storybook/react': 10.5.7(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(storybook@10.5.0(@types/react@19.2.17)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))(typescript@6.0.3)
+      '@storybook/builder-vite': 10.5.7(esbuild@0.28.2)(storybook@10.5.0(@types/react@19.2.17)(prettier@3.9.6)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))
+      '@storybook/react': 10.5.7(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(storybook@10.5.0(@types/react@19.2.17)(prettier@3.9.6)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))(typescript@6.0.3)
       empathic: 2.0.1
       magic-string: 0.30.21
       react: 19.2.7
       react-docgen: 8.0.3
       react-dom: 19.2.7(react@19.2.7)
       resolve: 1.22.12
-      storybook: 10.5.0(@types/react@19.2.17)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0))
+      storybook: 10.5.0(@types/react@19.2.17)(prettier@3.9.6)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0))
       tsconfig-paths: 4.2.0
       vite: 8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0)
     optionalDependencies:
@@ -5112,15 +5147,15 @@ snapshots:
       - supports-color
       - webpack
 
-  '@storybook/react@10.5.7(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(storybook@10.5.0(@types/react@19.2.17)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))(typescript@6.0.3)':
+  '@storybook/react@10.5.7(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(storybook@10.5.0(@types/react@19.2.17)(prettier@3.9.6)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))(typescript@6.0.3)':
     dependencies:
       '@storybook/global': 5.0.0
-      '@storybook/react-dom-shim': 10.5.7(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(storybook@10.5.0(@types/react@19.2.17)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))
+      '@storybook/react-dom-shim': 10.5.7(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(storybook@10.5.0(@types/react@19.2.17)(prettier@3.9.6)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)))
       react: 19.2.7
       react-docgen: 8.0.3
       react-docgen-typescript: 2.4.0(typescript@6.0.3)
       react-dom: 19.2.7(react@19.2.7)
-      storybook: 10.5.0(@types/react@19.2.17)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0))
+      storybook: 10.5.0(@types/react@19.2.17)(prettier@3.9.6)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0))
     optionalDependencies:
       '@types/react': 19.2.17
       '@types/react-dom': 19.2.3(@types/react@19.2.17)
@@ -5322,8 +5357,12 @@ snapshots:
     dependencies:
       '@types/unist': 3.0.3
 
+  '@types/json-schema@7.0.15': {}
+
   '@types/linkify-it@3.0.5':
     optional: true
+
+  '@types/lodash@4.17.25': {}
 
   '@types/markdown-it@12.2.3':
     dependencies:
@@ -6284,6 +6323,12 @@ snapshots:
 
   is-docker@4.0.0: {}
 
+  is-extglob@2.1.1: {}
+
+  is-glob@4.0.3:
+    dependencies:
+      is-extglob: 2.1.1
+
   is-inside-container@1.0.0:
     dependencies:
       is-docker: 3.0.0
@@ -6331,10 +6376,17 @@ snapshots:
 
   jsesc@3.1.0: {}
 
-  json-schema-to-ts@3.1.1:
+  json-schema-to-typescript@15.0.4:
     dependencies:
-      '@babel/runtime': 7.29.7
-      ts-algebra: 2.0.0
+      '@apidevtools/json-schema-ref-parser': 11.9.3
+      '@types/json-schema': 7.0.15
+      '@types/lodash': 4.17.25
+      is-glob: 4.0.3
+      js-yaml: 4.3.1
+      lodash: 4.18.1
+      minimist: 1.2.8
+      prettier: 3.9.6
+      tinyglobby: 0.2.17
 
   json-schema-traverse@1.0.0: {}
 
@@ -6402,6 +6454,8 @@ snapshots:
       lightningcss-win32-x64-msvc: 1.33.0
 
   lodash-es@4.18.1: {}
+
+  lodash@4.18.1: {}
 
   loupe@3.2.1: {}
 
@@ -6703,6 +6757,8 @@ snapshots:
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
+  prettier@3.9.6: {}
+
   pretty-format@27.5.1:
     dependencies:
       ansi-regex: 5.0.1
@@ -6928,7 +6984,7 @@ snapshots:
 
   std-env@4.1.0: {}
 
-  storybook@10.5.0(@types/react@19.2.17)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)):
+  storybook@10.5.0(@types/react@19.2.17)(prettier@3.9.6)(react@19.2.7)(vite-plus@0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)):
     dependencies:
       '@storybook/global': 5.0.0
       '@storybook/icons': 2.1.0(react@19.2.7)
@@ -6949,6 +7005,7 @@ snapshots:
       ws: 8.21.0
     optionalDependencies:
       '@types/react': 19.2.17
+      prettier: 3.9.6
       vite-plus: 0.1.21(@types/node@22.20.1)(esbuild@0.28.2)(jsdom@28.1.0)(typescript@6.0.3)(vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(yaml@2.9.0))(yaml@2.9.0)
     transitivePeerDependencies:
       - bufferutil
@@ -7024,8 +7081,6 @@ snapshots:
   trim-lines@3.0.1: {}
 
   trough@2.2.0: {}
-
-  ts-algebra@2.0.0: {}
 
   ts-dedent@2.3.0: {}
 

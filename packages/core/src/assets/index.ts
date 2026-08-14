@@ -40,14 +40,20 @@ export {
 } from "./json";
 export {
   generateAutomaticAssetName,
+  isAssetBlobUri,
   isGeneratedAssetName,
   parseAsset,
+  parseAssetBlobUri,
+  parseGeneratedAssetName,
   serializeAsset,
   topikAssetNameDescriptor,
-  validateAssetUri,
+  validateAssetBlobUri,
   validateAssetValue,
   validateStableSourceNamespace,
   type GenerateAutomaticAssetNameOptions,
+  type AssetBlobUri,
+  type CompiledAsset,
+  type GeneratedAssetName,
   type ParsedAsset,
 } from "./asset";
 export {

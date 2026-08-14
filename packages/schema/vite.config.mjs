@@ -2,16 +2,10 @@ import { defineConfig } from "vite-plus";
 
 export default defineConfig({
   pack: {
-    deps: {
-      onlyBundle: ["json-schema-to-ts", "ts-algebra"],
-    },
+    entry: ["src/*/v*.ts", "!src/**/*.test.ts"],
+    copy: [{ from: "src/*/v*.json", to: "dist", flatten: false }],
     dts: {
       tsgo: true,
-    },
-    exports: {
-      customExports: {
-        "./asset/v1.json": "./dist/asset-v1.json",
-      },
     },
   },
   lint: {

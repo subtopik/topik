@@ -1,0 +1,4 @@
+apiVersion: v1
+type: Asset
+name: missing-uri
+spec: {}

@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { describe, expect, test } from "vite-plus/test";
-import { resolveWikiNavigation, type Wiki } from "@topik/schema";
+import type { Wiki } from "@topik/schema/wiki/v1";
+import { resolveWikiNavigation } from "../wiki-navigation";
 import { validateResources } from "../validate";
 import { compileWiki } from "./wiki";
 

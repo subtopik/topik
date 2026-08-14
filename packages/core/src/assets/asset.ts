@@ -2,15 +2,12 @@ import { createHash } from "node:crypto";
 import Ajv2020 from "ajv/dist/2020.js";
 import type { ErrorObject } from "ajv";
 import {
-  assetV1Schema,
-  hasMatchingAssetDigests,
-  isAssetBlobUri,
-  isGeneratedAssetName as isSchemaGeneratedAssetName,
-  parseGeneratedAssetName,
-  type Asset,
-  type AssetBlobUri,
-  type GeneratedAssetName,
-} from "@topik/schema";
+  isTopikGeneratedAssetName,
+  parseTopikGeneratedAssetName,
+  type TopikGeneratedAssetName,
+} from "@topik/content-schema";
+import type { Asset } from "@topik/schema/asset/v1";
+import rawAssetV1Schema from "@topik/schema/asset/v1.json" with { type: "json" };
 import {
   ASSET_API_VERSION,
   ASSET_TYPE,
@@ -36,23 +33,55 @@ import {
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
+const ASSET_BLOB_URI_VALIDATOR = /^blobs\/[0-9a-f]{64}$/u;
 const ajv = new Ajv2020({
   strict: true,
   strictRequired: false,
   allErrors: true,
   ownProperties: true,
 });
-const validateSchema = ajv.compile(assetV1Schema);
+const validateSchema = ajv.compile(rawAssetV1Schema);
 
 export interface ParsedAsset {
   asset: Asset;
   canonicalBytes: Uint8Array;
 }
 
-type StructurallyValidatedAsset = Omit<Asset, "name" | "spec"> & {
-  name: string;
-  spec: Omit<Asset["spec"], "uri"> & { uri: string };
+/** Compiler-generated name used by automatic Asset compilation. */
+export type GeneratedAssetName = TopikGeneratedAssetName;
+
+declare const assetBlobUriBrand: unique symbol;
+
+/** Opaque compiler output path for one SHA-256-addressed Asset blob. */
+export type AssetBlobUri = string & {
+  readonly [assetBlobUriBrand]: "AssetBlobUri";
 };
+
+export function isAssetBlobUri(value: unknown): value is AssetBlobUri {
+  return typeof value === "string" && ASSET_BLOB_URI_VALIDATOR.test(value);
+}
+
+export function parseAssetBlobUri(value: string): AssetBlobUri {
+  if (!isAssetBlobUri(value)) {
+    throw new TypeError("Asset blob URI is not canonical");
+  }
+  return value;
+}
+
+export function parseGeneratedAssetName(value: string): GeneratedAssetName {
+  return parseTopikGeneratedAssetName(value);
+}
+
+/** Asset descriptor emitted by the compiler with a materialized payload. */
+export interface CompiledAsset extends Asset {
+  name: GeneratedAssetName;
+  spec: {
+    uri: AssetBlobUri;
+    integrity: `sha256:${string}`;
+    size: number;
+    mediaType: string;
+  };
+}
 
 export function parseAsset(input: string | Uint8Array): TopikAssetResult<ParsedAsset> {
   const source = typeof input === "string" ? encoder.encode(input) : Uint8Array.from(input);
@@ -146,13 +175,7 @@ export function validateAssetValue(value: unknown): TopikAssetResult<Asset> {
   if (!validateSchema(value)) {
     return { ok: false, diagnostics: (validateSchema.errors ?? []).map(schemaDiagnostic) };
   }
-  const asset = value as StructurallyValidatedAsset;
-  const name = asset.name;
-  if (!isSchemaGeneratedAssetName(name)) {
-    return failure("TOPIK_ASSET_SCHEMA_INVALID", "Asset name must be compiler-derived", "/name");
-  }
-  const uri = validateAssetUri(asset.spec.uri);
-  if (!uri.ok) return { ok: false, diagnostics: uri.diagnostics };
+  const asset = value as unknown as Asset;
   if (!hasMatchingAssetDigests(asset)) {
     return {
       ok: false,
@@ -169,11 +192,17 @@ export function validateAssetValue(value: unknown): TopikAssetResult<Asset> {
       ],
     };
   }
-  return {
-    ok: true,
-    value: { ...asset, name, spec: { ...asset.spec, uri: uri.value.uri } },
-    diagnostics: [],
-  };
+  return { ok: true, value: asset, diagnostics: [] };
+}
+
+/** Enforce the compiler blob/SHA-256 invariant when both forms are present. */
+function hasMatchingAssetDigests(asset: Asset): boolean {
+  const { integrity, uri } = asset.spec;
+  if (integrity === undefined || !isAssetBlobUri(uri) || !integrity.startsWith("sha256:")) {
+    return true;
+  }
+  const digest = /^sha256:([0-9a-f]{64})$/u.exec(integrity);
+  return digest !== null && uri.slice("blobs/".length) === digest[1];
 }
 
 /** Serialize one Asset to deterministic UTF-8 canonical JSON and prove its round trip. */
@@ -191,7 +220,8 @@ export function serializeAsset(value: unknown): TopikAssetResult<Uint8Array> {
   return { ok: true, value: bytes, diagnostics: [] };
 }
 
-export function validateAssetUri(value: string): TopikAssetResult<{ uri: AssetBlobUri }> {
+/** Admit a compiler-materialized blob path; Asset resources may use other URI forms. */
+export function validateAssetBlobUri(value: string): TopikAssetResult<{ uri: AssetBlobUri }> {
   const local = validateTopikPath(value);
   if (!local.ok) return { ok: false, diagnostics: local.diagnostics };
   if (!isAssetBlobUri(local.value.path)) {
@@ -208,8 +238,8 @@ export function validateAssetUri(value: string): TopikAssetResult<{ uri: AssetBl
   };
 }
 
-export function isGeneratedAssetName(value: string): value is GeneratedAssetName {
-  return isSchemaGeneratedAssetName(value);
+export function isGeneratedAssetName(value: unknown): value is GeneratedAssetName {
+  return isTopikGeneratedAssetName(value);
 }
 
 export function validateStableSourceNamespace(value: string): TopikAssetResult<string> {

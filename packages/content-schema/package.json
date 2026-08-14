@@ -28,7 +28,6 @@
   },
   "dependencies": {
     "@markdoc/markdoc": "catalog:",
-    "@topik/schema": "workspace:*",
     "entities": "catalog:",
     "github-slugger": "catalog:"
   },

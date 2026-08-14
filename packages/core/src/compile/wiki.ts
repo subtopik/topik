@@ -6,15 +6,14 @@ import {
   validateTopikContent,
   type TopikContentLink,
 } from "@topik/content-schema";
-import {
-  joinWikiPath,
-  type Wiki,
-  type WikiDropdownNavNode,
-  type WikiNavigation,
-  type WikiNavNode as CompiledWikiNavNode,
-  type WikiPage,
-  type WikiSidebarNavNode,
-} from "@topik/schema";
+import type {
+  Wiki,
+  WikiDropdownNavNode,
+  WikiNavigation,
+  WikiNavNode as CompiledWikiNavNode,
+  WikiSidebarNavNode,
+} from "@topik/schema/wiki/v1";
+import type { WikiPage } from "@topik/schema/wiki-page/v1";
 import type { SourceResource } from "../resource";
 import { parseWikiConfig, WIKI_PAGE_NAME_HASH_LENGTH, type WikiNavNode } from "../config/wiki";
 import { compileAssetResources, type AssetCompilationOptions } from "./assets";
@@ -34,6 +33,7 @@ import {
   type CompileResult,
 } from "./shared";
 import { validateWikiLinks, type WikiPageLinkAnalysis } from "./links";
+import { joinWikiPath } from "../wiki-navigation";
 
 export interface CompileWikiOptions {
   dir: string;
@@ -189,7 +189,7 @@ async function classifyWikiNonPageLinks(
   return nonPageLinks;
 }
 
-// Keep compiled WikiPage spec.description within wikiPageSchema's 1024-character limit.
+// Keep compiled WikiPage spec.description within the WikiPage/v1 schema's 1024-character limit.
 function normalizeWikiPageDescription(description: unknown): string | undefined {
   return typeof description === "string" ? description.slice(0, 1024) : undefined;
 }

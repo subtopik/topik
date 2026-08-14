@@ -2,7 +2,7 @@ import {
   isGeneratedAssetName,
   parseGeneratedAssetName,
   type GeneratedAssetName,
-} from "@topik/schema";
+} from "@topik/core";
 import {
   validateTopikAssetReference,
   type TopikGeneratedAssetName,

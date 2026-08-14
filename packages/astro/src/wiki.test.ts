@@ -159,10 +159,9 @@ describe("topikWikiLoader", () => {
       const assets = loader.getAssets();
       expect(assets).toHaveLength(2);
       expect(body.match(/asset:auto-v1-[a-z2-7]{51}[aq]/gu)).toHaveLength(2);
-      expect(assets.map((asset) => asset.spec.mediaType).sort()).toEqual([
-        "application/pdf",
-        "image/png",
-      ]);
+      expect(
+        assets.map((asset) => asset.spec.mediaType).sort((a, b) => a.localeCompare(b)),
+      ).toEqual(["application/pdf", "image/png"]);
       for (const asset of assets) {
         expect(loader.resolveAsset(asset.name)).toBe(`/${asset.spec.uri}`);
       }

@@ -1,14 +1,12 @@
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
-import {
-  courseModuleSchema,
-  coursePageSchema,
-  courseSchema,
-  guideSchema,
-  personSchema,
-  wikiPageSchema,
-  wikiSchema,
-} from "@topik/schema";
+import courseV1Schema from "@topik/schema/course/v1.json" with { type: "json" };
+import courseModuleV1Schema from "@topik/schema/course-module/v1.json" with { type: "json" };
+import coursePageV1Schema from "@topik/schema/course-page/v1.json" with { type: "json" };
+import guideV1Schema from "@topik/schema/guide/v1.json" with { type: "json" };
+import personV1Schema from "@topik/schema/person/v1.json" with { type: "json" };
+import wikiV1Schema from "@topik/schema/wiki/v1.json" with { type: "json" };
+import wikiPageV1Schema from "@topik/schema/wiki-page/v1.json" with { type: "json" };
 import { validateAssetValue } from "./assets/asset";
 import type { TopikAssetDiagnosticId } from "./assets/diagnostics";
 
@@ -16,13 +14,13 @@ const ajv = new Ajv2020({ strict: true, discriminator: true, ownProperties: true
 addFormats(ajv);
 
 const validators = new Map<string, ReturnType<typeof ajv.compile>>([
-  ["Course/v1", ajv.compile(courseSchema)],
-  ["CourseModule/v1", ajv.compile(courseModuleSchema)],
-  ["CoursePage/v1", ajv.compile(coursePageSchema)],
-  ["Guide/v1", ajv.compile(guideSchema)],
-  ["Person/v1", ajv.compile(personSchema)],
-  ["Wiki/v1", ajv.compile(wikiSchema)],
-  ["WikiPage/v1", ajv.compile(wikiPageSchema)],
+  ["Course/v1", ajv.compile(courseV1Schema)],
+  ["CourseModule/v1", ajv.compile(courseModuleV1Schema)],
+  ["CoursePage/v1", ajv.compile(coursePageV1Schema)],
+  ["Guide/v1", ajv.compile(guideV1Schema)],
+  ["Person/v1", ajv.compile(personV1Schema)],
+  ["Wiki/v1", ajv.compile(wikiV1Schema)],
+  ["WikiPage/v1", ajv.compile(wikiPageV1Schema)],
 ]);
 
 export interface ValidationError {

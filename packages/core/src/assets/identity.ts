@@ -4,7 +4,7 @@ import {
   validateTopikAssetReference,
   validateTopikContent,
 } from "@topik/content-schema";
-import type { Asset } from "@topik/schema";
+import type { Asset } from "@topik/schema/asset/v1";
 import type { Resource } from "../resource";
 import { validateResources } from "../validate";
 import {

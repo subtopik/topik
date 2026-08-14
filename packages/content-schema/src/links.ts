@@ -1,5 +1,5 @@
 import type { Node, ValidationError } from "@markdoc/markdoc";
-import { isGeneratedAssetName } from "@topik/schema";
+import { isTopikGeneratedAssetName } from "./asset-references";
 import { assignTopikHeadingIds, type TopikHeading } from "./headings";
 import { parseTopikContent } from "./content";
 import {
@@ -106,7 +106,7 @@ export function validateTopikHref(value: unknown): ValidationError[] {
   const explicitScheme = SCHEME.exec(value)?.[1].toLowerCase();
 
   if (explicitScheme === "asset") {
-    return isGeneratedAssetName(value.slice("asset:".length))
+    return isTopikGeneratedAssetName(value.slice("asset:".length))
       ? []
       : [linkError("link-asset-invalid")];
   }

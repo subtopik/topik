@@ -1,10 +1,10 @@
-import type { AssetBlobUri, AssetSpec } from "@topik/schema";
+import type { AssetBlobUri } from "@topik/core";
+import type { AssetSpec } from "@topik/schema/asset/v1";
 
 // @ts-expect-error even a canonical-looking literal requires runtime admission
 const uncheckedLiteral: AssetBlobUri =
   "blobs/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-// @ts-expect-error malformed digest length is not an admitted blob URI
-const length: AssetSpec["uri"] = "blobs/0123456789abcdef";
+const generalAssetUri: AssetSpec["uri"] = "https://cdn.example.com/asset";
 // @ts-expect-error digest alphabet is lowercase hexadecimal only
 const alphabet: AssetBlobUri =
   "blobs/gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg";
@@ -23,4 +23,4 @@ const uncheckedString: string =
 // @ts-expect-error unchecked strings must pass the runtime parser or guard
 const unchecked: AssetBlobUri = uncheckedString;
 
-void [uncheckedLiteral, length, alphabet, uppercase, prefix, legacy, unchecked];
+void [uncheckedLiteral, generalAssetUri, alphabet, uppercase, prefix, legacy, unchecked];

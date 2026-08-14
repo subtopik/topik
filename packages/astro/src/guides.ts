@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { compileGuides } from "@topik/core";
-import type { Guide } from "@topik/schema";
+import type { Guide } from "@topik/schema/guide/v1";
 import type { LoaderContext } from "astro/loaders";
 import {
   compileTopikAssetLoader,

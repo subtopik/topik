@@ -39,6 +39,7 @@
     "ajv-formats": "^3.0.1",
     "json-schema-to-typescript": "catalog:",
     "typescript": "catalog:",
+    "vite": "catalog:",
     "vite-plus": "catalog:",
     "yaml": "^2.9.0"
   }

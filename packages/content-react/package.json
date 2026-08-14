@@ -51,6 +51,7 @@
     "react-dom": "^19.2.3",
     "storybook": "^10.5.0",
     "typescript": "catalog:",
+    "vite": "catalog:",
     "vite-plus": "catalog:"
   },
   "peerDependencies": {

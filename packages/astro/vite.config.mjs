@@ -5,9 +5,7 @@ export default defineConfig({
     deps: {
       neverBundle: [/^node:/, /^astro/],
     },
-    dts: {
-      tsgo: true,
-    },
+    dts: true,
     exports: true,
   },
   lint: {

@@ -10,9 +10,7 @@ const schemaSource = fileURLToPath(new URL("../schema/src", import.meta.url));
 export default defineConfig({
   pack: {
     entry: ["src/index.ts", "src/theme.ts", "src/rich.tsx"],
-    dts: {
-      tsgo: true,
-    },
+    dts: true,
     exports: {
       customExports: {
         "./rich/styles.css": "./dist/rich/styles.css",

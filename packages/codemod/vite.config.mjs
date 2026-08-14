@@ -3,9 +3,7 @@ import { defineConfig } from "vite-plus";
 export default defineConfig({
   pack: {
     entry: "src/cli.ts",
-    dts: {
-      tsgo: true,
-    },
+    dts: true,
     exports: {
       bin: {
         "topik-codemod": "src/cli.ts",

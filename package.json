@@ -11,6 +11,7 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "vite": "catalog:",
     "vite-plus": "catalog:"
   },
   "engines": {

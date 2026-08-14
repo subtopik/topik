@@ -16,8 +16,8 @@ catalog:
   github-slugger: ^2.0.0
   json-schema-to-typescript: ^15.0.4
   typescript: ^6.0.3
-  vite: npm:@voidzero-dev/vite-plus-core@0.1.21
-  vite-plus: 0.1.21
+  vite: npm:@voidzero-dev/vite-plus-core@0.2.9
+  vite-plus: 0.2.9
 
 catalogMode: prefer
 
@@ -27,7 +27,6 @@ minimumReleaseAgeExclude:
 overrides:
   jsdom: 28.1.0
   vite: "catalog:"
-  vitest: 4.1.10
 
 peerDependencyRules:
   allowAny:

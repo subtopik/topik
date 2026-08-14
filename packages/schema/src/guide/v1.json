@@ -6,19 +6,16 @@
   "properties": {
     "apiVersion": {
       "type": "string",
-      "const": "v1",
-      "description": "API version"
+      "const": "v1"
     },
     "type": {
       "type": "string",
-      "const": "Guide",
-      "description": "Resource type"
+      "const": "Guide"
     },
     "name": {
       "type": "string",
       "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
-      "maxLength": 63,
-      "description": "Unique resource name (DNS-1123 subdomain)"
+      "maxLength": 63
     },
     "labels": {
       "type": "object",
@@ -32,29 +29,24 @@
         "title": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 256,
-          "description": "Title of the guide"
+          "maxLength": 256
         },
         "slug": {
           "type": "string",
           "maxLength": 256,
-          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
-          "description": "URL-friendly slug"
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
         },
         "description": {
           "type": ["string", "null"],
-          "maxLength": 512,
-          "description": "Short description of the guide"
+          "maxLength": 512
         },
         "authors": {
           "type": "array",
           "items": {
             "type": "string",
             "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
-            "maxLength": 63,
-            "description": "Reference to a Person by name"
-          },
-          "description": "List of author references (Person names)"
+            "maxLength": 63
+          }
         },
         "tags": {
           "type": "array",
@@ -62,20 +54,17 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 63
-          },
-          "description": "Tags for categorizing the guide"
+          }
         },
         "content": {
           "type": "object",
           "properties": {
             "format": {
               "type": "string",
-              "enum": ["topik", "other"],
-              "description": "Format of the content value"
+              "enum": ["topik", "other"]
             },
             "value": {
-              "type": "string",
-              "description": "Guide content in the specified format"
+              "type": "string"
             }
           },
           "required": ["format", "value"],

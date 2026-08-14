@@ -4,8 +4,6 @@
  */
 
 /**
- * A homogeneous root of tabs, dropdowns, or sidebar nodes
- *
  * This interface was referenced by `Wiki`'s JSON-Schema
  * via the `definition` "navigation".
  */
@@ -42,21 +40,12 @@ export type WikiNavNode = WikiTabNavNode | WikiDropdownNavNode | WikiSidebarNavN
 export interface Wiki {
   apiVersion: "v1";
   type: "Wiki";
-  /**
-   * Unique resource name (DNS-1123 subdomain)
-   */
   name: string;
   labels?: {
     [k: string]: string;
   };
   spec: {
-    /**
-     * Title of the wiki
-     */
     title: string;
-    /**
-     * Description of the wiki
-     */
     description?: string | null;
     navigation?: WikiNavigation;
     theme?: WikiTheme;
@@ -105,17 +94,8 @@ export interface WikiGroupNavNode {
  */
 export interface WikiPageNavNode {
   type: "page";
-  /**
-   * Reference to a WikiPage by name
-   */
   page: string;
-  /**
-   * URL path relative to the containing navigation node
-   */
   slug: string;
-  /**
-   * Full extensionless Markdown source path
-   */
   sourcePath?: string;
   icon?: string;
   hidden?: boolean;
@@ -154,30 +134,16 @@ export interface WikiExternalTabNavNode {
   href: string;
 }
 /**
- * Theme configuration
- *
  * This interface was referenced by `Wiki`'s JSON-Schema
  * via the `definition` "theme".
  */
 export interface WikiTheme {
   colors?: {
-    /**
-     * Primary theme color
-     */
     primary: string;
-    /**
-     * Light mode color override
-     */
     light?: string;
-    /**
-     * Dark mode color override
-     */
     dark?: string;
   };
   appearance?: {
-    /**
-     * Default color scheme
-     */
     default?: "light" | "dark" | "system";
   };
 }

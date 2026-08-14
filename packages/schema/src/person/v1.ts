@@ -6,25 +6,13 @@
 export interface Person {
   apiVersion: "v1";
   type: "Person";
-  /**
-   * Unique resource name (DNS-1123 subdomain)
-   */
   name: string;
   labels?: {
     [k: string]: string;
   };
   spec: {
-    /**
-     * Display name of the person
-     */
     name: string;
-    /**
-     * Email address
-     */
     email?: string | null;
-    /**
-     * Biography or description
-     */
     bio?: string | null;
   };
 }

@@ -15,8 +15,7 @@
     "name": {
       "type": "string",
       "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
-      "maxLength": 63,
-      "description": "Unique resource name (DNS-1123 subdomain)"
+      "maxLength": 63
     },
     "labels": {
       "type": "object",
@@ -29,13 +28,12 @@
       "properties": {
         "title": {
           "type": "string",
-          "maxLength": 256,
-          "description": "Title of the wiki"
+          "minLength": 1,
+          "maxLength": 256
         },
         "description": {
           "type": ["string", "null"],
-          "maxLength": 1024,
-          "description": "Description of the wiki"
+          "maxLength": 1024
         },
         "navigation": {
           "$ref": "#/$defs/navigation"
@@ -53,7 +51,6 @@
   "$defs": {
     "navigation": {
       "title": "WikiNavigation",
-      "description": "A homogeneous root of tabs, dropdowns, or sidebar nodes",
       "anyOf": [
         {
           "type": "array",
@@ -99,6 +96,7 @@
         },
         "title": {
           "type": "string",
+          "minLength": 1,
           "maxLength": 256
         },
         "slug": {
@@ -144,6 +142,7 @@
         },
         "title": {
           "type": "string",
+          "minLength": 1,
           "maxLength": 256
         },
         "icon": {
@@ -174,6 +173,7 @@
         },
         "title": {
           "type": "string",
+          "minLength": 1,
           "maxLength": 256
         },
         "slug": {
@@ -209,6 +209,7 @@
         },
         "title": {
           "type": "string",
+          "minLength": 1,
           "maxLength": 256
         },
         "icon": {
@@ -239,6 +240,7 @@
         },
         "title": {
           "type": "string",
+          "minLength": 1,
           "maxLength": 256
         },
         "slug": {
@@ -328,20 +330,17 @@
         "page": {
           "type": "string",
           "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
-          "maxLength": 63,
-          "description": "Reference to a WikiPage by name"
+          "maxLength": 63
         },
         "slug": {
           "type": "string",
           "maxLength": 512,
-          "pattern": "^([a-z0-9]+(?:[-/][a-z0-9]+)*)?$",
-          "description": "URL path relative to the containing navigation node"
+          "pattern": "^([a-z0-9]+(?:[-/][a-z0-9]+)*)?$"
         },
         "sourcePath": {
           "type": "string",
           "maxLength": 512,
-          "pattern": "^[a-z0-9]+(?:[-/][a-z0-9]+)*$",
-          "description": "Full extensionless Markdown source path"
+          "pattern": "^[a-z0-9]+(?:[-/][a-z0-9]+)*$"
         },
         "icon": {
           "type": "string",
@@ -365,6 +364,7 @@
         },
         "title": {
           "type": "string",
+          "minLength": 1,
           "maxLength": 256
         },
         "icon": {
@@ -394,18 +394,15 @@
           "properties": {
             "primary": {
               "type": "string",
-              "pattern": "^#[0-9a-fA-F]{6}$",
-              "description": "Primary theme color"
+              "pattern": "^#[0-9a-fA-F]{6}$"
             },
             "light": {
               "type": "string",
-              "pattern": "^#[0-9a-fA-F]{6}$",
-              "description": "Light mode color override"
+              "pattern": "^#[0-9a-fA-F]{6}$"
             },
             "dark": {
               "type": "string",
-              "pattern": "^#[0-9a-fA-F]{6}$",
-              "description": "Dark mode color override"
+              "pattern": "^#[0-9a-fA-F]{6}$"
             }
           },
           "required": ["primary"],
@@ -416,15 +413,13 @@
           "properties": {
             "default": {
               "type": "string",
-              "enum": ["light", "dark", "system"],
-              "description": "Default color scheme"
+              "enum": ["light", "dark", "system"]
             }
           },
           "additionalProperties": false
         }
       },
-      "additionalProperties": false,
-      "description": "Theme configuration"
+      "additionalProperties": false
     }
   }
 }

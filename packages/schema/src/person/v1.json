@@ -15,8 +15,7 @@
     "name": {
       "type": "string",
       "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
-      "maxLength": 63,
-      "description": "Unique resource name (DNS-1123 subdomain)"
+      "maxLength": 63
     },
     "labels": {
       "type": "object",
@@ -29,18 +28,15 @@
       "properties": {
         "name": {
           "type": "string",
-          "maxLength": 128,
-          "description": "Display name of the person"
+          "maxLength": 128
         },
         "email": {
           "type": ["string", "null"],
           "maxLength": 320,
-          "format": "email",
-          "description": "Email address"
+          "format": "email"
         },
         "bio": {
-          "type": ["string", "null"],
-          "description": "Biography or description"
+          "type": ["string", "null"]
         }
       },
       "required": ["name"],

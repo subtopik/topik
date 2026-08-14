@@ -1,42 +1,21 @@
 {
-  "$id": "https://topik.dev/schemas/asset/v1.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$defs": {
-    "AssetSpec": {
-      "additionalProperties": false,
-      "properties": {
-        "integrity": {
-          "type": "string"
-        },
-        "mediaType": {
-          "type": "string"
-        },
-        "size": {
-          "maximum": 268435456,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "uri": {
-          "type": "string"
-        }
-      },
-      "required": ["uri"],
-      "type": "object"
-    }
-  },
-  "additionalProperties": false,
+  "$id": "https://topik.dev/schemas/asset/v1.json",
+  "title": "Asset",
+  "type": "object",
   "properties": {
     "apiVersion": {
+      "type": "string",
       "const": "v1"
     },
     "type": {
+      "type": "string",
       "const": "Asset"
     },
     "name": {
-      "description": "Unique resource name (DNS-1123 subdomain)",
-      "maxLength": 63,
+      "type": "string",
       "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
-      "type": "string"
+      "maxLength": 63
     },
     "labels": {
       "type": "object",
@@ -49,7 +28,28 @@
     }
   },
   "required": ["apiVersion", "type", "name", "spec"],
-  "title": "Asset",
-  "description": "An asset resource",
-  "type": "object"
+  "additionalProperties": false,
+  "$defs": {
+    "AssetSpec": {
+      "type": "object",
+      "properties": {
+        "uri": {
+          "type": "string"
+        },
+        "integrity": {
+          "type": "string"
+        },
+        "mediaType": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 268435456
+        }
+      },
+      "required": ["uri"],
+      "additionalProperties": false
+    }
+  }
 }

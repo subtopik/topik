@@ -4,50 +4,20 @@
  */
 
 export interface Guide {
-  /**
-   * API version
-   */
   apiVersion: "v1";
-  /**
-   * Resource type
-   */
   type: "Guide";
-  /**
-   * Unique resource name (DNS-1123 subdomain)
-   */
   name: string;
   labels?: {
     [k: string]: string;
   };
   spec: {
-    /**
-     * Title of the guide
-     */
     title: string;
-    /**
-     * URL-friendly slug
-     */
     slug: string;
-    /**
-     * Short description of the guide
-     */
     description?: string | null;
-    /**
-     * List of author references (Person names)
-     */
     authors?: string[];
-    /**
-     * Tags for categorizing the guide
-     */
     tags?: string[];
     content: {
-      /**
-       * Format of the content value
-       */
       format: "topik" | "other";
-      /**
-       * Guide content in the specified format
-       */
       value: string;
     };
   };

@@ -42,7 +42,11 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: true
 
-      - run: node tools/release/cli.mjs verify-tag --tag "$RELEASE_TAG"
+      - run: >-
+          node tools/release/cli.mjs verify-tag
+          --tag "$RELEASE_TAG"
+          --event-ref "$GITHUB_REF"
+          --event-sha "$GITHUB_SHA"
 
       - run: vp install --frozen-lockfile
 
@@ -72,8 +76,13 @@ jobs:
         with:
           node-version: "24"
           cache: true
+          registry-url: https://registry.npmjs.org
 
-      - run: node tools/release/cli.mjs verify-tag --tag "$RELEASE_TAG"
+      - run: >-
+          node tools/release/cli.mjs verify-tag
+          --tag "$RELEASE_TAG"
+          --event-ref "$GITHUB_REF"
+          --event-sha "$GITHUB_SHA"
 
       - run: vp install --frozen-lockfile
 
@@ -86,4 +95,8 @@ jobs:
           node tools/release/cli.mjs publish
           --mode "$RELEASE_MODE"
           --tag "$RELEASE_TAG"
+          --event-ref "$GITHUB_REF"
+          --event-sha "$GITHUB_SHA"
           --artifacts .release-artifacts
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.TOPIK_NPM_RELEASE_TOKEN }}

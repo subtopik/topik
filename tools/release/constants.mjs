@@ -3,6 +3,8 @@ export const NODE_ENGINES = "^22.12.0 || ^24.0.0";
 export const NPM_CLI_VERSION = "11.13.0";
 export const NPM_REGISTRY = "https://registry.npmjs.org";
 export const RELEASE_CONCURRENCY_GROUP = "topik-alpha-release";
+export const SOURCE_REPOSITORY = "https://github.com/subtopik/topik";
+export const PUBLISH_WORKFLOW_PATH = ".github/workflows/publish.yaml";
 
 export const PUBLIC_PACKAGES = Object.freeze([
   "@topik/content-schema",

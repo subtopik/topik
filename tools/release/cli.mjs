@@ -6,6 +6,7 @@ import { loadAndVerifyArchives, prepareArchives } from "./archive.mjs";
 import { verifyGitTag } from "./git-tag.mjs";
 import { loadReleaseContext } from "./plan.mjs";
 import { NpmRegistry, promoteAlpha, publishCandidate } from "./registry.mjs";
+import { PUBLISH_WORKFLOW_PATH, SOURCE_REPOSITORY } from "./constants.mjs";
 
 const workspaceRoot = resolve(fileURLToPath(new URL("../../", import.meta.url)));
 
@@ -34,10 +35,10 @@ export function parseCliArguments(arguments_) {
 
   const allowed = {
     validate: [],
-    "verify-tag": ["--tag"],
+    "verify-tag": ["--event-ref", "--event-sha", "--tag"],
     prepare: ["--artifacts"],
-    publish: ["--artifacts", "--mode", "--tag"],
-    promote: ["--artifacts", "--consumer-gate", "--tag"],
+    publish: ["--artifacts", "--event-ref", "--event-sha", "--mode", "--tag"],
+    promote: ["--artifacts", "--consumer-gate", "--event-ref", "--event-sha", "--tag"],
   }[command];
   const fields = Object.keys(options).sort((left, right) => left.localeCompare(right));
   const expected = [...allowed].sort((left, right) => left.localeCompare(right));
@@ -57,7 +58,11 @@ export async function main(arguments_, hooks = {}) {
   if (command === "validate") return;
 
   if (command === "verify-tag") {
-    await verifyGitTag(root, options["--tag"], context.plan.gitTag, hooks.git);
+    await verifyGitTag(root, options["--tag"], context.plan.gitTag, {
+      ...hooks.git,
+      eventRef: options["--event-ref"],
+      eventSha: options["--event-sha"],
+    });
     return;
   }
   if (command === "prepare") {
@@ -65,17 +70,33 @@ export async function main(arguments_, hooks = {}) {
     return;
   }
 
-  await verifyGitTag(root, options["--tag"], context.plan.gitTag, hooks.git);
+  const gitCommit = await verifyGitTag(root, options["--tag"], context.plan.gitTag, {
+    ...hooks.git,
+    eventRef: options["--event-ref"],
+    eventSha: options["--event-sha"],
+  });
+  const source = {
+    repository: SOURCE_REPOSITORY,
+    workflow: PUBLISH_WORKFLOW_PATH,
+    gitRef: options["--event-ref"],
+    gitCommit,
+  };
   const archives = await loadAndVerifyArchives(root, options["--artifacts"], context);
   const registry = hooks.registry ?? new NpmRegistry();
   if (command === "publish") {
-    await publishCandidate({ mode: options["--mode"], plan: context.plan, archives, registry });
+    await publishCandidate({
+      mode: options["--mode"],
+      plan: context.plan,
+      archives,
+      registry,
+      source,
+    });
     return;
   }
   if (options["--consumer-gate"] !== "validated") {
     throw new Error("promotion requires explicit private consumer validation");
   }
-  await promoteAlpha({ plan: context.plan, archives, registry });
+  await promoteAlpha({ plan: context.plan, archives, registry, source });
 }
 
 export function publicReleaseError(error, root = workspaceRoot) {

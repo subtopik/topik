@@ -120,6 +120,41 @@ void test("CLI and tag validation reject malformed or injectable inputs before e
   );
 });
 
+void test("tag verification binds the workflow event ref and SHA", async () => {
+  const commit = "a".repeat(40);
+  let calls = 0;
+  const run = async () => {
+    calls++;
+    return commit;
+  };
+  await assert.rejects(
+    verifyGitTag(workspaceRoot, "v0.1.0-alpha.5", "v0.1.0-alpha.5", {
+      run,
+      eventRef: "refs/heads/main",
+      eventSha: commit,
+    }),
+    /event ref/u,
+  );
+  assert.equal(calls, 0);
+  await assert.rejects(
+    verifyGitTag(workspaceRoot, "v0.1.0-alpha.5", "v0.1.0-alpha.5", {
+      run,
+      eventRef: "refs/tags/v0.1.0-alpha.5",
+      eventSha: "b".repeat(40),
+    }),
+    /event SHA/u,
+  );
+  assert.equal(calls, 2);
+  assert.equal(
+    await verifyGitTag(workspaceRoot, "v0.1.0-alpha.5", "v0.1.0-alpha.5", {
+      run,
+      eventRef: "refs/tags/v0.1.0-alpha.5",
+      eventSha: commit,
+    }),
+    commit,
+  );
+});
+
 void test("publication and promotion workflows share immutable serialization configuration", async () => {
   const workflows = await Promise.all(
     ["publish.yaml", "promote-alpha.yaml"].map((name) =>
@@ -134,6 +169,26 @@ void test("publication and promotion workflows share immutable serialization con
   assert.match(workflows[0], /workflow_dispatch:[\s\S]+tag:[\s\S]+required: true/u);
   assert.match(workflows[0], /ref: \$\{\{ env\.RELEASE_TAG \}\}/u);
   assert.match(workflows[1], /private_consumer_validation:[\s\S]+- validated/u);
+});
+
+void test("npm mutation steps use an environment-scoped granular token", async () => {
+  const workflows = await Promise.all(
+    ["publish.yaml", "promote-alpha.yaml"].map((name) =>
+      readFile(resolve(workspaceRoot, ".github", "workflows", name), "utf8"),
+    ),
+  );
+  for (const workflow of workflows) {
+    assert.match(workflow, /registry-url: https:\/\/registry\.npmjs\.org/u);
+    assert.match(workflow, /NODE_AUTH_TOKEN: \$\{\{ secrets\.TOPIK_NPM_RELEASE_TOKEN \}\}/u);
+    assert.equal(workflow.match(/TOPIK_NPM_RELEASE_TOKEN/gu)?.length, 1);
+    assert.ok(
+      workflow.indexOf("NODE_AUTH_TOKEN:") > workflow.indexOf("--artifacts .release-artifacts"),
+    );
+    assert.match(workflow, /--event-ref "\$GITHUB_REF"/u);
+    assert.match(workflow, /--event-sha "\$GITHUB_SHA"/u);
+  }
+  assert.match(workflows[0], /id-token: write/u);
+  assert.doesNotMatch(workflows[1], /id-token: write/u);
 });
 
 void test("pull-request CI runs one real Node 24 release preparation after building", async () => {

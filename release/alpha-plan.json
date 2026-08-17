@@ -1,0 +1,53 @@
+{
+  "planSchemaVersion": 1,
+  "contentSchemaVersion": "0.1.0",
+  "releaseVersion": "0.1.0-alpha.5",
+  "gitTag": "v0.1.0-alpha.5",
+  "candidateTag": "candidate",
+  "adoptionLane": "alpha",
+  "packages": [
+    "@topik/content-schema",
+    "@topik/schema",
+    "@topik/core",
+    "@topik/content-react",
+    "@topik/cli",
+    "@topik/codemod"
+  ],
+  "resourceVersions": {
+    "readable": [
+      "Asset/v1",
+      "Course/v1",
+      "CourseModule/v1",
+      "CoursePage/v1",
+      "Guide/v1",
+      "Person/v1",
+      "Wiki/v1",
+      "WikiPage/v1"
+    ],
+    "writable": [
+      "Asset/v1",
+      "Course/v1",
+      "CourseModule/v1",
+      "CoursePage/v1",
+      "Guide/v1",
+      "Person/v1",
+      "Wiki/v1",
+      "WikiPage/v1"
+    ]
+  },
+  "featureFloors": [
+    {
+      "feature": "automatic-asset-identity",
+      "minimumVersion": "0.1.0-alpha.5"
+    },
+    {
+      "feature": "fail-closed-invalid-and-unsupported-content",
+      "minimumVersion": "0.1.0-alpha.5"
+    }
+  ],
+  "migrations": [],
+  "consumerGate": {
+    "kind": "private-manual",
+    "requiredBeforeLanePromotion": true
+  }
+}

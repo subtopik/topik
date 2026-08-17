@@ -1,0 +1,59 @@
+name: Promote alpha cohort
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Immutable candidate release tag
+        required: true
+        type: string
+      private_consumer_validation:
+        description: Confirm the private manual consumer gate completed
+        required: true
+        type: choice
+        options:
+          - validated
+
+permissions: read-all
+
+concurrency:
+  group: topik-alpha-release
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ inputs.tag }}
+  CONSUMER_GATE: ${{ inputs.private_consumer_validation }}
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+
+      - uses: voidzero-dev/setup-vp@313600b80b104eadebb9111787d37a2e83e014ca # v1.17.0
+        with:
+          node-version: "24"
+          cache: true
+
+      - run: node tools/release/cli.mjs verify-tag --tag "$RELEASE_TAG"
+
+      - run: vp install --frozen-lockfile
+
+      - run: vp run -r build
+
+      - run: node tools/release/cli.mjs prepare --artifacts .release-artifacts
+
+      - name: Promote the validated cohort
+        run: >-
+          node tools/release/cli.mjs promote
+          --tag "$RELEASE_TAG"
+          --consumer-gate "$CONSUMER_GATE"
+          --artifacts .release-artifacts

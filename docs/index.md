@@ -11,3 +11,5 @@ Topik defines portable resources for structured content and framework-neutral to
 - [Navigation](./navigation.md) defines wiki paths and valid nesting.
 - [Rendering](./rendering.md) shows the public navigation helpers available to consumers.
 - [Assets](./assets.md) defines automatic discovery, generated identity, and materialization.
+- [Alpha releases](./alpha-releases.md) documents candidate publication, validation, promotion, and
+  recovery.

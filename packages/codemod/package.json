@@ -1,6 +1,6 @@
 {
   "name": "@topik/codemod",
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.5",
   "description": "Codemods for migrating content to Topik",
   "license": "MIT",
   "repository": {
@@ -30,7 +30,7 @@
     "prepublishOnly": "vp run build"
   },
   "dependencies": {
-    "@drizzle-team/brocli": "catalog:"
+    "@drizzle-team/brocli": "0.12.0"
   },
   "devDependencies": {
     "@types/bun": "catalog:",
@@ -38,5 +38,8 @@
     "typescript": "catalog:",
     "vite": "catalog:",
     "vite-plus": "catalog:"
+  },
+  "engines": {
+    "node": "^22.12.0 || ^24.0.0"
   }
 }

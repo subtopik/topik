@@ -1,6 +1,6 @@
 {
   "name": "@topik/core",
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.5",
   "description": "Topik core library",
   "license": "MIT",
   "repository": {
@@ -27,18 +27,21 @@
     "prepublishOnly": "vp run build"
   },
   "dependencies": {
-    "@topik/content-schema": "workspace:*",
-    "@topik/schema": "workspace:*",
-    "ajv": "^8.20.0",
-    "ajv-formats": "^3.0.1",
-    "chokidar": "^5.0.0",
-    "yaml": "^2.9.0",
-    "zod": "^4.4.3"
+    "@topik/content-schema": "workspace:0.1.0-alpha.5",
+    "@topik/schema": "workspace:0.1.0-alpha.5",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "chokidar": "5.0.0",
+    "yaml": "2.9.0",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/node": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",
     "vite-plus": "catalog:"
+  },
+  "engines": {
+    "node": "^22.12.0 || ^24.0.0"
   }
 }

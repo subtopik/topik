@@ -12,6 +12,7 @@ dist
 storybook-static
 .claude
 .topik
+.release-artifacts
 dist-ssr
 *.local
 

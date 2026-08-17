@@ -4,9 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "ready": "vp fmt && vp lint && vp run -r test && vp run -r build",
+    "ready": "vp fmt && vp lint && vp run release:test && vp run -r test && vp run -r build",
     "dev": "vp run dev",
     "prepare": "vp config",
+    "release:prepare": "node tools/release/cli.mjs prepare --artifacts .release-artifacts",
+    "release:test": "node --test tools/release/*.test.mjs",
+    "release:validate": "node tools/release/cli.mjs validate",
     "verify:asset-packages": "node tools/verify-asset-packages.mjs"
   },
   "devDependencies": {

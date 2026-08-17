@@ -10,3 +10,7 @@ navigation:
       - navigation
       - rendering
       - assets
+  - type: group
+    title: Operations
+    children:
+      - alpha-releases

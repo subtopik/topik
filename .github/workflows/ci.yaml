@@ -28,10 +28,36 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: true
 
-      - run: vp install
+      - run: vp install --frozen-lockfile
 
       - run: vp run -r build
 
       - run: vp check
 
       - run: vp test
+
+      - run: vp run release:test
+
+  release-pack:
+    name: Release pack (Node 24)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: voidzero-dev/setup-vp@313600b80b104eadebb9111787d37a2e83e014ca # v1.17.0
+        with:
+          node-version: "24"
+          cache: true
+
+      - run: vp install --frozen-lockfile
+
+      - run: vp run -r build
+
+      - run: vp run release:prepare
+
+      - name: Clean release artifacts
+        if: always()
+        run: >-
+          node -e 'require("node:fs").rmSync(".release-artifacts", { recursive: true, force: true })'

@@ -1,11 +1,24 @@
-name: Publish
+name: Publish candidate cohort
 
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Immutable release tag to recover
+        required: true
+        type: string
 
 permissions: read-all
+
+concurrency:
+  group: topik-alpha-release
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  RELEASE_MODE: ${{ github.event_name == 'workflow_dispatch' && 'recovery' || 'initial' }}
 
 jobs:
   ci:
@@ -16,24 +29,30 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: ["22", "24"]
+        node-version: ["22.12.0", "22", "24"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
 
       - uses: voidzero-dev/setup-vp@313600b80b104eadebb9111787d37a2e83e014ca # v1.17.0
         with:
           node-version: ${{ matrix.node-version }}
           cache: true
 
-      - run: vp install
+      - run: node tools/release/cli.mjs verify-tag --tag "$RELEASE_TAG"
+
+      - run: vp install --frozen-lockfile
 
       - run: vp run -r build
 
       - run: vp check
 
       - run: vp test
+
+      - run: vp run release:test
 
   publish:
     needs: ci
@@ -46,51 +65,25 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
 
       - uses: voidzero-dev/setup-vp@313600b80b104eadebb9111787d37a2e83e014ca # v1.17.0
         with:
           node-version: "24"
           cache: true
 
-      - run: vp install
+      - run: node tools/release/cli.mjs verify-tag --tag "$RELEASE_TAG"
+
+      - run: vp install --frozen-lockfile
 
       - run: vp run -r build
 
-      - name: Publish packages
-        run: |
-          packages=(
-            packages/content-schema
-            packages/schema
-            packages/core
-            packages/content-react
-            packages/cli
-            packages/codemod
-          )
+      - run: node tools/release/cli.mjs prepare --artifacts .release-artifacts
 
-          for dir in "${packages[@]}"; do
-            pkg="$dir/package.json"
-            name=$(jq -r .name "$pkg")
-            version=$(jq -r .version "$pkg")
-
-            if npx -y npm@11.13.0 view "$name@$version" version >/dev/null 2>&1; then
-              echo "Skipping $name@$version because it is already published"
-              continue
-            fi
-
-            if [[ "$version" == *"-alpha"* ]]; then
-              tag=alpha
-            elif [[ "$version" == *"-beta"* ]]; then
-              tag=beta
-            elif [[ "$version" == *"-rc"* ]]; then
-              tag=rc
-            else
-              tag=latest
-            fi
-
-            echo "Publishing $name@$version with tag $tag"
-            cd "$dir"
-            vp pm pack -- --pack-destination .
-            tarball=$(ls -t *.tgz | head -n 1)
-            npx -y npm@11.13.0 publish "$tarball" --provenance --access public --tag "$tag"
-            cd "$GITHUB_WORKSPACE"
-          done
+      - name: Publish or recover candidate cohort
+        run: >-
+          node tools/release/cli.mjs publish
+          --mode "$RELEASE_MODE"
+          --tag "$RELEASE_TAG"
+          --artifacts .release-artifacts

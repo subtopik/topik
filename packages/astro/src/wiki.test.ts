@@ -37,7 +37,7 @@ describe("topikWikiLoader", () => {
     const context = createMockContext();
     await loader.load(context);
 
-    expect(context.entries.size).toBe(5);
+    expect(context.entries.size).toBe(6);
     const home = [...context.entries.values()].find((entry) => entry.data.slug === "");
     expect(home).toMatchObject({
       id: expect.stringMatching(wikiPageNamePattern),
@@ -52,6 +52,7 @@ describe("topikWikiLoader", () => {
     await loader.load(context);
 
     expect([...context.entries.values()].map((entry) => entry.data.slug)).toEqual([
+      "alpha-releases",
       "",
       "resources",
       "assets",
@@ -96,6 +97,18 @@ describe("topikWikiLoader", () => {
             page: expect.stringMatching(wikiPageNamePattern),
             slug: "assets",
             sourcePath: "assets",
+          },
+        ],
+      },
+      {
+        type: "group",
+        title: "Operations",
+        children: [
+          {
+            type: "page",
+            page: expect.stringMatching(wikiPageNamePattern),
+            slug: "alpha-releases",
+            sourcePath: "alpha-releases",
           },
         ],
       },

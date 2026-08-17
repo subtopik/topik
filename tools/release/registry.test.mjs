@@ -86,7 +86,8 @@ void test("publication authentication failure aborts both modes before registry 
         calls.push(args);
         if (args[0] === "view" && args[2] === "versions") return [];
         if (args[0] === "view" && args[2] === "dist-tags") return {};
-        if (args[0] === "access") throw new Error("injected authentication failure");
+        if (args[0] === "access") return "public";
+        if (args[0] === "whoami") throw new Error("injected authentication failure");
         throw new Error("unexpected npm command");
       },
     });
@@ -95,7 +96,7 @@ void test("publication authentication failure aborts both modes before registry 
       publishCandidate({ mode, plan, archives, registry, source }),
       /injected authentication failure/u,
     );
-    assert.deepEqual(calls.at(-1), ["access", "get", "status", plan.packages[0], "--json"]);
+    assert.deepEqual(calls.at(-1), ["whoami", "--json"]);
     assert.equal(calls.some(isNpmMutation), false);
   }
 });
@@ -509,26 +510,39 @@ void test("npm adapter rejects arbitrary package and latest-tag operations befor
   assert.equal(calls, 0);
 });
 
-void test("npm access preflight authenticates against every planned public package", async () => {
+void test("npm access preflight authenticates and checks every planned public package", async () => {
   const calls = [];
   const registry = new NpmRegistry({
     run: async (args) => {
       calls.push(args);
-      return "public";
+      return args[0] === "whoami" ? "release-operator" : "public";
     },
   });
 
   await registry.preflightAccess(plan.packages);
 
-  assert.deepEqual(
-    calls,
-    plan.packages.map((name) => ["access", "get", "status", name, "--json"]),
-  );
+  assert.deepEqual(calls, [
+    ...plan.packages.map((name) => ["access", "get", "status", name, "--json"]),
+    ["whoami", "--json"],
+  ]);
 
   const nonPublic = new NpmRegistry({
     run: async (args) => (args[3] === plan.packages.at(-1) ? "private" : "public"),
   });
   await assert.rejects(nonPublic.preflightAccess(plan.packages), /not public/u);
+});
+
+void test("npm access preflight rejects malformed identity without disclosing it", async () => {
+  for (const identity of [null, "", {}, "invalid identity sentinel", "x".repeat(215)]) {
+    const registry = new NpmRegistry({
+      run: async (args) => (args[0] === "whoami" ? identity : "public"),
+    });
+    await assert.rejects(registry.preflightAccess(plan.packages), (error) => {
+      assert.match(error.message, /invalid authenticated identity/u);
+      assert.doesNotMatch(error.message, /identity sentinel/u);
+      return true;
+    });
+  }
 });
 
 class FakeRegistry {

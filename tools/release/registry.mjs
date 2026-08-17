@@ -21,6 +21,7 @@ import { parseStrictJson } from "./strict-json.mjs";
 const runFile = promisify(execFile);
 const ALLOWED_DIST_TAGS = new Set(["candidate", "alpha", "latest"]);
 const REGISTRY_VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/u;
+const NPM_IDENTITY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,213}$/u;
 const GIT_COMMIT_PATTERN = /^[0-9a-f]{40,64}$/u;
 const SLSA_PREDICATE = "https://slsa.dev/provenance/v1";
 const INTOTO_STATEMENT = "https://in-toto.io/Statement/v1";
@@ -277,6 +278,10 @@ export class NpmRegistry {
       if ((await this.getAccess(name)) !== "public") {
         throw new Error("planned npm package is not public");
       }
+    }
+    const identity = await this.run(["whoami", "--json"], "authenticating npm token");
+    if (typeof identity !== "string" || !NPM_IDENTITY_PATTERN.test(identity)) {
+      throw new Error("registry returned an invalid authenticated identity");
     }
   }
 

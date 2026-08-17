@@ -19,6 +19,16 @@ updates:
           - "vite"
           - "@voidzero-dev/vite-plus-core"
           - "vitest"
+      storybook:
+        patterns:
+          - "storybook"
+          - "@storybook/*"
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
       ajv:
         patterns:
           - "ajv"

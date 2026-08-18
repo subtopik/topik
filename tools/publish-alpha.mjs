@@ -25,12 +25,14 @@ export function publishAlpha({
   const planPath = join(releaseDirectory, "publish-plan.json");
   const packDirectory = join(releaseDirectory, "packed");
 
-  run("pnpm", ["changeset", "publish-plan", "--output", planPath], { cwd });
+  run("vp", ["exec", "changeset", "publish-plan", "--output", planPath], { cwd });
   const releases = validatePlan(readJson(planPath), versions);
 
-  run("pnpm", ["changeset", "pack", "--from-publish-plan", planPath, "--out-dir", packDirectory], {
-    cwd,
-  });
+  run(
+    "vp",
+    ["exec", "changeset", "pack", "--from-publish-plan", planPath, "--out-dir", packDirectory],
+    { cwd },
+  );
   const packedReleases = validatePlan(
     readJson(join(packDirectory, "publish-plan.json")),
     versions,

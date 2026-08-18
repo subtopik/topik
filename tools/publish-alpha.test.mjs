@@ -78,15 +78,21 @@ describe("alpha publication retries", () => {
         temporaryDirectory: temporary,
         run(command, args) {
           calls.push([command, ...args]);
-          if (args[1] === "publish-plan") {
+          if (args[2] === "publish-plan") {
             writeFileSync(option(args, "--output"), JSON.stringify(plan));
-          } else if (args[1] === "pack") {
+          } else if (args[2] === "pack") {
             writePackedPlan(option(args, "--out-dir"), plan);
           }
         },
       });
 
+      const changesetCalls = calls.filter(([command]) => command === "vp");
       const publishCalls = calls.filter(([command]) => command === "npx");
+      expect(changesetCalls.map((call) => call.slice(0, 4))).toEqual([
+        ["vp", "exec", "changeset", "publish-plan"],
+        ["vp", "exec", "changeset", "pack"],
+      ]);
+      expect(calls.some(([command]) => command === "pnpm")).toBe(false);
       expect(plan.plan.flat().every((release) => release.tag === "latest")).toBe(true);
       expect(publishCalls).toHaveLength(plannedNames.length);
       expect(publishCalls.every((call) => call.slice(-2).join(" ") === "--tag alpha")).toBe(true);

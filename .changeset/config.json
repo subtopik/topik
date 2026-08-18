@@ -1,0 +1,21 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@4.0.0/schema.json",
+  "changelog": false,
+  "commit": false,
+  "fixed": [
+    [
+      "@topik/content-schema",
+      "@topik/schema",
+      "@topik/core",
+      "@topik/content-react",
+      "@topik/cli",
+      "@topik/codemod"
+    ]
+  ],
+  "linked": [],
+  "access": "public",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": ["@topik/astro"],
+  "privatePackages": false
+}

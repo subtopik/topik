@@ -4,12 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "changeset": "changeset",
     "ready": "vp fmt && vp lint && vp run -r test && vp run -r build",
     "dev": "vp run dev",
     "prepare": "vp config",
     "verify:asset-packages": "node tools/verify-asset-packages.mjs"
   },
   "devDependencies": {
+    "@changesets/cli": "catalog:",
     "@types/node": "catalog:",
     "vite": "catalog:",
     "vite-plus": "catalog:"

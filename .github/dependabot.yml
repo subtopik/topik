@@ -41,3 +41,7 @@ updates:
       - dependency-name: "@types/node"
         update-types:
           - "version-update:semver-major"
+      # jsdom 29+ requires a newer Node 22 minor than Topik's supported 22.12 floor.
+      - dependency-name: "jsdom"
+        update-types:
+          - "version-update:semver-major"

@@ -37,8 +37,8 @@
     "@topik/content-schema": "workspace:*"
   },
   "devDependencies": {
-    "@storybook/addon-docs": "^10.5.8",
-    "@storybook/react-vite": "^10.5.8",
+    "@storybook/addon-docs": "^10.5.9",
+    "@storybook/react-vite": "^10.5.9",
     "@topik/core": "workspace:*",
     "@topik/schema": "workspace:*",
     "@types/node": "catalog:",
@@ -48,7 +48,7 @@
     "jsdom": "^28.1.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "storybook": "^10.5.8",
+    "storybook": "^10.5.9",
     "typescript": "catalog:",
     "vite": "catalog:",
     "vite-plus": "catalog:"

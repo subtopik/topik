@@ -7,7 +7,7 @@ allowBuilds:
   sharp: true
 
 catalog:
-  "@changesets/cli": 3.0.0
+  "@changesets/cli": 3.0.1
   "@drizzle-team/brocli": ^0.12.0
   "@markdoc/markdoc": ^0.5.9
   "@types/bun": ^1.3.14

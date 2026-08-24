@@ -62,6 +62,21 @@ describe("validate command", () => {
     ).resolves.toBeUndefined();
   });
 
+  test("fails visibly for a known resource with an unsupported version", async () => {
+    const filePath = join(dir, "future-wiki.yaml");
+    await writeFile(
+      filePath,
+      ["apiVersion: v2", "type: Wiki", "name: docs", "spec:", "  title: Docs", ""].join("\n"),
+    );
+
+    const failure = await captureFailure(() =>
+      (validate as ValidateCommand).handler?.({ path: filePath }),
+    );
+    expect(failure).toBeInstanceOf(PublicCliError);
+    expect(failure).toMatchObject({ id: "resource-validation-failed" });
+    expect(formatPublicCliError(failure)).toBe("Resource validation failed.");
+  });
+
   test("keeps JSON bytes and absolute paths out of parse failures", async () => {
     const sentinel = "PRIVATE_VALUE";
     const filePath = join(dir, `${sentinel}.json`);

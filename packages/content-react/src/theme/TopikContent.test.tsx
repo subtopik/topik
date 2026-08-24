@@ -130,6 +130,18 @@ describe("TopikContent", () => {
     expect(html).toContain('src="assets/hero.webp"');
   });
 
+  it("server-renders a Markdown table with semantic rows and cells", () => {
+    const html = renderToStaticMarkup(
+      <TopikContent
+        content={["| Name | Value |", "| --- | --- |", "| Café | Ready |"].join("\n")}
+      />,
+    );
+
+    expect(html).toContain('<div class="topik-table"><table>');
+    expect(html).toContain("<thead><tr><th>Name</th><th>Value</th></tr></thead>");
+    expect(html).toContain("<tbody><tr><td>Café</td><td>Ready</td></tr></tbody>");
+  });
+
   it("preserves mixed-case credential-free HTTPS in the default renderer", () => {
     const references = [
       "HtTpS://example.com/image.png",

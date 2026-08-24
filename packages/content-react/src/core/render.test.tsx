@@ -1611,6 +1611,32 @@ describe("content-react core", () => {
     expect(html).toContain("<p>Paragraph.</p>");
   });
 
+  it("server-renders portable list, hard-break, and frontmatter semantics", () => {
+    const html = renderToStaticMarkup(
+      <>
+        {renderTopikMarkdown(
+          [
+            "---",
+            "title: Metadata only",
+            "---",
+            "# Checklist",
+            "",
+            "- First",
+            "- [x] Literal task marker",
+            "",
+            "Hard break  ",
+            "continues here.",
+          ].join("\n"),
+        )}
+      </>,
+    );
+
+    expect(html).toContain('<h1 id="checklist">Checklist</h1>');
+    expect(html).toContain("<ul><li>First</li><li>[x] Literal task marker</li></ul>");
+    expect(html).toContain("Hard break<br/>continues here.");
+    expect(html).not.toContain("Metadata only");
+  });
+
   it("renders generated, duplicate, and explicit heading IDs", () => {
     const html = renderToStaticMarkup(
       <>{renderTopikMarkdown("## Setup\n\n## Setup\n\n## Introduction {% #start-here %}")}</>,

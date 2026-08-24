@@ -27,6 +27,7 @@ import type { SourceResource } from "../resource";
 import {
   parseAssetBlobUri,
   parseGeneratedAssetName,
+  type CompiledAsset,
   type GeneratedAssetName,
 } from "../assets/asset";
 import { TOPIK_ASSET_LIMITS } from "../assets/constants";
@@ -35,6 +36,7 @@ import {
   compileAssetResources,
   compileAssetResourcesWithReadHookForTest,
   registerGeneratedAssetPath,
+  type AssetCompilationResult,
   type CompileAssetResourcesInput,
 } from "./assets";
 
@@ -162,6 +164,97 @@ function compiledAsset(): Asset {
       mediaType: "application/octet-stream",
     },
   };
+}
+
+function expectCompiledAssetClosure(
+  result: AssetCompilationResult,
+  references: readonly {
+    resource: string;
+    source: string;
+    names: readonly string[];
+  }[],
+): void {
+  const assets = result.resources.filter(
+    (resource): resource is CompiledAsset => resource.type === "Asset",
+  );
+  const assetNames = assets.map((asset) => asset.name).toSorted();
+  expect(result.semantic.assetNames).toEqual(assetNames);
+
+  const expectedReferences = references
+    .flatMap(({ names, resource, source }) => {
+      const occurrences = extractTopikAssetOccurrences(source);
+      expect(names).toHaveLength(occurrences.length);
+      return occurrences.map((occurrence, index) => ({
+        resource,
+        position: occurrence.position,
+        slot: occurrence.slot,
+        name: names[index],
+      }));
+    })
+    .toSorted((left, right) =>
+      `${left.resource}\0${left.position}\0${left.slot}\0${left.name}` <
+      `${right.resource}\0${right.position}\0${right.slot}\0${right.name}`
+        ? -1
+        : 1,
+    );
+  expect(result.semantic.references).toEqual(expectedReferences);
+
+  for (const { names, resource, source } of references) {
+    const compiled = result.resources.find(
+      (candidate) => `${candidate.type}/${candidate.name}` === resource,
+    );
+    expect(
+      compiled?.type === "Guide" ||
+        compiled?.type === "WikiPage" ||
+        compiled?.type === "CoursePage",
+    ).toBe(true);
+    if (
+      compiled?.type !== "Guide" &&
+      compiled?.type !== "WikiPage" &&
+      compiled?.type !== "CoursePage"
+    ) {
+      continue;
+    }
+    const compiledOccurrences = extractTopikAssetOccurrences(compiled.spec.content.value);
+    expect(
+      compiledOccurrences.map(({ kind, reference, slot }) => ({ kind, reference, slot })),
+    ).toEqual(
+      names.map((name, index) => ({
+        kind: "asset",
+        reference: `asset:${name}`,
+        slot: extractTopikAssetOccurrences(source)[index]?.slot,
+      })),
+    );
+    for (const occurrence of extractTopikAssetOccurrences(source)) {
+      expect(compiled.spec.content.value).not.toContain(occurrence.reference);
+    }
+  }
+
+  expect(
+    result.materialization.resources.map(({ path, resource }) => ({ path, resource })),
+  ).toEqual(
+    result.resources.map((resource) => ({
+      resource: `${resource.type}/${resource.name}`,
+      path: `resources/${resource.type}/${resource.name}.json`,
+    })),
+  );
+  expect(result.materialization.payloads).toEqual(
+    result.payloads.map((payload) => ({
+      path: payload.path,
+      size: payload.size,
+      sha256: payload.integrity.slice("sha256:".length),
+      assetNames: payload.assetNames,
+    })),
+  );
+  for (const asset of assets) {
+    const payload = result.payloads.find(({ path }) => path === asset.spec.uri);
+    expect(payload).toMatchObject({
+      integrity: asset.spec.integrity,
+      mediaType: asset.spec.mediaType,
+      size: asset.spec.size,
+      assetNames: expect.arrayContaining([asset.name]),
+    });
+  }
 }
 
 describe("compilation-wide automatic Assets", () => {
@@ -554,19 +647,24 @@ describe("compilation-wide automatic Assets", () => {
     await writeFile(join(dir, "shared.png"), PNG_BYTES);
     await writeFile(join(dir, "one.md"), "source\n");
     await writeFile(join(dir, "two.md"), "source\n");
+    const oneSource = "![Shared](shared.png) ![Again](shared.png)\n";
+    const twoSource = "![Shared](shared.png)\n";
     const result = await compileAssetResources({
       rootDir: dir,
-      resources: [
-        guide("one", "![Shared](shared.png) ![Again](shared.png)\n"),
-        guide("two", "![Shared](shared.png)\n"),
-      ],
+      resources: [guide("one", oneSource), guide("two", twoSource)],
       sourcePathsByResource: { "Guide/one": "one.md", "Guide/two": "two.md" },
       sourceNamespace: "multiple-guides",
     });
 
-    expect(result.resources.filter((resource) => resource.type === "Asset")).toHaveLength(1);
-    expect(result.semantic.references).toHaveLength(3);
+    const asset = result.resources.find(
+      (resource): resource is CompiledAsset => resource.type === "Asset",
+    );
+    expect(asset).toBeDefined();
     expect(result.payloads).toHaveLength(1);
+    expectCompiledAssetClosure(result, [
+      { resource: "Guide/one", source: oneSource, names: [asset!.name, asset!.name] },
+      { resource: "Guide/two", source: twoSource, names: [asset!.name] },
+    ]);
   });
 
   test("compiles Assets from every page in a multipage Wiki into one set", async () => {
@@ -576,13 +674,11 @@ describe("compilation-wide automatic Assets", () => {
     await writeFile(join(dir, "pages", "one.md"), "source\n");
     await writeFile(join(dir, "pages", "two.md"), "source\n");
     const wiki: Wiki = { apiVersion: "v1", type: "Wiki", name: "docs", spec: { title: "Docs" } };
+    const oneSource = "![One](one.png)\n";
+    const twoSource = "![Two](two.png)\n";
     const result = await compileAssetResources({
       rootDir: dir,
-      resources: [
-        wiki,
-        wikiPage("page-one", "![One](one.png)\n"),
-        wikiPage("page-two", "![Two](two.png)\n"),
-      ],
+      resources: [wiki, wikiPage("page-one", oneSource), wikiPage("page-two", twoSource)],
       sourcePathsByResource: {
         "WikiPage/page-one": "pages/one.md",
         "WikiPage/page-two": "pages/two.md",
@@ -590,9 +686,26 @@ describe("compilation-wide automatic Assets", () => {
       sourceNamespace: "multipage-wiki",
     });
 
-    expect(result.resources.filter((resource) => resource.type === "Asset")).toHaveLength(2);
-    expect(result.semantic.references).toHaveLength(2);
+    const pageOne = result.resources.find(
+      (resource): resource is WikiPage =>
+        resource.type === "WikiPage" && resource.name === "page-one",
+    );
+    const pageTwo = result.resources.find(
+      (resource): resource is WikiPage =>
+        resource.type === "WikiPage" && resource.name === "page-two",
+    );
+    const oneName = extractTopikAssetOccurrences(pageOne!.spec.content.value)[0]!.reference.slice(
+      "asset:".length,
+    );
+    const twoName = extractTopikAssetOccurrences(pageTwo!.spec.content.value)[0]!.reference.slice(
+      "asset:".length,
+    );
+    expect(oneName).not.toBe(twoName);
     expect(result.payloads).toHaveLength(1);
+    expectCompiledAssetClosure(result, [
+      { resource: "WikiPage/page-one", source: oneSource, names: [oneName] },
+      { resource: "WikiPage/page-two", source: twoSource, names: [twoName] },
+    ]);
   });
 
   test("compiles a mixed Guide, Wiki, and Course against one Asset set", async () => {
@@ -613,6 +726,7 @@ describe("compilation-wide automatic Assets", () => {
       name: "module",
       spec: { course: "course", title: "Module", slug: "module", order: 0 },
     };
+    const sharedSource = "![Shared](shared.png)\n";
     const page: CoursePage = {
       apiVersion: "v1",
       type: "CoursePage",
@@ -622,13 +736,13 @@ describe("compilation-wide automatic Assets", () => {
         title: "Page",
         slug: "page",
         order: 0,
-        content: { format: "topik", value: "![Shared](shared.png)\n" },
+        content: { format: "topik", value: sharedSource },
       },
     };
     const resources: SourceResource[] = [
-      guide("guide", "![Shared](shared.png)\n"),
+      guide("guide", sharedSource),
       wiki,
-      wikiPage("wiki-page", "![Shared](shared.png)\n"),
+      wikiPage("wiki-page", sharedSource),
       course,
       module,
       page,
@@ -653,9 +767,16 @@ describe("compilation-wide automatic Assets", () => {
       "Wiki",
       "WikiPage",
     ]);
-    expect(result.resources.filter((resource) => resource.type === "Asset")).toHaveLength(1);
-    expect(result.semantic.references).toHaveLength(3);
+    const asset = result.resources.find(
+      (resource): resource is CompiledAsset => resource.type === "Asset",
+    );
+    expect(asset).toBeDefined();
     expect(result.payloads).toHaveLength(1);
+    expectCompiledAssetClosure(result, [
+      { resource: "CoursePage/course-page", source: sharedSource, names: [asset!.name] },
+      { resource: "Guide/guide", source: sharedSource, names: [asset!.name] },
+      { resource: "WikiPage/wiki-page", source: sharedSource, names: [asset!.name] },
+    ]);
   });
 
   test("automatically proves local downloads and leaves page navigation and HTTPS external", async () => {

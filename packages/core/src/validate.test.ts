@@ -1,6 +1,78 @@
 import { describe, expect, test } from "vite-plus/test";
 import { validateResources } from "./validate";
 
+const digest = "0".repeat(64);
+
+const supportedResources = [
+  {
+    apiVersion: "v1",
+    type: "Asset",
+    name: `auto-v1-${"a".repeat(52)}`,
+    spec: {
+      uri: `blobs/${digest}`,
+      integrity: `sha256:${digest}`,
+      size: 7,
+      mediaType: "image/png",
+    },
+  },
+  {
+    apiVersion: "v1",
+    type: "Course",
+    name: "course",
+    spec: { title: "Course", slug: "course" },
+  },
+  {
+    apiVersion: "v1",
+    type: "CourseModule",
+    name: "module",
+    spec: { course: "course", title: "Module", slug: "module", order: 0 },
+  },
+  {
+    apiVersion: "v1",
+    type: "CoursePage",
+    name: "lesson",
+    spec: {
+      module: "module",
+      title: "Lesson",
+      slug: "lesson",
+      order: 0,
+      content: { format: "topik", value: "# Lesson" },
+    },
+  },
+  {
+    apiVersion: "v1",
+    type: "Guide",
+    name: "guide",
+    spec: {
+      title: "Guide",
+      slug: "guide",
+      content: { format: "topik", value: "# Guide" },
+    },
+  },
+  {
+    apiVersion: "v1",
+    type: "Person",
+    name: "ada",
+    spec: { name: "Ada Lovelace" },
+  },
+  {
+    apiVersion: "v1",
+    type: "Wiki",
+    name: "docs",
+    spec: { title: "Docs" },
+  },
+  {
+    apiVersion: "v1",
+    type: "WikiPage",
+    name: "docs-intro",
+    spec: {
+      wiki: "docs",
+      title: "Intro",
+      content: { format: "topik", value: "# Intro" },
+    },
+  },
+] as const;
+
 describe("validateResources", () => {
   test("accepts supported wiki resources", () => {
     const result = validateResources([
@@ -40,6 +112,42 @@ describe("validateResources", () => {
     ]);
 
     expect(result).toEqual({ valid: true, errors: [] });
+  });
+
+  test("accepts every supported v1 resource through the shared runtime boundary", () => {
+    expect(validateResources(supportedResources)).toEqual({ valid: true, errors: [] });
+  });
+
+  test.each(supportedResources.filter((resource) => resource.type !== "Asset"))(
+    "rejects an unsupported $type version with a typed resource diagnostic",
+    (resource) => {
+      expect(validateResources([{ ...resource, apiVersion: "v2" }])).toEqual({
+        valid: false,
+        errors: [
+          {
+            id: "resource-unsupported-version",
+            resource: `${resource.type}/${resource.name}`,
+            path: "/apiVersion",
+            message: `Unsupported ${resource.type} apiVersion: v2`,
+          },
+        ],
+      });
+    },
+  );
+
+  test("preserves the typed Asset version diagnostic through shared validation", () => {
+    const asset = supportedResources[0];
+    expect(validateResources([{ ...asset, apiVersion: "v2" }])).toEqual({
+      valid: false,
+      errors: [
+        {
+          id: "TOPIK_ASSET_UNSUPPORTED_VERSION",
+          resource: `Asset/${asset.name}`,
+          path: "/apiVersion",
+          message: "Unsupported Asset apiVersion",
+        },
+      ],
+    });
   });
 
   test("rejects unsupported resource types explicitly", () => {
@@ -107,7 +215,6 @@ describe("validateResources", () => {
   });
 
   test("preserves the typed diagnostic for contradictory Asset payload digests", () => {
-    const digest = "0".repeat(64);
     const result = validateResources([
       {
         apiVersion: "v1",

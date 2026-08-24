@@ -2,15 +2,14 @@ import { execFileSync } from "node:child_process";
 import {
   existsSync,
   mkdtempSync,
-  mkdirSync,
   readFileSync,
-  readdirSync,
   realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { packPublicPackages } from "./pack-public-package.mjs";
 
 const mode = process.argv[2];
 if (mode !== "minimum" && mode !== "workspace") {
@@ -19,8 +18,6 @@ if (mode !== "minimum" && mode !== "workspace") {
 
 const root = join(import.meta.dirname, "..");
 const contentReactRoot = join(root, "packages", "content-react");
-const contentSchemaRoot = join(root, "packages", "content-schema");
-const workspaceManifest = readJson(join(root, "package.json"));
 const manifest = readJson(join(contentReactRoot, "package.json"));
 const peerNames = ["katex", "mermaid", "react", "react-dom", "shiki"];
 const peers = Object.fromEntries(
@@ -34,17 +31,18 @@ const peers = Object.fromEntries(
 const temporary = mkdtempSync(join(tmpdir(), `topik-content-react-${mode}-`));
 
 try {
-  const archives = join(temporary, "archives");
-  mkdirSync(archives);
-  const contentSchemaArchive = pack(contentSchemaRoot, archives);
-  const contentReactArchive = pack(contentReactRoot, archives);
+  const { archives } = packPublicPackages(root, join(temporary, "packing"));
+  const contentSchemaArchive = archives.get("@topik/content-schema");
+  const contentReactArchive = archives.get("@topik/content-react");
+  if (contentSchemaArchive === undefined || contentReactArchive === undefined) {
+    throw new Error("Changesets omitted a content peer archive");
+  }
   writeFileSync(
     join(temporary, "package.json"),
     `${JSON.stringify(
       {
         private: true,
         type: "module",
-        packageManager: workspaceManifest.packageManager,
         dependencies: {
           "@topik/content-react": `file:${contentReactArchive}`,
           "@topik/content-schema": `file:${contentSchemaArchive}`,
@@ -55,7 +53,7 @@ try {
       2,
     )}\n`,
   );
-  execFileSync("pnpm", ["install", "--ignore-scripts", "--lockfile=false"], {
+  execFileSync("npm", ["install", "--ignore-scripts", "--package-lock=false"], {
     cwd: temporary,
     stdio: "inherit",
   });
@@ -105,19 +103,6 @@ function workspaceModule(name) {
   ].find((candidate) => existsSync(candidate));
   if (path === undefined) throw new Error(`Workspace peer is unavailable: ${name}`);
   return realpathSync(path);
-}
-
-function pack(packageRoot, destination) {
-  const before = new Set(readdirSync(destination));
-  execFileSync("pnpm", ["pack", "--pack-destination", destination], {
-    cwd: packageRoot,
-    stdio: "ignore",
-  });
-  const archive = readdirSync(destination).find(
-    (entry) => entry.endsWith(".tgz") && !before.has(entry),
-  );
-  if (archive === undefined) throw new Error(`No archive was produced for ${packageRoot}`);
-  return join(destination, archive);
 }
 
 function readJson(path) {

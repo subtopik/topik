@@ -80,7 +80,7 @@ export function packPublicPackages(workspaceRoot, destination) {
         ...process.env,
         PATH: `${join(toolDirectory, "node_modules", ".bin")}${delimiter}${process.env.PATH ?? ""}`,
       },
-      stdio: "ignore",
+      stdio: "inherit",
     },
   );
 

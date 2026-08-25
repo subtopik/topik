@@ -55,6 +55,4 @@ jobs:
 
       - run: vp run -r build
 
-      - run: node tools/verify-content-react-peers.mjs workspace
-
-      - run: node tools/verify-content-react-peers.mjs minimum
+      - run: vp run verify:content-react-peers

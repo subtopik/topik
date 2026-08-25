@@ -13,6 +13,7 @@ import {
 import { join, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { packPublicPackages } from "./pack-public-package.mjs";
+import { listNpmRootMetadata } from "./public-packlist.mjs";
 import { publicPackages } from "./publish-alpha.mjs";
 
 const root = join(import.meta.dirname, "..");
@@ -122,8 +123,8 @@ function verifyPacklist(packageRoot, archive) {
     .map((entry) => entry.replace(/^package\//u, ""))
     .toSorted((left, right) => left.localeCompare(right));
   const expected = [
-    "LICENSE",
     "package.json",
+    ...listNpmRootMetadata(packageRoot),
     ...listFiles(join(packageRoot, "dist"), "dist"),
   ].toSorted((left, right) => left.localeCompare(right));
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {

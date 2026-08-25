@@ -9,7 +9,7 @@
     "dev": "vp run dev",
     "prepare": "vp config",
     "verify:asset-packages": "node tools/verify-asset-packages.mjs",
-    "verify:content-react-peers": "node tools/verify-content-react-peers.mjs",
+    "verify:content-react-peers": "node tools/verify-content-react-peers.mjs workspace && node tools/verify-content-react-peers.mjs minimum",
     "verify:public-packages": "node tools/verify-public-packages.mjs"
   },
   "devDependencies": {

@@ -163,6 +163,32 @@ describe("topik integration", () => {
     }
   });
 
+  test("shares snapshots only between logically identical loaders", async () => {
+    await writeFile(join(dir, "collection.yaml"), "id: guides\ntitle: Guides\n");
+    await writeFile(join(dir, "wiki.yaml"), "id: docs\ntitle: Docs\nnavigation:\n  - intro\n");
+    await writeFile(join(dir, "hero.png"), PNG_BYTES);
+    await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](hero.png)\n");
+    const options = { dir, sourceNamespace: "astro-logical-loader" } as const;
+    const deliveryLoader = topikGuidesLoader(options);
+    const compilingLoader = topikGuidesLoader(options);
+    const otherNamespace = topikGuidesLoader({ ...options, sourceNamespace: "astro-other-loader" });
+    const otherRoot = join(tempDir, "other");
+    await mkdir(otherRoot);
+    const otherDirectory = topikGuidesLoader({ ...options, dir: otherRoot });
+    const otherKind = topikWikiLoader(options);
+
+    await compilingLoader.load(createMockContext());
+
+    const asset = compilingLoader.getAssets()[0];
+    expect(deliveryLoader.getAssets()).toEqual([asset]);
+    expect(
+      (await dispatch(createMiddleware([deliveryLoader]), `/${asset.spec.uri}`)).response.end,
+    ).toHaveBeenCalledWith(PNG_BYTES);
+    expect(otherNamespace.getAssets()).toEqual([]);
+    expect(otherDirectory.getAssets()).toEqual([]);
+    expect(otherKind.getAssets()).toEqual([]);
+  });
+
   test("admits only literal raw development blob request targets", async () => {
     await writeFile(join(dir, "collection.yaml"), "id: guides\ntitle: Guides\n");
     await writeFile(join(dir, "hero.png"), PNG_BYTES);

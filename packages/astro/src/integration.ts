@@ -40,12 +40,12 @@ export function topik(options: TopikOptions): AstroIntegration {
           await removePublishedSnapshot(
             config.output === "server" ? config.build.client : config.outDir,
           );
+          const codegenDir = createCodegenDir();
+          const middleware = new URL("topik-asset-middleware.mjs", codegenDir);
+          await writeFile(middleware, productionMiddlewareSource(), { encoding: "utf8" });
+          addMiddleware({ entrypoint: middleware, order: "pre" });
+          updateConfig({ vite: { plugins: [snapshotPlugin(loaders)] } });
         }
-        const codegenDir = createCodegenDir();
-        const middleware = new URL("topik-asset-middleware.mjs", codegenDir);
-        await writeFile(middleware, productionMiddlewareSource(), { encoding: "utf8" });
-        addMiddleware({ entrypoint: middleware, order: "pre" });
-        updateConfig({ vite: { plugins: [snapshotPlugin(loaders)] } });
       },
       "astro:build:start": async () => {
         await refreshTopikAssetSnapshots(loaders);
@@ -56,9 +56,10 @@ export function topik(options: TopikOptions): AstroIntegration {
       "astro:server:setup": ({ server }) => {
         server.middlewares.use((req, res, next) => {
           if (req.method !== "GET" && req.method !== "HEAD") return next();
-          if (req.url === undefined) return next();
-          const queryOffset = req.url.indexOf("?");
-          const pathname = queryOffset === -1 ? req.url : req.url.slice(0, queryOffset);
+          const rawTarget = (req as typeof req & { originalUrl?: string }).originalUrl ?? req.url;
+          if (rawTarget === undefined) return next();
+          const queryOffset = rawTarget.indexOf("?");
+          const pathname = queryOffset === -1 ? rawTarget : rawTarget.slice(0, queryOffset);
           if (!PAYLOAD_PATH_PATTERN.test(pathname)) return next();
 
           const payload = findTopikAssetPayload(loaders, pathname.slice(1));

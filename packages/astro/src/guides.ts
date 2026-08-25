@@ -86,6 +86,7 @@ export function topikGuidesLoader(options: TopikGuidesOptions): TopikAssetLoader
       },
     },
     compile,
+    { kind: "guides", sourceNamespace, sourceRoot: resolvedDir },
   );
   return enhanced.loader;
 }

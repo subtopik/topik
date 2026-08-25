@@ -227,6 +227,18 @@ describe("automatic Asset identity", () => {
 });
 
 describe("safe Asset diagnostics", () => {
+  test("preserves bounded ASCII messages and redacts oversized or Unicode detail", () => {
+    const bounded = "a".repeat(1024);
+    expect(topikAssetDiagnostic("TOPIK_ASSET_FILE_MISSING", bounded).message).toBe(bounded);
+
+    for (const message of ["a".repeat(1025), "PRIVATE_VALUE_é"]) {
+      const diagnostic = topikAssetDiagnostic("TOPIK_ASSET_FILE_MISSING", message);
+      expect(diagnostic.message).toBe("Diagnostic detail was redacted");
+      expect(JSON.stringify(diagnostic)).not.toContain(message);
+      expect(JSON.stringify(diagnostic)).not.toContain("PRIVATE_VALUE");
+    }
+  });
+
   test.each([
     "/home/user/secret/file.bin",
     "C:\\Users\\user\\secret.bin",

@@ -1,7 +1,9 @@
 import Markdoc, { type Config } from "@markdoc/markdoc";
 import { describe, expect, test, vi } from "vite-plus/test";
 import { mergeTopikMarkdocConfig } from "./config";
+import { parseTopikContent } from "./content";
 import { formatTopikContent } from "./format";
+import { assignTopikHeadingIds } from "./headings";
 import {
   allAmbiguousDiagnosticFiles as ambiguousDiagnosticFiles,
   unsafeDiagnosticFiles,
@@ -243,6 +245,94 @@ describe("Topik content formatting", () => {
     });
   });
 
+  test.each([
+    [
+      "portable Markdown",
+      [
+        "---",
+        "title: Metadata only",
+        "---",
+        "# Caf&eacute; and Unicode",
+        "",
+        "[Guide](/guide) and ![Logo](assets/logo.png)",
+        "",
+        "- First",
+        "- [x] Literal task marker",
+        "",
+        "3. Third",
+        "4. Fourth",
+        "",
+        "Hard break  ",
+        "continues here.",
+        "",
+        "| Name | Value |",
+        "| --- | --- |",
+        "| Unicode | café |",
+      ].join("\n"),
+    ],
+    [
+      "Topik learning components",
+      [
+        '{% callout variant="tip" title="Remember" %}',
+        "Use the helper.",
+        "{% /callout %}",
+        "",
+        "{% tabs %}",
+        '{% tab title="CLI" %}',
+        "{% codeGroup %}",
+        '{% codeTab title="npm" %}',
+        "```sh",
+        "npm install",
+        "```",
+        "{% /codeTab %}",
+        "{% /codeGroup %}",
+        "{% /tab %}",
+        "{% /tabs %}",
+        "",
+        '{% accordion title="Details" %}',
+        "More detail.",
+        "{% /accordion %}",
+        "",
+        "{% steps %}",
+        '{% step title="Install" %}',
+        "Run it.",
+        "{% /step %}",
+        "{% /steps %}",
+        "",
+        'Inline {% badge variant="success" %}stable{% /badge %} and {% mathInline content="x^2" /%}.',
+        "",
+        '{% math content="E = mc^2" /%}',
+        "",
+        "```mermaid",
+        "graph TD; A-->B;",
+        "```",
+        "",
+        '{% figure src="assets/hero.png" alt="Hero" caption="Overview" /%}',
+        "",
+        '{% card title="Next" href="/next" /%}',
+        "",
+        "{% quiz %}",
+        "{% question %}",
+        "{% choice correct=true %}Yes{% /choice %}",
+        "{% choice %}No{% /choice %}",
+        "{% explanation %}Because.{% /explanation %}",
+        "{% /question %}",
+        "{% /quiz %}",
+      ].join("\n"),
+    ],
+  ])("preserves normalized %s semantics across repeated formatting", (_name, source) => {
+    const first = formatTopikContent(source);
+
+    expect(first).toMatchObject({ ok: true, source, diagnostics: [] });
+    if (!first.ok) return;
+    const second = formatTopikContent(first.formatted);
+    expect(second).toMatchObject({ ok: true, source: first.formatted, diagnostics: [] });
+    if (!second.ok) return;
+
+    expect(contentSemantics(first.formatted)).toEqual(contentSemantics(source));
+    expect(second.formatted).toBe(first.formatted);
+  });
+
   test("keeps sensitive source and absolute paths out of refusal diagnostics", () => {
     const sentinel = "SENSITIVE_DIRECTORY";
     const source = "![x](é.png)";
@@ -298,3 +388,9 @@ describe("Topik content formatting", () => {
     );
   });
 });
+
+function contentSemantics(source: string): unknown {
+  const ast = parseTopikContent(source);
+  assignTopikHeadingIds(ast);
+  return JSON.parse(JSON.stringify(Markdoc.transform(ast, mergeTopikMarkdocConfig()))) as unknown;
+}

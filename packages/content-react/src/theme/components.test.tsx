@@ -294,10 +294,12 @@ describe("default Topik theme components", () => {
       <TopikTable>
         <tbody>
           <TopikTableRow>
-            <TopikTableHeader align="center" width="40%">
+            <TopikTableHeader align="center" colSpan={2} width="40%">
               Head
             </TopikTableHeader>
-            <TopikTableCell align="right">Cell</TopikTableCell>
+            <TopikTableCell align="right" rowSpan={2}>
+              Cell
+            </TopikTableCell>
           </TopikTableRow>
         </tbody>
       </TopikTable>,
@@ -311,6 +313,8 @@ describe("default Topik theme components", () => {
     expect(table).toContain('class="topik-table"');
     expect(table).toContain('style="text-align:center;width:40%"');
     expect(table).toContain('style="text-align:right"');
+    expect(table).toContain('colSpan="2"');
+    expect(table).toContain('rowSpan="2"');
   });
 
   it("intercepts link navigation through explicit props and provider context", () => {

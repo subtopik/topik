@@ -32,6 +32,27 @@ jobs:
 
       - run: vp run -r build
 
+      - run: vp run verify:public-packages
+
       - run: vp check
 
       - run: vp test
+
+  content-react-peers:
+    name: Content React peer boundaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: voidzero-dev/setup-vp@313600b80b104eadebb9111787d37a2e83e014ca # v1.17.0
+        with:
+          node-version: "24"
+          cache: true
+
+      - run: vp install
+
+      - run: vp run -r build
+
+      - run: vp run verify:content-react-peers

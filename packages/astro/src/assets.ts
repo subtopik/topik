@@ -12,6 +12,17 @@ interface TopikAssetSnapshot {
   payloadsByPath: ReadonlyMap<string, AssetPayload>;
 }
 
+interface TopikAssetLoaderIdentity {
+  kind: "guides" | "wiki";
+  sourceNamespace: string;
+  sourceRoot: string;
+}
+
+interface LogicalTopikAssetSnapshot {
+  current: TopikAssetSnapshot;
+  identity: Readonly<TopikAssetLoaderIdentity>;
+}
+
 interface TopikAssetAccess {
   /** Current compiler-emitted independent Asset descriptors. */
   getAssets(): readonly CompiledAsset[];
@@ -30,7 +41,7 @@ type TopikAssetCompiler = () => Promise<AssetCompilationResult>;
 
 interface RegisteredTopikAssetLoader {
   compile: TopikAssetCompiler;
-  getSnapshot: () => TopikAssetSnapshot;
+  logicalSnapshot: LogicalTopikAssetSnapshot;
   snapshot: TopikAssetSnapshotControl;
 }
 
@@ -40,7 +51,10 @@ const EMPTY_SNAPSHOT: TopikAssetSnapshot = {
   payloadsByPath: new Map(),
 };
 const RUNTIME_ASSET_URLS = Symbol.for("@topik/astro/runtime-asset-urls");
-const snapshots = new WeakMap<object, RegisteredTopikAssetLoader>();
+// Astro may evaluate configuration and content loaders in separate module graphs.
+// A global symbol bridges only their process-local, logically keyed current snapshots.
+const LOGICAL_ASSET_SNAPSHOTS = Symbol.for("@topik/astro/logical-asset-snapshots/v1");
+const registeredLoaders = new WeakMap<object, RegisteredTopikAssetLoader>();
 
 export function requireTopikSourceNamespace(value: string): string {
   const validated = validateStableSourceNamespace(value);
@@ -51,31 +65,32 @@ export function requireTopikSourceNamespace(value: string): string {
 export function withTopikAssetSnapshot<T extends Loader>(
   loader: T,
   compile: TopikAssetCompiler,
+  identity: TopikAssetLoaderIdentity,
 ): { loader: T & TopikAssetAccess; snapshot: TopikAssetSnapshotControl } {
-  let current = EMPTY_SNAPSHOT;
+  const logicalSnapshot = getLogicalSnapshot(identity);
   const snapshot: TopikAssetSnapshotControl = {
     clear() {
-      current = EMPTY_SNAPSHOT;
+      logicalSnapshot.current = EMPTY_SNAPSHOT;
     },
     publish(result) {
-      current = createSnapshot(result);
+      logicalSnapshot.current = createSnapshot(result);
     },
   };
   const enhanced = Object.assign(loader, {
-    getAssets: () => current.assets,
+    getAssets: () => logicalSnapshot.current.assets,
     resolveAsset: (name: string) => {
-      const asset = current.assetsByName.get(name);
+      const asset = logicalSnapshot.current.assetsByName.get(name);
       return asset === undefined ? runtimeAssetUrls()?.get(name) : `/${asset.spec.uri}`;
     },
   });
-  snapshots.set(enhanced, { compile, getSnapshot: () => current, snapshot });
+  registeredLoaders.set(enhanced, { compile, logicalSnapshot, snapshot });
   return { loader: enhanced, snapshot };
 }
 
 export function assertTopikAssetLoaders(
   loaders: readonly TopikAssetLoader[],
 ): asserts loaders is readonly TopikAssetLoader[] {
-  if (loaders.some((loader) => !snapshots.has(loader))) {
+  if (loaders.some((loader) => !registeredLoaders.has(loader))) {
     throw new TypeError("Topik Asset delivery accepts only loaders created by @topik/astro");
   }
 }
@@ -85,7 +100,7 @@ export function findTopikAssetPayload(
   path: string,
 ): AssetPayload | undefined {
   for (const loader of loaders) {
-    const payload = snapshots.get(loader)?.getSnapshot().payloadsByPath.get(path);
+    const payload = registeredLoaders.get(loader)?.logicalSnapshot.current.payloadsByPath.get(path);
     if (payload !== undefined) return payload;
   }
   return undefined;
@@ -94,7 +109,7 @@ export function findTopikAssetPayload(
 export async function compileTopikAssetLoader(
   loader: TopikAssetLoader,
 ): Promise<AssetCompilationResult> {
-  const registered = snapshots.get(loader);
+  const registered = registeredLoaders.get(loader);
   if (registered === undefined) {
     throw new TypeError("Topik Asset compilation accepts only loaders created by @topik/astro");
   }
@@ -106,7 +121,7 @@ export async function refreshTopikAssetSnapshots(
   loaders: readonly TopikAssetLoader[],
 ): Promise<void> {
   assertTopikAssetLoaders(loaders);
-  const registered = loaders.map((loader) => snapshots.get(loader)!);
+  const registered = loaders.map((loader) => registeredLoaders.get(loader)!);
   for (const entry of registered) entry.snapshot.clear();
   try {
     const results = await Promise.all(registered.map((entry) => entry.compile()));
@@ -126,7 +141,9 @@ export function collectTopikAssetPayloads(
   assertTopikAssetLoaders(loaders);
   const payloads = new Map<string, AssetPayload>();
   for (const loader of loaders) {
-    for (const payload of snapshots.get(loader)!.getSnapshot().payloadsByPath.values()) {
+    for (const payload of registeredLoaders
+      .get(loader)!
+      .logicalSnapshot.current.payloadsByPath.values()) {
       const prior = payloads.get(payload.path);
       if (prior === undefined) {
         payloads.set(payload.path, payload);
@@ -151,7 +168,7 @@ export function collectTopikAssetUrls(
   assertTopikAssetLoaders(loaders);
   const urls = new Map<string, string>();
   for (const loader of loaders) {
-    for (const asset of snapshots.get(loader)!.getSnapshot().assets) {
+    for (const asset of registeredLoaders.get(loader)!.logicalSnapshot.current.assets) {
       const url = `/${asset.spec.uri}`;
       const prior = urls.get(asset.name);
       if (prior !== undefined && prior !== url) {
@@ -161,6 +178,35 @@ export function collectTopikAssetUrls(
     }
   }
   return urls;
+}
+
+function getLogicalSnapshot(identity: TopikAssetLoaderIdentity): LogicalTopikAssetSnapshot {
+  const registry = logicalSnapshotRegistry();
+  const key = JSON.stringify([identity.kind, identity.sourceRoot, identity.sourceNamespace]);
+  const existing = registry.get(key);
+  if (existing !== undefined) {
+    if (
+      existing.identity.kind !== identity.kind ||
+      existing.identity.sourceRoot !== identity.sourceRoot ||
+      existing.identity.sourceNamespace !== identity.sourceNamespace
+    ) {
+      throw new TypeError("Topik Asset loader identity collision");
+    }
+    return existing;
+  }
+  const created = {
+    current: EMPTY_SNAPSHOT,
+    identity: Object.freeze({ ...identity }),
+  };
+  registry.set(key, created);
+  return created;
+}
+
+function logicalSnapshotRegistry(): Map<string, LogicalTopikAssetSnapshot> {
+  const runtime = globalThis as typeof globalThis & {
+    [LOGICAL_ASSET_SNAPSHOTS]?: Map<string, LogicalTopikAssetSnapshot>;
+  };
+  return (runtime[LOGICAL_ASSET_SNAPSHOTS] ??= new Map());
 }
 
 function createSnapshot(

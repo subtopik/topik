@@ -93,6 +93,7 @@ export function topikWikiLoader(options: TopikWikiOptions): TopikAssetLoader & {
       },
     },
     compile,
+    { kind: "wiki", sourceNamespace, sourceRoot: resolvedDir },
   );
   return enhanced.loader;
 }

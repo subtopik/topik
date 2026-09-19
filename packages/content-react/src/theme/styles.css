@@ -377,7 +377,7 @@
     padding: 0.75rem;
   }
 
-  .topik-question__result {
+  .topik-question__result:not(:empty) {
     color: var(--topik-color-accent);
     font-weight: 700;
     margin-top: 0.85rem;

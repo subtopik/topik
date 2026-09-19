@@ -502,17 +502,19 @@ describe("default Topik theme components", () => {
     expect(inputs).toHaveLength(2);
     expect(inputs[0].type).toBe("radio");
     expect(dom.textContent).not.toContain("Because the first choice is correct.");
+    const status = dom.querySelector('[role="status"]');
+    expect(status?.textContent).toBe("");
 
     act(() => inputs[1].click());
 
     expect(dom.querySelector(".topik-question")?.getAttribute("data-correct")).toBe("false");
-    expect(dom.textContent).toContain("Try again");
+    expect(status?.textContent).toBe("Try again");
     expect(dom.textContent).toContain("Because the first choice is correct.");
 
     act(() => inputs[0].click());
 
     expect(dom.querySelector(".topik-question")?.getAttribute("data-correct")).toBe("true");
-    expect(dom.textContent).toContain("Correct");
+    expect(status?.textContent).toBe("Correct");
   });
 
   it("handles multiple-choice quiz answers", () => {
@@ -526,14 +528,28 @@ describe("default Topik theme components", () => {
 
     const inputs = dom.querySelectorAll<HTMLInputElement>("input");
     expect(inputs[0].type).toBe("checkbox");
+    const status = dom.querySelector('[role="status"]');
+    expect(status?.textContent).toBe("");
 
     act(() => inputs[0].click());
     expect(dom.querySelector(".topik-question")?.getAttribute("data-correct")).toBe("false");
+    expect(status?.textContent).toBe("Try again");
 
     act(() => inputs[1].click());
     expect(dom.querySelector(".topik-question")?.getAttribute("data-correct")).toBe("true");
+    expect(status?.textContent).toBe("Correct");
 
     act(() => inputs[2].click());
     expect(dom.querySelector(".topik-question")?.getAttribute("data-correct")).toBe("false");
+    expect(status?.textContent).toBe("Try again");
+
+    act(() => {
+      inputs[0].click();
+      inputs[1].click();
+      inputs[2].click();
+    });
+    expect(status?.textContent).toBe("");
+    expect(dom.querySelector('[role="status"]')).toBe(status);
+    expect(dom.querySelector(".topik-question")?.hasAttribute("data-correct")).toBe(false);
   });
 });

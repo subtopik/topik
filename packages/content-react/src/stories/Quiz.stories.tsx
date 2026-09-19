@@ -28,11 +28,16 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const Unanswered: Story = {};
+export const Unanswered: Story = {
+  play: async ({ canvas }) => {
+    await expect(canvas.getByRole("status")).toBeEmptyDOMElement();
+  },
+};
 export const IncorrectAnswer: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(canvas.getByRole("radio", { name: "Only in the editor" }));
-    await expect(canvas.getByText("Try again")).toBeVisible();
+    await expect(canvas.getByRole("status")).toHaveTextContent("Try again");
+    await expect(canvas.getByRole("status")).toBeVisible();
     await expect(
       canvas.getByText("Your host application controls how content is presented."),
     ).toBeVisible();
@@ -42,7 +47,8 @@ export const CorrectAnswer: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(canvas.getByRole("radio", { name: "Only in the editor" }));
     await userEvent.click(canvas.getByRole("radio", { name: "In your own application" }));
-    await expect(canvas.getByText("Correct", { exact: true })).toBeVisible();
+    await expect(canvas.getByRole("status")).toHaveTextContent("Correct");
+    await expect(canvas.getByRole("status")).toBeVisible();
     await expect(canvas.getByRole("radio", { name: "Only in the editor" })).not.toBeChecked();
   },
 };
@@ -50,8 +56,9 @@ export const MultipleChoice: Story = {
   args: { type: "multiple-choice" },
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(canvas.getByRole("checkbox", { name: "In your own application" }));
-    await expect(canvas.getByText("Try again")).toBeVisible();
+    await expect(canvas.getByRole("status")).toHaveTextContent("Try again");
     await userEvent.click(canvas.getByRole("checkbox", { name: "On a documentation site" }));
-    await expect(canvas.getByText("Correct", { exact: true })).toBeVisible();
+    await expect(canvas.getByRole("status")).toHaveTextContent("Correct");
+    await expect(canvas.getByRole("status")).toBeVisible();
   },
 };

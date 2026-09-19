@@ -496,9 +496,10 @@ export function TopikQuestion({ children, type = "single-choice" }: TopikCompone
           </label>
         ))}
       </div>
-      {answered ? (
-        <div className="topik-question__result">{isCorrect ? "Correct" : "Try again"}</div>
-      ) : null}
+      {/* Keep the live region mounted before its first feedback update. */}
+      <div className="topik-question__result" role="status" aria-atomic="true">
+        {answered ? (isCorrect ? "Correct" : "Try again") : null}
+      </div>
       {answered && explanation.length > 0 ? explanation : null}
     </section>
   );

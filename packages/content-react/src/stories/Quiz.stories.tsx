@@ -12,7 +12,11 @@ const meta = {
       <p>Where can you render Topik content?</p>
       <TopikQuestion key={String(args.type)} {...args}>
         <TopikChoice correct>In your own application</TopikChoice>
-        <TopikChoice correct={args.type === "multiple-choice"}>On a documentation site</TopikChoice>
+        <TopikChoice correct={args.type === "multiple-choice"}>
+          {args.type === "multiple-choice"
+            ? "On a documentation site"
+            : "Only on a hosted course platform"}
+        </TopikChoice>
         <TopikChoice>Only in the editor</TopikChoice>
         <TopikExplanation>
           Your host application controls how content is presented.

@@ -93,7 +93,10 @@ export const CopyCode: Story = {
   play: async (context) => {
     await HighlightedCode.play?.(context);
     await context.userEvent.click(context.canvas.getByRole("button", { name: "Copy" }));
-    await expect(await context.canvas.findByRole("button", { name: "Copied" })).toBeVisible();
+    // Synthetic clicks do not establish CSS :hover. Check the announced state and payload.
+    await expect(
+      await context.canvas.findByRole("button", { name: "Copied" }),
+    ).toHaveAccessibleName("Copied");
     await expect(writeClipboard).toHaveBeenCalledWith(`${code}\n`);
   },
 };

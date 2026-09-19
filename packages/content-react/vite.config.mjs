@@ -7,7 +7,7 @@ const contentSchemaSource = fileURLToPath(
 const coreSource = fileURLToPath(new URL("../core/src/index.ts", import.meta.url));
 const schemaSource = fileURLToPath(new URL("../schema/src", import.meta.url));
 
-export default defineConfig({
+const config = defineConfig({
   pack: {
     entry: ["src/index.ts", "src/theme.ts", "src/rich.tsx"],
     dts: true,
@@ -46,3 +46,9 @@ export default defineConfig({
   },
   fmt: {},
 });
+
+// The Storybook test panel discovers this config and sets VITEST_STORYBOOK.
+// Keep its browser project separate from normal vp test runs.
+export default process.env.VITEST_STORYBOOK === "true"
+  ? (await import("./.storybook/vite.config.mjs")).default
+  : config;

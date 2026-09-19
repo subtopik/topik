@@ -14,6 +14,14 @@
     padding: 1rem;
   }
 
+  /* Preserve Shiki's token contrast against its own pre background. */
+  .topik-content .topik-rich-code-block__frame .shiki code {
+    background: transparent;
+    border-radius: 0;
+    font-size: inherit;
+    padding: 0;
+  }
+
   .topik-rich-code-block__copy {
     background: rgb(17 24 39 / 0.86);
     border: 1px solid rgb(255 255 255 / 0.16);

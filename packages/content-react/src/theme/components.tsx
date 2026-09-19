@@ -144,11 +144,16 @@ function useRovingTabs(tabCount: number) {
 
 export function TopikCallout({ children, title, variant = "info" }: TopikComponentProps) {
   const calloutTitle = stringAttribute(title);
+  const titleId = useId();
 
   return (
-    <aside className="topik-callout not-prose" data-variant={stringAttribute(variant) ?? "info"}>
+    <aside
+      aria-labelledby={calloutTitle ? titleId : undefined}
+      className="topik-callout not-prose"
+      data-variant={stringAttribute(variant) ?? "info"}
+    >
       {calloutTitle ? (
-        <div className="topik-callout__title">
+        <div className="topik-callout__title" id={titleId}>
           <strong>{calloutTitle}</strong>
         </div>
       ) : null}
@@ -491,9 +496,10 @@ export function TopikQuestion({ children, type = "single-choice" }: TopikCompone
           </label>
         ))}
       </div>
-      {answered ? (
-        <div className="topik-question__result">{isCorrect ? "Correct" : "Try again"}</div>
-      ) : null}
+      {/* Keep the live region mounted before its first feedback update. */}
+      <div className="topik-question__result" role="status" aria-atomic="true">
+        {answered ? (isCorrect ? "Correct" : "Try again") : null}
+      </div>
       {answered && explanation.length > 0 ? explanation : null}
     </section>
   );

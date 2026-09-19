@@ -30,6 +30,7 @@
     "check": "vp check",
     "storybook": "storybook dev -p 6006",
     "storybook:build": "storybook build",
+    "storybook:test": "vp test --config .storybook/vite.config.mjs",
     "prepublishOnly": "vp run build"
   },
   "dependencies": {
@@ -37,21 +38,29 @@
     "@topik/content-schema": "workspace:*"
   },
   "devDependencies": {
+    "@storybook/addon-a11y": "catalog:",
     "@storybook/addon-docs": "^10.5.10",
+    "@storybook/addon-vitest": "catalog:",
     "@storybook/react-vite": "^10.5.10",
     "@topik/core": "workspace:*",
     "@topik/schema": "workspace:*",
     "@types/node": "catalog:",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@vitest/browser-playwright": "catalog:",
     "ajv": "^8.20.0",
     "jsdom": "^28.1.0",
+    "katex": "^0.16.0",
+    "mermaid": "^11.0.0",
+    "playwright": "catalog:",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "shiki": "^4.0.0",
     "storybook": "^10.5.10",
     "typescript": "catalog:",
     "vite": "catalog:",
-    "vite-plus": "catalog:"
+    "vite-plus": "catalog:",
+    "vitest": "catalog:"
   },
   "peerDependencies": {
     "katex": "^0.16.0",

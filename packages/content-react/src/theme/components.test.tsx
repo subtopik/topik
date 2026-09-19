@@ -75,10 +75,15 @@ describe("default Topik theme components", () => {
 
     expect(titled).toContain('class="topik-callout not-prose"');
     expect(titled).toContain('data-variant="warning"');
-    expect(titled).toContain('<div class="topik-callout__title"><strong>Heads up</strong></div>');
-    expect(titled).toContain("Heads up");
+    const fragment = document.createElement("div");
+    fragment.innerHTML = titled;
+    const heading = fragment.querySelector(".topik-callout__title");
+    expect(heading?.textContent).toBe("Heads up");
+    expect(heading?.id).toBeTruthy();
+    expect(fragment.querySelector("aside")?.getAttribute("aria-labelledby")).toBe(heading?.id);
     expect(untitled).toContain('data-variant="info"');
     expect(untitled).not.toContain("topik-callout__title");
+    expect(untitled).not.toContain("aria-labelledby");
   });
 
   it("ships theme styles in the components cascade layer", () => {
@@ -497,17 +502,19 @@ describe("default Topik theme components", () => {
     expect(inputs).toHaveLength(2);
     expect(inputs[0].type).toBe("radio");
     expect(dom.textContent).not.toContain("Because the first choice is correct.");
+    const status = dom.querySelector('[role="status"]');
+    expect(status?.textContent).toBe("");
 
     act(() => inputs[1].click());
 
     expect(dom.querySelector(".topik-question")?.getAttribute("data-correct")).toBe("false");
-    expect(dom.textContent).toContain("Try again");
+    expect(status?.textContent).toBe("Try again");
     expect(dom.textContent).toContain("Because the first choice is correct.");
 
     act(() => inputs[0].click());
 
     expect(dom.querySelector(".topik-question")?.getAttribute("data-correct")).toBe("true");
-    expect(dom.textContent).toContain("Correct");
+    expect(status?.textContent).toBe("Correct");
   });
 
   it("handles multiple-choice quiz answers", () => {
@@ -521,14 +528,28 @@ describe("default Topik theme components", () => {
 
     const inputs = dom.querySelectorAll<HTMLInputElement>("input");
     expect(inputs[0].type).toBe("checkbox");
+    const status = dom.querySelector('[role="status"]');
+    expect(status?.textContent).toBe("");
 
     act(() => inputs[0].click());
     expect(dom.querySelector(".topik-question")?.getAttribute("data-correct")).toBe("false");
+    expect(status?.textContent).toBe("Try again");
 
     act(() => inputs[1].click());
     expect(dom.querySelector(".topik-question")?.getAttribute("data-correct")).toBe("true");
+    expect(status?.textContent).toBe("Correct");
 
     act(() => inputs[2].click());
     expect(dom.querySelector(".topik-question")?.getAttribute("data-correct")).toBe("false");
+    expect(status?.textContent).toBe("Try again");
+
+    act(() => {
+      inputs[0].click();
+      inputs[1].click();
+      inputs[2].click();
+    });
+    expect(status?.textContent).toBe("");
+    expect(dom.querySelector('[role="status"]')).toBe(status);
+    expect(dom.querySelector(".topik-question")?.hasAttribute("data-correct")).toBe(false);
   });
 });

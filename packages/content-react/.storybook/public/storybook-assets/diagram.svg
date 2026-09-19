@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="360" viewBox="0 0 960 360">
+  <rect width="960" height="360" rx="16" fill="#f0fdfa"/>
+  <g fill="#ffffff" stroke="#0f766e" stroke-width="3">
+    <rect x="60" y="125" width="220" height="110" rx="12"/>
+    <rect x="370" y="125" width="220" height="110" rx="12"/>
+    <rect x="680" y="125" width="220" height="110" rx="12"/>
+    <path d="M280 180h90m220 0h90"/>
+  </g>
+  <g fill="#134e4a" font-family="system-ui, sans-serif" font-size="28" text-anchor="middle">
+    <text x="170" y="190">Write</text>
+    <text x="480" y="190">Validate</text>
+    <text x="790" y="190">Publish</text>
+  </g>
+</svg>

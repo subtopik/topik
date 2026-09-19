@@ -82,6 +82,11 @@
     --topik-callout-heading: rgb(95 33 32);
   }
 
+  .topik-content[data-theme="dark"] .topik-callout,
+  .dark .topik-content .topik-callout {
+    --topik-callout-heading: var(--topik-color-text);
+  }
+
   .topik-callout__title {
     color: var(--topik-callout-heading);
     font-size: 0.875rem;

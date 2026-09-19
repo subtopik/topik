@@ -144,11 +144,16 @@ function useRovingTabs(tabCount: number) {
 
 export function TopikCallout({ children, title, variant = "info" }: TopikComponentProps) {
   const calloutTitle = stringAttribute(title);
+  const titleId = useId();
 
   return (
-    <aside className="topik-callout not-prose" data-variant={stringAttribute(variant) ?? "info"}>
+    <aside
+      aria-labelledby={calloutTitle ? titleId : undefined}
+      className="topik-callout not-prose"
+      data-variant={stringAttribute(variant) ?? "info"}
+    >
       {calloutTitle ? (
-        <div className="topik-callout__title">
+        <div className="topik-callout__title" id={titleId}>
           <strong>{calloutTitle}</strong>
         </div>
       ) : null}

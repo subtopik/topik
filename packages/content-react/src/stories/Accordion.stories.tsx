@@ -21,12 +21,16 @@ type Story = StoryObj<typeof meta>;
 
 export const Closed: Story = {};
 export const Open: Story = { args: { open: true } };
-export const KeyboardToggle: Story = {
+export const FocusAndToggle: Story = {
   play: async ({ canvas, userEvent }) => {
     const summary = canvas.getByText("How is content rendered?");
+    await userEvent.tab();
+    await expect(summary).toHaveFocus();
     await userEvent.click(summary);
     await expect(canvas.getByText("The host application controls rendering.")).toBeVisible();
-    await userEvent.keyboard("{Enter}");
+    // Synthetic key events do not invoke Chromium's native summary activation.
+    // Verify focusability and disclosure behavior; custom keyboard handlers live in Tabs.
+    await userEvent.click(summary);
     await expect(canvas.getByText("The host application controls rendering.")).not.toBeVisible();
   },
 };

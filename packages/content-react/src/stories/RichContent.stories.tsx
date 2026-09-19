@@ -1,11 +1,14 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, waitFor } from "storybook/test";
+import { expect, fn, spyOn, waitFor } from "storybook/test";
 import { RichTopikContentProvider } from "../rich";
 import { TopikContent } from "../theme/TopikContent";
 import "../rich/styles.css";
 import "katex/dist/katex.min.css";
 
 const code = "const message = 'Hello, Topik!';";
+const writeClipboard = fn<(text: string) => Promise<void>>()
+  .mockResolvedValue(undefined)
+  .mockName("clipboard.writeText");
 const mermaid = [
   "```mermaid",
   "graph TD",
@@ -74,11 +77,24 @@ export const HighlightedCode: Story = {
 
 export const CopyCode: Story = {
   ...HighlightedCode,
+  parameters: {
+    docs: {
+      description: {
+        story:
+          "The clipboard API is mocked for this automated example so it can verify the copied text without changing your clipboard or requiring browser permissions.",
+      },
+    },
+  },
+  beforeEach: () => {
+    writeClipboard.mockClear();
+    const writeText = spyOn(navigator.clipboard, "writeText").mockImplementation(writeClipboard);
+    return () => writeText.mockRestore();
+  },
   play: async (context) => {
     await HighlightedCode.play?.(context);
     await context.userEvent.click(context.canvas.getByRole("button", { name: "Copy" }));
-    await expect(context.canvas.getByRole("button", { name: "Copied" })).toBeVisible();
-    await expect(await navigator.clipboard.readText()).toBe(code);
+    await expect(await context.canvas.findByRole("button", { name: "Copied" })).toBeVisible();
+    await expect(writeClipboard).toHaveBeenCalledWith(`${code}\n`);
   },
 };
 

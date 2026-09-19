@@ -75,10 +75,15 @@ describe("default Topik theme components", () => {
 
     expect(titled).toContain('class="topik-callout not-prose"');
     expect(titled).toContain('data-variant="warning"');
-    expect(titled).toContain('<div class="topik-callout__title"><strong>Heads up</strong></div>');
-    expect(titled).toContain("Heads up");
+    const fragment = document.createElement("div");
+    fragment.innerHTML = titled;
+    const heading = fragment.querySelector(".topik-callout__title");
+    expect(heading?.textContent).toBe("Heads up");
+    expect(heading?.id).toBeTruthy();
+    expect(fragment.querySelector("aside")?.getAttribute("aria-labelledby")).toBe(heading?.id);
     expect(untitled).toContain('data-variant="info"');
     expect(untitled).not.toContain("topik-callout__title");
+    expect(untitled).not.toContain("aria-labelledby");
   });
 
   it("ships theme styles in the components cascade layer", () => {

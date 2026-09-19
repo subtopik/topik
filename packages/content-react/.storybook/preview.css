@@ -1,0 +1,15 @@
+.storybook-frame {
+  background: #ffffff;
+  box-sizing: border-box;
+  padding: 24px;
+  font-family: system-ui, sans-serif;
+}
+
+.storybook-frame.dark {
+  background: #101828;
+}
+
+.storybook-content {
+  margin-inline: auto;
+  max-width: 960px;
+}

@@ -1,0 +1,36 @@
+name: Storybook
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  storybook:
+    name: Build and browser checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: voidzero-dev/setup-vp@9fd26ff49f9b5e6276c2b493da4454ad4527f7f4 # v1.20.0
+        with:
+          node-version: "24"
+          cache: true
+
+      - run: vp install --frozen-lockfile
+      - run: vp exec --filter @topik/content-react playwright install --with-deps chromium
+      - run: vp run --filter @topik/content-react storybook:build
+      - run: vp run --filter @topik/content-react storybook:test
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: content-react-storybook
+          path: packages/content-react/storybook-static
+          if-no-files-found: ignore
+          retention-days: 7

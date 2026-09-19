@@ -1,11 +1,19 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { expect, fn } from "storybook/test";
 import { TopikContent } from "../theme/TopikContent";
-
-const diagramAssetName = "auto-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+import { diagramAssetName, resolveStoryAsset } from "./fixtures";
 
 const meta = {
   title: "Content React/Components",
   component: TopikContent,
+  parameters: {
+    docs: {
+      description: {
+        component:
+          "Markdoc integration examples using the default theme. For KaTeX, Shiki, and rendered diagrams, see Rich content. Use the Theme and Viewport toolbars to inspect every example.",
+      },
+    },
+  },
 } satisfies Meta<typeof TopikContent>;
 
 export default meta;
@@ -57,9 +65,16 @@ export const Code: Story = {
       "Use {% underline %}`TopikContent`{% /underline %} to render the compiled content.",
     ].join("\n"),
   },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("tab", { name: "P pnpm" }));
+    await userEvent.keyboard("{End}");
+    await expect(canvas.getByRole("tab", { name: "N npm" })).toHaveFocus();
+    await expect(canvas.getByRole("tabpanel")).toHaveTextContent("npm install");
+  },
 };
 
 export const MathAndMermaid: Story = {
+  name: "Math and Mermaid (source fallbacks)",
   args: {
     content: [
       '{% math content="E = mc^2" /%}',
@@ -86,17 +101,22 @@ export const TableAndImage: Story = {
       "| Math | Source fallback | KaTeX rendering |",
       "| Mermaid | Source fallback | SVG diagram |",
     ].join("\n"),
-    resolveAsset: (name: string) => `https://placehold.co/920x360?text=${encodeURIComponent(name)}`,
+    resolveAsset: resolveStoryAsset,
   },
 };
 
 export const LinkNavigation: Story = {
   args: {
     content: "[Open internal route](/docs/getting-started)",
-    onNavigateLink: (href) => {
-      console.log("intercepted navigation", href);
-      return true;
-    },
+    onNavigateLink: fn(() => true),
+  },
+  play: async ({ args, canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("link", { name: "Open internal route" }));
+    await expect(args.onNavigateLink).toHaveBeenCalledWith(
+      "/docs/getting-started",
+      expect.anything(),
+    );
+    await expect(canvas.getByRole("link")).toBeVisible();
   },
 };
 
@@ -110,7 +130,7 @@ export const Steps: Story = {
 export const FigureAndBadge: Story = {
   args: {
     content: `Status: {% badge variant="info" %}draft{% /badge %}\n\n{% figure src="asset:${diagramAssetName}" alt="Diagram" caption="Figure caption" /%}`,
-    resolveAsset: (name: string) => `https://placehold.co/800x360?text=${encodeURIComponent(name)}`,
+    resolveAsset: resolveStoryAsset,
   },
 };
 

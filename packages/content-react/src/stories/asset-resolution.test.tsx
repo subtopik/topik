@@ -8,7 +8,7 @@ const generatedAssetNamePattern = /^auto-v1-[a-z2-7]{51}[aq]$/u;
 
 interface AssetStoryArgs {
   content: string;
-  resolveAsset: (name: string) => string;
+  resolveAsset: (name: string) => string | undefined;
 }
 
 function getStoryArgs(story: unknown): AssetStoryArgs {

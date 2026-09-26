@@ -33,7 +33,7 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
-    "astro": "^7.2.8",
+    "astro": "^7.3.4",
     "typescript": "catalog:",
     "vite": "catalog:",
     "vite-plus": "catalog:"

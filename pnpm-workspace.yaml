@@ -11,7 +11,7 @@ catalog:
   "@drizzle-team/brocli": ^0.12.0
   "@markdoc/markdoc": ^0.5.9
   "@types/bun": ^1.4.0
-  "@types/node": 22.20.1
+  "@types/node": 22.20.4
   entities: 8.0.0
   github-slugger: ^2.0.0
   json-schema-to-typescript: ^15.0.4

@@ -17,7 +17,7 @@ import { discoverSchemaTargets } from "../packages/schema/scripts/schema-targets
 const root = join(import.meta.dirname, "..");
 const schemaRoot = join(root, "packages", "schema");
 const coreRoot = join(root, "packages", "core");
-const contentSchemaRoot = join(root, "packages", "content-schema");
+const contentRoot = join(root, "packages", "content");
 const contentReactRoot = join(root, "packages", "content-react");
 const resourceNamePattern = "^[a-z0-9]+(?:-[a-z0-9]+)*$";
 const schemaTargets = await discoverSchemaTargets(schemaRoot);
@@ -57,13 +57,9 @@ if (
   throw new Error("Asset/v1 URI is not an unrestricted string");
 }
 
-const contentSchemaRuntime = await import(
-  pathToFileURL(join(contentSchemaRoot, "dist", "index.mjs"))
-);
+const contentRuntime = await import(pathToFileURL(join(contentRoot, "dist", "index.mjs")));
 const coreRuntime = await import(pathToFileURL(join(coreRoot, "dist", "index.mjs")));
-verifyGeneratedNameRuntime("content-schema", (name) =>
-  contentSchemaRuntime.isTopikGeneratedAssetName(name),
-);
+verifyGeneratedNameRuntime("content", (name) => contentRuntime.isTopikGeneratedAssetName(name));
 verifyGeneratedNameRuntime("core", (name) => coreRuntime.isGeneratedAssetName(name));
 verifyBlobRuntime(coreRuntime);
 verifyBlobDeclarations();
@@ -156,7 +152,8 @@ function verifyPackedTypeBoundaries() {
     mkdirSync(scope, { recursive: true });
     for (const [name, directory] of [
       ["schema", schemaRoot],
-      ["content-schema", contentSchemaRoot],
+      ["content", contentRoot],
+      ["remark-tags", join(root, "packages", "remark-tags")],
       ["core", coreRoot],
     ]) {
       const before = new Set(readdirSync(temporary));
@@ -177,12 +174,6 @@ function verifyPackedTypeBoundaries() {
       );
     }
 
-    mkdirSync(join(modules, "@markdoc"), { recursive: true });
-    symlinkSync(
-      join(root, "node_modules", "@markdoc", "markdoc"),
-      join(modules, "@markdoc", "markdoc"),
-      "dir",
-    );
     symlinkSync(join(root, "node_modules", "zod"), join(modules, "zod"), "dir");
     writeFileSync(
       join(temporary, "package.json"),

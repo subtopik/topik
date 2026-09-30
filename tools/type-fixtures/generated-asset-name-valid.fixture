@@ -6,7 +6,7 @@ import {
 import {
   validateTopikAssetReference,
   type TopikGeneratedAssetName,
-} from "@topik/content-schema";
+} from "@topik/content";
 
 const parsed: GeneratedAssetName = parseGeneratedAssetName(
   "auto-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

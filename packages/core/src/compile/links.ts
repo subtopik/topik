@@ -2,8 +2,8 @@ import type {
   AnalyzeTopikContentResult,
   TopikContentDiagnostic,
   TopikContentLink,
-} from "@topik/content-schema";
-import { topikLinkDiagnosticMessage } from "@topik/content-schema";
+} from "@topik/content";
+import { topikLinkDiagnosticMessage } from "@topik/content";
 import type { LinkValidationPolicy } from "./shared";
 
 const NON_PAGE_SCHEME = /^(?:asset|https?|mailto|tel):/i;

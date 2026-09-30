@@ -1,6 +1,6 @@
 import { readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { analyzeTopikContent, validateTopikContent } from "@topik/content-schema";
+import { analyzeTopikContent, validateTopikContent } from "@topik/content";
 import type { Guide } from "@topik/schema/guide/v1";
 import type { SourceResource } from "../resource";
 import { parseCollectionConfig } from "../config/collection";

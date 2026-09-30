@@ -1,6 +1,5 @@
-import Markdoc, { type Config } from "@markdoc/markdoc";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { mergeTopikMarkdocConfig } from "@topik/content-schema";
+import { mergeTopikContentConfig } from "@topik/content";
 import { renderToStaticMarkup } from "react-dom/server";
 import { TopikContentProvider } from "../core/context";
 import type { TopikLinkRenderProps } from "../core/components";
@@ -8,94 +7,30 @@ import { InvalidTopikContentError } from "../core/render";
 import { TopikContent } from "./TopikContent";
 
 describe("TopikContent", () => {
-  it("refuses an invalid reachable partial before default or custom SSR", () => {
-    const source = '{% partial file="bad.md" /%}';
+  it("keeps canonical validation after a caller mutates a merged schema", () => {
+    const config = mergeTopikContentConfig();
+    Reflect.set(config.components.quiz, "children", "blocks");
     const renderQuiz = vi.fn(() => <span>must not render</span>);
-    const config = {
-      partials: { "bad.md": Markdoc.parse("{% quiz %}ordinary child{% /quiz %}") },
-    };
-
-    expect(() => renderToStaticMarkup(<TopikContent config={config} content={source} />)).toThrow(
-      InvalidTopikContentError,
-    );
+    const content = "{% quiz %}\nordinary child\n{% /quiz %}";
     expect(() =>
       renderToStaticMarkup(
-        <TopikContent components={{ TopikQuiz: renderQuiz }} config={config} content={source} />,
+        <TopikContent content={content} config={config} components={{ TopikQuiz: renderQuiz }} />,
       ),
     ).toThrow(InvalidTopikContentError);
-    const placeholder = renderToStaticMarkup(
-      <TopikContent config={config} content={source} invalidContent="placeholder" />,
-    );
-    expect(placeholder).toContain('role="alert"');
-    expect(placeholder).not.toContain("ordinary child");
     expect(renderQuiz).not.toHaveBeenCalled();
   });
 
-  it("refuses canonical errors before an additive validator can affect SSR", () => {
-    const source = "{% attack /%}\n{% quiz %}ordinary child{% /quiz %}";
-    const extensionValidator = vi.fn((_node, config: Config) => {
-      const quiz = config.tags?.quiz as Record<string, unknown>;
-      Reflect.set(quiz, "validate", () => []);
-      return [];
-    });
-
-    expect(() =>
-      renderToStaticMarkup(
-        <TopikContent
-          config={{ tags: { attack: { render: "div", validate: extensionValidator } } }}
-          content={source}
-        />,
-      ),
-    ).toThrow(InvalidTopikContentError);
-    expect(extensionValidator).not.toHaveBeenCalled();
-
-    const placeholder = renderToStaticMarkup(
+  it("selects course content from declarative student variables", () => {
+    const content =
+      '{% if equals($student.role, "teacher") %}\nTeacher notes\n{% else /%}\nWelcome {% $student.name %}\n{% /if %}';
+    const html = renderToStaticMarkup(
       <TopikContent
-        config={{ tags: { attack: { render: "div", validate: extensionValidator } } }}
-        content={source}
-        invalidContent="placeholder"
+        content={content}
+        config={{ variables: { student: { role: "student", name: "Ada" } } }}
       />,
     );
-    expect(placeholder).toContain('role="alert"');
-    expect(placeholder).not.toContain("ordinary child");
-    expect(extensionValidator).not.toHaveBeenCalled();
-  });
-
-  it("cannot render through a mutated merged canonical schema", () => {
-    const source = "{% quiz %}ordinary child{% /quiz %}";
-    const config = mergeTopikMarkdocConfig();
-    const renderQuiz = vi.fn(() => <span>must not render</span>);
-    const quiz = config.tags?.quiz as Record<string, unknown>;
-    const originalValidate = quiz.validate;
-
-    try {
-      Reflect.set(quiz, "validate", () => []);
-      Reflect.set(config, "tags", { quiz: { render: "TopikQuiz", validate: () => [] } });
-
-      expect(() =>
-        renderToStaticMarkup(
-          <TopikContent components={{ TopikQuiz: renderQuiz }} config={config} content={source} />,
-        ),
-      ).toThrow(InvalidTopikContentError);
-      expect(renderQuiz).not.toHaveBeenCalled();
-    } finally {
-      Reflect.set(quiz, "validate", originalValidate);
-    }
-  });
-
-  it("cannot replace canonical validation through the default component", () => {
-    const renderQuiz = vi.fn(() => <span>must not render</span>);
-
-    expect(() =>
-      renderToStaticMarkup(
-        <TopikContent
-          components={{ TopikQuiz: renderQuiz }}
-          config={{ tags: { quiz: { render: "TopikQuiz" } } }}
-          content="{% quiz %}{% /quiz %}"
-        />,
-      ),
-    ).toThrow(InvalidTopikContentError);
-    expect(renderQuiz).not.toHaveBeenCalled();
+    expect(html).toContain("Welcome Ada");
+    expect(html).not.toContain("Teacher notes");
   });
 
   it("throws for unsupported content by default", () => {
@@ -122,7 +57,11 @@ describe("TopikContent", () => {
 
   it("renders styled default components with portable asset paths", () => {
     const html = renderToStaticMarkup(
-      <TopikContent content='{% callout title="Asset" %}{% figure src="assets/hero.webp" alt="Hero" /%}{% /callout %}' />,
+      <TopikContent
+        content={
+          '{% callout title="Asset" %}\n{% figure src="assets/hero.webp" alt="Hero" /%}\n{% /callout %}'
+        }
+      />,
     );
 
     expect(html).toContain('class="topik-content"');
@@ -181,91 +120,6 @@ describe("TopikContent", () => {
     ).toThrow(InvalidTopikContentError);
   });
 
-  it("removes unsafe evaluated Asset-slot values in the default renderer", () => {
-    const diagnostics: string[] = [];
-    const html = renderToStaticMarkup(
-      <TopikContent
-        config={{
-          functions: { unsafe: { transform: () => "javascript:alert(1)" } },
-          tags: {
-            evaluatedImage: {
-              render: "TopikImage",
-              attributes: { alt: { type: String }, src: { type: String } },
-            },
-            evaluatedLink: {
-              render: "TopikLink",
-              attributes: { href: { type: String } },
-            },
-          },
-          variables: {
-            allowed: "HtTpS://example.com/dark.png",
-            unsafe: "https://user:secret@example.com/file.png",
-          },
-        }}
-        content={[
-          '{% evaluatedImage src=$unsafe alt="Image" /%}',
-          '{% figure src=$allowed darkSrc=unsafe() alt="Figure" /%}',
-          "{% evaluatedLink href=$unsafe %}Download{% /evaluatedLink %}",
-        ].join("\n\n")}
-        onAssetDiagnostic={(diagnostic) => diagnostics.push(diagnostic.id)}
-      />,
-    );
-
-    expect(diagnostics).toEqual(Array(3).fill("TOPIK_ASSET_REFERENCE_MALFORMED"));
-    expect(html).toContain("HtTpS://example.com/dark.png");
-    expect(html).not.toContain("user:secret");
-    expect(html).not.toContain("javascript:");
-    expect(html).not.toContain("href=");
-  });
-
-  it("omits non-string evaluated Asset-slot values in the themed renderer", () => {
-    const unsafe = "https://user:secret@example.com/file.png";
-    const diagnostics: string[] = [];
-    const html = renderToStaticMarkup(
-      <TopikContent
-        config={{
-          functions: {
-            boxed: { transform: () => Object(unsafe) },
-            nil: { transform: () => null },
-            number: { transform: () => 42 },
-          },
-          tags: {
-            evaluatedImage: {
-              render: "TopikImage",
-              attributes: { alt: { type: String }, src: { type: Object } },
-            },
-            evaluatedLink: {
-              render: "TopikLink",
-              attributes: { href: { type: Object } },
-            },
-          },
-          variables: {
-            allowed: "images/allowed.png",
-            array: [unsafe],
-            boolean: true,
-            object: { toString: () => unsafe },
-          },
-        }}
-        content={[
-          '{% evaluatedImage src=$object alt="Object" /%}',
-          '{% figure src=boxed() darkSrc=$array alt="Figure" /%}',
-          "{% evaluatedLink href=number() %}Number{% /evaluatedLink %}",
-          '{% evaluatedImage src=$boolean alt="Boolean" /%}',
-          "{% evaluatedLink href=nil() %}Null{% /evaluatedLink %}",
-          '{% evaluatedImage src=$allowed alt="Allowed" /%}',
-        ].join("\n\n")}
-        onAssetDiagnostic={(diagnostic) => diagnostics.push(diagnostic.id)}
-      />,
-    );
-
-    expect(diagnostics).toEqual(Array(6).fill("TOPIK_ASSET_REFERENCE_MALFORMED"));
-    expect(html).toContain('src="images/allowed.png"');
-    expect(html).not.toContain("user:secret");
-    expect(html).not.toContain('href="42"');
-    expect(html).not.toContain('href="null"');
-    expect(html).not.toContain('src="true"');
-  });
-
   it("passes an explicit color scheme to figures", () => {
     const html = renderToStaticMarkup(
       <TopikContent
@@ -320,7 +174,7 @@ describe("TopikContent", () => {
         components={{
           TopikCallout: ({ children }) => <section className="custom-callout">{children}</section>,
         }}
-        content='{% callout title="Custom" %}Body{% /callout %}'
+        content={'{% callout title="Custom" %}\nBody\n{% /callout %}'}
       />,
     );
 
@@ -475,7 +329,21 @@ describe("TopikContent", () => {
           TopikChoice: ({ children }) => <span className="custom-choice">{children}</span>,
           TopikExplanation: ({ children }) => <div className="custom-explanation">{children}</div>,
         }}
-        content="{% quiz %}{% question %}{% choice correct=true %}Yes{% /choice %}{% choice %}No{% /choice %}{% explanation %}Because yes.{% /explanation %}{% /question %}{% /quiz %}"
+        content={[
+          "{% quiz %}",
+          "{% question %}",
+          "{% choice correct=true %}",
+          "Yes",
+          "{% /choice %}",
+          "{% choice %}",
+          "No",
+          "{% /choice %}",
+          "{% explanation %}",
+          "Because yes.",
+          "{% /explanation %}",
+          "{% /question %}",
+          "{% /quiz %}",
+        ].join("\n")}
       />,
     );
 

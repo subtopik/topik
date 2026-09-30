@@ -1,0 +1,26 @@
+{
+  "type": "root",
+  "children": [
+    {
+      "type": "paragraph",
+      "children": [
+        {
+          "type": "text",
+          "value": "Select the\n"
+        },
+        {
+          "type": "tagText",
+          "name": "badge",
+          "attributes": {
+            "label": "Preview"
+          },
+          "children": []
+        },
+        {
+          "type": "text",
+          "value": "\nchannel."
+        }
+      ]
+    }
+  ]
+}

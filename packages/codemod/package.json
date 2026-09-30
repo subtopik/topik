@@ -30,7 +30,8 @@
     "prepublishOnly": "vp run build"
   },
   "dependencies": {
-    "@drizzle-team/brocli": "catalog:"
+    "@drizzle-team/brocli": "catalog:",
+    "@topik/content": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

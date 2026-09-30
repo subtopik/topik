@@ -1,18 +1,18 @@
-import Markdoc, { type Config, type RenderableTreeNode } from "@markdoc/markdoc";
 import {
-  assignTopikHeadingIds,
-  extractTopikAssetOccurrences,
-  mergeTopikMarkdocConfig,
-  parseTopikContent,
-  removeInvalidTopikAssetReferences,
-  removeInvalidTopikNavigationReferences,
-  sanitizeTopikContentDiagnostic,
+  ContentTag,
+  isContentTag,
+  compileTopikContent,
+  type CompileTopikContentOptions,
+  type CompileTopikContentFailure,
+  type CompileTopikContentResult,
+  type RenderableTreeNode,
+} from "@topik/content";
+import {
   validateTopikAssetReference,
-  validateTopikContent,
   validateTopikHref,
   validateTopikNavigationHref,
   type TopikContentDiagnostic,
-} from "@topik/content-schema";
+} from "@topik/content";
 import * as React from "react";
 import {
   getTopikComponents,
@@ -20,11 +20,13 @@ import {
   type TopikComponentOverrides,
 } from "./components";
 
-export interface CompileTopikContentOptions {
-  file?: string;
-  config?: Config;
-  onDiagnostic?: (diagnostic: TopikContentDiagnostic) => void;
-}
+export {
+  compileTopikContent,
+  type CompileTopikContentOptions,
+  type CompileTopikContentFailure,
+  type CompileTopikContentResult,
+  type CompileTopikContentSuccess,
+} from "@topik/content";
 
 export interface RenderTrustedTopikTreeOptions {
   components?: TopikComponentOverrides;
@@ -38,23 +40,6 @@ export interface RenderTopikContentOptions extends RenderTrustedTopikTreeOptions
   invalidContent?: "placeholder";
   invalidContentPlaceholder?: React.ComponentType;
 }
-
-export interface CompileTopikContentSuccess {
-  ok: true;
-  /** Exact caller-supplied source. */
-  source: string;
-  diagnostics: TopikContentDiagnostic[];
-  tree: RenderableTreeNode;
-}
-
-export interface CompileTopikContentFailure {
-  ok: false;
-  /** Exact caller-supplied source, unchanged and never transformed. */
-  source: string;
-  diagnostics: TopikContentDiagnostic[];
-}
-
-export type CompileTopikContentResult = CompileTopikContentSuccess | CompileTopikContentFailure;
 
 export class InvalidTopikContentError extends Error {
   constructor(public readonly result: CompileTopikContentFailure) {
@@ -79,82 +64,6 @@ export interface TopikNavigationResolutionDiagnostic {
 export interface RenderTopikMarkdownOptions
   extends CompileTopikContentOptions, RenderTopikContentOptions {}
 
-export function compileTopikContent(
-  content: string,
-  options: CompileTopikContentOptions = {},
-): CompileTopikContentResult {
-  return compileTopikContentInternal(content, options);
-}
-
-function compileTopikContentInternal(
-  content: string,
-  options: CompileTopikContentOptions & Pick<RenderTopikContentOptions, "onAssetDiagnostic">,
-): CompileTopikContentResult {
-  let configSnapshot: Config | undefined;
-  let transformConfig: Config;
-  try {
-    configSnapshot =
-      options.config === undefined ? undefined : mergeTopikMarkdocConfig(options.config);
-    transformConfig = configSnapshot ?? mergeTopikMarkdocConfig();
-  } catch {
-    const diagnostic = transformDiagnostic(options.file, "topik-config-invalid");
-    options.onDiagnostic?.(diagnostic);
-    return { ok: false, source: content, diagnostics: [diagnostic] };
-  }
-  const validation = validateTopikContent(content, {
-    file: options.file,
-    config: configSnapshot,
-    allowCompiledAssetReferences: true,
-  });
-  for (const diagnostic of validation.errors) options.onDiagnostic?.(diagnostic);
-  if (!validation.valid) {
-    return { ok: false, source: content, diagnostics: validation.errors };
-  }
-
-  const ast = parseTopikContent(content, { file: options.file, location: true });
-  for (const occurrence of extractTopikAssetOccurrences(content)) {
-    if (occurrence.kind !== "reserved-asset") continue;
-    options.onAssetDiagnostic?.({
-      id: "TOPIK_ASSET_REFERENCE_MALFORMED",
-      message: "Asset reference has an invalid name",
-      slot: occurrence.slot,
-    });
-  }
-  removeInvalidTopikAssetReferences(ast, content);
-  removeInvalidTopikNavigationReferences(ast);
-  assignTopikHeadingIds(ast);
-  try {
-    return {
-      ok: true,
-      source: content,
-      diagnostics: validation.errors,
-      tree: Markdoc.transform(ast, transformConfig),
-    };
-  } catch {
-    const diagnostic = transformDiagnostic(options.file, "topik-transform-failed");
-    options.onDiagnostic?.(diagnostic);
-    return {
-      ok: false,
-      source: content,
-      diagnostics: [...validation.errors, diagnostic],
-    };
-  }
-}
-
-function transformDiagnostic(
-  file: string | undefined,
-  id: "topik-config-invalid" | "topik-transform-failed",
-): TopikContentDiagnostic {
-  return sanitizeTopikContentDiagnostic({
-    id,
-    type: "document",
-    level: "critical",
-    message: "",
-    lines: [],
-    ...(file === undefined ? {} : { file }),
-  });
-}
-
 export function renderTopikContent(
   result: CompileTopikContentResult,
   options: RenderTopikContentOptions = {},
@@ -170,7 +79,7 @@ export function renderTopikContent(
 }
 
 /**
- * Render a caller-trusted Markdoc tree. The caller owns validation and this API remains separate
+ * Render a caller-trusted Topik render tree. The caller owns validation and this API remains separate
  * from normal source rendering. Post-transform link and Asset sanitization still applies.
  */
 export function renderTrustedTopikTree(
@@ -181,9 +90,20 @@ export function renderTrustedTopikTree(
     onDiagnostic: options.onAssetDiagnostic,
     onNavigationDiagnostic: options.onNavigationDiagnostic,
   });
-  return Markdoc.renderers.react(resolved, React, {
-    components: getTopikComponents(options.components),
-  });
+  const components = getTopikComponents(options.components);
+  function render(node: RenderableTreeNode, key = 0): React.ReactNode {
+    if (Array.isArray(node)) return node.map(render);
+    if (!isContentTag(node)) return node;
+    const component = Object.hasOwn(components, node.name)
+      ? components[node.name as keyof typeof components]
+      : node.name;
+    return React.createElement(
+      component,
+      { ...node.attributes, key },
+      ...node.children.map(render),
+    );
+  }
+  return render(resolved);
 }
 
 function renderInvalidTopikContent(Placeholder: React.ComponentType | undefined): React.ReactNode {
@@ -208,7 +128,7 @@ export function resolveTopikAssetReferences<T>(
   if (Array.isArray(value)) {
     return value.map((entry) => resolveTopikAssetReferences(entry, resolveAsset, options)) as T;
   }
-  if (!(value instanceof Markdoc.Tag)) return value;
+  if (!isContentTag(value)) return value;
 
   const attributes = { ...value.attributes };
   const slots = renderedReferenceSlots(value.name);
@@ -278,7 +198,7 @@ export function resolveTopikAssetReferences<T>(
       attributes[attribute] = resolved;
     }
   }
-  return new Markdoc.Tag(
+  return new ContentTag(
     value.name,
     attributes,
     value.children.map((child) => resolveTopikAssetReferences(child, resolveAsset, options)),
@@ -368,6 +288,6 @@ export function renderTopikMarkdown(
   content: string,
   options: RenderTopikMarkdownOptions = {},
 ): React.ReactNode {
-  const result = compileTopikContentInternal(content, options);
+  const result = compileTopikContent(content, options);
   return renderTopikContent(result, { ...options, onDiagnostic: undefined });
 }

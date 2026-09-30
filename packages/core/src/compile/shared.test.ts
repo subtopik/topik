@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vite-plus/test";
-import type { TopikContentDiagnostic } from "@topik/content-schema";
+import type { TopikContentDiagnostic } from "@topik/content";
 import {
   allAmbiguousDiagnosticFiles as ambiguousDiagnosticFiles,
   unsafeDiagnosticFiles,
-} from "../../../content-schema/src/test-fixtures/diagnostic-files";
+} from "../../../content/src/test-fixtures/diagnostic-files";
 import {
   CompileError,
   extractMarkdownTitle,

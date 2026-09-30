@@ -11,7 +11,7 @@ const learningPage = `
 Use {% badge variant="success" %}Topik{% /badge %} content to compose lessons.
 
 {% callout variant="tip" title="Authoring model" %}
-Content authors write Markdoc, while apps control rendering.
+Content authors write Topik Markdown, while apps control rendering.
 {% /callout %}
 
 {% cardGrid columns=3 %}
@@ -92,7 +92,9 @@ export const AssetResolution: Story = {
 
 export const ComponentOverride: Story = {
   args: {
-    content: '{% callout title="Override" %}Rendered with a custom callout.{% /callout %}',
+    content: `{% callout title="Override" %}
+Rendered with a custom callout.
+{% /callout %}`,
     components: {
       TopikCallout: ({ children }) => (
         <section style={{ border: "2px solid currentColor", padding: 16 }}>{children}</section>

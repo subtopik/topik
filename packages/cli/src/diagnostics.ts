@@ -1,4 +1,4 @@
-import { sanitizeTopikContentDiagnostic, type TopikContentDiagnostic } from "@topik/content-schema";
+import { sanitizeTopikContentDiagnostic, type TopikContentDiagnostic } from "@topik/content";
 
 export function formatDiagnostic(diagnostic: TopikContentDiagnostic): string {
   const sanitized = sanitizeTopikContentDiagnostic(diagnostic);

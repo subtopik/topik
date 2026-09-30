@@ -1,0 +1,66 @@
+{
+  "name": "@topik/content",
+  "version": "0.1.0-alpha.5",
+  "description": "Declarative Topik content model, Markdown format, validation and rendering",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/subtopik/topik.git",
+    "directory": "packages/content"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.mjs",
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "test": "vp test --run",
+    "test:coverage": "vp test --run --coverage",
+    "check": "vp check",
+    "build": "vp pack",
+    "prepublishOnly": "vp run build"
+  },
+  "dependencies": {
+    "@topik/remark-tags": "workspace:*",
+    "@types/mdast": "catalog:",
+    "@types/unist": "catalog:",
+    "github-slugger": "catalog:",
+    "mdast-util-from-markdown": "catalog:",
+    "mdast-util-frontmatter": "catalog:",
+    "mdast-util-gfm-footnote": "catalog:",
+    "mdast-util-gfm-strikethrough": "catalog:",
+    "mdast-util-gfm-table": "catalog:",
+    "mdast-util-gfm-task-list-item": "catalog:",
+    "mdast-util-to-markdown": "catalog:",
+    "micromark-extension-frontmatter": "catalog:",
+    "micromark-extension-gfm-footnote": "catalog:",
+    "micromark-extension-gfm-strikethrough": "catalog:",
+    "micromark-extension-gfm-table": "catalog:",
+    "micromark-extension-gfm-task-list-item": "catalog:",
+    "micromark-util-decode-string": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@vitest/coverage-v8": "catalog:",
+    "micromark-util-types": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vite-plus": "catalog:",
+    "vitest": "catalog:"
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "^22.18.0 || ^24.11.0 || >=26.0.0"
+    }
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

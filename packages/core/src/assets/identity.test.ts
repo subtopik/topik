@@ -45,7 +45,7 @@ const semantic = createTopikAssetSemanticRecord(
   [
     {
       resource: "Guide/guide",
-      position: "/children/0/children/0/children/0/attributes/href",
+      position: "/children/0/children/0/attributes/href",
       slot: "link.href",
       name: assetName,
     },

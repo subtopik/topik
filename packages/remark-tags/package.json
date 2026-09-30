@@ -1,0 +1,68 @@
+{
+  "name": "@topik/remark-tags",
+  "version": "0.1.0-alpha.5",
+  "description": "Markdoc-style declarative tag syntax for remark and mdast",
+  "keywords": [
+    "markdown",
+    "mdast",
+    "remark",
+    "remark-plugin",
+    "tags",
+    "unified"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/subtopik/topik.git",
+    "directory": "packages/remark-tags"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.mjs",
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "test": "vp test --run",
+    "test:coverage": "vp test --run --coverage",
+    "check": "vp check",
+    "build": "vp pack",
+    "prepublishOnly": "vp run build"
+  },
+  "dependencies": {
+    "@types/mdast": "catalog:",
+    "@types/unist": "catalog:",
+    "mdast-util-from-markdown": "catalog:",
+    "mdast-util-to-markdown": "catalog:",
+    "micromark-util-types": "catalog:",
+    "unified": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@vitest/coverage-v8": "catalog:",
+    "mdast-util-directive": "catalog:",
+    "mdast-util-gfm": "catalog:",
+    "micromark-extension-directive": "catalog:",
+    "micromark-extension-gfm": "catalog:",
+    "remark-parse": "catalog:",
+    "remark-stringify": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vite-plus": "catalog:",
+    "vitest": "catalog:"
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "^22.18.0 || ^24.11.0 || >=26.0.0"
+    }
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

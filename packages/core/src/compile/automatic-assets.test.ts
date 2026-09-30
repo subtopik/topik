@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
-import { extractTopikAssetOccurrences } from "@topik/content-schema";
+import { extractTopikAssetOccurrences } from "@topik/content";
 import type { Asset } from "@topik/schema/asset/v1";
 import type { Course } from "@topik/schema/course/v1";
 import type { CourseModule } from "@topik/schema/course-module/v1";
@@ -402,6 +402,25 @@ describe("compilation-wide automatic Assets", () => {
 
     expect(result.resources).toEqual([source]);
     expect((result.resources[0] as Guide).spec.content.value).toBe(content);
+    expect(result.payloads).toEqual([]);
+    expect(result.semantic).toMatchObject({ assetNames: [], references: [] });
+  });
+
+  test.each([
+    "http://example.com/file.pdf",
+    "https://example.com/file.pdf",
+    "www.example.com",
+    "person@example.com",
+    "mailto:person@example.com",
+  ])("compiles bare addresses as text without creating Assets: %s", async (content) => {
+    const source = guide("guide", content);
+    const result = await compileAssetResources({
+      rootDir: dir,
+      resources: [source],
+      sourcePathsByResource: { "Guide/guide": "guide.md" },
+    });
+
+    expect(result.resources).toEqual([source]);
     expect(result.payloads).toEqual([]);
     expect(result.semantic).toMatchObject({ assetNames: [], references: [] });
   });

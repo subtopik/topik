@@ -74,7 +74,7 @@ describe("alpha publication retries", () => {
     const calls = [];
     try {
       publishAlpha({
-        cwd: root,
+        cwd: createPublishWorkspace(temporary),
         temporaryDirectory: temporary,
         run(command, args) {
           calls.push([command, ...args]);
@@ -97,12 +97,91 @@ describe("alpha publication retries", () => {
       expect(publishCalls).toHaveLength(plannedNames.length);
       expect(publishCalls.every((call) => call.slice(-2).join(" ") === "--tag alpha")).toBe(true);
       expect(publishCalls.every((call) => !call.includes("latest"))).toBe(true);
-      expect(publishCalls.some((call) => call.join(" ").includes("content-schema"))).toBe(false);
+      expect(publishCalls.some((call) => call.join(" ").includes("topik-remark-tags-"))).toBe(
+        false,
+      );
+    } finally {
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  });
+
+  test("refuses unapplied changesets before contacting the registry or publishing", () => {
+    const temporary = mkdtempSync(join(tmpdir(), "topik-unversioned-publish-"));
+    try {
+      const cwd = createPublishWorkspace(temporary);
+      writeFileSync(join(cwd, ".changeset", "pending.md"), '---\n"@topik/content": minor\n---\n');
+      const calls = [];
+      expect(() =>
+        publishAlpha({ cwd, temporaryDirectory: temporary, run: (...args) => calls.push(args) }),
+      ).toThrow(/unapplied changesets/);
+      expect(calls).toEqual([]);
+    } finally {
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  });
+
+  test("allows applied prerelease changesets and an already-published empty plan", () => {
+    const temporary = mkdtempSync(join(tmpdir(), "topik-versioned-publish-"));
+    try {
+      const cwd = createPublishWorkspace(temporary);
+      writeFileSync(
+        join(cwd, ".changeset", "applied.md"),
+        '---\n"@topik/content": minor\n---\nExercise release versioning.\n',
+      );
+      execFileSync(
+        process.execPath,
+        [join(root, "node_modules", "@changesets", "cli", "bin.js"), "version"],
+        {
+          cwd,
+          stdio: "pipe",
+        },
+      );
+      expect(() => readFileSync(join(cwd, ".changeset", "applied.md"))).toThrow();
+      expect(readFileSync(join(cwd, ".changeset", "pre", "applied.md"), "utf8")).toContain(
+        "Exercise release versioning.",
+      );
+      const calls = [];
+      publishAlpha({
+        cwd,
+        temporaryDirectory: temporary,
+        run(command, args) {
+          calls.push(command);
+          if (args[2] === "publish-plan") {
+            writeFileSync(option(args, "--output"), JSON.stringify(createPlan([])));
+          } else if (args[2] === "pack") {
+            writePackedPlan(option(args, "--out-dir"), createPlan([]));
+          }
+        },
+      });
+      expect(calls).toEqual(["vp", "vp"]);
     } finally {
       rmSync(temporary, { recursive: true, force: true });
     }
   });
 });
+
+function createPublishWorkspace(temporary) {
+  const cwd = join(temporary, "workspace");
+  mkdirSync(join(cwd, ".changeset"), { recursive: true });
+  for (const name of ["package.json", "pnpm-workspace.yaml"]) {
+    writeFileSync(join(cwd, name), readFileSync(join(root, name)));
+  }
+  writeFileSync(join(cwd, ".changeset", "pre.json"), JSON.stringify({ mode: "pre", tag: "alpha" }));
+  writeFileSync(
+    join(cwd, ".changeset", "config.json"),
+    readFileSync(join(root, ".changeset", "config.json")),
+  );
+  writeFileSync(join(cwd, ".changeset", "README.md"), "Release instructions.\n");
+  for (const name of [...publicPackages, "@topik/astro"]) {
+    const directory = join("packages", name.slice("@topik/".length));
+    mkdirSync(join(cwd, directory), { recursive: true });
+    writeFileSync(
+      join(cwd, directory, "package.json"),
+      readFileSync(join(root, directory, "package.json")),
+    );
+  }
+  return cwd;
+}
 
 function createFakePnpm(temporary) {
   const fakeBin = join(temporary, "bin");

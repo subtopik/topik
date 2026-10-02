@@ -1,9 +1,7 @@
 import { defineConfig } from "vite-plus";
 import { fileURLToPath } from "node:url";
 
-const contentSchemaSource = fileURLToPath(
-  new URL("../content-schema/src/index.ts", import.meta.url),
-);
+const contentSource = fileURLToPath(new URL("../content/src/index.ts", import.meta.url));
 const coreSource = fileURLToPath(new URL("../core/src/index.ts", import.meta.url));
 const schemaSource = fileURLToPath(new URL("../schema/src", import.meta.url));
 
@@ -37,7 +35,7 @@ const config = defineConfig({
   },
   test: {
     alias: {
-      "@topik/content-schema": contentSchemaSource,
+      "@topik/content": contentSource,
       "@topik/core": coreSource,
       "@topik/schema": schemaSource,
     },

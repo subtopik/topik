@@ -1,12 +1,19 @@
 id: topik-docs
 title: Topik
-description: Portable content resources and rendering primitives.
+description: Portable Markdown, compiled resources, and application rendering.
 navigation:
   - index
   - type: group
-    title: Concepts
+    title: Content
+    slug: content
     children:
-      - resources
-      - navigation
+      - content-design
+      - autolinks
       - rendering
+  - type: group
+    title: Resources
+    slug: resources
+    children:
+      - index
+      - navigation
       - assets

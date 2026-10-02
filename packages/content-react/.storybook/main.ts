@@ -14,8 +14,9 @@ const config: StorybookConfig = {
     return mergeConfig(config, {
       resolve: {
         alias: {
-          "@topik/content-schema": fileURLToPath(
-            new URL("../../content-schema/src/index.ts", import.meta.url),
+          "@topik/content": fileURLToPath(new URL("../../content/src/index.ts", import.meta.url)),
+          "@topik/remark-tags": fileURLToPath(
+            new URL("../../remark-tags/src/index.ts", import.meta.url),
           ),
         },
       },

@@ -1,11 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 export const publicPackages = [
-  "@topik/content-schema",
+  "@topik/remark-tags",
+  "@topik/content",
   "@topik/schema",
   "@topik/core",
   "@topik/content-react",
@@ -68,13 +69,20 @@ function validateWorkspace(cwd) {
   if (preState.mode !== "pre" || preState.tag !== "alpha") {
     throw new Error("Changesets must be in alpha prerelease mode");
   }
+  // Changesets 3 moves applied prerelease notes into .changeset/pre/.
+  const pendingChangesets = readdirSync(join(cwd, ".changeset")).filter(
+    (name) => name.endsWith(".md") && name !== "README.md",
+  );
+  if (pendingChangesets.length > 0) {
+    throw new Error("Run changeset version before publishing: unapplied changesets remain");
+  }
 
   const config = readJson(join(cwd, ".changeset", "config.json"));
   if (
     config.fixed?.length !== 1 ||
     JSON.stringify(config.fixed[0].toSorted()) !== JSON.stringify(publicPackages.toSorted())
   ) {
-    throw new Error("Changesets must contain the exact six-package fixed group");
+    throw new Error("Changesets must contain the exact public-package fixed group");
   }
 
   const versions = new Map();
@@ -91,7 +99,7 @@ function validateWorkspace(cwd) {
     }
     cohortVersion ??= packageJson.version;
     if (packageJson.version !== cohortVersion) {
-      throw new Error("The six public packages must use one alpha version");
+      throw new Error("The public packages must use one alpha version");
     }
     versions.set(name, packageJson.version);
   }

@@ -6,7 +6,7 @@ import { isDirectory, runMintlify } from "./runner";
 
 const mintlify = command({
   name: "mintlify",
-  desc: "Convert a Mintlify project to Topik (Markdoc)",
+  desc: "Convert supported Mintlify components to Topik content directives",
   options: {
     dir: positional("dir").desc("Path to the Mintlify content directory").default("."),
     dryRun: boolean("dry-run").desc("Preview changes without writing files").default(false),

@@ -7,18 +7,18 @@ vp install
 vp run --filter @topik/content-react storybook
 ```
 
-Storybook resolves the content schema from workspace source, so it does not require a package build first. It imports the same theme CSS shipped to consumers. Rich stories also import the rich styles and KaTeX CSS, and use the actual optional rendering libraries installed as development dependencies.
+Storybook resolves the content parser from workspace source, so it does not require a package build first. It imports the same theme CSS shipped to consumers. Rich stories also import the rich styles and KaTeX CSS, and use the actual optional rendering libraries installed as development dependencies.
 
 ## Writing stories
 
 - Use typed CSF stories with `satisfies Meta<typeof Component>` and `StoryObj<typeof meta>`.
-- Keep individual component states in focused files, with args and explicit controls for the generic Topik component props. Keep Markdoc integration examples under Components and TopikContent.
+- Keep individual component states in focused files, with args and explicit controls for the generic Topik component props. Keep Topik Markdown integration examples under Components and TopikContent.
 - Prefer named states such as Open, IncorrectAnswer, and DisplayMath. Exercise meaningful keyboard and callback behavior with `play`, `expect`, and `userEvent` from the story context.
 - Use `fn()` from `storybook/test` for callback args. Example navigation is intercepted by the global provider so links do not leave the canvas.
 - Reuse the local assets in `public/storybook-assets` through `src/stories/fixtures.ts`. Do not add external placeholder-image services.
 - Autodocs is enabled globally. Add descriptions explaining required providers, CSS, and deliberate error scenarios.
 - The Theme toolbar synchronizes CSS, asset selection, and the rich renderer. Add explicit dark and mobile stories for important regression cases; toolbar exploration alone is not automated coverage.
-- Invalid Markdoc throws by default. Demonstrate safe error presentation with `invalidContent: "placeholder"`, or explicitly catch errors when documenting the throwing API.
+- Invalid Topik Markdown throws by default. Demonstrate safe error presentation with `invalidContent: "placeholder"`, or explicitly catch errors when documenting the throwing API.
 
 ## Verification
 

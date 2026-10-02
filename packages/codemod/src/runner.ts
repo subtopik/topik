@@ -47,7 +47,8 @@ export async function runMintlify(options: RunOptions): Promise<RunSummary> {
       }
 
       let renameWillRun = false;
-      if (!options.keepExtension && absPath.endsWith(".mdx")) {
+      // A warned file may still contain MDX; keep its extension for manual migration.
+      if (!options.keepExtension && result.warnings.length === 0 && absPath.endsWith(".mdx")) {
         const newPath = absPath.slice(0, -4) + ".md";
         fileResult.newRelativePath = relative(options.dir, newPath);
         if (await pathExists(newPath)) {

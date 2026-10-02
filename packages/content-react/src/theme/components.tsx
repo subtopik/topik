@@ -1,4 +1,4 @@
-import { validateTopikHref } from "@topik/content-schema";
+import { validateTopikHref } from "@topik/content";
 import {
   Children,
   isValidElement,

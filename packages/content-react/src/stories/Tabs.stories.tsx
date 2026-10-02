@@ -7,7 +7,7 @@ const meta = {
   component: TopikTabs,
   render: () => (
     <TopikTabs>
-      <TopikTab title="Write">Write your content in Markdoc.</TopikTab>
+      <TopikTab title="Write">Write your content in Topik Markdown.</TopikTab>
       <TopikTab title="Preview">Preview it in your application.</TopikTab>
       <TopikTab title="Publish">Publish when you are ready.</TopikTab>
     </TopikTabs>
@@ -39,6 +39,8 @@ export const KeyboardNavigation: Story = {
     await userEvent.keyboard("{ArrowLeft}");
     await expect(canvas.getByRole("tab", { name: "Publish" })).toHaveFocus();
     await userEvent.keyboard("{Home}");
-    await expect(canvas.getByRole("tabpanel")).toHaveTextContent("Write your content in Markdoc.");
+    await expect(canvas.getByRole("tabpanel")).toHaveTextContent(
+      "Write your content in Topik Markdown.",
+    );
   },
 };

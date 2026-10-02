@@ -1,0 +1,11 @@
+{
+  "type": "root",
+  "children": [
+    {
+      "type": "tagContainer",
+      "name": "panel",
+      "attributes": {},
+      "children": []
+    }
+  ]
+}

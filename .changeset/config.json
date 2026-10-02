@@ -4,7 +4,8 @@
   "commit": false,
   "fixed": [
     [
-      "@topik/content-schema",
+      "@topik/remark-tags",
+      "@topik/content",
       "@topik/schema",
       "@topik/core",
       "@topik/content-react",

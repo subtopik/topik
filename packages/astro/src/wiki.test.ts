@@ -37,7 +37,7 @@ describe("topikWikiLoader", () => {
     const context = createMockContext();
     await loader.load(context);
 
-    expect(context.entries.size).toBe(5);
+    expect(context.entries.size).toBe(7);
     const home = [...context.entries.values()].find((entry) => entry.data.slug === "");
     expect(home).toMatchObject({
       id: expect.stringMatching(wikiPageNamePattern),
@@ -46,17 +46,20 @@ describe("topikWikiLoader", () => {
     expect(home?.body).toContain("# Topik");
   });
 
-  test("uses the shared resolver for pathless container routes", async () => {
+  test("uses the shared resolver for nested documentation routes", async () => {
     const loader = topikWikiLoader(docsOptions);
     const context = createMockContext();
     await loader.load(context);
 
-    expect([...context.entries.values()].map((entry) => entry.data.slug)).toEqual([
+    const slugs = [...context.entries.values()].map((entry) => String(entry.data.slug));
+    expect(slugs.sort((a, b) => a.localeCompare(b))).toEqual([
       "",
+      "content/autolinks",
+      "content/content-design",
+      "content/rendering",
       "resources",
-      "assets",
-      "navigation",
-      "rendering",
+      "resources/assets",
+      "resources/navigation",
     ]);
   });
 
@@ -71,31 +74,51 @@ describe("topikWikiLoader", () => {
       },
       {
         type: "group",
-        title: "Concepts",
+        title: "Content",
+        slug: "content",
         children: [
           {
             type: "page",
             page: expect.stringMatching(wikiPageNamePattern),
-            slug: "resources",
-            sourcePath: "resources",
+            slug: "content-design",
+            sourcePath: "content/content-design",
           },
           {
             type: "page",
             page: expect.stringMatching(wikiPageNamePattern),
-            slug: "navigation",
-            sourcePath: "navigation",
+            slug: "autolinks",
+            sourcePath: "content/autolinks",
           },
           {
             type: "page",
             page: expect.stringMatching(wikiPageNamePattern),
             slug: "rendering",
-            sourcePath: "rendering",
+            sourcePath: "content/rendering",
+          },
+        ],
+      },
+      {
+        type: "group",
+        title: "Resources",
+        slug: "resources",
+        children: [
+          {
+            type: "page",
+            page: expect.stringMatching(wikiPageNamePattern),
+            slug: "",
+            sourcePath: "resources/index",
+          },
+          {
+            type: "page",
+            page: expect.stringMatching(wikiPageNamePattern),
+            slug: "navigation",
+            sourcePath: "resources/navigation",
           },
           {
             type: "page",
             page: expect.stringMatching(wikiPageNamePattern),
             slug: "assets",
-            sourcePath: "assets",
+            sourcePath: "resources/assets",
           },
         ],
       },

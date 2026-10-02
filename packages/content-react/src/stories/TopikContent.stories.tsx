@@ -9,7 +9,7 @@ const learningPage = `
 Use {% badge variant="success" %}Topik{% /badge %} content to compose lessons.
 
 {% callout variant="tip" title="Authoring model" %}
-Content authors write Markdoc, while apps control rendering.
+Content authors write Topik Markdown, while apps control rendering.
 {% /callout %}
 
 {% cardGrid columns=3 %}
@@ -67,7 +67,7 @@ const meta = {
     resolveAsset: resolveStoryAsset,
   },
   argTypes: {
-    content: { control: "text", description: "Validated Topik Markdoc source." },
+    content: { control: "text", description: "Validated Topik Markdown source." },
     colorScheme: { control: "select", options: [undefined, "light", "dark"] },
     components: { control: false },
     config: { control: false },
@@ -78,7 +78,7 @@ const meta = {
     docs: {
       description: {
         component:
-          'The themed renderer validates Markdoc before rendering it. Import @topik/content-react/theme/styles.css in your app. Invalid content throws by default; select invalidContent="placeholder" to show a safe alert. The Theme toolbar also controls light/dark asset selection.',
+          'The themed renderer validates Topik Markdown before rendering it. Import @topik/content-react/theme/styles.css in your app. Invalid content throws by default; select invalidContent="placeholder" to show a safe alert. The Theme toolbar also controls light/dark asset selection.',
       },
     },
   },
@@ -138,7 +138,9 @@ export const MissingAsset: Story = {
 
 export const ComponentOverride: Story = {
   args: {
-    content: '{% callout title="Override" %}Rendered with a custom callout.{% /callout %}',
+    content: `{% callout title="Override" %}
+Rendered with a custom callout.
+{% /callout %}`,
     components: {
       TopikCallout: ({ children }) => (
         <section style={{ border: "2px solid currentColor", padding: 16 }}>{children}</section>

@@ -5,7 +5,7 @@ import {
   isTopikGeneratedAssetName,
   parseTopikGeneratedAssetName,
   type TopikGeneratedAssetName,
-} from "@topik/content-schema";
+} from "@topik/content";
 import type { Asset } from "@topik/schema/asset/v1";
 import rawAssetV1Schema from "@topik/schema/asset/v1.json" with { type: "json" };
 import {

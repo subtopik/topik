@@ -1,0 +1,31 @@
+{
+  "type": "root",
+  "children": [
+    {
+      "type": "tagContainer",
+      "name": "panel",
+      "attributes": {
+        "title": "Checklist"
+      },
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "text",
+              "value": "Verify the cache."
+            }
+          ]
+        },
+        {
+          "type": "tagLeaf",
+          "name": "media",
+          "attributes": {
+            "src": "asset:diagram"
+          },
+          "children": []
+        }
+      ]
+    }
+  ]
+}

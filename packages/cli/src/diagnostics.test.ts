@@ -1,9 +1,9 @@
-import { validateTopikContent } from "@topik/content-schema";
+import { validateTopikContent } from "@topik/content";
 import { describe, expect, test } from "vite-plus/test";
 import {
   allAmbiguousDiagnosticFiles as ambiguousDiagnosticFiles,
   unsafeDiagnosticFiles,
-} from "../../content-schema/src/test-fixtures/diagnostic-files";
+} from "../../content/src/test-fixtures/diagnostic-files";
 import { formatDiagnostic } from "./diagnostics";
 
 describe("CLI diagnostic serialization", () => {

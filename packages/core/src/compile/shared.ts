@@ -1,4 +1,4 @@
-import { sanitizeTopikContentDiagnostic, type TopikContentDiagnostic } from "@topik/content-schema";
+import { sanitizeTopikContentDiagnostic, type TopikContentDiagnostic } from "@topik/content";
 import { parse as parseYaml } from "yaml";
 import type { TopikAssetSemanticRecordV1, TopikMaterializationRecordV1 } from "../assets/identity";
 import type { AssetPayload, CompiledResource } from "./assets";

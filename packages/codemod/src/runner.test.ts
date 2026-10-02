@@ -60,4 +60,29 @@ describe("runMintlify", () => {
     const original = await readFile(join(dir, "post.mdx"), "utf-8");
     expect(original).toBe("<Note>hi</Note>\n");
   });
+
+  test("keeps an unsupported MDX file and its extension unchanged", async () => {
+    const source = '<Note>Helpful.</Note>\n<Icon icon="star" />\n';
+    await writeFile(join(dir, "unsupported.mdx"), source);
+
+    const summary = await runMintlify({ dir, dryRun: false, keepExtension: false });
+
+    expect(summary.filesChanged).toBe(0);
+    expect(summary.warnings).toBeGreaterThan(0);
+    expect(summary.files[0]).toMatchObject({ changed: false, relativePath: "unsupported.mdx" });
+    expect(await readFile(join(dir, "unsupported.mdx"), "utf-8")).toBe(source);
+    expect(await readdir(dir)).not.toContain("unsupported.md");
+  });
+
+  test("does not rename an untouched file containing unknown JSX", async () => {
+    const source = '<CustomThing title="x" />\n';
+    await writeFile(join(dir, "custom.mdx"), source);
+
+    const summary = await runMintlify({ dir, dryRun: false, keepExtension: false });
+
+    expect(summary.filesChanged).toBe(0);
+    expect(summary.warnings).toBeGreaterThan(0);
+    expect(await readdir(dir)).toContain("custom.mdx");
+    expect(await readFile(join(dir, "custom.mdx"), "utf-8")).toBe(source);
+  });
 });

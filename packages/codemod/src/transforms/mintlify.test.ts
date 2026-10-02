@@ -1,127 +1,119 @@
+import { parseTopikContent, validateTopikContent } from "@topik/content";
 import { describe, expect, test } from "vite-plus/test";
 import { transformMintlify } from "./mintlify";
 
-describe("transformMintlify", () => {
-  test("converts <Note> to an info callout", () => {
-    const { content } = transformMintlify("<Note>Heads up</Note>\n");
-    expect(content).toBe('{% callout variant="info" %}Heads up{% /callout %}\n');
+function converted(source: string): string {
+  const result = transformMintlify(source);
+  expect(result.warnings).toEqual([]);
+  expect(result.changed).toBe(true);
+  expect(validateTopikContent(result.content)).toMatchObject({ valid: true, errors: [] });
+  return result.content;
+}
+
+describe("Mintlify to Topik content", () => {
+  test.each([
+    ["Note", "info"],
+    ["Info", "info"],
+    ["Tip", "tip"],
+    ["Check", "tip"],
+    ["Warning", "warning"],
+    ["Danger", "danger"],
+  ])("converts <%s> to a block callout with variant %s", (name, variant) => {
+    const output = converted(`<${name}>Heads up</${name}>\n`);
+    expect(output).toBe(`{% callout variant="${variant}" %}\nHeads up\n{% /callout %}\n`);
+    expect(parseTopikContent(output).children[0]).toMatchObject({
+      type: "topikComponent",
+      name: "callout",
+      props: { variant },
+    });
   });
 
-  test("maps Mintlify callouts to supported Topik variants", () => {
-    const variants = {
-      Note: "info",
-      Info: "info",
-      Tip: "tip",
-      Check: "tip",
-      Warning: "warning",
-      Danger: "danger",
-    };
-    for (const [component, variant] of Object.entries(variants)) {
-      const { content } = transformMintlify(`<${component}>x</${component}>`);
-      expect(content).toBe(`{% callout variant="${variant}" %}x{% /callout %}`);
+  test("converts nested canonical components with camelCase names and own-line tags", () => {
+    const source = [
+      '<CardGroup columns="2">',
+      '<Card title="First" href="/first" />',
+      "</CardGroup>",
+      '<Tabs><Tab title="CLI">Use it.</Tab></Tabs>',
+      '<Steps><Step title="Install">Run it.</Step></Steps>',
+      '<Accordion title="More">Details.</Accordion>',
+    ].join("\n");
+    const output = converted(source);
+    expect(output).toContain(
+      '{% cardGrid columns=2 %}\n{% card title="First" href="/first" /%}\n{% /cardGrid %}',
+    );
+    expect(output).toContain('{% tabs %}\n{% tab title="CLI" %}\nUse it.\n{% /tab %}\n{% /tabs %}');
+    expect(output).toContain(
+      '{% steps %}\n{% step title="Install" %}\nRun it.\n{% /step %}\n{% /steps %}',
+    );
+  });
+
+  test("preserves quoted values and converts typed literals", () => {
+    const output = converted(
+      `<Card title='say "hi"' href="/next" />\n<Accordion title="More" open="true">Details.</Accordion>`,
+    );
+    expect(output).toContain('title="say \\"hi\\""');
+    expect(output).toContain("open=true");
+    expect(parseTopikContent(output).children[1]).toMatchObject({
+      type: "topikComponent",
+      name: "accordion",
+      props: { open: true },
+    });
+  });
+
+  test.each([
+    '<Frame caption="Image">![alt](image.png)</Frame>',
+    '<Icon icon="star" />',
+    '<AccordionGroup><Accordion title="A">Body</Accordion></AccordionGroup>',
+    "<Card title={name} />",
+    '<Card title="Safe" icon={Icon} />',
+    '<Card title="Safe" unknown="value" />',
+    "<CodeGroup>```js\nhello\n```</CodeGroup>",
+    '<Tab title="Orphan">Body</Tab>',
+    '<Card title="One" title="Two" />',
+  ])("keeps unsupported source unchanged with a warning: %s", (source) => {
+    const result = transformMintlify(source);
+    expect(result).toMatchObject({ content: source, changed: false });
+    expect(result.warnings.length).toBeGreaterThan(0);
+  });
+
+  test("does not publish partial conversion when a file has unsupported source", () => {
+    const source = '<Note>Helpful.</Note>\n<Icon icon="star" />';
+    const result = transformMintlify(source);
+    expect(result).toMatchObject({ content: source, changed: false });
+    expect(result.warnings.length).toBeGreaterThan(0);
+  });
+
+  test("warns at the offending dynamic attribute", () => {
+    const source = '<Card title="Safe" icon={Icon} />';
+    const result = transformMintlify(source);
+    expect(result).toMatchObject({ content: source, changed: false });
+    expect(result.warnings).toEqual([
+      expect.objectContaining({ line: 1, column: 20, message: expect.stringContaining("Dynamic") }),
+    ]);
+  });
+
+  test("finds a quoted > without misreading a tag boundary", () => {
+    const output = converted('<Card title="x>y" />');
+    expect(output).toContain('title="x>y"');
+  });
+
+  test("leaves code fences, inline code and plain Markdown intact", () => {
+    for (const source of [
+      "```mdx\n<Note>example</Note>\n```\n",
+      "~~~mdx\n<Note>example</Note>\n~~~\n",
+      "````mdx\n<Note>example</Note>\n````\n",
+      "Use the `<Note>` component.\n",
+      "Use the ``<Note>`` component.\n",
+      "# Hello\n\nJust regular Markdown.\n",
+    ]) {
+      expect(transformMintlify(source)).toEqual({ content: source, warnings: [], changed: false });
     }
   });
 
-  test("converts <Frame> with attributes", () => {
-    const { content } = transformMintlify('<Frame caption="A hero">![alt](./img.png)</Frame>');
-    expect(content).toBe('{% frame caption="A hero" %}![alt](./img.png){% /frame %}');
-  });
-
-  test("converts self-closing tags", () => {
-    const { content } = transformMintlify('<Icon icon="bun" />');
-    expect(content).toBe('{% icon icon="bun" /%}');
-  });
-
-  test("converts known passthrough tags by mechanical rename", () => {
-    const { content } = transformMintlify(
-      '<Tabs>\n<Tab title="JS">code</Tab>\n<Tab title="TS">code</Tab>\n</Tabs>',
-    );
-    expect(content).toBe(
-      '{% tabs %}\n{% tab title="JS" %}code{% /tab %}\n{% tab title="TS" %}code{% /tab %}\n{% /tabs %}',
-    );
-  });
-
-  test("preserves single-quoted attribute values", () => {
-    const { content } = transformMintlify("<Frame caption='hi'>x</Frame>");
-    expect(content).toBe('{% frame caption="hi" %}x{% /frame %}');
-  });
-
-  test("warns and drops JSX expression attributes", () => {
-    const { content, warnings } = transformMintlify('<Card title="x" icon={Icon} />');
-    expect(content).toBe('{% card title="x" /%}');
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0].message).toContain("JSX expression");
-    expect(warnings[0].message).toContain("{Icon}");
-  });
-
-  test("leaves unknown tags alone", () => {
-    const source = "<div>not mine</div> <CustomThing>also not mine</CustomThing>";
-    const { content, changed } = transformMintlify(source);
-    expect(content).toBe(source);
-    expect(changed).toBe(false);
-  });
-
-  test("leaves lowercase HTML tags alone", () => {
-    const source = "<img src='./x.png' />\n<a href='/foo'>link</a>";
-    const { content, changed } = transformMintlify(source);
-    expect(content).toBe(source);
-    expect(changed).toBe(false);
-  });
-
-  test("leaves tags inside fenced code blocks alone", () => {
-    const source = "```mdx\n<Note>example</Note>\n```\n";
-    const { content, changed } = transformMintlify(source);
-    expect(content).toBe(source);
-    expect(changed).toBe(false);
-  });
-
-  test("leaves tags inside inline code alone", () => {
-    const source = "Use the `<Note>` component.\n";
-    const { content, changed } = transformMintlify(source);
-    expect(content).toBe(source);
-    expect(changed).toBe(false);
-  });
-
-  test("preserves attribute values verbatim (escapes carry through)", () => {
-    const { content } = transformMintlify('<Frame caption="say \\"hi\\"">x</Frame>');
-    expect(content).toBe('{% frame caption="say \\"hi\\"" %}x{% /frame %}');
-  });
-
-  test("converts nested known tags", () => {
-    const source = "<Steps>\n  <Step title='one'>do this</Step>\n</Steps>";
-    const { content } = transformMintlify(source);
-    expect(content).toBe('{% steps %}\n  {% step title="one" %}do this{% /step %}\n{% /steps %}');
-  });
-
-  test("escapes inner double quotes when re-quoting single-quoted attributes", () => {
-    const { content } = transformMintlify(`<Frame caption='say "hi"'>x</Frame>`);
-    expect(content).toBe('{% frame caption="say \\"hi\\"" %}x{% /frame %}');
-  });
-
-  test("does not mistake > inside a quoted attribute for the tag end", () => {
-    const { content } = transformMintlify('<Frame caption="x>y">body</Frame>');
-    expect(content).toBe('{% frame caption="x>y" %}body{% /frame %}');
-  });
-
-  test("does not mistake > inside a JSX expression for the tag end", () => {
-    const { content, warnings } = transformMintlify("<Card icon={a > b} />");
-    expect(content).toBe("{% card /%}");
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0].message).toContain("{a > b}");
-  });
-
-  test("warning column points at the offending attribute, not the tag start", () => {
-    const source = '<Card title="x" icon={Icon} />';
-    const { warnings } = transformMintlify(source);
-    expect(warnings).toHaveLength(1);
-    // "icon={Icon}" starts at column 17 (1-indexed); the < is at column 1
-    expect(warnings[0].column).toBe(17);
-  });
-
-  test("leaves files with no Mintlify components untouched", () => {
-    const source = "# Hello\n\nJust regular markdown.\n";
-    const { content, changed } = transformMintlify(source);
-    expect(content).toBe(source);
-    expect(changed).toBe(false);
+  test("warns on unsupported raw JSX even without a recognized convertible tag", () => {
+    const source = '<CustomThing title="x" />';
+    const result = transformMintlify(source);
+    expect(result).toMatchObject({ content: source, changed: false });
+    expect(result.warnings.length).toBeGreaterThan(0);
   });
 });

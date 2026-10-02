@@ -1,0 +1,24 @@
+{
+  "type": "root",
+  "children": [
+    {
+      "type": "paragraph",
+      "children": [
+        {
+          "type": "inlineCode",
+          "value": "{% unknown /%}"
+        },
+        {
+          "type": "text",
+          "value": " and {% unknown /%}."
+        }
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "txt",
+      "meta": null,
+      "value": "{% unknown %}"
+    }
+  ]
+}

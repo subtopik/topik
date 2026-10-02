@@ -1,5 +1,5 @@
 import type { GeneratedAssetName } from "@topik/core";
-import type { TopikGeneratedAssetName } from "@topik/content-schema";
+import type { TopikGeneratedAssetName } from "@topik/content";
 
 // @ts-expect-error generated names cannot be constructed from unchecked strings
 const unchecked: GeneratedAssetName =
@@ -15,7 +15,7 @@ const uppercase: GeneratedAssetName =
 const prefix: GeneratedAssetName = "asset-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 // @ts-expect-error final symbol must have zero base32 padding bits
 const suffix: GeneratedAssetName = "auto-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab";
-// @ts-expect-error the content-schema alias preserves the same opaque boundary
+// @ts-expect-error the content alias preserves the same opaque boundary
 const contentAlias: TopikGeneratedAssetName = "auto-v1-q";
 
 void [unchecked, shortName, alphabet, uppercase, prefix, suffix, contentAlias];

@@ -5,7 +5,7 @@ import {
   validateTopikAssetReference,
   validateTopikContent,
   type TopikContentLink,
-} from "@topik/content-schema";
+} from "@topik/content";
 import type {
   Wiki,
   WikiDropdownNavNode,

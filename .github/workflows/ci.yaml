@@ -5,8 +5,10 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_call:
 
-permissions: read-all
+permissions:
+  contents: read
 
 jobs:
   ci:
@@ -15,9 +17,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Keep the declared floor exact: Node 22.12 embeds Unicode 16, while
-        # current Node 22/24 embed Unicode 17.
-        node-version: ["22.12.0", "22", "24"]
+        # Vite+/Vitest require a newer runtime than the published libraries.
+        node-version: ["22.18.0", "22", "24"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -28,31 +29,21 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: true
 
-      - run: vp install
+      - run: vp install --frozen-lockfile
 
       - run: vp run -r build
 
-      - run: vp run verify:public-packages
+      - name: Verify packed packages
+        if: matrix.node-version != '22.18.0'
+        run: vp run verify:public-packages
+
+      - name: Verify packed packages and the public Node.js floor
+        if: matrix.node-version == '22.18.0'
+        run: |
+          vp env install 22.12.0
+          runtime_node="$(vp env exec --node 22.12.0 node -p process.execPath)"
+          vp run verify:public-packages --runtime-node "$runtime_node"
 
       - run: vp check
 
       - run: vp test
-
-  content-react-peers:
-    name: Content React peer boundaries
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - uses: voidzero-dev/setup-vp@9fd26ff49f9b5e6276c2b493da4454ad4527f7f4 # v1.20.0
-        with:
-          node-version: "24"
-          cache: true
-
-      - run: vp install
-
-      - run: vp run -r build
-
-      - run: vp run verify:content-react-peers

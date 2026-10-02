@@ -14,27 +14,43 @@ type Story = StoryObj<typeof meta>;
 
 export const Callout: Story = {
   args: {
-    content: '{% callout variant="warning" title="Watch out" %}Callout body.{% /callout %}',
+    content: `{% callout variant="warning" title="Watch out" %}
+Callout body.
+{% /callout %}`,
   },
 };
 
 export const Cards: Story = {
   args: {
-    content:
-      '{% cardGrid columns=2 %}{% card title="Alpha" href="/alpha" icon="A" %}First card.{% /card %}{% card title="Beta" icon="B" %}Second card.{% /card %}{% /cardGrid %}',
+    content: `{% cardGrid columns=2 %}
+{% card title="Alpha" href="/alpha" icon="A" %}
+First card.
+{% /card %}
+{% card title="Beta" icon="B" %}
+Second card.
+{% /card %}
+{% /cardGrid %}`,
   },
 };
 
 export const Accordion: Story = {
   args: {
-    content: '{% accordion title="Details" open=true %}Accordion body.{% /accordion %}',
+    content: `{% accordion title="Details" open=true %}
+Accordion body.
+{% /accordion %}`,
   },
 };
 
 export const Tabs: Story = {
   args: {
-    content:
-      '{% tabs %}{% tab title="One" %}First panel.{% /tab %}{% tab title="Two" %}Second panel.{% /tab %}{% /tabs %}',
+    content: `{% tabs %}
+{% tab title="One" %}
+First panel.
+{% /tab %}
+{% tab title="Two" %}
+Second panel.
+{% /tab %}
+{% /tabs %}`,
   },
 };
 
@@ -102,8 +118,14 @@ export const LinkNavigation: Story = {
 
 export const Steps: Story = {
   args: {
-    content:
-      '{% steps %}{% step title="Plan" %}Choose the topic.{% /step %}{% step title="Publish" %}Ship the lesson.{% /step %}{% /steps %}',
+    content: `{% steps %}
+{% step title="Plan" %}
+Choose the topic.
+{% /step %}
+{% step title="Publish" %}
+Ship the lesson.
+{% /step %}
+{% /steps %}`,
   },
 };
 
@@ -116,7 +138,21 @@ export const FigureAndBadge: Story = {
 
 export const Quiz: Story = {
   args: {
-    content:
-      '{% quiz %}{% question type="multiple-choice" %}{% choice correct=true %}A{% /choice %}{% choice correct=true %}B{% /choice %}{% choice %}C{% /choice %}{% explanation %}A and B are correct.{% /explanation %}{% /question %}{% /quiz %}',
+    content: `{% quiz %}
+{% question type="multiple-choice" %}
+{% choice correct=true %}
+A
+{% /choice %}
+{% choice correct=true %}
+B
+{% /choice %}
+{% choice %}
+C
+{% /choice %}
+{% explanation %}
+A and B are correct.
+{% /explanation %}
+{% /question %}
+{% /quiz %}`,
   },
 };

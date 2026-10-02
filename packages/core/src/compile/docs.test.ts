@@ -14,15 +14,17 @@ describe("Topik documentation wiki", () => {
     const pages = resources.filter((resource) => resource.type === "WikiPage");
 
     expect(wiki?.name).toBe("topik-docs");
-    expect(pages).toHaveLength(5);
+    expect(pages).toHaveLength(7);
     expect(validateResources(resources)).toEqual({ valid: true, errors: [] });
     const resolved = resolveWikiNavigation(wiki?.spec.navigation ?? []);
     expect(resolved.pages.map((page) => page.route)).toEqual([
       "",
+      "content/content-design",
+      "content/autolinks",
+      "content/rendering",
       "resources",
-      "navigation",
-      "rendering",
-      "assets",
+      "resources/navigation",
+      "resources/assets",
     ]);
   });
 });

@@ -1,3 +1,5 @@
+import { components, validateTopikContent } from "@topik/content";
+
 export interface TransformWarning {
   line: number;
   column: number;
@@ -19,19 +21,21 @@ const CALLOUT_VARIANTS = new Map([
   ["Danger", "danger"],
 ]);
 
-const CALLOUT_TAGS = new Set(CALLOUT_VARIANTS.keys());
+const BLOCK_TAGS = new Map([
+  ["Tabs", "tabs"],
+  ["Tab", "tab"],
+  ["Steps", "steps"],
+  ["Step", "step"],
+  ["Card", "card"],
+  ["CardGroup", "cardGrid"],
+  ["Accordion", "accordion"],
+  ["CodeGroup", "codeGroup"],
+  ["CodeTab", "codeTab"],
+]);
 
-const PASSTHROUGH_TAGS = new Set([
+const UNSUPPORTED_TAGS = new Set([
   "Frame",
   "Image",
-  "Tabs",
-  "Tab",
-  "Steps",
-  "Step",
-  "CodeGroup",
-  "Card",
-  "CardGroup",
-  "Accordion",
   "AccordionGroup",
   "Expandable",
   "Snippet",
@@ -49,6 +53,7 @@ export function transformMintlify(source: string): TransformResult {
   let out = "";
   let cursor = 0;
   let changed = false;
+  let firstTag = 0;
 
   while (cursor < source.length) {
     const next = findNextTag(source, cursor);
@@ -58,26 +63,48 @@ export function transformMintlify(source: string): TransformResult {
     }
 
     out += source.slice(cursor, next.start);
-
-    if (next.kind === "open" || next.kind === "selfclose") {
-      const replacement = renderOpenTag(
-        next.name,
-        next.rawAttrs,
-        next.kind === "selfclose",
-        next.attrsStart,
-        source,
-        warnings,
-      );
-      out += replacement;
-    } else {
-      out += `{% /${markdocTagName(next.name)} %}`;
+    if (UNSUPPORTED_TAGS.has(next.name)) {
+      warn(warnings, source, next.start, `<${next.name}> has no equivalent Topik component`);
+      out += source.slice(next.start, next.end);
+      cursor = next.end;
+      continue;
     }
 
+    if (!changed) firstTag = next.start;
     changed = true;
+    const name = CALLOUT_VARIANTS.has(next.name) ? "callout" : BLOCK_TAGS.get(next.name)!;
+    if (next.kind === "close") {
+      if (next.rawAttrs.length > 0)
+        warn(warnings, source, next.attrsStart, `Closing </${next.name}> has attributes`);
+      if (!out.endsWith("\n") && out.length > 0) out += "\n";
+      out += `{% /${name} %}`;
+    } else {
+      const attrs = parseAttrs(next, name, source, warnings);
+      if (CALLOUT_VARIANTS.has(next.name))
+        attrs.unshift(`variant=${JSON.stringify(CALLOUT_VARIANTS.get(next.name))}`);
+      if (out.length > 0 && !out.endsWith("\n") && /\S/u.test(out.slice(out.lastIndexOf("\n") + 1)))
+        out += "\n";
+      out += `{% ${name}${attrs.length ? ` ${attrs.join(" ")}` : ""}${next.kind === "selfclose" ? " /%}" : " %}"}`;
+    }
+    if (source[next.end] !== "\n") out += "\n";
     cursor = next.end;
   }
 
-  return { content: out, warnings, changed };
+  // Conversion is transactional: never claim a partial or invalid migration.
+  if (warnings.length > 0) return { content: source, warnings, changed: false };
+  if (!validateTopikContent(out).valid) {
+    warn(
+      warnings,
+      source,
+      firstTag,
+      changed
+        ? "Converted content is not valid Topik content; source kept"
+        : "Source is not valid Topik content; source kept",
+    );
+    return { content: source, warnings, changed: false };
+  }
+  if (!changed) return { content: source, warnings, changed: false };
+  return { content: out, warnings, changed: true };
 }
 
 interface FoundTag {
@@ -109,7 +136,7 @@ function findNextTag(source: string, from: number): FoundTag | null {
       continue;
     }
     const name = nameMatch[0];
-    if (!isKnownComponent(name)) {
+    if (!CALLOUT_VARIANTS.has(name) && !BLOCK_TAGS.has(name) && !UNSUPPORTED_TAGS.has(name)) {
       i++;
       continue;
     }
@@ -119,8 +146,8 @@ function findNextTag(source: string, from: number): FoundTag | null {
     if (tagEnd < 0) return null;
 
     const interior = source.slice(afterName, tagEnd);
-    const isSelfClose = interior.endsWith("/");
-    const rawInterior = isSelfClose ? interior.slice(0, -1) : interior;
+    const isSelfClose = !isClose && /\/\s*$/u.test(interior);
+    const rawInterior = isSelfClose ? interior.replace(/\/\s*$/u, "") : interior;
     const leadingWs = rawInterior.length - rawInterior.trimStart().length;
     const rawAttrs = rawInterior.trim();
     const attrsStart = afterName + leadingWs;
@@ -153,69 +180,90 @@ function findTagEnd(source: string, from: number): number {
   return -1;
 }
 
-function isKnownComponent(name: string): boolean {
-  return CALLOUT_TAGS.has(name) || PASSTHROUGH_TAGS.has(name);
-}
-
-function markdocTagName(componentName: string): string {
-  if (CALLOUT_TAGS.has(componentName)) return "callout";
-  return componentName.toLowerCase();
-}
-
-function renderOpenTag(
-  componentName: string,
-  rawAttrs: string,
-  selfClose: boolean,
-  attrsStart: number,
-  source: string,
-  warnings: TransformWarning[],
-): string {
-  const isCallout = CALLOUT_TAGS.has(componentName);
-  const tagName = isCallout ? "callout" : markdocTagName(componentName);
-  const attrParts: string[] = [];
-
-  if (isCallout) {
-    attrParts.push(`variant="${CALLOUT_VARIANTS.get(componentName)}"`);
-  }
-
-  if (rawAttrs.length > 0) {
-    const collected = parseAttrs(rawAttrs, attrsStart, source, warnings);
-    attrParts.push(...collected);
-  }
-
-  const attrString = attrParts.length > 0 ? ` ${attrParts.join(" ")}` : "";
-  const closer = selfClose ? " /%}" : " %}";
-  return `{% ${tagName}${attrString}${closer}`;
-}
-
 function parseAttrs(
-  raw: string,
-  attrsStart: number,
+  tag: FoundTag,
+  targetName: string,
   source: string,
   warnings: TransformWarning[],
 ): string[] {
   const attrs: string[] = [];
+  const raw = tag.rawAttrs;
+  const definitions = components[targetName].attributes;
+  const seen = new Set<string>();
   ATTR_RE.lastIndex = 0;
+  let previousEnd = 0;
   let match: RegExpExecArray | null;
   while ((match = ATTR_RE.exec(raw)) !== null) {
+    if (raw.slice(previousEnd, match.index).trim())
+      warn(
+        warnings,
+        source,
+        tag.attrsStart + previousEnd,
+        `Unsupported attributes on <${tag.name}>`,
+      );
+    previousEnd = ATTR_RE.lastIndex;
     const [, name, doubleQuoted, singleQuoted, jsExpression] = match;
+    const offset = tag.attrsStart + match.index;
     if (jsExpression !== undefined) {
-      const { line, column } = lineColumnAt(source, attrsStart + match.index);
-      warnings.push({
-        line,
-        column,
-        message: `JSX expression in attribute (dropped): ${name}=${jsExpression}`,
-      });
+      warn(warnings, source, offset, `Dynamic JSX attribute ${name} is unsupported`);
       continue;
     }
-    // Re-emit as double-quoted Markdoc attribute. Values from a single-quoted
-    // source may contain literal " that must be escaped.
-    const wasDoubleQuoted = doubleQuoted !== undefined;
-    const value = doubleQuoted ?? singleQuoted ?? "";
-    const safeValue = wasDoubleQuoted ? value : value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-    attrs.push(`${name}="${safeValue}"`);
+    if (
+      !Object.hasOwn(definitions, name) ||
+      seen.has(name) ||
+      (targetName === "callout" && name === "variant")
+    ) {
+      warn(warnings, source, offset, `Attribute ${name} is unsupported on <${tag.name}>`);
+      continue;
+    }
+    seen.add(name);
+    const value = decodeQuoted(doubleQuoted ?? singleQuoted ?? "", doubleQuoted !== undefined);
+    if (value === undefined || /\p{Cc}/u.test(value) || /&(?:#\w+|[a-z][a-z0-9]+);/iu.test(value)) {
+      warn(warnings, source, offset, `Attribute ${name} cannot be converted safely`);
+      continue;
+    }
+    const definition = definitions[name];
+    if (definition.type === "boolean") {
+      if (value !== "true" && value !== "false")
+        warn(warnings, source, offset, `Attribute ${name} requires a boolean`);
+      else attrs.push(`${name}=${value}`);
+    } else if (definition.type === "number") {
+      const number = Number(value);
+      if (!value.trim() || !Number.isFinite(number) || String(number) !== value)
+        warn(warnings, source, offset, `Attribute ${name} requires a finite number`);
+      else attrs.push(`${name}=${value}`);
+    } else {
+      attrs.push(`${name}=${JSON.stringify(value)}`);
+    }
   }
+  if (raw.slice(previousEnd).trim())
+    warn(warnings, source, tag.attrsStart + previousEnd, `Unsupported attributes on <${tag.name}>`);
   return attrs;
+}
+
+function decodeQuoted(raw: string, doubleQuoted: boolean): string | undefined {
+  if (doubleQuoted) {
+    try {
+      return JSON.parse(`"${raw}"`) as string;
+    } catch {
+      return undefined;
+    }
+  }
+  let result = "";
+  for (let index = 0; index < raw.length; index++) {
+    if (raw[index] !== "\\") {
+      result += raw[index];
+      continue;
+    }
+    const next = raw[++index];
+    if (next !== "'" && next !== '"' && next !== "\\") return undefined;
+    result += next;
+  }
+  return result;
+}
+
+function warn(warnings: TransformWarning[], source: string, offset: number, message: string): void {
+  warnings.push({ ...lineColumnAt(source, offset), message });
 }
 
 function lineColumnAt(source: string, offset: number): { line: number; column: number } {
@@ -231,11 +279,21 @@ function lineColumnAt(source: string, offset: number): { line: number; column: n
 }
 
 function isInsideCodeBlock(source: string, offset: number): boolean {
-  const before = source.slice(0, offset);
-  const fences = before.match(/```/g);
-  if (fences && fences.length % 2 === 1) return true;
-  const lineStart = before.lastIndexOf("\n") + 1;
-  const lineSoFar = before.slice(lineStart);
-  const ticks = lineSoFar.match(/`/g);
-  return ticks != null && ticks.length % 2 === 1;
+  const lines = source.slice(0, offset).split("\n");
+  let fence: { marker: string; length: number } | undefined;
+  for (const line of lines.slice(0, -1)) {
+    const match = /^ {0,3}(`{3,}|~{3,})(.*)$/u.exec(line);
+    if (!match) continue;
+    const marker = match[1][0];
+    if (!fence) fence = { marker, length: match[1].length };
+    else if (marker === fence.marker && match[1].length >= fence.length && !match[2].trim())
+      fence = undefined;
+  }
+  if (fence) return true;
+  let inlineTicks = 0;
+  for (const match of lines.at(-1)!.matchAll(/`+/gu)) {
+    if (inlineTicks === 0) inlineTicks = match[0].length;
+    else if (inlineTicks === match[0].length) inlineTicks = 0;
+  }
+  return inlineTicks > 0;
 }

@@ -27,7 +27,7 @@
     "prepublishOnly": "vp run build"
   },
   "dependencies": {
-    "@topik/content-schema": "workspace:*",
+    "@topik/content": "workspace:*",
     "@topik/schema": "workspace:*",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",

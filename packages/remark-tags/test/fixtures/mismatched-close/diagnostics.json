@@ -1,0 +1,12 @@
+[
+  {
+    "message": "Mismatched closing tag media",
+    "line": 2,
+    "column": 1
+  },
+  {
+    "message": "Unclosed tag panel",
+    "line": 1,
+    "column": 1
+  }
+]

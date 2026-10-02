@@ -1,5 +1,5 @@
 import type { ComponentPropsWithoutRef, ComponentType, MouseEvent, ReactNode } from "react";
-import type { TopikGeneratedAssetName } from "@topik/content-schema";
+import type { TopikGeneratedAssetName } from "@topik/content";
 
 export const topikComponentNames = [
   "TopikAccordion",

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="360" viewBox="0 0 960 360">
+  <rect width="960" height="360" rx="16" fill="#134e4a"/>
+  <circle cx="180" cy="180" r="75" fill="#5eead4"/>
+  <text x="330" y="195" fill="#f0fdfa" font-family="system-ui, sans-serif" font-size="40">Dark image</text>
+</svg>

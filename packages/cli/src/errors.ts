@@ -1,4 +1,4 @@
-import { publicCompileErrorMessage, PublicCompileError } from "@topik/core";
+import { publicCompileErrorMessage, PublicCompileError, ManifestSourceError } from "@topik/core";
 
 export class CliError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -40,6 +40,17 @@ function publicCliErrorMessage(id: unknown): string | undefined {
 export function formatPublicCliError(error: unknown): string {
   if (error instanceof PublicCliError) {
     return publicCliErrorMessage(error.id) ?? "Topik command failed.";
+  }
+  if (error instanceof ManifestSourceError) {
+    const message = publicCompileErrorMessage(error.id) ?? "Topik command failed.";
+    // Re-sanitize mutable error properties at the presentation boundary.
+    const location = new PublicCompileError(error.id, error.location).location;
+    const index =
+      Number.isSafeInteger(error.sourceIndex) && error.sourceIndex >= 0
+        ? `sources[${error.sourceIndex}]`
+        : "source";
+    const kind = error.kind === "wiki" || error.kind === "collection" ? ` (${error.kind})` : "";
+    return `.topik.yaml ${index}${kind}${location ? ` ${location}` : ""}: ${message}`;
   }
   if (error instanceof PublicCompileError) {
     return publicCompileErrorMessage(error.id) ?? "Topik command failed.";

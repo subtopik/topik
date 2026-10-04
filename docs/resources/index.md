@@ -122,3 +122,7 @@ memory; the CLI writes the complete output tree.
 possible application relationship. Keep the generated inventories and payloads
 with the resources when transferring a compilation. [Assets](./assets.md#compiled-output)
 explains that output boundary.
+
+## Repository projects
+
+Use a [root `.topik.yaml` manifest](./manifest.md) to select multiple existing Wiki and collection configurations. Each local configuration keeps its own settings and relative content paths.

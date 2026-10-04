@@ -114,6 +114,8 @@ export function validatePortableAssetTree(
 export interface ReadPortableAssetFileOptions {
   root: string;
   path: string;
+  /** Optional tighter read limit; cannot exceed the portable asset maximum. */
+  maxBytes?: number;
 }
 
 export type PortableNavigationPathKind = "directory" | "missing" | "other";
@@ -202,6 +204,14 @@ async function readPortableAssetFileAnchored(
 ): Promise<TopikAssetResult<PortableAssetFileDescriptor>> {
   const pathValidation = validateTopikPath(options.path);
   if (!pathValidation.ok) return { ok: false, diagnostics: pathValidation.diagnostics };
+  const maxBytes = options.maxBytes ?? TOPIK_ASSET_LIMITS.maxAssetBytes;
+  if (
+    !Number.isSafeInteger(maxBytes) ||
+    maxBytes < 1 ||
+    maxBytes > TOPIK_ASSET_LIMITS.maxAssetBytes
+  ) {
+    return { ok: false, diagnostics: [unsupportedPath(options.path, "Invalid file read limit")] };
+  }
 
   if (
     process.platform !== "linux" ||
@@ -356,7 +366,7 @@ async function readPortableAssetFileAnchored(
       !before.isFile() ||
       before.nlink !== 1n ||
       (before.mode & 0o111n) !== 0n ||
-      before.size > BigInt(TOPIK_ASSET_LIMITS.maxAssetBytes) ||
+      before.size > BigInt(maxBytes) ||
       (before.size > 0n && before.blocks * 512n < before.size)
     ) {
       return {
@@ -364,7 +374,16 @@ async function readPortableAssetFileAnchored(
         diagnostics: [unsupportedPath(options.path, "Unsafe filesystem file type or mode")],
       };
     }
-    const bytes = await fileHandle.readFile();
+    // Bound allocation/read even if the file grows after stat. The identity check below
+    // rejects any mutation; one extra byte detects growth without an unbounded readFile.
+    const buffer = Buffer.alloc(Number(before.size) + 1);
+    let length = 0;
+    while (length < buffer.length) {
+      const { bytesRead } = await fileHandle.read(buffer, length, buffer.length - length, null);
+      if (bytesRead === 0) break;
+      length += bytesRead;
+    }
+    const bytes = buffer.subarray(0, length);
     await afterFileRead?.();
     const after = await fileHandle.stat({ bigint: true });
     if (

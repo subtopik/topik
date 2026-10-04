@@ -43,7 +43,7 @@ const ownedDescriptorEncoder = new TextEncoder();
 
 export const compile = command({
   name: "compile",
-  desc: "Compile wiki content into Topik resource files",
+  desc: "Compile project content into Topik resource files",
   options: {
     dir: positional("dir").desc("Path to the content directory").default("."),
     outDir: string("out-dir").alias("o").desc("Output directory for compiled resources"),

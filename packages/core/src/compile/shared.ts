@@ -5,6 +5,8 @@ import type { AssetPayload, CompiledResource } from "./assets";
 import { PublicCompileError } from "./public-errors";
 
 export interface CompileResult {
+  /** Present for manifest compilation, in declaration order. */
+  provenance?: import("./manifest").ManifestSourceProvenance[];
   diagnostics: TopikContentDiagnostic[];
   resources: CompiledResource[];
   payloads: AssetPayload[];

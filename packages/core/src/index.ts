@@ -1,5 +1,15 @@
 /** High-level parsers target the Topik input format. */
 export {
+  DEFAULT_ASSET_DIRECTORY,
+  sourceAssetsConfigSchema,
+  type SourceAssetsConfig,
+  TOPIK_MANIFEST_FILENAME,
+  TOPIK_MANIFEST_LIMITS,
+  topikManifestSchema,
+  topikManifestSourceSchema,
+  parseTopikManifest,
+  type TopikManifest,
+  type TopikManifestSource,
   parseCollectionConfig,
   parseWikiConfig,
   type CollectionConfig,
@@ -7,6 +17,14 @@ export {
 } from "./config";
 
 export {
+  compileManifest,
+  loadTopikManifest,
+  discoverManifestSources,
+  deriveManifestSourceNamespace,
+  ManifestSourceError,
+  type ManifestCompileResult,
+  type ManifestSourceDescriptor,
+  type ManifestSourceProvenance,
   compile,
   lint,
   compileWiki,

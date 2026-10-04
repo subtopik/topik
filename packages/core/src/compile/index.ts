@@ -1,3 +1,4 @@
+import { compileManifest, hasRootManifest } from "./manifest";
 import { resolve } from "node:path";
 import type { SourceResource } from "../resource";
 import { findConfigFile } from "./config";
@@ -50,6 +51,7 @@ export interface CompileOptions {
 
 export async function compile(options: CompileOptions): Promise<CompileResult> {
   const dir = resolve(options.dir);
+  if (await hasRootManifest(dir)) return compileManifest(options);
   const resources: SourceResource[] = [];
   const diagnostics: CompileResult["diagnostics"] = [];
   const sourcePathsByResource: Record<string, string> = {};
@@ -96,3 +98,14 @@ export async function lint(options: CompileOptions): Promise<LintResult> {
     throw error;
   }
 }
+
+export {
+  compileManifest,
+  loadTopikManifest,
+  discoverManifestSources,
+  deriveManifestSourceNamespace,
+  ManifestSourceError,
+  type ManifestCompileResult,
+  type ManifestSourceDescriptor,
+  type ManifestSourceProvenance,
+} from "./manifest";

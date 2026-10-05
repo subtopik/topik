@@ -28,7 +28,7 @@ schemas and TypeScript types; `@topik/core` validates resource envelopes.
 
 ## Source files and compiled resources
 
-Authors normally work with Markdown and a directory configuration. The compiler
+Authors work with Markdown, local configurations, and a [project manifest](./manifest.md). The compiler
 produces resources from those files:
 
 | Source                                    | Output                                    |
@@ -49,13 +49,26 @@ and file-discovery support are separate capabilities.
 
 ## Compile a wiki
 
-Create a directory with `wiki.yaml` and `index.md`:
+Create a directory with `.topik.yaml`, `wiki.yaml`, and `index.md`:
 
 ```text
 handbook/
+  .topik.yaml
   wiki.yaml
   index.md
 ```
+
+Declare the Wiki in `.topik.yaml`:
+
+```yaml
+version: 1
+namespace: example/handbook
+sources:
+  - kind: wiki
+    config: wiki.yaml
+```
+
+Configure `wiki.yaml`:
 
 ```yaml
 id: handbook
@@ -84,7 +97,7 @@ separate output directory. Writing compilation output with the current CLI
 requires Linux.
 
 Use [Navigation](./navigation.md) to add folders, groups, page links, and routes.
-If the source includes local assets, see [Assets](./assets.md) for source
+If the source includes local assets, see [Assets](./assets.md) for project
 namespaces and delivery.
 
 ## Compile a guide collection
@@ -96,11 +109,20 @@ id: tutorials
 title: Tutorials
 ```
 
-Put guide Markdown files beside that configuration and run `topik compile` on
-that directory. Each filename supplies a guide slug; the resource name combines
+Put guide Markdown files beside that configuration and declare it in `.topik.yaml`:
+
+```yaml
+version: 1
+namespace: example/tutorials
+sources:
+  - kind: collection
+    config: collection.yaml
+```
+
+Run `topik compile` on the manifest directory. Each filename supplies a guide slug; the resource name combines
 the collection ID and slug. A frontmatter `title` overrides the first heading as
 the displayed title. The compiler can process a wiki and collection together
-when both configurations are present in one directory.
+when both configurations are listed in the manifest.
 
 ## Use the compiler as a library
 
@@ -110,11 +132,13 @@ import { compileWiki, validateResources } from "@topik/core";
 const result = await compileWiki({ dir: "./docs" });
 const validation = validateResources(result.resources);
 if (!validation.valid) throw new Error(JSON.stringify(validation.errors));
-console.log(result.resources.map((resource) => `${resource.type}/${resource.name}`));
+console.log(
+  result.resources.map((resource) => `${resource.type}/${resource.name}`),
+);
 ```
 
-Use `compileGuides` for a collection or `compile` to discover both supported
-configurations. The result contains resources, asset payloads, diagnostics, and
+Use `compileGuides` for a standalone collection or `compile` for the sources
+declared in `.topik.yaml`. Only explicit standalone operations omit the manifest. The result contains resources, asset payloads, diagnostics, and
 the semantic and materialization inventories. The library returns these in
 memory; the CLI writes the complete output tree.
 
@@ -123,6 +147,6 @@ possible application relationship. Keep the generated inventories and payloads
 with the resources when transferring a compilation. [Assets](./assets.md#compiled-output)
 explains that output boundary.
 
-## Repository projects
+## Multi-source projects
 
-Use a [root `.topik.yaml` manifest](./manifest.md) to select multiple existing Wiki and collection configurations. Each local configuration keeps its own settings and relative content paths.
+The [project manifest](./manifest.md) can select multiple existing Wiki and collection configurations. Each local configuration keeps its own settings and relative content paths.

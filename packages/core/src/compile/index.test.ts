@@ -15,18 +15,27 @@ describe("compile", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  test("returns no resources when no supported config is present", async () => {
-    await expect(compile({ dir })).resolves.toMatchObject({
-      diagnostics: [],
-      resources: [],
-      payloads: [],
-    });
+  test("requires a manifest instead of discovering conventional configs", async () => {
+    await expect(compile({ dir })).rejects.toMatchObject({ id: "manifest-required" });
+    await writeFile(join(dir, "wiki.yaml"), "id: docs\ntitle: Docs");
+    await expect(compile({ dir })).rejects.toMatchObject({ id: "manifest-required" });
   });
+  async function manifest(kinds: string[]) {
+    await writeFile(
+      join(dir, ".topik.yaml"),
+      JSON.stringify({
+        version: 1,
+        namespace: "test/project",
+        sources: kinds.map((kind) => ({ kind, config: kind + ".yaml" })),
+      }),
+    );
+  }
 
   test("delegates wiki directories to the wiki compiler", async () => {
     await writeFile(join(dir, "wiki.yaml"), "id: docs\ntitle: Docs\nnavigation:\n  - intro\n");
     await writeFile(join(dir, "intro.md"), "# Intro\n");
 
+    await manifest(["wiki"]);
     const result = await compile({ dir });
 
     expect(result.resources.map((resource) => resource.type)).toEqual(["Wiki", "WikiPage"]);
@@ -36,6 +45,7 @@ describe("compile", () => {
     await writeFile(join(dir, "collection.yaml"), "id: blog\ntitle: Blog\n");
     await writeFile(join(dir, "post.md"), "# My Post\n");
 
+    await manifest(["collection"]);
     const result = await compile({ dir });
 
     expect(result.resources.map((resource) => resource.type)).toEqual(["Guide"]);
@@ -48,10 +58,10 @@ describe("compile", () => {
       join(dir, "intro.md"),
       "[Wiki configuration](wiki.yaml)\n\n[Collection configuration](collection.yaml)\n",
     );
+    await manifest(["wiki", "collection"]);
     const result = await compile({
       dir,
       validation: { links: "off" },
-      assets: { sourceNamespace: "protected-mixed-config" },
     });
     expect(result.resources.filter((resource) => resource.type === "Asset")).toEqual([]);
     expect(result.payloads).toEqual([]);
@@ -61,9 +71,10 @@ describe("compile", () => {
     const config = "id: docs\ntitle: Docs\nnavigation: [intro]\n";
     await writeFile(join(dir, "wiki.yaml"), config);
     await writeFile(join(dir, "intro.md"), "# Intro\n");
+    await manifest(["wiki"]);
     const before = await compile({ dir });
     await writeFile(join(dir, "wiki.yaml"), config + "assets:\n  directory: media/uploads\n");
-    expect(await compile({ dir })).toEqual(before);
-    expect((await readdir(dir)).sort()).toEqual(["intro.md", "wiki.yaml"]);
+    expect((await compile({ dir })).resources).toEqual(before.resources);
+    expect((await readdir(dir)).sort()).toEqual([".topik.yaml", "intro.md", "wiki.yaml"]);
   });
 });

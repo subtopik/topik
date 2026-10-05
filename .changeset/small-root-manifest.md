@@ -3,6 +3,8 @@
 "@topik/cli": minor
 ---
 
-Add a minimal root `.topik.yaml` manifest selecting existing Wiki and collection configurations, with exact config loading, directory-scoped Asset namespaces, complete aggregate inventories, and contextual errors. Preserve standalone discovery and staged CLI output.
+Require `.topik.yaml` with `version`, a stable project `namespace`, and explicit Wiki/collection source pointers for project compilation, linting, watching, and CLI development. This is a breaking change: migrate implicit source discovery and CLI/library namespace options into the manifest. Explicit standalone Wiki and collection library operations remain available.
 
-Support local `assets.directory` in Wiki and collection configurations, defaulting to `_assets`, and expose the resolved destination in manifest provenance for future source synchronization.
+Generate Asset IDs from the manifest namespace and manifest-relative file path in one project-wide asset pass. Overlapping sources share the same file identity, equal payload bytes deduplicate, and local source containment remains enforced. Namespace or identity-path changes require rebuilding and transferring a complete output generation.
+
+Support local `assets.directory` in Wiki and collection configurations, defaulting to `_assets`, and expose the manifest-relative destination in provenance for future source synchronization. Document media destinations on the assets page.

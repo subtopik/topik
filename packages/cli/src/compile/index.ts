@@ -29,11 +29,6 @@ import {
 import { printDiagnostics } from "../diagnostics";
 import { CliError } from "../errors";
 import { formatValidationFailure } from "../validation-output";
-import {
-  deriveGitSourceNamespace,
-  sourceNamespaceOptions,
-  requiresSourceNamespace,
-} from "../source-namespace";
 
 const COMPILATION_GENERATION_PREFIX = ".topik-compilation-generation-";
 const COMPILATION_PRIOR_PREFIX = ".topik-compilation-prior-";
@@ -45,7 +40,7 @@ export const compile = command({
   name: "compile",
   desc: "Compile project content into Topik resource files",
   options: {
-    dir: positional("dir").desc("Path to the content directory").default("."),
+    dir: positional("dir").desc("Project directory containing .topik.yaml").default("."),
     outDir: string("out-dir").alias("o").desc("Output directory for compiled resources"),
     format: string("format")
       .alias("f")
@@ -62,27 +57,13 @@ export const compile = command({
       .desc("How unresolved wiki links and local guide fragments are handled")
       .enum("error", "warning", "off")
       .default("error"),
-    sourceNamespace: string("source-namespace").desc(
-      "Stable source namespace for automatically discovered local Assets (derived from Git when omitted)",
-    ),
   },
   handler: async (options) => {
     const dir = resolve(options.dir);
     const links = options.links as LinkValidationPolicy;
     const outDir = options.outDir ? resolve(options.outDir) : join(dir, ".topik");
     await assertCompilationOutputScope(dir, outDir);
-    const assetOptions = sourceNamespaceOptions(options.sourceNamespace);
-    let result: Awaited<ReturnType<typeof compileContent>>;
-    try {
-      result = await compileContent({ dir, validation: { links }, assets: assetOptions });
-    } catch (error) {
-      if (assetOptions !== undefined || !requiresSourceNamespace(error)) throw error;
-      result = await compileContent({
-        dir,
-        validation: { links },
-        assets: { sourceNamespace: await deriveGitSourceNamespace(dir) },
-      });
-    }
+    const result = await compileContent({ dir, validation: { links } });
     const { diagnostics, materialization, payloads, resources, semantic } = result;
     printDiagnostics(diagnostics);
 

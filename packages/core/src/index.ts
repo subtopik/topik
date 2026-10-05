@@ -20,7 +20,6 @@ export {
   compileManifest,
   loadTopikManifest,
   discoverManifestSources,
-  deriveManifestSourceNamespace,
   ManifestSourceError,
   type ManifestCompileResult,
   type ManifestSourceDescriptor,

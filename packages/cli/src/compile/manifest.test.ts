@@ -29,7 +29,6 @@ const handler = (
       dryRun: boolean;
       validate: boolean;
       links: "error";
-      sourceNamespace?: string;
     }) => Promise<void>;
   }
 ).handler;
@@ -43,7 +42,7 @@ test("manifest produces one generation and failures preserve prior output", asyn
   await writeFile(join(dir, "docs", "index.md"), "# Docs");
   await writeFile(
     join(dir, ".topik.yaml"),
-    "version: 1\nsources: [{kind: wiki, config: docs/wiki.yaml}]",
+    "version: 1\nnamespace: example/project\nsources: [{kind: wiki, config: docs/wiki.yaml}]",
   );
   const options = {
     dir,
@@ -58,15 +57,15 @@ test("manifest produces one generation and failures preserve prior output", asyn
   expect(Object.keys(before)).toContain("resources/Wiki/docs.json");
   for (const manifest of [
     "version: 2\nsources: []",
-    "version: 1\nsources: [{kind: wiki, config: docs/wiki.yaml}, {kind: collection, config: absent.yaml}]",
-    "version: 1\nsources: [{kind: wiki, config: docs/wiki.yaml}, {kind: wiki, config: duplicate.yaml}]",
+    "version: 1\nnamespace: example/project\nsources: [{kind: wiki, config: docs/wiki.yaml}, {kind: collection, config: absent.yaml}]",
+    "version: 1\nnamespace: example/project\nsources: [{kind: wiki, config: docs/wiki.yaml}, {kind: wiki, config: duplicate.yaml}]",
   ]) {
     await writeFile(join(dir, "duplicate.yaml"), "id: docs\ntitle: Duplicate");
     await writeFile(join(dir, ".topik.yaml"), manifest);
     await expect(handler(options)).rejects.toThrow();
     expect(await snapshot(output)).toEqual(before);
   }
-  await writeFile(join(dir, ".topik.yaml"), "version: 1\nsources: []");
+  await writeFile(join(dir, ".topik.yaml"), "version: 1\nnamespace: example/project\nsources: []");
   await handler(options);
   expect(Object.keys(await snapshot(output)).sort()).toEqual([
     "materialization.json",

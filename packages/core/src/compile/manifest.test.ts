@@ -1,15 +1,10 @@
-import { createHash } from "node:crypto";
 import { chmod, link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { afterEach, describe, expect, test } from "vite-plus/test";
 import { compile, compileWiki, compileGuides } from "./index";
-import {
-  compileManifest,
-  deriveManifestSourceNamespace,
-  loadTopikManifest,
-  mergeManifestCompilations,
-} from "./manifest";
+import { compileManifest, loadTopikManifest } from "./manifest";
+import { generateAutomaticAssetName } from "../assets/asset";
 import { validateTopikMaterializationRecord } from "../assets/identity";
 import { parseTopikManifest } from "../config/manifest";
 
@@ -28,9 +23,8 @@ async function fixture(files: Record<string, string | Buffer>): Promise<string> 
   return root;
 }
 const sources = (entries: { kind: string; config: string }[]) =>
-  JSON.stringify({ version: 1, sources: entries });
+  JSON.stringify({ version: 1, namespace: "example/project", sources: entries });
 const wiki = (id: string) => `id: ${id}\ntitle: ${id}\nnavigation: [index]\n`;
-const assets = { sourceNamespace: "repository:example" };
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
@@ -57,7 +51,7 @@ describe("root manifest compilation", () => {
       "unlisted.md": "bad <script>",
       "docs/.topik.yaml": "invalid",
     });
-    const result = await compileManifest({ dir, assets });
+    const result = await compileManifest({ dir });
     expect(result.resources.map((resource) => resource.type).sort()).toEqual([
       "Asset",
       "Guide",
@@ -75,20 +69,15 @@ describe("root manifest compilation", () => {
       entries.map((entry) => entry.config),
     );
     expect(Object.values(result.provenance[0].sourcePathsByResource)).toContain("docs/index.md");
-    const namespace = result.provenance[0].sourceNamespace;
-    const standalone = await compileWiki({
-      dir,
-      configFile: "docs/custom.yml",
-      assets: { sourceNamespace: namespace },
+    expect(result.provenance[0].namespace).toBe("example/project");
+    const expected = generateAutomaticAssetName({
+      stableSourceNamespace: "example/project",
+      normalizedPath: "docs/images/logo.png",
     });
-    expect(
-      result.resources.filter(
-        (resource) => resource.type === "Asset" || resource.name.startsWith("docs"),
-      ),
-    ).toEqual(standalone.resources);
-    expect(await compile({ dir: relative(process.cwd(), dir), assets })).toEqual(result);
+    expect(expected.ok && result.semantic.assetNames).toEqual(expected.ok ? [expected.value] : []);
+    expect(await compile({ dir: relative(process.cwd(), dir) })).toEqual(result);
     await writeFile(join(dir, ".topik.yaml"), sources(entries.toReversed()));
-    const reversed = await compile({ dir, assets });
+    const reversed = await compile({ dir });
     expect(reversed.resources).toEqual(result.resources);
     expect(reversed.payloads).toEqual(result.payloads);
     expect(reversed.semantic).toEqual(result.semantic);
@@ -109,21 +98,15 @@ describe("root manifest compilation", () => {
       "docs/index.md": "# Shared\n![logo](logo.png)",
       "docs/logo.png": PNG,
     });
-    const result = await compileManifest({ dir, assets });
+    const result = await compileManifest({ dir });
     expect(result.resources.filter((resource) => resource.type === "Asset")).toHaveLength(1);
     expect(result.semantic.references).toHaveLength(2);
     expect(result.payloads).toHaveLength(1);
-    expect(result.provenance[0].sourceNamespace).toBe(result.provenance[1].sourceNamespace);
+    expect(result.provenance[0].namespace).toBe(result.provenance[1].namespace);
     expect(
       validateTopikMaterializationRecord(result.materialization, result.resources, result.semantic)
         .ok,
     ).toBe(true);
-    const standalone = await compile({
-      dir: join(dir, "docs"),
-      assets: { sourceNamespace: result.provenance[0].sourceNamespace },
-    });
-    expect(standalone.resources).toEqual(result.resources);
-    expect(standalone.materialization).toEqual(result.materialization);
   });
 
   test.each([true, false])(
@@ -143,7 +126,7 @@ describe("root manifest compilation", () => {
         "a/images/logo.png": PNG,
         "b/images/logo.png": other,
       });
-      const result = await compileManifest({ dir, assets });
+      const result = await compileManifest({ dir });
       expect(new Set(result.semantic.assetNames).size).toBe(2);
       expect(result.semantic.references).toHaveLength(2);
       expect(result.payloads).toHaveLength(equal ? 1 : 2);
@@ -157,41 +140,24 @@ describe("root manifest compilation", () => {
           result.semantic,
         ).ok,
       ).toBe(true);
-      expect(result.provenance[0].sourceNamespace).not.toBe(result.provenance[1].sourceNamespace);
+      expect(result.provenance[0].namespace).toBe(result.provenance[1].namespace);
     },
   );
 
-  test("namespace derivation has a stable public vector, root spelling, and validation", () => {
-    const expected = createHash("sha256").update('["repository:example","docs"]').digest("hex");
-    expect(deriveManifestSourceNamespace(assets.sourceNamespace, "docs")).toBe(
-      `topik-manifest-source-v1:${expected}`,
-    );
-    expect(deriveManifestSourceNamespace(assets.sourceNamespace, "")).not.toBe(
-      deriveManifestSourceNamespace(assets.sourceNamespace, "docs"),
-    );
-    expect(() => deriveManifestSourceNamespace("", "docs")).toThrow();
-    expect(() => deriveManifestSourceNamespace("repo", "../docs")).toThrow();
-  });
-
-  test("missing namespace preserves the existing actionable error", async () => {
-    const dir = await fixture({
-      ".topik.yaml": sources([{ kind: "wiki", config: "wiki.yaml" }]),
-      "wiki.yaml": wiki("docs"),
-      "index.md": "![logo](logo.png)",
-      "logo.png": PNG,
-    });
-    await expect(compile({ dir })).rejects.toMatchObject({
-      diagnostics: expect.arrayContaining([
-        expect.objectContaining({ id: "TOPIK_ASSET_SOURCE_NAMESPACE_REQUIRED" }),
-      ]),
-    });
+  test("requires a namespace even without assets and rejects programmatic overrides", async () => {
+    const dir = await fixture({ ".topik.yaml": "version: 1\nsources: []" });
+    await expect(compile({ dir })).rejects.toMatchObject({ id: "manifest-invalid" });
+    await writeFile(join(dir, ".topik.yaml"), sources([]));
+    await expect(
+      compile({ dir, ...{ assets: { sourceNamespace: "override" } } }),
+    ).rejects.toMatchObject({ id: "manifest-namespace-override" });
   });
 
   test("empty manifest ignores conventional files, and explicit missing manifest fails", async () => {
-    const dir = await fixture({ ".topik.yaml": "version: 1\nsources: []", "wiki.yaml": "invalid" });
+    const dir = await fixture({ ".topik.yaml": sources([]), "wiki.yaml": "invalid" });
     expect((await compile({ dir })).resources).toEqual([]);
     await rm(join(dir, ".topik.yaml"));
-    await expect(loadTopikManifest(dir)).rejects.toMatchObject({ id: "config-not-found" });
+    await expect(loadTopikManifest(dir)).rejects.toMatchObject({ id: "manifest-required" });
   });
 
   test("standalone calls ignore root and ancestor manifests and use declared kind", async () => {
@@ -204,7 +170,9 @@ describe("root manifest compilation", () => {
     expect((await compileGuides({ dir, configFile: "nested/wiki.yaml" })).resources[0].type).toBe(
       "Guide",
     );
-    expect((await compile({ dir: join(dir, "nested") })).resources[0].type).toBe("Wiki");
+    await expect(compile({ dir: join(dir, "nested") })).rejects.toMatchObject({
+      id: "manifest-required",
+    });
     await expect(compileWiki({ dir, configFile: "nested/missing.yaml" })).rejects.toMatchObject({
       id: "config-not-found",
     });
@@ -236,13 +204,13 @@ describe("root manifest compilation", () => {
   test.each([
     "version: 2\nsources: []",
     "version: '1'\nsources: []",
-    "version: 1\nsources: []\nextra: true",
-    "version: 1\nversion: 1\nsources: []",
+    "version: 1\nnamespace: example/project\nsources: []\nextra: true",
+    "version: 1\nnamespace: example/project\nversion: 1\nnamespace: example/project\nsources: []",
     "version: 1",
-    "version: 1\nsources: [!executable {}]",
-    "version: 1\nsources: &a [*a]",
-    "version: 1\nsources: [{kind: course, config: course.yaml}]",
-    "version: 1\nsources: [{kind: wiki, config: wiki.yaml, extra: true}]",
+    "version: 1\nnamespace: example/project\nsources: [!executable {}]",
+    "version: 1\nnamespace: example/project\nsources: &a [*a]",
+    "version: 1\nnamespace: example/project\nsources: [{kind: course, config: course.yaml}]",
+    "version: 1\nnamespace: example/project\nsources: [{kind: wiki, config: wiki.yaml, extra: true}]",
     "[".repeat(1000),
   ])("invalid manifest never falls back (%s)", async (manifest) => {
     const dir = await fixture({
@@ -262,7 +230,13 @@ describe("root manifest compilation", () => {
     "e\u0301/wiki.yaml",
     "config.txt",
   ])("rejects nonportable configuration path %s", (config) => {
-    expect(() => parseTopikManifest({ version: 1, sources: [{ kind: "wiki", config }] })).toThrow();
+    expect(() =>
+      parseTopikManifest({
+        version: 1,
+        namespace: "example/project",
+        sources: [{ kind: "wiki", config }],
+      }),
+    ).toThrow();
   });
 
   test.each([
@@ -274,6 +248,7 @@ describe("root manifest compilation", () => {
     expect(() =>
       parseTopikManifest({
         version: 1,
+        namespace: "example/project",
         sources: configs.map((config, index) => ({ kind: index ? "collection" : "wiki", config })),
       }),
     ).toThrow();
@@ -342,36 +317,91 @@ describe("root manifest compilation", () => {
     await expect(compile({ dir })).rejects.toThrow();
   });
 
-  test("aggregate rejects conflicting output bytes and same asset identity from different evidence", async () => {
+  test("overlapping sources share one identity for the same manifest-relative file", async () => {
+    const entries = [
+      { kind: "wiki", config: "wiki.yaml" },
+      { kind: "wiki", config: "nested/wiki.yaml" },
+    ];
+    const files = {
+      ".topik.yaml": sources(entries),
+      "wiki.yaml": wiki("parent"),
+      "index.md": "![Shared](nested/logo.png)",
+      "nested/wiki.yaml": wiki("child"),
+      "nested/index.md": "![Shared](logo.png)",
+      "nested/logo.png": PNG,
+    };
+    const dir = await fixture(files);
+    const result = await compileManifest({ dir });
+    expect(result.semantic.assetNames).toHaveLength(1);
+    expect(result.semantic.references).toHaveLength(2);
+    expect(result.payloads).toHaveLength(1);
+    expect(
+      validateTopikMaterializationRecord(result.materialization, result.resources, result.semantic)
+        .ok,
+    ).toBe(true);
+    const copied = await fixture(files);
+    expect((await compile({ dir: copied })).materialization).toEqual(result.materialization);
+    // Moving the selected config within its directory preserves asset identity.
+    await writeFile(join(dir, "nested/renamed.yaml"), wiki("child"));
+    await writeFile(
+      join(dir, ".topik.yaml"),
+      sources([entries[0], { kind: "wiki", config: "nested/renamed.yaml" }]),
+    );
+    expect((await compile({ dir })).semantic.assetNames).toEqual(result.semantic.assetNames);
+    await writeFile(
+      join(dir, ".topik.yaml"),
+      sources(entries).replace("example/project", "another/project"),
+    );
+    const other = await compile({ dir });
+    expect(other.semantic.assetNames).not.toEqual(result.semantic.assetNames);
+    expect(other.payloads[0].path).toBe(result.payloads[0].path);
+  });
+
+  test("moving an asset changes its identity but editing its bytes does not", async () => {
     const dir = await fixture({
-      "wiki.yaml": wiki("docs"),
-      "index.md": "![logo](logo.png)",
+      ".topik.yaml": sources([{ kind: "wiki", config: "docs/wiki.yaml" }]),
+      "docs/wiki.yaml": wiki("docs"),
+      "docs/index.md": "![Logo](logo.png)",
+      "docs/logo.png": PNG,
+    });
+    const before = await compile({ dir });
+    await writeFile(join(dir, "docs/logo.png"), Buffer.concat([PNG, Buffer.from("changed")]));
+    const edited = await compile({ dir });
+    expect(edited.semantic.assetNames).toEqual(before.semantic.assetNames);
+    expect(edited.payloads[0].path).not.toBe(before.payloads[0].path);
+    await writeFile(join(dir, "docs/moved.png"), PNG);
+    await writeFile(join(dir, "docs/index.md"), "![Logo](moved.png)");
+    const moved = await compile({ dir });
+    expect(moved.semantic.assetNames).not.toEqual(before.semantic.assetNames);
+    expect(moved.payloads[0].path).toBe(before.payloads[0].path);
+  });
+
+  test("manifest identities preserve local source containment", async () => {
+    const dir = await fixture({
+      ".topik.yaml": sources([{ kind: "wiki", config: "docs/wiki.yaml" }]),
+      "docs/wiki.yaml": wiki("docs"),
+      "docs/index.md": "![Logo](../logo.png)",
       "logo.png": PNG,
     });
-    const result = await compileWiki({ dir, assets });
-    const onlyAssets = {
-      ...result,
-      resources: result.resources.filter((resource) => resource.type === "Asset"),
-      semantic: { ...result.semantic, references: [] },
-    };
-    expect(() =>
-      mergeManifestCompilations([
-        { directory: "a", result: onlyAssets },
-        { directory: "b", result: onlyAssets },
+    await expect(compile({ dir })).rejects.toThrow();
+  });
+
+  test("checks path aliases and protected inputs across overlapping sources", async () => {
+    const dir = await fixture({
+      ".topik.yaml": sources([
+        { kind: "wiki", config: "wiki.yaml" },
+        { kind: "wiki", config: "nested/wiki.yaml" },
       ]),
-    ).toThrow();
-    const changed = {
-      ...onlyAssets,
-      payloads: onlyAssets.payloads.map((payload) => ({
-        ...payload,
-        bytes: Buffer.from("different"),
-      })),
-    };
-    expect(() =>
-      mergeManifestCompilations([
-        { directory: "a", result: onlyAssets },
-        { directory: "a", result: changed },
-      ]),
-    ).toThrow();
+      "wiki.yaml": wiki("parent"),
+      "index.md": "![Bad](nested/wiki.yaml)",
+      "nested/wiki.yaml": wiki("child"),
+      "nested/index.md": "# Child",
+    });
+    await expect(compile({ dir })).rejects.toThrow();
+    await writeFile(join(dir, "index.md"), "![Logo](nested/Logo.png)");
+    await writeFile(join(dir, "nested/index.md"), "![Logo](logo.png)");
+    await writeFile(join(dir, "nested/Logo.png"), PNG);
+    await writeFile(join(dir, "nested/logo.png"), PNG);
+    await expect(compile({ dir })).rejects.toThrow();
   });
 });

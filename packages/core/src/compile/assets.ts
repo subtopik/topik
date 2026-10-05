@@ -60,6 +60,9 @@ export interface CompileAssetResourcesInput extends AssetCompilationOptions {
   resources: readonly SourceResource[];
   /** Compilation-root-relative source paths keyed by `Type/name`. */
   sourcePathsByResource: Readonly<Record<string, string>>;
+  /** Optional per-document containment directories relative to rootDir (empty for root).
+   * Asset identities still use paths relative to rootDir. */
+  sourceDirectoriesByResource?: Readonly<Record<string, string>>;
   /** Other consumed compiler inputs that cannot be owned as Asset bytes. */
   protectedSourcePaths?: readonly string[];
 }
@@ -180,6 +183,17 @@ async function compileAssetResourcesWithReader(
   for (const resource of topikContentResources) {
     const key = resourceKey(resource);
     const sourcePath = sourcePaths.get(key) as string;
+    const directory = input.sourceDirectoriesByResource?.[key] ?? "";
+    if (directory !== "") {
+      requirePath(directory, "Asset containment directory is not portable");
+      if (!sourcePath.startsWith(`${directory}/`))
+        throw new AssetCompilationError(
+          "Content source is outside its Asset containment directory",
+        );
+    }
+    const localSourcePath = directory === "" ? sourcePath : sourcePath.slice(directory.length + 1);
+    const resolveLocalPath = (reference: string) =>
+      posix.join(directory, resolveOccurrencePath(localSourcePath, reference));
     const resourceReplacements = new Map<string, string>();
     replacements.set(key, resourceReplacements);
     const occurrences = extractTopikAssetOccurrences(resource.spec.content.value, {
@@ -219,7 +233,7 @@ async function compileAssetResourcesWithReader(
           if (parsedValidation.valid && parsedValidation.kind === "local") {
             let parsedPath: string;
             try {
-              parsedPath = resolveOccurrencePath(sourcePath, occurrence.parsedReference);
+              parsedPath = resolveLocalPath(occurrence.parsedReference);
             } catch (error) {
               if (error instanceof AssetCompilationError) continue;
               throw error;
@@ -252,13 +266,13 @@ async function compileAssetResourcesWithReader(
       let normalizedPath: string;
       if (ordinaryNavigation) {
         try {
-          normalizedPath = resolveOccurrencePath(sourcePath, occurrence.reference);
+          normalizedPath = resolveLocalPath(occurrence.reference);
         } catch (error) {
           if (error instanceof AssetCompilationError) continue;
           throw error;
         }
       } else {
-        normalizedPath = resolveOccurrencePath(sourcePath, occurrence.reference);
+        normalizedPath = resolveLocalPath(occurrence.reference);
       }
       if (protectedPaths.has(normalizedPath)) {
         if (ordinaryNavigation) continue;

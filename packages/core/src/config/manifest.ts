@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { validateStableSourceNamespace } from "../assets/asset";
 import { validateTopikPath } from "../assets/path";
 
 export const TOPIK_MANIFEST_FILENAME = ".topik.yaml";
@@ -16,6 +17,15 @@ export const topikManifestSourceSchema = z.strictObject({
 export const topikManifestSchema = z
   .strictObject({
     version: z.literal(1),
+    namespace: z.string().transform((value, context) => {
+      const result = validateStableSourceNamespace(value);
+      if (result.ok && result.value.trim().length > 0) return result.value;
+      context.addIssue({
+        code: "custom",
+        message: "Expected a nonempty portable project namespace",
+      });
+      return z.NEVER;
+    }),
     sources: z.array(topikManifestSourceSchema).max(TOPIK_MANIFEST_LIMITS.maxSources),
   })
   .superRefine((manifest, context) => {

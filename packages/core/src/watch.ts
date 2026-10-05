@@ -1,15 +1,15 @@
+import { PublicCompileError } from "./compile/public-errors";
 import { EventEmitter } from "node:events";
 import { resolve } from "node:path";
 import { watch as chokidarWatch } from "chokidar";
 import { compile } from "./compile";
-import type { AssetCompilationOptions, AssetPayload } from "./compile/assets";
+import type { AssetPayload } from "./compile/assets";
 import { digestTopikMaterializationRecord } from "./assets/identity";
 import type { Resource } from "./resource";
 
 export interface WatchOptions {
   dir: string;
   signal?: AbortSignal;
-  assets?: AssetCompilationOptions;
 }
 
 export type UpdateListener = (key: string, resource: Resource) => void;
@@ -32,13 +32,15 @@ function resourceKey(resource: Resource): string {
 }
 
 export async function watch(options: WatchOptions): Promise<Watcher> {
+  if ("assets" in options)
+    throw new PublicCompileError("manifest-namespace-override", ".topik.yaml");
   const dir = resolve(options.dir);
   const emitter = new EventEmitter();
   const resources = new Map<string, Resource>();
   const payloads = new Map<string, AssetPayload>();
 
   // Initial compile
-  const initial = await compile({ dir, assets: options.assets });
+  const initial = await compile({ dir });
   let materialization = initial.materialization;
   for (const resource of initial.resources) {
     resources.set(resourceKey(resource), resource);
@@ -49,7 +51,7 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
 
   async function recompile() {
     try {
-      const result = await compile({ dir, assets: options.assets });
+      const result = await compile({ dir });
       const newKeys = new Set<string>();
       const materializationChanged =
         digestTopikMaterializationRecord(materialization) !==

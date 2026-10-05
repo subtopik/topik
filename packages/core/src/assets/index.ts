@@ -49,7 +49,7 @@ export {
   topikAssetNameDescriptor,
   validateAssetBlobUri,
   validateAssetValue,
-  validateStableSourceNamespace,
+  validateProjectNamespace,
   type GenerateAutomaticAssetNameOptions,
   type AssetBlobUri,
   type CompiledAsset,

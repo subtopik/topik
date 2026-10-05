@@ -71,8 +71,8 @@ describe("root manifest compilation", () => {
     expect(Object.values(result.provenance[0].sourcePathsByResource)).toContain("docs/index.md");
     expect(result.provenance[0].namespace).toBe("example/project");
     const expected = generateAutomaticAssetName({
-      stableSourceNamespace: "example/project",
-      normalizedPath: "docs/images/logo.png",
+      projectNamespace: "example/project",
+      manifestRelativePath: "docs/images/logo.png",
     });
     expect(expected.ok && result.semantic.assetNames).toEqual(expected.ok ? [expected.value] : []);
     expect(await compile({ dir: relative(process.cwd(), dir) })).toEqual(result);
@@ -148,9 +148,8 @@ describe("root manifest compilation", () => {
     const dir = await fixture({ ".topik.yaml": "version: 1\nsources: []" });
     await expect(compile({ dir })).rejects.toMatchObject({ id: "manifest-invalid" });
     await writeFile(join(dir, ".topik.yaml"), sources([]));
-    await expect(
-      compile({ dir, ...{ assets: { sourceNamespace: "override" } } }),
-    ).rejects.toMatchObject({ id: "manifest-namespace-override" });
+    const overridden = { dir, assets: { generateName: () => "override" } };
+    await expect(compile(overridden)).rejects.toMatchObject({ id: "manifest-namespace-override" });
   });
 
   test("empty manifest ignores conventional files, and explicit missing manifest fails", async () => {

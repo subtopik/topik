@@ -9,12 +9,15 @@ export {
   compileAssetResources,
   AssetCompilationError,
   type AssetCompilationOptions,
+  type AssetNameInput,
+  type AssetNameGenerator,
   type AssetCompilationResult,
   type AssetPayload,
   type CompileAssetResourcesInput,
   type CompiledResource,
   type ContentBearingResource,
 } from "./assets";
+export { createProjectAssetNameGenerator, type ProjectAssetNameOptions } from "./asset-names";
 export type { Resource } from "../resource";
 export {
   CompileError,

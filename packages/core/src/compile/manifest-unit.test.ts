@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, expect, test, vi } from "vite-plus/test";
-import { compile } from "./index";
+import { compile, compileWiki, compileGuides, createProjectAssetNameGenerator } from "../index";
 import { generateAutomaticAssetName } from "../assets/asset";
 import { validateTopikMaterializationRecord } from "../assets/identity";
 
@@ -71,8 +71,8 @@ test("one project asset identity spans overlapping sources, with closed inventor
     }),
   });
   const expected = generateAutomaticAssetName({
-    stableSourceNamespace: "example/docs",
-    normalizedPath: "nested/logo.png",
+    projectNamespace: "example/docs",
+    manifestRelativePath: "nested/logo.png",
   });
   expect(first.semantic.assetNames).toEqual(expected.ok ? [expected.value] : []);
   expect(first.semantic.references).toHaveLength(2);
@@ -162,4 +162,127 @@ test("consumed source files cannot become assets through another source", async 
   await expect(compile({ dir })).rejects.toThrow(
     "Local reference conflicts with a compiler input path",
   );
+});
+
+test("standalone wiki and collection compilers match project IDs through the injected policy", async () => {
+  const root = await fixture({
+    ".topik.yaml": JSON.stringify({
+      version: 1,
+      namespace: "example/docs",
+      sources: [
+        { kind: "wiki", config: "handbook/wiki.yaml" },
+        { kind: "collection", config: "guides/collection.yaml" },
+      ],
+    }),
+    "handbook/wiki.yaml": wiki("docs"),
+    "handbook/index.md": "![Logo](logo.png) ![Again](logo.png)",
+    "handbook/logo.png": PNG,
+    "guides/collection.yaml": "id: guides\ntitle: Guides",
+    "guides/index.md": "![Logo](logo.png)",
+    "guides/logo.png": PNG,
+  });
+  const project = await compile({ dir: root });
+  // Standalone compilation must not consult even a malformed nearby manifest.
+  await writeFile(join(root, ".topik.yaml"), "invalid manifest");
+  bytesByPath.set(join(root, ".topik.yaml"), Buffer.from("invalid manifest"));
+  const policy = createProjectAssetNameGenerator({
+    projectRoot: root,
+    projectNamespace: "example/docs",
+  });
+  const generateName = vi.fn(async (input: Parameters<typeof policy>[0]) => policy(input));
+  const handbook = await compileWiki({
+    dir: root,
+    configFile: "handbook/wiki.yaml",
+    assets: { generateName },
+  });
+  const guides = await compileGuides({ dir: join(root, "guides"), assets: { generateName } });
+  expect([...handbook.semantic.assetNames, ...guides.semantic.assetNames].sort()).toEqual(
+    project.semantic.assetNames,
+  );
+  expect(generateName.mock.calls.map(([input]) => input.resolvedAssetPath)).toEqual([
+    join(root, "handbook/logo.png"),
+    join(root, "guides/logo.png"),
+  ]);
+  for (const standalone of [handbook, guides]) {
+    for (const resource of standalone.resources) {
+      expect(project.resources).toContainEqual(resource);
+    }
+    expect(
+      validateTopikMaterializationRecord(
+        standalone.materialization,
+        standalone.resources,
+        standalone.semantic,
+      ).ok,
+    ).toBe(true);
+  }
+});
+
+test("standalone compilers require a callback only for local assets", async () => {
+  const root = await fixture({
+    "wiki.yaml": wiki("docs"),
+    "index.md": "![Remote](https://example.com/logo.png)",
+  });
+  expect((await compileWiki({ dir: root })).semantic.assetNames).toEqual([]);
+  await writeFile(join(root, "index.md"), "![Local](logo.png)");
+  await expect(compileWiki({ dir: root })).rejects.toMatchObject({
+    diagnostics: [expect.objectContaining({ id: "TOPIK_ASSET_NAME_GENERATOR_REQUIRED" })],
+  });
+});
+
+test("custom naming remains subject to name validation and collision checks", async () => {
+  const root = await fixture({
+    "wiki.yaml": wiki("docs"),
+    "index.md": "![One](one.png) ![Two](two.png)",
+    "one.png": PNG,
+    "two.png": PNG,
+  });
+  await expect(
+    compileWiki({ dir: root, assets: { generateName: () => "invalid" } }),
+  ).rejects.toMatchObject({
+    diagnostics: [expect.objectContaining({ id: "TOPIK_ASSET_NAME_INVALID" })],
+  });
+  const policy = createProjectAssetNameGenerator({
+    projectRoot: root,
+    projectNamespace: "example/docs",
+  });
+  const name = await policy({ resolvedAssetPath: join(root, "one.png") });
+  await expect(
+    compileWiki({ dir: root, assets: { generateName: () => name } }),
+  ).rejects.toMatchObject({
+    diagnostics: [expect.objectContaining({ id: "TOPIK_ASSET_NAME_COLLISION" })],
+  });
+  const failure = new Error("Naming provider unavailable");
+  await expect(
+    compileWiki({
+      dir: root,
+      assets: {
+        generateName: async () => {
+          throw failure;
+        },
+      },
+    }),
+  ).rejects.toBe(failure);
+});
+
+test("project naming is checkout-independent and rejects paths outside the chosen root", async () => {
+  const firstRoot = await fixture({});
+  const secondRoot = await fixture({});
+  const first = createProjectAssetNameGenerator({
+    projectRoot: firstRoot,
+    projectNamespace: "example/docs",
+  });
+  const second = createProjectAssetNameGenerator({
+    projectRoot: secondRoot,
+    projectNamespace: "example/docs",
+  });
+  expect(await first({ resolvedAssetPath: join(firstRoot, "nested/logo.png") })).toBe(
+    await second({ resolvedAssetPath: join(secondRoot, "nested/logo.png") }),
+  );
+  expect(() => first({ resolvedAssetPath: join(firstRoot, "../logo.png") })).toThrow(
+    "outside the project root",
+  );
+  expect(() => first({ resolvedAssetPath: "logo.png" })).toThrow("outside the project root");
+  expect(() =>
+    createProjectAssetNameGenerator({ projectRoot: firstRoot, projectNamespace: "  " }),
+  ).toThrow("Project namespace is invalid");
 });

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { validateStableSourceNamespace } from "../assets/asset";
+import { validateProjectNamespace } from "../assets/asset";
 import { validateTopikPath } from "../assets/path";
 
 export const TOPIK_MANIFEST_FILENAME = ".topik.yaml";
@@ -18,8 +18,8 @@ export const topikManifestSchema = z
   .strictObject({
     version: z.literal(1),
     namespace: z.string().transform((value, context) => {
-      const result = validateStableSourceNamespace(value);
-      if (result.ok && result.value.trim().length > 0) return result.value;
+      const result = validateProjectNamespace(value);
+      if (result.ok) return result.value;
       context.addIssue({
         code: "custom",
         message: "Expected a nonempty portable project namespace",

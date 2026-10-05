@@ -1,3 +1,4 @@
+import { createProjectAssetNameGenerator } from "@topik/core";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,7 +7,16 @@ import type { LoaderContext } from "astro/loaders";
 import { topikGuidesLoader } from "./guides";
 
 const fixturesDir = join(import.meta.dirname, "__fixtures__/guides");
-const fixtureOptions = { dir: fixturesDir, sourceNamespace: "astro-guide-fixtures" } as const;
+const fixtureOptions = {
+  dir: fixturesDir,
+  name: "astro-guide-fixtures",
+  assets: {
+    generateName: createProjectAssetNameGenerator({
+      projectRoot: fixturesDir,
+      projectNamespace: "astro-guide-fixtures",
+    }),
+  },
+} as const;
 const PNG_BYTES = Buffer.from(
   "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000000500010d0a2db40000000049454e44ae426082",
   "hex",
@@ -35,13 +45,19 @@ function createMockContext() {
 describe("topikGuidesLoader", () => {
   test("returns a loader with the correct name", () => {
     const loader = topikGuidesLoader(fixtureOptions);
-    expect(loader.name).toBe("topik-guides");
+    expect(loader.name).toBe(fixtureOptions.name);
   });
 
-  test("rejects an invalid Asset source namespace at configuration time", () => {
-    expect(() => topikGuidesLoader({ dir: fixturesDir, sourceNamespace: "" })).toThrow(
-      /source namespace/u,
-    );
+  test("rejects an empty loader name at configuration time", () => {
+    expect(() => topikGuidesLoader({ dir: fixturesDir, name: "" })).toThrow(/loader name/u);
+  });
+
+  test("loads content without a manifest or naming callback when there are no local assets", async () => {
+    const loader = topikGuidesLoader({ dir: fixturesDir, name: "without-assets" });
+    const context = createMockContext();
+    await loader.load(context);
+    expect(context.entries.size).toBe(2);
+    expect(loader.getAssets()).toEqual([]);
   });
 
   test("loads guides from a directory", async () => {
@@ -103,7 +119,16 @@ describe("topikGuidesLoader", () => {
         join(dir, "intro.md"),
         "# Intro\n\n![Hero](hero.png)\n\n[Manual](manual.pdf)\n",
       );
-      const loader = topikGuidesLoader({ dir, sourceNamespace: "astro-guides-assets" });
+      const loader = topikGuidesLoader({
+        dir,
+        name: "astro-guides-assets",
+        assets: {
+          generateName: createProjectAssetNameGenerator({
+            projectRoot: dir,
+            projectNamespace: "astro-guides-assets",
+          }),
+        },
+      });
       const context = createMockContext();
 
       await loader.load(context);

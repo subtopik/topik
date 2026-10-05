@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { posix } from "node:path";
+import { posix, resolve } from "node:path";
 import {
   extractTopikAssetOccurrences,
   rewriteTopikAssetOccurrences,
@@ -13,7 +13,7 @@ import type { Guide } from "@topik/schema/guide/v1";
 import type { WikiPage } from "@topik/schema/wiki-page/v1";
 import type { Resource, SourceResource } from "../resource";
 import {
-  generateAutomaticAssetName,
+  isGeneratedAssetName,
   parseAssetBlobUri,
   type AssetBlobUri,
   type CompiledAsset,
@@ -50,9 +50,18 @@ import { validateResources, type ValidationError } from "../validate";
 
 export type ContentBearingResource = CoursePage | Guide | WikiPage;
 
+export interface AssetNameInput {
+  /** Absolute native path after resolving the authored reference within its allowed root.
+   * This is a file location, not a portable identity or a delivery URL. */
+  resolvedAssetPath: string;
+}
+
+/** Return a stable, canonical auto-v1 name. Called once per distinct asset path per compilation. */
+export type AssetNameGenerator = (input: AssetNameInput) => string | Promise<string>;
+
 export interface AssetCompilationOptions {
   /** Required only when supported local references are discovered automatically. */
-  sourceNamespace?: string;
+  generateName?: AssetNameGenerator;
 }
 
 export interface CompileAssetResourcesInput extends AssetCompilationOptions {
@@ -170,6 +179,7 @@ async function compileAssetResourcesWithReader(
 
   const readCache = new Map<string, Awaited<ReturnType<typeof requireAssetFile>>>();
   const localPathByGeneratedName = new Map<GeneratedAssetName, string>();
+  const generatedNameByPath = new Map<string, GeneratedAssetName>();
   const replacements = new Map<string, Map<string, string>>();
   const mappings: TopikAssetReferenceMappingV1[] = [];
   const rolesByName = new Map<string, string[]>();
@@ -291,28 +301,30 @@ async function compileAssetResourcesWithReader(
         if (proof === undefined) continue;
         readCache.set(normalizedPath, proof);
       }
-      if (input.sourceNamespace === undefined) {
-        throw new AssetCompilationError(
-          "Automatic Asset discovery requires a stable source namespace",
-          [
-            topikAssetDiagnostic(
-              "TOPIK_ASSET_SOURCE_NAMESPACE_REQUIRED",
-              "Provide the versioned stable source namespace option",
-              { location: { path: normalizedPath, contentPosition: occurrence.position } },
-            ),
-          ],
-        );
+      if (input.generateName === undefined) {
+        throw new AssetCompilationError("Automatic Asset discovery requires a name generator", [
+          topikAssetDiagnostic(
+            "TOPIK_ASSET_NAME_GENERATOR_REQUIRED",
+            "Provide an Asset name generator",
+            { location: { path: normalizedPath, contentPosition: occurrence.position } },
+          ),
+        ]);
       }
-      const generated = generateAutomaticAssetName({
-        stableSourceNamespace: input.sourceNamespace,
-        normalizedPath,
-      });
-      if (!generated.ok)
-        throw new AssetCompilationError(
-          "Automatic Asset name could not be generated",
-          generated.diagnostics,
-        );
-      const name = generated.value;
+      let name = generatedNameByPath.get(normalizedPath);
+      if (name === undefined) {
+        const generated = await input.generateName({
+          resolvedAssetPath: resolve(input.rootDir, normalizedPath),
+        });
+        if (!isGeneratedAssetName(generated)) {
+          throw new AssetCompilationError("Asset name generator returned an invalid name", [
+            topikAssetDiagnostic("TOPIK_ASSET_NAME_INVALID", "Expected a canonical auto-v1 name", {
+              location: { path: normalizedPath },
+            }),
+          ]);
+        }
+        name = generated;
+        generatedNameByPath.set(normalizedPath, name);
+      }
       registerGeneratedAssetPath(localPathByGeneratedName, name, normalizedPath);
       if (localPathByGeneratedName.size > TOPIK_ASSET_LIMITS.maxAssets) {
         throw new AssetCompilationError("Compilation exceeds its Asset limit");

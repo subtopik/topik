@@ -69,13 +69,50 @@ enforces uniqueness. The CLI does not derive a namespace from Git or accept an
 override. See [Project manifest](./manifest.md) for the full contract.
 
 Explicit standalone library calls such as `compileWiki` and `compileGuides`
-remain independent of manifests. They accept `assets.sourceNamespace` and use
-asset paths relative to the local configuration directory. Use project
-compilation for identities matching a manifest build.
+remain independent of manifests. They accept an `assets.generateName` callback;
+see [Standalone asset naming](#standalone-asset-naming).
+
+## Standalone asset naming
+
+`compileWiki`, `compileGuides`, and `compileAssetResources` accept a naming callback
+without requiring a manifest. `assets.generateName` (or `generateName` directly
+on `compileAssetResources`) receives `{ resolvedAssetPath }`: the absolute native
+file path after reference resolution. It must return a stable canonical `auto-v1-…`
+name, synchronously or asynchronously. It is called once per distinct asset path
+in a compilation. Missing callbacks fail only when local assets are encountered;
+content without local assets needs no naming configuration.
+
+For the standard project policy, create a callback with an explicit root and
+namespace:
+
+```ts
+import { resolve } from "node:path";
+import { compileWiki, createProjectAssetNameGenerator } from "@topik/core";
+
+const projectRoot = resolve("./content");
+const generateName = createProjectAssetNameGenerator({
+  projectRoot,
+  projectNamespace: "example/handbook",
+});
+const result = await compileWiki({
+  dir: projectRoot,
+  configFile: "handbook/wiki.yaml",
+  assets: { generateName },
+});
+```
+
+The helper reads no manifest. It hashes the namespace and portable path relative
+to `projectRoot`, and rejects files outside that root. If those values match a
+manifest build, asset IDs match too, including for nested configurations and
+shared files. Never hash the absolute checkout path if IDs must survive relocation.
+For custom callbacks, the caller owns stability and uniqueness across compilations.
+Within a compilation, the compiler validates names and rejects different paths
+mapped to the same name. File admission, payload hashing, deduplication, content
+rewriting, and inventory validation remain compiler responsibilities.
 
 ## Generated identity
 
-An asset's generated name identifies its project namespace and manifest-relative source location. Its payload digest
+In project builds, an asset's generated name identifies its project namespace and manifest-relative source location. Its payload digest
 identifies its bytes. Those identities have different uses:
 
 | Change                       | Generated name | Payload digest                    |
@@ -180,16 +217,27 @@ Topik integration so that page content and delivery share one compiled snapshot:
 
 ```ts
 import { topik, topikWikiLoader } from "@topik/astro";
+import { createProjectAssetNameGenerator } from "@topik/core";
 
 export const wiki = topikWikiLoader({
   dir: "content/wiki",
-  sourceNamespace: "handbook-v1",
+  name: "handbook",
+  assets: {
+    generateName: createProjectAssetNameGenerator({
+      projectRoot: "content",
+      projectNamespace: "example/handbook",
+    }),
+  },
 });
 export const integration = topik({ loaders: [wiki] });
 ```
 
-These standalone loaders require an explicit namespace and use paths relative to
-their local configuration directory; they do not read the project manifest. `getAssets()` exposes their descriptors;
+These standalone loaders accept the same naming callback as the core compilers;
+they do not read a project manifest. `name` identifies the logical loader across
+Astro module contexts and does not participate in asset naming. Use a different
+loader name for different naming policies applied to the same source directory.
+Equivalent instances with the same name, directory, and kind share their current
+snapshot. `getAssets()` exposes their descriptors;
 `resolveAsset(name)` returns the corresponding `/blobs/<digest>` URL after a
 completed load. The integration writes blobs during static builds and serves the
 compiled snapshot through middleware in production server builds. Failed loads

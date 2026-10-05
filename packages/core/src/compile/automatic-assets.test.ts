@@ -1,3 +1,4 @@
+import { createProjectAssetNameGenerator } from "./asset-names";
 import { execFile } from "node:child_process";
 import {
   chmod,
@@ -275,7 +276,10 @@ describe("compilation-wide automatic Assets", () => {
       rootDir: dir,
       resources: [guide("guide", "![Hero](hero.png)\n")],
       sourcePathsByResource: { "Guide/guide": "guide.md" },
-      sourceNamespace: "automatic-fixture",
+      generateName: createProjectAssetNameGenerator({
+        projectRoot: dir,
+        projectNamespace: "automatic-fixture",
+      }),
     });
     const asset = result.resources.find((resource) => resource.type === "Asset");
     const compiledGuide = result.resources.find(
@@ -366,7 +370,10 @@ describe("compilation-wide automatic Assets", () => {
         rootDir: dir,
         resources: [resource],
         sourcePathsByResource: { "Guide/guide": "guide.md" },
-        sourceNamespace: "refused-rewrite",
+        generateName: createProjectAssetNameGenerator({
+          projectRoot: dir,
+          projectNamespace: "refused-rewrite",
+        }),
       });
     } catch (error) {
       failure = error;
@@ -613,7 +620,10 @@ describe("compilation-wide automatic Assets", () => {
       rootDir: dir,
       resources: [guide("guide", "![One](one.png)\n")],
       sourcePathsByResource: { "Guide/guide": "guide.md" },
-      sourceNamespace: "identity-fixture",
+      generateName: createProjectAssetNameGenerator({
+        projectRoot: dir,
+        projectNamespace: "identity-fixture",
+      }),
     } as const;
     const first = await compileAssetResources(input);
     const changed = Uint8Array.from(PNG_BYTES);
@@ -641,13 +651,19 @@ describe("compilation-wide automatic Assets", () => {
       rootDir: dir,
       resources,
       sourcePathsByResource: { "Guide/guide": "guide.md" },
-      sourceNamespace: "source-one",
+      generateName: createProjectAssetNameGenerator({
+        projectRoot: dir,
+        projectNamespace: "source-one",
+      }),
     });
     const second = await compileAssetResources({
       rootDir: dir,
       resources,
       sourcePathsByResource: { "Guide/guide": "guide.md" },
-      sourceNamespace: "source-two",
+      generateName: createProjectAssetNameGenerator({
+        projectRoot: dir,
+        projectNamespace: "source-two",
+      }),
     });
     const firstNames = first.resources
       .filter((resource) => resource.type === "Asset")
@@ -672,7 +688,10 @@ describe("compilation-wide automatic Assets", () => {
       rootDir: dir,
       resources: [guide("one", oneSource), guide("two", twoSource)],
       sourcePathsByResource: { "Guide/one": "one.md", "Guide/two": "two.md" },
-      sourceNamespace: "multiple-guides",
+      generateName: createProjectAssetNameGenerator({
+        projectRoot: dir,
+        projectNamespace: "multiple-guides",
+      }),
     });
 
     const asset = result.resources.find(
@@ -702,7 +721,10 @@ describe("compilation-wide automatic Assets", () => {
         "WikiPage/page-one": "pages/one.md",
         "WikiPage/page-two": "pages/two.md",
       },
-      sourceNamespace: "multipage-wiki",
+      generateName: createProjectAssetNameGenerator({
+        projectRoot: dir,
+        projectNamespace: "multipage-wiki",
+      }),
     });
 
     const pageOne = result.resources.find(
@@ -774,7 +796,10 @@ describe("compilation-wide automatic Assets", () => {
         "WikiPage/wiki-page": "wiki.md",
         "CoursePage/course-page": "course.md",
       },
-      sourceNamespace: "mixed-content",
+      generateName: createProjectAssetNameGenerator({
+        projectRoot: dir,
+        projectNamespace: "mixed-content",
+      }),
     });
 
     expect(result.resources.map((resource) => resource.type)).toEqual([
@@ -812,7 +837,10 @@ describe("compilation-wide automatic Assets", () => {
         guide("two", "No Assets\n"),
       ],
       sourcePathsByResource: { "Guide/one": "one.md", "Guide/two": "two.md" },
-      sourceNamespace: "downloads",
+      generateName: createProjectAssetNameGenerator({
+        projectRoot: dir,
+        projectNamespace: "downloads",
+      }),
     });
     const compiledGuide = result.resources.find(
       (resource): resource is Guide => resource.type === "Guide" && resource.name === "one",
@@ -841,7 +869,10 @@ describe("compilation-wide automatic Assets", () => {
       rootDir: dir,
       resources: [guide("guide", content)],
       sourcePathsByResource: { "Guide/guide": "guide.md" },
-      sourceNamespace: "accessible-download-labels",
+      generateName: createProjectAssetNameGenerator({
+        projectRoot: dir,
+        projectNamespace: "accessible-download-labels",
+      }),
     });
     const compiledGuide = result.resources.find(
       (resource): resource is Guide => resource.type === "Guide",
@@ -866,7 +897,10 @@ describe("compilation-wide automatic Assets", () => {
         rootDir: dir,
         resources: [guide("guide", "[![](icon.png)](manual.bin)")],
         sourcePathsByResource: { "Guide/guide": "guide.md" },
-        sourceNamespace: "empty-download-label",
+        generateName: createProjectAssetNameGenerator({
+          projectRoot: dir,
+          projectNamespace: "empty-download-label",
+        }),
       }),
     ).rejects.toMatchObject({
       diagnostics: [expect.objectContaining({ id: "TOPIK_ASSET_REFERENCE_ACCESSIBILITY_INVALID" })],
@@ -890,7 +924,10 @@ describe("compilation-wide automatic Assets", () => {
         rootDir: dir,
         resources: [guide("guide", content)],
         sourcePathsByResource: { "Guide/guide": "guide.md" },
-        sourceNamespace: "inline-titles",
+        generateName: createProjectAssetNameGenerator({
+          projectRoot: dir,
+          projectNamespace: "inline-titles",
+        }),
       });
       const compiledGuide = result.resources.find(
         (resource): resource is Guide => resource.type === "Guide",
@@ -936,7 +973,10 @@ describe("compilation-wide automatic Assets", () => {
       rootDir: dir,
       resources: [guide("guide", content)],
       sourcePathsByResource: { "Guide/guide": "guide.md" },
-      sourceNamespace: "decoded-inline-titles",
+      generateName: createProjectAssetNameGenerator({
+        projectRoot: dir,
+        projectNamespace: "decoded-inline-titles",
+      }),
     });
     const compiledGuide = result.resources.find(
       (resource): resource is Guide => resource.type === "Guide",
@@ -991,7 +1031,10 @@ describe("compilation-wide automatic Assets", () => {
           rootDir: dir,
           resources: [guide("guide", "[Download](unsafe.bin)\n")],
           sourcePathsByResource: { "Guide/guide": "guide.md" },
-          sourceNamespace: "unsafe-generic-link",
+          generateName: createProjectAssetNameGenerator({
+            projectRoot: dir,
+            projectNamespace: "unsafe-generic-link",
+          }),
         }),
       ).rejects.toMatchObject({
         diagnostics: [expect.objectContaining({ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" })],
@@ -1011,7 +1054,10 @@ describe("compilation-wide automatic Assets", () => {
           rootDir: dir,
           resources: [guide("guide", `[Download](${reference})\n`)],
           sourcePathsByResource: { "Guide/guide": "guide.md" },
-          sourceNamespace: "effective-unsafe-generic-link",
+          generateName: createProjectAssetNameGenerator({
+            projectRoot: dir,
+            projectNamespace: "effective-unsafe-generic-link",
+          }),
         }),
       ).rejects.toMatchObject({
         diagnostics: [expect.objectContaining({ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" })],
@@ -1030,7 +1076,10 @@ describe("compilation-wide automatic Assets", () => {
           rootDir: dir,
           resources: [guide("guide", `[Download](${reference})\n`)],
           sourcePathsByResource: { "Guide/guide": "guide.md" },
-          sourceNamespace: "noncanonical-download",
+          generateName: createProjectAssetNameGenerator({
+            projectRoot: dir,
+            projectNamespace: "noncanonical-download",
+          }),
         }),
       ).rejects.toMatchObject({
         diagnostics: [expect.objectContaining({ id: "TOPIK_ASSET_REFERENCE_MALFORMED" })],
@@ -1050,7 +1099,10 @@ describe("compilation-wide automatic Assets", () => {
           rootDir: dir,
           resources: [guide("guide", "[Download](unsafe.bin)\n")],
           sourcePathsByResource: { "Guide/guide": "guide.md" },
-          sourceNamespace: "changed-generic-link",
+          generateName: createProjectAssetNameGenerator({
+            projectRoot: dir,
+            projectNamespace: "changed-generic-link",
+          }),
         },
         async () => {
           await writeFile(target, "modified bytes\n");
@@ -1069,7 +1121,10 @@ describe("compilation-wide automatic Assets", () => {
     const input = {
       rootDir: dir,
       sourcePathsByResource: { "Guide/guide": "guide.md" },
-      sourceNamespace: "media-failures",
+      generateName: createProjectAssetNameGenerator({
+        projectRoot: dir,
+        projectNamespace: "media-failures",
+      }),
     } as const;
 
     await expect(
@@ -1119,14 +1174,17 @@ describe("compilation-wide automatic Assets", () => {
         rootDir: root,
         resources: [guide("guide", content)],
         sourcePathsByResource: { "Guide/guide": "guide.md" },
-        sourceNamespace: "real-submodule",
+        generateName: createProjectAssetNameGenerator({
+          projectRoot: root,
+          projectNamespace: "real-submodule",
+        }),
       }),
     ).rejects.toMatchObject({
       diagnostics: [expect.objectContaining({ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" })],
     });
   });
 
-  test("fails visibly on missing bytes, missing namespaces, protected inputs, and collisions", async () => {
+  test("fails visibly on missing bytes, missing name generators, protected inputs, and collisions", async () => {
     await writeFile(join(dir, "a.png"), PNG_BYTES);
     await writeFile(join(dir, "b.png"), PNG_BYTES);
     await writeFile(join(dir, "guide.md"), "source\n");
@@ -1135,7 +1193,10 @@ describe("compilation-wide automatic Assets", () => {
         rootDir: dir,
         resources: [guide("guide", "![Missing](missing.png)\n")],
         sourcePathsByResource: { "Guide/guide": "guide.md" },
-        sourceNamespace: "failures",
+        generateName: createProjectAssetNameGenerator({
+          projectRoot: dir,
+          projectNamespace: "failures",
+        }),
       }),
     ).rejects.toMatchObject({
       diagnostics: [expect.objectContaining({ id: "TOPIK_ASSET_FILE_MISSING" })],
@@ -1147,7 +1208,7 @@ describe("compilation-wide automatic Assets", () => {
         sourcePathsByResource: { "Guide/guide": "guide.md" },
       }),
     ).rejects.toMatchObject({
-      diagnostics: [expect.objectContaining({ id: "TOPIK_ASSET_SOURCE_NAMESPACE_REQUIRED" })],
+      diagnostics: [expect.objectContaining({ id: "TOPIK_ASSET_NAME_GENERATOR_REQUIRED" })],
     });
     await expect(
       compileAssetResources({
@@ -1155,7 +1216,10 @@ describe("compilation-wide automatic Assets", () => {
         resources: [guide("guide", "![Input](config.yaml)\n")],
         sourcePathsByResource: { "Guide/guide": "guide.md" },
         protectedSourcePaths: ["config.yaml"],
-        sourceNamespace: "failures",
+        generateName: createProjectAssetNameGenerator({
+          projectRoot: dir,
+          projectNamespace: "failures",
+        }),
       }),
     ).rejects.toMatchObject({
       diagnostics: [expect.objectContaining({ id: "TOPIK_ASSET_REFERENCE_AMBIGUOUS" })],

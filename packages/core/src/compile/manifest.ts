@@ -8,6 +8,7 @@ import {
   type TopikManifestSource,
 } from "../config/manifest";
 import { compileAssetResources } from "./assets";
+import { createProjectAssetNameGenerator } from "./asset-names";
 import { readConfigurationText, parseSafeConfigurationYaml, readExactConfigFile } from "./config";
 import { discoverGuides, type CompileResourceDiscovery } from "./guide";
 import { discoverWiki } from "./wiki";
@@ -191,7 +192,10 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
     sourcePathsByResource,
     sourceDirectoriesByResource,
     protectedSourcePaths,
-    sourceNamespace: manifest.namespace,
+    generateName: createProjectAssetNameGenerator({
+      projectRoot: root,
+      projectNamespace: manifest.namespace,
+    }),
   });
   return { diagnostics, provenance, ...compiled };
 }

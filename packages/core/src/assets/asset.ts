@@ -242,23 +242,24 @@ export function isGeneratedAssetName(value: unknown): value is GeneratedAssetNam
   return isTopikGeneratedAssetName(value);
 }
 
-export function validateStableSourceNamespace(value: string): TopikAssetResult<string> {
+export function validateProjectNamespace(value: string): TopikAssetResult<string> {
   if (containsForbiddenPortableText(value)) {
     return failure(
-      "TOPIK_ASSET_SOURCE_NAMESPACE_INVALID",
-      "Stable source namespace is not portable text after NFC normalization",
+      "TOPIK_ASSET_PROJECT_NAMESPACE_INVALID",
+      "Project namespace is not portable text after NFC normalization",
     );
   }
   const normalized = value.normalize("NFC");
   const bytes = encoder.encode(normalized);
   if (
+    normalized.trim().length === 0 ||
     bytes.byteLength < 1 ||
     bytes.byteLength > 1024 ||
     containsForbiddenPortableText(normalized)
   ) {
     return failure(
-      "TOPIK_ASSET_SOURCE_NAMESPACE_INVALID",
-      "Stable source namespace is not portable text after NFC normalization",
+      "TOPIK_ASSET_PROJECT_NAMESPACE_INVALID",
+      "Project namespace is not portable text after NFC normalization",
     );
   }
   return { ok: true, value: normalized, diagnostics: [] };
@@ -278,16 +279,16 @@ function containsForbiddenPortableText(value: string): boolean {
 }
 
 export interface GenerateAutomaticAssetNameOptions {
-  stableSourceNamespace: string;
-  normalizedPath: string;
+  projectNamespace: string;
+  manifestRelativePath: string;
 }
 
 export function generateAutomaticAssetName(
   options: GenerateAutomaticAssetNameOptions,
 ): TopikAssetResult<GeneratedAssetName> {
-  const namespace = validateStableSourceNamespace(options.stableSourceNamespace);
+  const namespace = validateProjectNamespace(options.projectNamespace);
   if (!namespace.ok) return { ok: false, diagnostics: namespace.diagnostics };
-  const path = validateTopikPath(options.normalizedPath);
+  const path = validateTopikPath(options.manifestRelativePath);
   if (!path.ok) return { ok: false, diagnostics: path.diagnostics };
   const input = new Uint8Array(
     encoder.encode(namespace.value).byteLength + 1 + encoder.encode(path.value.path).byteLength,

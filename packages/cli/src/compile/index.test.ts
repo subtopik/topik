@@ -260,7 +260,7 @@ describe("compile command", () => {
     await writeFile(join(dir, "hero.png"), PNG_BYTES);
     await writeFile(join(dir, "intro.md"), "![Hero](hero.png)\n");
     const names: string[] = [];
-    for (const [suffix, sourceNamespace] of [
+    for (const [suffix, projectNamespace] of [
       ["composed", "é"],
       ["decomposed", "e\u0301"],
     ] as const) {
@@ -268,7 +268,7 @@ describe("compile command", () => {
         join(dir, ".topik.yaml"),
         JSON.stringify({
           version: 1,
-          namespace: sourceNamespace,
+          namespace: projectNamespace,
           sources: [{ kind: "collection", config: "collection.yaml" }],
         }),
       );

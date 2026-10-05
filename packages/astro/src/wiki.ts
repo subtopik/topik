@@ -1,11 +1,11 @@
 import { resolve } from "node:path";
-import { compileWiki, resolveWikiNavigation } from "@topik/core";
+import { compileWiki, resolveWikiNavigation, type AssetCompilationOptions } from "@topik/core";
 import type { Wiki, WikiNavNode } from "@topik/schema/wiki/v1";
 import type { WikiPage } from "@topik/schema/wiki-page/v1";
 import type { LoaderContext } from "astro/loaders";
 import {
   compileTopikAssetLoader,
-  requireTopikSourceNamespace,
+  requireTopikLoaderName,
   withTopikAssetSnapshot,
   type TopikAssetLoader,
 } from "./assets";
@@ -15,8 +15,10 @@ export type { WikiNavNode };
 export interface TopikWikiOptions {
   /** Path to the wiki directory (containing wiki.yaml). */
   dir: string;
-  /** Stable, versioned identity namespace for automatically discovered Assets. */
-  sourceNamespace: string;
+  /** Stable loader identity shared across Astro module contexts; does not affect Asset names. */
+  name: string;
+  /** Name generator for local Assets. No manifest is required. */
+  assets?: AssetCompilationOptions;
 }
 
 const WIKI_PAGE_TYPES = `
@@ -32,12 +34,13 @@ export function topikWikiLoader(options: TopikWikiOptions): TopikAssetLoader & {
   getNavigation(): Promise<WikiNavNode[]>;
 } {
   const resolvedDir = resolve(options.dir);
-  const sourceNamespace = requireTopikSourceNamespace(options.sourceNamespace);
+  const name = requireTopikLoaderName(options.name);
+  const assets = options.assets;
 
-  const compile = () => loadCompiledWiki(resolvedDir, sourceNamespace);
+  const compile = () => loadCompiledWiki(resolvedDir, assets);
   const enhanced = withTopikAssetSnapshot(
     {
-      name: "topik-wiki",
+      name,
 
       load: async (context: LoaderContext) => {
         context.logger.info(`Compiling wiki from ${resolvedDir}`);
@@ -88,19 +91,19 @@ export function topikWikiLoader(options: TopikWikiOptions): TopikAssetLoader & {
       },
 
       getNavigation: async () => {
-        const { navigation } = await loadCompiledWiki(resolvedDir, sourceNamespace);
+        const { navigation } = await loadCompiledWiki(resolvedDir, assets);
         return navigation;
       },
     },
     compile,
-    { kind: "wiki", sourceNamespace, sourceRoot: resolvedDir },
+    { kind: "wiki", name, sourceRoot: resolvedDir },
   );
   return enhanced.loader;
 }
 
 async function loadCompiledWiki(
   dir: string,
-  sourceNamespace: string,
+  assets: AssetCompilationOptions | undefined,
 ): Promise<{
   navigation: WikiNavNode[];
   pageResources: WikiPage[];
@@ -111,7 +114,7 @@ async function loadCompiledWiki(
 }> {
   const { resources, payloads, semantic, materialization } = await compileWiki({
     dir,
-    assets: { sourceNamespace },
+    assets,
   });
   const wiki = resources.find((resource): resource is Wiki => resource.type === "Wiki");
   return {

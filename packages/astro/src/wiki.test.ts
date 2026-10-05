@@ -1,3 +1,4 @@
+import { createProjectAssetNameGenerator } from "@topik/core";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,7 +8,16 @@ import { topikWikiLoader } from "./wiki";
 
 const docsDir = join(import.meta.dirname, "../../../docs");
 const wikiPageNamePattern = /^topik-docs-[a-f0-9]{16}$/;
-const docsOptions = { dir: docsDir, sourceNamespace: "astro-docs-fixture" } as const;
+const docsOptions = {
+  dir: docsDir,
+  name: "astro-docs-fixture",
+  assets: {
+    generateName: createProjectAssetNameGenerator({
+      projectRoot: docsDir,
+      projectNamespace: "astro-docs-fixture",
+    }),
+  },
+} as const;
 const PNG_BYTES = Buffer.from(
   "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000000500010d0a2db40000000049454e44ae426082",
   "hex",
@@ -29,7 +39,19 @@ function createMockContext() {
 
 describe("topikWikiLoader", () => {
   test("returns a loader with the correct name", () => {
-    expect(topikWikiLoader(docsOptions).name).toBe("topik-wiki");
+    expect(topikWikiLoader(docsOptions).name).toBe(docsOptions.name);
+  });
+
+  test("rejects an empty loader name", () => {
+    expect(() => topikWikiLoader({ dir: docsDir, name: " " })).toThrow(/loader name/u);
+  });
+
+  test("loads content without a manifest or naming callback when there are no local assets", async () => {
+    const loader = topikWikiLoader({ dir: docsDir, name: "docs-without-assets" });
+    const context = createMockContext();
+    await loader.load(context);
+    expect(context.entries.size).toBe(8);
+    expect(loader.getAssets()).toEqual([]);
   });
 
   test("loads the self-hosted Topik wiki", async () => {
@@ -143,7 +165,16 @@ describe("topikWikiLoader", () => {
       await writeFile(join(dir, "runtime", "index.md"), "# Runtime\n");
       await writeFile(join(dir, "runtime", "next.md"), "# Next\n");
 
-      const loader = topikWikiLoader({ dir, sourceNamespace: "astro-nested-wiki" });
+      const loader = topikWikiLoader({
+        dir,
+        name: "astro-nested-wiki",
+        assets: {
+          generateName: createProjectAssetNameGenerator({
+            projectRoot: dir,
+            projectNamespace: "astro-nested-wiki",
+          }),
+        },
+      });
       const context = createMockContext();
       await loader.load(context);
 
@@ -180,7 +211,16 @@ describe("topikWikiLoader", () => {
         join(dir, "intro.md"),
         "# Intro\n\n![Hero](hero.png)\n\n[Manual](manual.pdf)\n",
       );
-      const loader = topikWikiLoader({ dir, sourceNamespace: "astro-wiki-assets" });
+      const loader = topikWikiLoader({
+        dir,
+        name: "astro-wiki-assets",
+        assets: {
+          generateName: createProjectAssetNameGenerator({
+            projectRoot: dir,
+            projectNamespace: "astro-wiki-assets",
+          }),
+        },
+      });
       const context = createMockContext();
 
       await loader.load(context);

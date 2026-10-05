@@ -1,3 +1,4 @@
+import { compile, createProjectAssetNameGenerator } from "@topik/core";
 import { execFile } from "node:child_process";
 import { createServer, request, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -129,6 +130,53 @@ describe("topik integration", () => {
     await rm(tempDir, { recursive: true, force: true });
   });
 
+  test("nested standalone loaders use the same naming policy as a manifest build", async () => {
+    await mkdir(join(dir, "handbook"));
+    await mkdir(join(dir, "guides"));
+    await writeFile(
+      join(dir, ".topik.yaml"),
+      JSON.stringify({
+        version: 1,
+        namespace: "example/astro",
+        sources: [
+          { kind: "wiki", config: "handbook/wiki.yaml" },
+          { kind: "collection", config: "guides/collection.yaml" },
+        ],
+      }),
+    );
+    await writeFile(join(dir, "handbook/wiki.yaml"), "id: docs\ntitle: Docs\nnavigation: [intro]");
+    await writeFile(join(dir, "guides/collection.yaml"), "id: guides\ntitle: Guides");
+    for (const directory of ["handbook", "guides"]) {
+      await writeFile(join(dir, directory, "intro.md"), "![Hero](hero.png)");
+      await writeFile(join(dir, directory, "hero.png"), PNG_BYTES);
+    }
+    const project = await compile({ dir });
+    await rm(join(dir, ".topik.yaml"));
+    const assets = {
+      generateName: createProjectAssetNameGenerator({
+        projectRoot: dir,
+        projectNamespace: "example/astro",
+      }),
+    };
+    const wiki = topikWikiLoader({ dir: join(dir, "handbook"), name: "handbook", assets });
+    const guides = topikGuidesLoader({ dir: join(dir, "guides"), name: "guides", assets });
+    const renamed = topikWikiLoader({ dir: join(dir, "handbook"), name: "another-loader", assets });
+    const contexts = [createMockContext(), createMockContext()];
+    await wiki.load(contexts[0]);
+    await guides.load(contexts[1]);
+    await renamed.load(createMockContext());
+    expect([...wiki.getAssets(), ...guides.getAssets()].map((asset) => asset.name).sort()).toEqual(
+      project.semantic.assetNames,
+    );
+    expect(renamed.getAssets()).toEqual(wiki.getAssets());
+    for (const [index, type] of ["WikiPage", "Guide"].entries()) {
+      const resource = project.resources.find((resource) => resource.type === type);
+      if (resource?.type !== "WikiPage" && resource?.type !== "Guide")
+        throw new Error("Expected compiled content");
+      expect(contexts[index].entries.get(resource.name)?.body).toBe(resource.spec.content.value);
+    }
+  });
+
   test("delivers only compiler-proven Guide image and download payloads", async () => {
     await writeFile(join(dir, "collection.yaml"), "id: guides\ntitle: Guides\n");
     await writeFile(join(dir, "hero.png"), PNG_BYTES);
@@ -137,7 +185,16 @@ describe("topik integration", () => {
       join(dir, "intro.md"),
       "# Intro\n\n![Hero](hero.png)\n\n[Manual](manual.pdf)\n",
     );
-    const loader = topikGuidesLoader({ dir, sourceNamespace: "astro-guide-delivery" });
+    const loader = topikGuidesLoader({
+      dir,
+      name: "astro-guide-delivery",
+      assets: {
+        generateName: createProjectAssetNameGenerator({
+          projectRoot: dir,
+          projectNamespace: "astro-guide-delivery",
+        }),
+      },
+    });
     const context = createMockContext();
     await loader.load(context);
     const middleware = createMiddleware([loader]);
@@ -168,10 +225,19 @@ describe("topik integration", () => {
     await writeFile(join(dir, "wiki.yaml"), "id: docs\ntitle: Docs\nnavigation:\n  - intro\n");
     await writeFile(join(dir, "hero.png"), PNG_BYTES);
     await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](hero.png)\n");
-    const options = { dir, sourceNamespace: "astro-logical-loader" } as const;
+    const options = {
+      dir,
+      name: "astro-logical-loader",
+      assets: {
+        generateName: createProjectAssetNameGenerator({
+          projectRoot: dir,
+          projectNamespace: "astro-logical-loader",
+        }),
+      },
+    } as const;
     const deliveryLoader = topikGuidesLoader(options);
     const compilingLoader = topikGuidesLoader(options);
-    const otherNamespace = topikGuidesLoader({ ...options, sourceNamespace: "astro-other-loader" });
+    const otherName = topikGuidesLoader({ ...options, name: "astro-other-loader" });
     const otherRoot = join(tempDir, "other");
     await mkdir(otherRoot);
     const otherDirectory = topikGuidesLoader({ ...options, dir: otherRoot });
@@ -184,7 +250,7 @@ describe("topik integration", () => {
     expect(
       (await dispatch(createMiddleware([deliveryLoader]), `/${asset.spec.uri}`)).response.end,
     ).toHaveBeenCalledWith(PNG_BYTES);
-    expect(otherNamespace.getAssets()).toEqual([]);
+    expect(otherName.getAssets()).toEqual([]);
     expect(otherDirectory.getAssets()).toEqual([]);
     expect(otherKind.getAssets()).toEqual([]);
   });
@@ -193,7 +259,16 @@ describe("topik integration", () => {
     await writeFile(join(dir, "collection.yaml"), "id: guides\ntitle: Guides\n");
     await writeFile(join(dir, "hero.png"), PNG_BYTES);
     await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](hero.png)\n");
-    const loader = topikGuidesLoader({ dir, sourceNamespace: "astro-raw-delivery" });
+    const loader = topikGuidesLoader({
+      dir,
+      name: "astro-raw-delivery",
+      assets: {
+        generateName: createProjectAssetNameGenerator({
+          projectRoot: dir,
+          projectNamespace: "astro-raw-delivery",
+        }),
+      },
+    });
     await loader.load(createMockContext());
     const asset = loader.getAssets()[0];
     const canonicalPath = `/${asset.spec.uri}`;
@@ -255,7 +330,16 @@ describe("topik integration", () => {
       join(dir, "intro.md"),
       "# Intro\n\n![Hero](hero.png)\n\n[Manual](manual.pdf)\n",
     );
-    const loader = topikWikiLoader({ dir, sourceNamespace: "astro-wiki-delivery" });
+    const loader = topikWikiLoader({
+      dir,
+      name: "astro-wiki-delivery",
+      assets: {
+        generateName: createProjectAssetNameGenerator({
+          projectRoot: dir,
+          projectNamespace: "astro-wiki-delivery",
+        }),
+      },
+    });
     const context = createMockContext();
     await loader.load(context);
     const middleware = createMiddleware([loader]);
@@ -296,7 +380,16 @@ describe("topik integration", () => {
     await mkdir(sharedDir);
     await writeFile(join(sharedDir, "linked.png"), PNG_BYTES);
     await symlink(sharedDir, join(dir, "images"), "dir");
-    const loader = topikGuidesLoader({ dir, sourceNamespace: "astro-unreferenced-files" });
+    const loader = topikGuidesLoader({
+      dir,
+      name: "astro-unreferenced-files",
+      assets: {
+        generateName: createProjectAssetNameGenerator({
+          projectRoot: dir,
+          projectNamespace: "astro-unreferenced-files",
+        }),
+      },
+    });
     await loader.load(createMockContext());
     const middleware = createMiddleware([loader]);
 
@@ -322,7 +415,16 @@ describe("topik integration", () => {
     await writeFile(join(dir, "collection.yaml"), "id: guides\ntitle: Guides\n");
     await writeFile(join(dir, "hero.png"), PNG_BYTES);
     await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](hero.png)\n");
-    const loader = topikGuidesLoader({ dir, sourceNamespace: "astro-snapshot-mutation" });
+    const loader = topikGuidesLoader({
+      dir,
+      name: "astro-snapshot-mutation",
+      assets: {
+        generateName: createProjectAssetNameGenerator({
+          projectRoot: dir,
+          projectNamespace: "astro-snapshot-mutation",
+        }),
+      },
+    });
     const context = createMockContext();
     await loader.load(context);
     const middleware = createMiddleware([loader]);
@@ -349,7 +451,16 @@ describe("topik integration", () => {
     await writeFile(join(dir, "collection.yaml"), "id: guides\ntitle: Guides\n");
     await writeFile(join(dir, "hero.png"), PNG_BYTES);
     await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](hero.png)\n");
-    const loader = topikGuidesLoader({ dir, sourceNamespace: "astro-failed-snapshot" });
+    const loader = topikGuidesLoader({
+      dir,
+      name: "astro-failed-snapshot",
+      assets: {
+        generateName: createProjectAssetNameGenerator({
+          projectRoot: dir,
+          projectNamespace: "astro-failed-snapshot",
+        }),
+      },
+    });
     const context = createMockContext();
     await loader.load(context);
     const middleware = createMiddleware([loader]);

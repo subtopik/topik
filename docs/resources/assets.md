@@ -160,22 +160,9 @@ compiled blobs. For a server exposing `blobs/` under `/published/blobs/`:
 import { TopikContent } from "@topik/content-react/theme";
 import type { Asset } from "@topik/schema/asset/v1";
 
-export function PublishedPage({
-  content,
-  assets,
-}: {
-  content: string;
-  assets: Asset[];
-}) {
-  const assetUrls = new Map(
-    assets.map((asset) => [asset.name, `/published/${asset.spec.uri}`]),
-  );
-  return (
-    <TopikContent
-      content={content}
-      resolveAsset={(name) => assetUrls.get(name)}
-    />
-  );
+export function PublishedPage({ content, assets }: { content: string; assets: Asset[] }) {
+  const assetUrls = new Map(assets.map((asset) => [asset.name, `/published/${asset.spec.uri}`]));
+  return <TopikContent content={content} resolveAsset={(name) => assetUrls.get(name)} />;
 }
 ```
 

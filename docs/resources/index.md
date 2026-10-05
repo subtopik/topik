@@ -132,9 +132,7 @@ import { compileWiki, validateResources } from "@topik/core";
 const result = await compileWiki({ dir: "./docs" });
 const validation = validateResources(result.resources);
 if (!validation.valid) throw new Error(JSON.stringify(validation.errors));
-console.log(
-  result.resources.map((resource) => `${resource.type}/${resource.name}`),
-);
+console.log(result.resources.map((resource) => `${resource.type}/${resource.name}`));
 ```
 
 Use `compileGuides` for a standalone collection or `compile` for the sources

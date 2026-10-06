@@ -116,9 +116,6 @@ function manifestSourceDescriptors(manifest: TopikManifest): ManifestSourceDescr
 /** Compile only declared sources, sharing the existing local compiler and Asset pipeline. */
 export async function compileManifest(options: CompileOptions): Promise<ManifestCompileResult> {
   const root = resolve(options.dir);
-  // Reject obsolete overrides from JavaScript callers instead of silently ignoring them.
-  if ("assets" in options)
-    throw new PublicCompileError("manifest-namespace-override", TOPIK_MANIFEST_FILENAME);
   const manifest = await loadTopikManifest(root);
   const sources = manifestSourceDescriptors(manifest);
   const provenance: ManifestSourceProvenance[] = [];

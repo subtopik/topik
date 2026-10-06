@@ -144,12 +144,9 @@ describe("root manifest compilation", () => {
     },
   );
 
-  test("requires a namespace even without assets and rejects programmatic overrides", async () => {
+  test("requires a namespace even without assets", async () => {
     const dir = await fixture({ ".topik.yaml": "version: 1\nsources: []" });
     await expect(compile({ dir })).rejects.toMatchObject({ id: "manifest-invalid" });
-    await writeFile(join(dir, ".topik.yaml"), sources([]));
-    const overridden = { dir, assets: { generateName: () => "override" } };
-    await expect(compile(overridden)).rejects.toMatchObject({ id: "manifest-namespace-override" });
   });
 
   test("empty manifest ignores conventional files, and explicit missing manifest fails", async () => {

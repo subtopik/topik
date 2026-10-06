@@ -1,4 +1,3 @@
-import { PublicCompileError } from "./compile/public-errors";
 import { EventEmitter } from "node:events";
 import { resolve } from "node:path";
 import { watch as chokidarWatch } from "chokidar";
@@ -32,8 +31,6 @@ function resourceKey(resource: Resource): string {
 }
 
 export async function watch(options: WatchOptions): Promise<Watcher> {
-  if ("assets" in options)
-    throw new PublicCompileError("manifest-namespace-override", ".topik.yaml");
   const dir = resolve(options.dir);
   const emitter = new EventEmitter();
   const resources = new Map<string, Resource>();

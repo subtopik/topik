@@ -4,8 +4,6 @@ import { isTopikPathCodePointForbiddenV17 } from "../assets/path-unicode-v17";
 const PUBLIC_COMPILE_ERROR_MESSAGES = {
   "manifest-required":
     'Project compilation requires .topik.yaml in the selected directory. Add a manifest such as: {"version":1,"namespace":"owner/project","sources":[{"kind":"wiki","config":"wiki.yaml"}]}',
-  "manifest-namespace-override":
-    "Set namespace in .topik.yaml; project namespace overrides are not supported.",
   "manifest-invalid": "Root manifest is invalid.",
   "manifest-source-failed": "Manifest source could not be compiled.",
   "manifest-resource-conflict": "Manifest sources produce conflicting resource identities.",

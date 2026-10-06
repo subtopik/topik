@@ -24,7 +24,7 @@ The manifest declares the project namespace and points to existing configuration
 
 The namespace is nonblank portable text, normalized to Unicode NFC, with a maximum of 1,024 UTF-8 bytes. Topik uses it together with each asset's **manifest-relative path** to generate the asset's identity. Changing the namespace changes every generated asset ID. Changing a Git remote or checkout location does not. See [Assets](./assets.md#generated-identity) for the exact identity rules.
 
-The manifest is authoritative. The CLI has no namespace override and does not derive a namespace from Git. Project library APIs likewise do not accept namespace overrides.
+Project compilation uses the namespace declared in the manifest.
 
 ## Discovery and paths
 
@@ -50,7 +50,7 @@ const project = await compileManifest({ dir: projectRoot });
 
 `topikManifestSchema`, `topikManifestSourceSchema`, `parseTopikManifest`, `TopikManifest` and `TopikManifestSource` expose the public contract. `discoverManifestSources` loads declaration descriptors. `compileManifest` returns `provenance` in declaration order: kind, config path, local directory, project namespace, resolved new-media destination, and authored resource keys mapped to manifest-relative source paths.
 
-Explicit single-source library operations remain available without a manifest:
+Single-source library operations compile without a manifest:
 
 ```ts
 import { compileWiki, createProjectAssetNameGenerator } from "@topik/core";
@@ -67,18 +67,10 @@ const wiki = await compileWiki({
 });
 ```
 
-`compileGuides` accepts the same optional `configFile` selector. Omitting it retains conventional single-source discovery. These operations do not read or require a manifest. Their `assets.generateName` callback receives the resolved absolute asset path; it owns the naming policy. The helper above uses the explicit project root and namespace to produce the same IDs as a manifest build with those values, including for nested configurations. Custom callbacks are also supported. The compiler still validates files, checks name collisions, emits payloads, and rewrites references. A callback is required only when local assets are discovered. See [Standalone asset naming](./assets.md#standalone-asset-naming).
+`compileGuides` accepts the same optional `configFile` selector. Omitting it uses conventional single-source discovery. These operations do not read or require a manifest. Their `assets.generateName` callback receives the resolved absolute asset path; it owns the naming policy. The helper above uses the explicit project root and namespace to produce the same IDs as a manifest build with those values, including for nested configurations. Custom callbacks are also supported. The compiler still validates files, checks name collisions, emits payloads, and rewrites references. A callback is required only when local assets are discovered. See [Standalone asset naming](./assets.md#standalone-asset-naming).
 
 ## Assets and output
 
 All declared sources use one asset compilation pass with the manifest namespace and manifest-relative paths. The same file has one asset identity even when referenced from overlapping sources. Different paths have different identities; identical payload bytes are stored once. Reordering sources or renaming a configuration within its directory preserves asset IDs. Moving an asset changes its ID.
 
 Compilation rejects conflicting authored resource identities and paths, then validates the complete semantic and materialization inventories. The CLI stages one complete output generation. A failed manifest, source or validation leaves prior successful output unchanged. Compilation never writes authoring files.
-
-## Migration
-
-This is a breaking change for project compilation. Add `.topik.yaml` to the directory passed to `compile`, `dev`, `lint`, or `watch`; list every Wiki and collection that previously relied on implicit discovery. Move an explicit namespace from CLI/library options into `namespace` and remove those overrides. If a project previously relied on Git derivation, choose and commit its stable namespace explicitly.
-
-Standalone compilers and Astro loaders now take `assets.generateName` instead of a namespace option. Astro also requires a stable loader `name` for snapshot sharing; this does not affect asset IDs. The project naming helper uses `projectNamespace` and `projectRoot`; the low-level hash function uses `projectNamespace` and `manifestRelativePath`. Namespace validation is exposed as `validateProjectNamespace`.
-
-Existing generated asset IDs are preserved only when both the normalized namespace and identity paths remain identical. Adopting a different root, namespace, or the earlier per-directory manifest derivation changes IDs. Recompile and transfer resources, references, and payload inventories together; do not mix output generations.

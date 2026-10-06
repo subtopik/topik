@@ -213,24 +213,35 @@ Resolution applies only to declared asset fields.
 
 `@topik/astro` is currently a private workspace package. Applications using that
 integration pass the same loader instances to their content collections and
-Topik integration so that page content and delivery share one compiled snapshot:
+Topik integration so that page content and delivery share one compiled snapshot.
+
+Place this example in `topik-loaders.ts` beside `.topik.yaml` at the project root.
+The manifest uses `namespace: example/handbook` and declares the Wiki configuration
+at `content/wiki/wiki.yaml`:
 
 ```ts
+import { fileURLToPath } from "node:url";
 import { topik, topikWikiLoader } from "@topik/astro";
 import { createProjectAssetNameGenerator } from "@topik/core";
 
+const projectRoot = fileURLToPath(new URL(".", import.meta.url));
+
 export const wiki = topikWikiLoader({
-  dir: "content/wiki",
+  dir: fileURLToPath(new URL("./content/wiki", import.meta.url)),
   name: "handbook",
   assets: {
     generateName: createProjectAssetNameGenerator({
-      projectRoot: "content",
+      projectRoot,
       projectNamespace: "example/handbook",
     }),
   },
 });
 export const integration = topik({ loaders: [wiki] });
 ```
+
+Both paths are anchored to the module location. An asset at
+`content/wiki/logo.png` keeps that full manifest-relative path for naming, so its
+ID matches the project build regardless of the working directory.
 
 These standalone loaders accept the same naming callback as the core compilers;
 they do not read a project manifest. `name` identifies the logical loader across

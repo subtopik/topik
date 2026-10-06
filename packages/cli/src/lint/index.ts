@@ -8,7 +8,7 @@ export const lint = command({
   name: "lint",
   desc: "Lint Topik source content without writing compiled resources",
   options: {
-    dir: positional("dir").desc("Path to the content directory").default("."),
+    dir: positional("dir").desc("Project directory containing .topik.yaml").default("."),
     links: string("links")
       .desc("How unresolved wiki links and local guide fragments are handled")
       .enum("error", "warning", "off")

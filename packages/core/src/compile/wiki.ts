@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { join, posix, resolve } from "node:path";
+import { join, posix } from "node:path";
 import {
   analyzeTopikContent,
   validateTopikAssetReference,
@@ -18,7 +18,12 @@ import type { SourceResource } from "../resource";
 import { parseWikiConfig, WIKI_PAGE_NAME_HASH_LENGTH, type WikiNavNode } from "../config/wiki";
 import { compileAssetResources, type AssetCompilationOptions } from "./assets";
 import type { CompileResourceDiscovery } from "./guide";
-import { readOptionalConfigFileWithPath } from "./config";
+import {
+  readOptionalConfigFileWithPath,
+  readExactConfigFile,
+  configurationDirectory,
+  type LoadedConfig,
+} from "./config";
 import { readRegularFileWithinRoot } from "./files";
 import { PublicCompileError } from "./public-errors";
 import { classifyPortableNavigationPath, readPortableAssetFile } from "../assets/files";
@@ -37,6 +42,8 @@ import { joinWikiPath } from "../wiki-navigation";
 
 export interface CompileWikiOptions {
   dir: string;
+  /** Exact config path relative to dir; content is relative to the config directory. */
+  configFile?: string;
   validation?: CompileValidationOptions;
   assets?: AssetCompilationOptions;
 }
@@ -50,7 +57,7 @@ export async function compileWiki(options: CompileWikiOptions): Promise<CompileR
 export async function inspectWiki(options: CompileWikiOptions): Promise<CompileResult> {
   const discovered = await discoverWiki(options);
   const compiled = await compileAssetResources({
-    rootDir: resolve(options.dir),
+    rootDir: configurationDirectory(options.dir, options.configFile),
     resources: discovered.resources,
     sourcePathsByResource: discovered.sourcePathsByResource,
     protectedSourcePaths: discovered.consumedSourcePaths,
@@ -60,14 +67,17 @@ export async function inspectWiki(options: CompileWikiOptions): Promise<CompileR
 }
 
 /** @internal Discovery phase used by the mixed top-level compiler. */
-export async function discoverWiki(options: CompileWikiOptions): Promise<CompileResourceDiscovery> {
-  const dir = resolve(options.dir);
+export async function discoverWiki(
+  options: CompileWikiOptions,
+  selectedConfig?: LoadedConfig,
+): Promise<CompileResourceDiscovery> {
+  const dir = configurationDirectory(options.dir, options.configFile);
 
-  const loadedConfig = await readOptionalConfigFileWithPath(dir, [
-    "wiki.yaml",
-    "wiki.yml",
-    "wiki.json",
-  ]);
+  const loadedConfig =
+    selectedConfig ??
+    (options.configFile !== undefined
+      ? await readExactConfigFile(options.dir, options.configFile)
+      : await readOptionalConfigFileWithPath(dir, ["wiki.yaml", "wiki.yml", "wiki.json"]));
   if (loadedConfig == null) {
     return { diagnostics: [], resources: [], sourcePathsByResource: {}, consumedSourcePaths: [] };
   }
@@ -76,7 +86,7 @@ export async function discoverWiki(options: CompileWikiOptions): Promise<Compile
   try {
     config = parseWikiConfig(loadedConfig.value);
   } catch {
-    throw new PublicCompileError("config-invalid", loadedConfig.path);
+    throw new PublicCompileError("config-invalid", options.configFile ?? loadedConfig.path);
   }
   const pagePaths = config.navigation ? [...new Set(collectPagePaths(config.navigation))] : [];
   const resolvedFiles = await Promise.all(pagePaths.map((pagePath) => readPageFile(dir, pagePath)));
@@ -151,6 +161,7 @@ export async function discoverWiki(options: CompileWikiOptions): Promise<Compile
     resources,
     sourcePathsByResource,
     consumedSourcePaths: [loadedConfig.path],
+    assetDirectory: config.assets.directory,
   };
 }
 

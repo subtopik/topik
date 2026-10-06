@@ -1,10 +1,10 @@
 import { resolve } from "node:path";
-import { compileGuides } from "@topik/core";
+import { compileGuides, type AssetCompilationOptions } from "@topik/core";
 import type { Guide } from "@topik/schema/guide/v1";
 import type { LoaderContext } from "astro/loaders";
 import {
   compileTopikAssetLoader,
-  requireTopikSourceNamespace,
+  requireTopikLoaderName,
   withTopikAssetSnapshot,
   type TopikAssetLoader,
 } from "./assets";
@@ -12,8 +12,10 @@ import {
 export interface TopikGuidesOptions {
   /** Path to the guide collection directory (containing collection.yaml). */
   dir: string;
-  /** Stable, versioned identity namespace for automatically discovered Assets. */
-  sourceNamespace: string;
+  /** Stable loader identity shared across Astro module contexts; does not affect Asset names. */
+  name: string;
+  /** Name generator for local Assets. No manifest is required. */
+  assets?: AssetCompilationOptions;
 }
 
 const GUIDE_TYPES = `
@@ -28,16 +30,17 @@ export type Entry = {
 
 export function topikGuidesLoader(options: TopikGuidesOptions): TopikAssetLoader {
   const resolvedDir = resolve(options.dir);
-  const sourceNamespace = requireTopikSourceNamespace(options.sourceNamespace);
+  const name = requireTopikLoaderName(options.name);
+  const assets = options.assets;
 
   const compile = () =>
     compileGuides({
       dir: resolvedDir,
-      assets: { sourceNamespace },
+      assets,
     });
   const enhanced = withTopikAssetSnapshot(
     {
-      name: "topik-guides",
+      name,
 
       load: async (context: LoaderContext) => {
         context.logger.info(`Compiling guides from ${resolvedDir}`);
@@ -86,7 +89,7 @@ export function topikGuidesLoader(options: TopikGuidesOptions): TopikAssetLoader
       },
     },
     compile,
-    { kind: "guides", sourceNamespace, sourceRoot: resolvedDir },
+    { kind: "guides", name, sourceRoot: resolvedDir },
   );
   return enhanced.loader;
 }

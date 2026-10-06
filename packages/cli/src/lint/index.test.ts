@@ -14,6 +14,14 @@ describe("lint command", () => {
 
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), "topik-cli-lint-"));
+    await writeFile(
+      join(dir, ".topik.yaml"),
+      JSON.stringify({
+        version: 1,
+        namespace: "cli-lint-fixture",
+        sources: [{ kind: "wiki", config: "wiki.yaml" }],
+      }),
+    );
     await writeFile(join(dir, "wiki.yaml"), "id: docs\ntitle: Docs\nnavigation:\n  - intro\n");
   });
 

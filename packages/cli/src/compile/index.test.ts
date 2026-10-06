@@ -36,7 +36,6 @@ type CompileCommand = {
     dryRun: boolean;
     validate: boolean;
     links: "error" | "warning" | "off";
-    sourceNamespace?: string;
   }) => Promise<void>;
 };
 
@@ -139,6 +138,14 @@ describe("compile command", () => {
 
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), "topik-cli-compile-"));
+    await writeFile(
+      join(dir, ".topik.yaml"),
+      JSON.stringify({
+        version: 1,
+        namespace: "cli-test-source",
+        sources: [{ kind: "collection", config: "collection.yaml" }],
+      }),
+    );
     await writeFile(join(dir, "collection.yaml"), "id: docs\ntitle: Docs\n");
     await writeFile(join(dir, "intro.md"), "# Intro\n");
   });
@@ -158,7 +165,6 @@ describe("compile command", () => {
       dryRun: true,
       validate: true,
       links: "error",
-      sourceNamespace: "cli-test-source",
     });
     expect(log).toHaveBeenCalledWith(
       expect.stringMatching(/^resources\/Asset\/auto-v1-[a-z2-7]{51}[aq]\.json$/u),
@@ -175,6 +181,17 @@ describe("compile command", () => {
     await writeFile(join(dir, "intro.md"), "<http://example.com/guide.pdf>\n");
     await writeFile(join(dir, "wiki.yaml"), "id: wiki\ntitle: Wiki\nnavigation:\n  - unsafe\n");
     await writeFile(join(dir, "unsafe.md"), "<http://example.com/wiki.pdf>\n");
+    await writeFile(
+      join(dir, ".topik.yaml"),
+      JSON.stringify({
+        version: 1,
+        namespace: "cli-test-source",
+        sources: [
+          { kind: "wiki", config: "wiki.yaml" },
+          { kind: "collection", config: "collection.yaml" },
+        ],
+      }),
+    );
 
     let failure: unknown;
     try {
@@ -200,6 +217,14 @@ describe("compile command", () => {
 
   test("keeps invalid config bytes and machine paths out of CLI compile error output", async () => {
     const sentinel = "PRIVATE_VALUE";
+    await writeFile(
+      join(dir, ".topik.yaml"),
+      JSON.stringify({
+        version: 1,
+        namespace: "cli-test-source",
+        sources: [{ kind: "wiki", config: "wiki.yaml" }],
+      }),
+    );
     await writeFile(join(dir, "wiki.yaml"), `id: docs\ntitle: [${sentinel}\n`);
 
     let failure: unknown;
@@ -210,7 +235,6 @@ describe("compile command", () => {
         dryRun: true,
         validate: true,
         links: "error",
-        sourceNamespace: "cli-test-source",
       });
     } catch (error) {
       failure = error;
@@ -224,20 +248,30 @@ describe("compile command", () => {
       typeof failure === "object" && failure !== null ? JSON.stringify(Object.values(failure)) : "",
       failure instanceof Error && failure.cause instanceof Error ? String(failure.cause) : "",
     ].join("\n");
-    expect(output).toBe("Configuration file could not be parsed.");
+    expect(output).toBe(
+      ".topik.yaml sources[0] (wiki) wiki.yaml: Configuration file could not be parsed.",
+    );
     expect(surfaces).not.toContain(sentinel);
     expect(surfaces).not.toContain(dir);
     expect(surfaces).not.toContain(tmpdir());
   });
 
-  test("uses the same generated identity for canonically equivalent CLI namespaces", async () => {
+  test("uses the same generated identity for canonically equivalent manifest namespaces", async () => {
     await writeFile(join(dir, "hero.png"), PNG_BYTES);
     await writeFile(join(dir, "intro.md"), "![Hero](hero.png)\n");
     const names: string[] = [];
-    for (const [suffix, sourceNamespace] of [
+    for (const [suffix, projectNamespace] of [
       ["composed", "é"],
       ["decomposed", "e\u0301"],
     ] as const) {
+      await writeFile(
+        join(dir, ".topik.yaml"),
+        JSON.stringify({
+          version: 1,
+          namespace: projectNamespace,
+          sources: [{ kind: "collection", config: "collection.yaml" }],
+        }),
+      );
       const outDir = join(dir, `out-${suffix}`);
       await (compile as CompileCommand).handler?.({
         dir,
@@ -246,7 +280,6 @@ describe("compile command", () => {
         dryRun: false,
         validate: true,
         links: "error",
-        sourceNamespace,
       });
       names.push((await readdir(join(outDir, "resources", "Asset")))[0]);
     }
@@ -264,7 +297,6 @@ describe("compile command", () => {
       dryRun: false,
       validate: true,
       links: "error" as const,
-      sourceNamespace: "cli-test-source",
     };
     await (compile as CompileCommand).handler?.(options);
     expect((await lstat(outDir)).isDirectory()).toBe(true);
@@ -342,7 +374,6 @@ describe("compile command", () => {
       dryRun: false,
       validate: true,
       links: "error" as const,
-      sourceNamespace: "cli-default-output",
     };
     await (compile as CompileCommand).handler?.(options);
     const outDir = join(dir, ".topik");

@@ -22,6 +22,14 @@ describe("watch", () => {
 
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), "topik-watch-"));
+    await writeFile(
+      join(dir, ".topik.yaml"),
+      JSON.stringify({
+        version: 1,
+        namespace: "watch-fixture",
+        sources: [{ kind: "collection", config: "collection.yaml" }],
+      }),
+    );
     await writeFile(join(dir, "collection.yaml"), "id: guides\ntitle: Guides\n");
     await writeFile(join(dir, "intro.md"), "# Intro\n\nWelcome.\n");
   });
@@ -64,7 +72,7 @@ describe("watch", () => {
   test("emits the automatic Asset update with a refreshed payload when bytes change", async () => {
     await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](hero.png)\n");
     await writeFile(join(dir, "hero.png"), PNG_BYTES);
-    watcher = await watch({ dir, assets: { sourceNamespace: "watch-fixture" } });
+    watcher = await watch({ dir });
 
     const asset = [...watcher.resources.values()].find((resource) => resource.type === "Asset");
     const key = `Asset/${asset?.name}`;
@@ -97,7 +105,7 @@ describe("watch", () => {
     await mkdir(join(dir, ".images"));
     await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](.images/hero.png)\n");
     await writeFile(join(dir, ".images", "hero.png"), PNG_BYTES);
-    watcher = await watch({ dir, assets: { sourceNamespace: "watch-fixture" } });
+    watcher = await watch({ dir });
 
     const asset = [...watcher.resources.values()].find((resource) => resource.type === "Asset");
     const key = `Asset/${asset?.name}`;
@@ -143,6 +151,14 @@ describe("watch", () => {
       // Replace guide content with wiki content
       await rm(join(dir, "collection.yaml"));
       await rm(join(dir, "intro.md"));
+      await writeFile(
+        join(dir, ".topik.yaml"),
+        JSON.stringify({
+          version: 1,
+          namespace: "watch-fixture",
+          sources: [{ kind: "wiki", config: "wiki.yaml" }],
+        }),
+      );
       await writeFile(join(dir, "wiki.yaml"), "id: docs\ntitle: Docs\nnavigation:\n  - intro\n");
       await writeFile(join(dir, "intro.md"), "# Intro\n\nWiki intro page.\n");
     });

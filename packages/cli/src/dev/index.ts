@@ -2,11 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { resolve } from "node:path";
 import { command, positional, string } from "@drizzle-team/brocli";
 import { watch, type Watcher } from "@topik/core";
-import {
-  deriveGitSourceNamespace,
-  sourceNamespaceOptions,
-  requiresSourceNamespace,
-} from "../source-namespace";
+
 import { formatPublicCliError, PublicCliError } from "../errors";
 
 const DEV_HOST = "127.0.0.1";
@@ -265,23 +261,12 @@ export async function startDevServer(options: {
   dir: string;
   port: number;
   allowOrigin?: string;
-  sourceNamespace?: string;
 }): Promise<StartedDevServer> {
   const dir = resolve(options.dir);
   const allowedOrigin = normalizeAllowedOrigin(options.allowOrigin ?? DEFAULT_ALLOWED_ORIGIN);
 
   console.log("Watching content for changes...");
-  const assetOptions = sourceNamespaceOptions(options.sourceNamespace);
-  let watcher: Watcher;
-  try {
-    watcher = await watch({ dir, assets: assetOptions });
-  } catch (error) {
-    if (assetOptions !== undefined || !requiresSourceNamespace(error)) throw error;
-    watcher = await watch({
-      dir,
-      assets: { sourceNamespace: await deriveGitSourceNamespace(dir) },
-    });
-  }
+  const watcher = await watch({ dir });
   console.log(`Compiled ${watcher.resources.size} resources`);
 
   watcher.on("error", (error: Error) => {
@@ -353,13 +338,10 @@ export const dev = command({
   name: "dev",
   desc: "Start a development server that watches for content changes",
   options: {
-    dir: positional("dir").desc("Path to the content directory").default("."),
+    dir: positional("dir").desc("Project directory containing .topik.yaml").default("."),
     port: string("port").alias("p").desc("Port to listen on").default("50001"),
     allowOrigin: string("allow-origin").desc(
       `Browser origin allowed to connect (default: ${DEFAULT_ALLOWED_ORIGIN})`,
-    ),
-    sourceNamespace: string("source-namespace").desc(
-      "Stable source namespace for automatically discovered local Assets (derived from Git when omitted)",
     ),
   },
   handler: async (options) => {
@@ -370,7 +352,6 @@ export const dev = command({
       dir,
       port,
       allowOrigin: options.allowOrigin,
-      sourceNamespace: options.sourceNamespace,
     });
     console.log(`Dev server listening on http://localhost:${runningServer.port}`);
 

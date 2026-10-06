@@ -14,6 +14,7 @@ compiled bytes and resolve those names to reader-facing URLs.
 
 ```text
 handbook/
+  .topik.yaml
   wiki.yaml
   content/
     overview.md
@@ -31,10 +32,11 @@ In `content/overview.md`, paths are relative to that Markdown file:
 [Download the checklist](../downloads/checklist.pdf)
 ```
 
-The resolved file must remain inside the compilation directory. Here, compile
-`handbook/`, so the compiler can read both the page and its referenced files.
-The normalized identities use `images/setup.png` and `downloads/checklist.pdf`,
-relative to that compilation directory.
+The resolved file must remain inside the local configuration directory. Here,
+`.topik.yaml` declares `wiki.yaml`, and `handbook/` is the project root. Asset
+identity paths are `images/setup.png` and `downloads/checklist.pdf`, relative to
+the directory containing the manifest. With a manifest one level above
+`handbook/`, those paths would include the `handbook/` prefix.
 
 Discovery covers Markdown images, `figure` light/dark sources, and local Markdown
 links proven to be supported regular-file downloads. It checks all authored
@@ -45,48 +47,116 @@ Credential-free HTTPS images and downloads stay external references. The
 compiler does not download them or create asset descriptors for them. HTTP and
 credential-bearing asset URLs are refused.
 
-## Set a stable source namespace
+## Set a stable project namespace
 
-Asset names depend on a namespace and normalized source path. Use a namespace
-that stays constant across recompilations and checkouts of the same content:
+Declare the namespace in the required `.topik.yaml`:
+
+```yaml
+version: 1
+namespace: example/handbook
+sources:
+  - kind: wiki
+    config: wiki.yaml
+```
 
 ```sh
-npx topik compile ./handbook --source-namespace handbook-v1 --validate
+npx topik compile ./handbook --validate
 ```
 
-When the option is omitted, the CLI attempts to derive a namespace from the Git
-remote and compilation-root path. A namespace is required only when local assets
-are discovered. Library callers pass it explicitly:
+Use the same namespace across checkouts, archives, and CI builds of the same
+project. Independent projects should use different values; no global registry
+enforces uniqueness. The CLI does not derive a namespace from Git or accept an
+override. See [Project manifest](./manifest.md) for the full contract.
+
+Explicit standalone library calls such as `compileWiki` and `compileGuides`
+remain independent of manifests. They accept an `assets.generateName` callback;
+see [Standalone asset naming](#standalone-asset-naming).
+
+## Standalone asset naming
+
+`compileWiki`, `compileGuides`, and `compileAssetResources` accept a naming callback
+without requiring a manifest. `assets.generateName` (or `generateName` directly
+on `compileAssetResources`) receives `{ resolvedAssetPath }`: the absolute native
+file path after reference resolution. It must return a stable canonical `auto-v1-…`
+name, synchronously or asynchronously. It is called once per distinct asset path
+in a compilation. Missing callbacks fail only when local assets are encountered;
+content without local assets needs no naming configuration.
+
+For the standard project policy, create a callback with an explicit root and
+namespace:
 
 ```ts
-import { compileWiki } from "@topik/core";
+import { resolve } from "node:path";
+import { compileWiki, createProjectAssetNameGenerator } from "@topik/core";
 
-export async function compileHandbook(dir: string) {
-  return compileWiki({ dir, assets: { sourceNamespace: "handbook-v1" } });
-}
+const projectRoot = resolve("./content");
+const generateName = createProjectAssetNameGenerator({
+  projectRoot,
+  projectNamespace: "example/handbook",
+});
+const result = await compileWiki({
+  dir: projectRoot,
+  configFile: "handbook/wiki.yaml",
+  assets: { generateName },
+});
 ```
+
+The helper reads no manifest. It hashes the namespace and portable path relative
+to `projectRoot`, and rejects files outside that root. If those values match a
+manifest build, asset IDs match too, including for nested configurations and
+shared files. Never hash the absolute checkout path if IDs must survive relocation.
+For custom callbacks, the caller owns stability and uniqueness across compilations.
+Within a compilation, the compiler validates names and rejects different paths
+mapped to the same name. File admission, payload hashing, deduplication, content
+rewriting, and inventory validation remain compiler responsibilities.
 
 ## Generated identity
 
-An asset's generated name identifies its source location. Its payload digest
+In project builds, an asset's generated name identifies its project namespace and manifest-relative source location. Its payload digest
 identifies its bytes. Those identities have different uses:
 
 | Change                       | Generated name | Payload digest                    |
 | ---------------------------- | -------------- | --------------------------------- |
 | Edit a file at the same path | Preserved.     | Changes when its bytes change.    |
 | Move a file                  | Changes.       | Preserved if its bytes are equal. |
-| Change the source namespace  | Changes.       | Preserved if its bytes are equal. |
+| Change the project namespace | Changes.       | Preserved if its bytes are equal. |
 | Use equal bytes at two paths | Two names.     | One shared payload.               |
 
 Generated names use `auto-v1-` followed by 52 lowercase base32 characters; the
 final character is `a` or `q`. The suffix encodes the complete SHA-256 digest of:
 
 ```text
-UTF8(NFC(source-namespace)) + NUL + UTF8(normalized-source-path)
+UTF8(NFC(project-namespace)) + NUL + UTF8(manifest-relative-asset-path)
 ```
+
+Within a project, references to the same file share an ID, including references
+from overlapping Wiki and collection directories. Different manifest-relative
+paths produce different IDs. Independent projects with the same namespace and
+matching paths produce the same IDs, so choose distinct namespaces deliberately.
+Moving a checkout or changing its Git remote preserves IDs.
 
 Topik owns that derivation. Authors keep ordinary local references in editable
 source and do not assign generated names themselves.
+
+## New media destination
+
+Each Wiki or collection configuration can select the destination for new synced media:
+
+```yaml
+# docs/wiki.yaml (also supported in collection.yaml)
+id: docs
+title: Documentation
+assets:
+  directory: _assets
+```
+
+`assets.directory` defaults to `_assets` beside the local configuration. Override it with a normalized portable relative directory, for example `media/uploads`. The path is relative to that configuration's directory, never to the process working directory. Absolute paths, URLs, traversal, case/Unicode-unsafe spelling, and reserved `.git`/`.topik` paths are rejected. The root `.topik.yaml` declares the project namespace and source pointers; it has no asset defaults or inheritance.
+
+This setting chooses where **new** media will be written during source synchronization. It does not move existing media, restrict which local media can be referenced, change Asset namespaces, or relocate compiled `blobs/` output. Compilation neither creates the destination nor writes files there. Source write-back is not implemented by this feature; it must preserve existing paths, use deterministic filenames, and reject destination conflicts without overwriting unrelated files. A destination setting grants no ownership over existing files.
+
+Configurations in the same directory share `_assets` by default, and may each override their destination. Shared directories alone are not conflicts. At write time, the complete resolved destination and filenames must pass the existing containment, file-type and collision checks; an existing file cannot be treated as a directory or overwritten by implication. The directory need not exist when compiling.
+
+The public Wiki/collection parsers return the effective `assets.directory`, including the default. Manifest compilation exposes each source's resolved manifest-relative `assetDirectory` in its provenance. `sourceAssetsConfigSchema`, `SourceAssetsConfig` and `DEFAULT_ASSET_DIRECTORY` are exported for tools using the same contract.
 
 ## Compiled output
 
@@ -143,19 +213,42 @@ Resolution applies only to declared asset fields.
 
 `@topik/astro` is currently a private workspace package. Applications using that
 integration pass the same loader instances to their content collections and
-Topik integration so that page content and delivery share one compiled snapshot:
+Topik integration so that page content and delivery share one compiled snapshot.
+
+Place this example in `topik-loaders.ts` beside `.topik.yaml` at the project root.
+The manifest uses `namespace: example/handbook` and declares the Wiki configuration
+at `content/wiki/wiki.yaml`:
 
 ```ts
+import { fileURLToPath } from "node:url";
 import { topik, topikWikiLoader } from "@topik/astro";
+import { createProjectAssetNameGenerator } from "@topik/core";
+
+const projectRoot = fileURLToPath(new URL(".", import.meta.url));
 
 export const wiki = topikWikiLoader({
-  dir: "content/wiki",
-  sourceNamespace: "handbook-v1",
+  dir: fileURLToPath(new URL("./content/wiki", import.meta.url)),
+  name: "handbook",
+  assets: {
+    generateName: createProjectAssetNameGenerator({
+      projectRoot,
+      projectNamespace: "example/handbook",
+    }),
+  },
 });
 export const integration = topik({ loaders: [wiki] });
 ```
 
-Loaders require an explicit namespace. `getAssets()` exposes their descriptors;
+Both paths are anchored to the module location. An asset at
+`content/wiki/logo.png` keeps that full manifest-relative path for naming, so its
+ID matches the project build regardless of the working directory.
+
+These standalone loaders accept the same naming callback as the core compilers;
+they do not read a project manifest. `name` identifies the logical loader across
+Astro module contexts and does not participate in asset naming. Use a different
+loader name for different naming policies applied to the same source directory.
+Equivalent instances with the same name, directory, and kind share their current
+snapshot. `getAssets()` exposes their descriptors;
 `resolveAsset(name)` returns the corresponding `/blobs/<digest>` URL after a
 completed load. The integration writes blobs during static builds and serves the
 compiled snapshot through middleware in production server builds. Failed loads

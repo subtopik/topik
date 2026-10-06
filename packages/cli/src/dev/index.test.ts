@@ -73,7 +73,6 @@ describe("dev command", () => {
     runningServer = await startDevServer({
       dir,
       port: 0,
-      sourceNamespace: "dev-test-source",
       ...options,
     });
     return addressOf(runningServer).port;
@@ -81,6 +80,14 @@ describe("dev command", () => {
 
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), "topik-dev-"));
+    await writeFile(
+      join(dir, ".topik.yaml"),
+      JSON.stringify({
+        version: 1,
+        namespace: "dev-test-source",
+        sources: [{ kind: "collection", config: "collection.yaml" }],
+      }),
+    );
     await writeFile(join(dir, "collection.yaml"), "id: docs\ntitle: Docs\n");
     await writeFile(join(dir, "intro.md"), "# Intro\n\nWelcome.\n");
   });
@@ -179,6 +186,14 @@ describe("dev command", () => {
 
   test("keeps config bytes and machine paths out of CLI dev output", async () => {
     const sentinel = "PRIVATE_VALUE";
+    await writeFile(
+      join(dir, ".topik.yaml"),
+      JSON.stringify({
+        version: 1,
+        namespace: "dev-test-source",
+        sources: [{ kind: "wiki", config: "wiki.yaml" }],
+      }),
+    );
     await writeFile(join(dir, "wiki.yaml"), `id: docs\ntitle: [${sentinel}\n`);
     const logs: string[] = [];
     vi.spyOn(console, "log").mockImplementation((...values) => {
@@ -187,7 +202,7 @@ describe("dev command", () => {
 
     let failure: unknown;
     try {
-      await startDevServer({ dir, port: 0, sourceNamespace: "dev-test-source" });
+      await startDevServer({ dir, port: 0 });
     } catch (error) {
       failure = error;
     }
@@ -200,7 +215,9 @@ describe("dev command", () => {
       typeof failure === "object" && failure !== null ? JSON.stringify(Object.values(failure)) : "",
       failure instanceof Error && failure.cause instanceof Error ? String(failure.cause) : "",
     ].join("\n");
-    expect(formatPublicCliError(failure)).toBe("Configuration file could not be parsed.");
+    expect(formatPublicCliError(failure)).toBe(
+      ".topik.yaml sources[0] (wiki) wiki.yaml: Configuration file could not be parsed.",
+    );
     expect(output).toContain("Watching content for changes...");
     expect(surfaces).not.toContain(sentinel);
     expect(surfaces).not.toContain(dir);
@@ -276,6 +293,14 @@ describe("dev command", () => {
   test("GET /resources returns wiki resources", async () => {
     await rm(join(dir, "collection.yaml"));
     await rm(join(dir, "intro.md"));
+    await writeFile(
+      join(dir, ".topik.yaml"),
+      JSON.stringify({
+        version: 1,
+        namespace: "dev-test-source",
+        sources: [{ kind: "wiki", config: "wiki.yaml" }],
+      }),
+    );
     await writeFile(join(dir, "wiki.yaml"), "id: docs\ntitle: Docs\nnavigation:\n  - intro\n");
     await writeFile(join(dir, "intro.md"), "# Intro\n\nWiki page.\n");
 
@@ -295,6 +320,14 @@ describe("dev command", () => {
   test("GET and HEAD /blobs/:digest serve only shared compiler payloads", async () => {
     await rm(join(dir, "collection.yaml"));
     await rm(join(dir, "intro.md"));
+    await writeFile(
+      join(dir, ".topik.yaml"),
+      JSON.stringify({
+        version: 1,
+        namespace: "dev-test-source",
+        sources: [{ kind: "wiki", config: "wiki.yaml" }],
+      }),
+    );
     await writeFile(join(dir, "wiki.yaml"), "id: docs\ntitle: Docs\nnavigation:\n  - intro\n");
     await mkdir(join(dir, "images"), { recursive: true });
     await writeFile(join(dir, "images", "hero.png"), PNG_BYTES);

@@ -1,3 +1,4 @@
+import { createProjectAssetNameGenerator } from "./asset-names";
 import { mkdir, mkdtemp, writeFile, rm, symlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
@@ -521,7 +522,15 @@ navigation:
     await writeFile(join(dir, "hero.png"), png);
     await writePage("hello", "# Hello\n\n![hero](hero.png)\n");
 
-    const result = await compileWiki({ dir, assets: { sourceNamespace: "example-wiki" } });
+    const result = await compileWiki({
+      dir,
+      assets: {
+        generateName: createProjectAssetNameGenerator({
+          projectRoot: dir,
+          projectNamespace: "example-wiki",
+        }),
+      },
+    });
     const page = result.resources.find((r) => r.type === "WikiPage")!;
     const asset = result.resources.find((resource) => resource.type === "Asset");
 
@@ -538,7 +547,12 @@ navigation:
 
     const result = await compileWiki({
       dir,
-      assets: { sourceNamespace: "example-wiki-download" },
+      assets: {
+        generateName: createProjectAssetNameGenerator({
+          projectRoot: dir,
+          projectNamespace: "example-wiki-download",
+        }),
+      },
     });
     const page = result.resources.find((resource) => resource.type === "WikiPage");
     const asset = result.resources.find((resource) => resource.type === "Asset");
@@ -547,7 +561,15 @@ navigation:
 
     await writePage("hello", "# Hello\n\n[Missing](missing.pdf)\n");
     await expect(
-      compileWiki({ dir, assets: { sourceNamespace: "example-wiki-download" } }),
+      compileWiki({
+        dir,
+        assets: {
+          generateName: createProjectAssetNameGenerator({
+            projectRoot: dir,
+            projectNamespace: "example-wiki-download",
+          }),
+        },
+      }),
     ).rejects.toThrow(/link-page-not-found/u);
   });
 
@@ -557,7 +579,12 @@ navigation:
     const result = await compileWiki({
       dir,
       validation: { links: "off" },
-      assets: { sourceNamespace: "protected-wiki-config" },
+      assets: {
+        generateName: createProjectAssetNameGenerator({
+          projectRoot: dir,
+          projectNamespace: "protected-wiki-config",
+        }),
+      },
     });
     expect(result.resources.filter((resource) => resource.type === "Asset")).toEqual([]);
     expect(result.payloads).toEqual([]);
@@ -572,7 +599,15 @@ navigation:
     await writeFile(join(dir, "hero.png"), png);
     await writePage("hello", '# Hello\n\n{% figure src="hero.png" alt="Hero" /%}\n');
 
-    const result = await compileWiki({ dir, assets: { sourceNamespace: "example-wiki" } });
+    const result = await compileWiki({
+      dir,
+      assets: {
+        generateName: createProjectAssetNameGenerator({
+          projectRoot: dir,
+          projectNamespace: "example-wiki",
+        }),
+      },
+    });
     const page = result.resources.find((r) => r.type === "WikiPage")!;
     const asset = result.resources.find((resource) => resource.type === "Asset");
 

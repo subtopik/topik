@@ -1,3 +1,4 @@
+import { createProjectAssetNameGenerator } from "./asset-names";
 import { mkdir, mkdtemp, writeFile, rm, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -86,7 +87,12 @@ describe("compileGuides", () => {
     const result = await compileGuides({
       dir,
       validation: { links: "off" },
-      assets: { sourceNamespace: "protected-guide-config" },
+      assets: {
+        generateName: createProjectAssetNameGenerator({
+          projectRoot: dir,
+          projectNamespace: "protected-guide-config",
+        }),
+      },
     });
     expect(result.resources.filter((resource) => resource.type === "Asset")).toEqual([]);
     expect(result.payloads).toEqual([]);
@@ -101,7 +107,12 @@ describe("compileGuides", () => {
       compileGuides({
         dir,
         validation: { links: "off" },
-        assets: { sourceNamespace: "symlinked-guide-config" },
+        assets: {
+          generateName: createProjectAssetNameGenerator({
+            projectRoot: dir,
+            projectNamespace: "symlinked-guide-config",
+          }),
+        },
       }),
     ).rejects.toMatchObject({ id: "config-read-failed", location: "collection.yaml" });
   });
@@ -305,7 +316,15 @@ describe("compileGuides", () => {
     await writeFile(join(dir, "hero.png"), png);
     await writeGuide("post", "# Post\n\n![hero](hero.png)\n");
 
-    const result = await compileGuides({ dir, assets: { sourceNamespace: "example-guides" } });
+    const result = await compileGuides({
+      dir,
+      assets: {
+        generateName: createProjectAssetNameGenerator({
+          projectRoot: dir,
+          projectNamespace: "example-guides",
+        }),
+      },
+    });
     const guide = result.resources.find((r) => r.type === "Guide") as Guide;
     const asset = result.resources.find((resource) => resource.type === "Asset");
 
@@ -335,7 +354,15 @@ describe("compileGuides", () => {
     await writeGuide("one", "# One\n\n![s](shared.png)\n");
     await writeGuide("two", "# Two\n\n![s](shared.png)\n");
 
-    const result = await compileGuides({ dir, assets: { sourceNamespace: "example-guides" } });
+    const result = await compileGuides({
+      dir,
+      assets: {
+        generateName: createProjectAssetNameGenerator({
+          projectRoot: dir,
+          projectNamespace: "example-guides",
+        }),
+      },
+    });
     expect(result.resources.filter((resource) => resource.type === "Asset")).toHaveLength(1);
     expect(result.payloads).toHaveLength(1);
   });

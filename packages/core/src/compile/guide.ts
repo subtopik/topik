@@ -1,11 +1,16 @@
 import { readdir } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { analyzeTopikContent, validateTopikContent } from "@topik/content";
 import type { Guide } from "@topik/schema/guide/v1";
 import type { SourceResource } from "../resource";
 import { parseCollectionConfig } from "../config/collection";
 import { compileAssetResources, type AssetCompilationOptions } from "./assets";
-import { readOptionalConfigFileWithPath } from "./config";
+import {
+  readOptionalConfigFileWithPath,
+  readExactConfigFile,
+  configurationDirectory,
+  type LoadedConfig,
+} from "./config";
 import {
   FileNotRegularError,
   FileOutsideCompilationRootError,
@@ -25,11 +30,15 @@ import { validateLocalFragments } from "./links";
 
 export interface CompileGuidesOptions {
   dir: string;
+  /** Exact config path relative to dir; content is relative to the config directory. */
+  configFile?: string;
   validation?: CompileValidationOptions;
   assets?: AssetCompilationOptions;
 }
 
 export interface CompileResourceDiscovery {
+  /** Destination relative to the selected configuration directory, if a config was loaded. */
+  assetDirectory?: string;
   diagnostics: CompileResult["diagnostics"];
   resources: SourceResource[];
   sourcePathsByResource: Record<string, string>;
@@ -45,7 +54,7 @@ export async function compileGuides(options: CompileGuidesOptions): Promise<Comp
 export async function inspectGuides(options: CompileGuidesOptions): Promise<CompileResult> {
   const discovered = await discoverGuides(options);
   const compiled = await compileAssetResources({
-    rootDir: resolve(options.dir),
+    rootDir: configurationDirectory(options.dir, options.configFile),
     resources: discovered.resources,
     sourcePathsByResource: discovered.sourcePathsByResource,
     protectedSourcePaths: discovered.consumedSourcePaths,
@@ -57,14 +66,19 @@ export async function inspectGuides(options: CompileGuidesOptions): Promise<Comp
 /** @internal Discovery phase used by the mixed top-level compiler. */
 export async function discoverGuides(
   options: CompileGuidesOptions,
+  selectedConfig?: LoadedConfig,
 ): Promise<CompileResourceDiscovery> {
-  const dir = resolve(options.dir);
+  const dir = configurationDirectory(options.dir, options.configFile);
 
-  const loadedConfig = await readOptionalConfigFileWithPath(dir, [
-    "collection.yaml",
-    "collection.yml",
-    "collection.json",
-  ]);
+  const loadedConfig =
+    selectedConfig ??
+    (options.configFile !== undefined
+      ? await readExactConfigFile(options.dir, options.configFile)
+      : await readOptionalConfigFileWithPath(dir, [
+          "collection.yaml",
+          "collection.yml",
+          "collection.json",
+        ]));
   if (loadedConfig == null) {
     return { diagnostics: [], resources: [], sourcePathsByResource: {}, consumedSourcePaths: [] };
   }
@@ -73,7 +87,7 @@ export async function discoverGuides(
   try {
     config = parseCollectionConfig(loadedConfig.value);
   } catch {
-    throw new PublicCompileError("config-invalid", loadedConfig.path);
+    throw new PublicCompileError("config-invalid", options.configFile ?? loadedConfig.path);
   }
 
   const files = await readdir(dir);
@@ -158,6 +172,7 @@ export async function discoverGuides(
     resources,
     sourcePathsByResource,
     consumedSourcePaths: [loadedConfig.path],
+    assetDirectory: config.assets.directory,
   };
 }
 

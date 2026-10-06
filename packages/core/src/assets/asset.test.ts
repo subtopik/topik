@@ -8,7 +8,7 @@ import {
   parseGeneratedAssetName,
   serializeAsset,
   validateAssetValue,
-  validateStableSourceNamespace,
+  validateProjectNamespace,
 } from "./asset";
 import { parseStrictTopikJson, serializeTopikJson } from "./json";
 import { sniffPortableMediaType, TOPIK_UNRESOLVED_ACTIVE_CONTENT_TYPE } from "./media";
@@ -167,22 +167,22 @@ describe("automatic Asset identity", () => {
     }
   });
 
-  test("uses namespace plus normalized path, never bytes", () => {
+  test("uses project namespace plus manifest-relative path, never bytes", () => {
     const first = generateAutomaticAssetName({
-      stableSourceNamespace: "example-source",
-      normalizedPath: "images/logo.png",
+      projectNamespace: "example-source",
+      manifestRelativePath: "images/logo.png",
     });
     const retry = generateAutomaticAssetName({
-      stableSourceNamespace: "example-source",
-      normalizedPath: "images/logo.png",
+      projectNamespace: "example-source",
+      manifestRelativePath: "images/logo.png",
     });
     const moved = generateAutomaticAssetName({
-      stableSourceNamespace: "example-source",
-      normalizedPath: "branding/logo.png",
+      projectNamespace: "example-source",
+      manifestRelativePath: "branding/logo.png",
     });
     const otherSource = generateAutomaticAssetName({
-      stableSourceNamespace: "other-source",
-      normalizedPath: "images/logo.png",
+      projectNamespace: "other-source",
+      manifestRelativePath: "images/logo.png",
     });
     expect(first).toEqual(retry);
     expect(first.ok && first.value).toBe(
@@ -193,33 +193,34 @@ describe("automatic Asset identity", () => {
   });
 
   test("rejects unstable namespaces", () => {
-    expect(validateStableSourceNamespace("")).toMatchObject({ ok: false });
-    expect(validateStableSourceNamespace("branch\u0000name")).toMatchObject({ ok: false });
+    expect(validateProjectNamespace("")).toMatchObject({ ok: false });
+    expect(validateProjectNamespace("  ")).toMatchObject({ ok: false });
+    expect(validateProjectNamespace("branch\u0000name")).toMatchObject({ ok: false });
   });
 
   test("normalizes namespaces before validation, sizing, and hashing", () => {
-    expect(validateStableSourceNamespace("e\u0301")).toEqual({
+    expect(validateProjectNamespace("e\u0301")).toEqual({
       ok: true,
       value: "é",
       diagnostics: [],
     });
     const composed = generateAutomaticAssetName({
-      stableSourceNamespace: "é",
-      normalizedPath: "image.png",
+      projectNamespace: "é",
+      manifestRelativePath: "image.png",
     });
     const decomposed = generateAutomaticAssetName({
-      stableSourceNamespace: "e\u0301",
-      normalizedPath: "image.png",
+      projectNamespace: "e\u0301",
+      manifestRelativePath: "image.png",
     });
     expect(decomposed).toEqual(composed);
-    expect(validateStableSourceNamespace("e\u0301".repeat(512))).toMatchObject({ ok: true });
-    expect(validateStableSourceNamespace("e\u0301".repeat(513))).toMatchObject({ ok: false });
+    expect(validateProjectNamespace("e\u0301".repeat(512))).toMatchObject({ ok: true });
+    expect(validateProjectNamespace("e\u0301".repeat(513))).toMatchObject({ ok: false });
   });
 
   test("rejects Unicode 17 marks that the Node 22.12 normalizer cannot order", () => {
-    expect(validateStableSourceNamespace("a\u{1acf}\u0315")).toMatchObject({ ok: false });
-    expect(validateStableSourceNamespace("a\u0315\u{1acf}")).toMatchObject({ ok: false });
-    expect(validateStableSourceNamespace("\u{10940}")).toMatchObject({
+    expect(validateProjectNamespace("a\u{1acf}\u0315")).toMatchObject({ ok: false });
+    expect(validateProjectNamespace("a\u0315\u{1acf}")).toMatchObject({ ok: false });
+    expect(validateProjectNamespace("\u{10940}")).toMatchObject({
       ok: true,
       value: "\u{10940}",
     });

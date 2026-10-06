@@ -213,7 +213,7 @@ async function createFixture(options: { server?: boolean } = {}): Promise<string
   );
   await writeFile(
     join(root, "topik-loaders.mjs"),
-    `import { topikGuidesLoader, topikWikiLoader } from ${JSON.stringify(TOPIK_ASTRO_SOURCE)};\nexport const guidesLoader = topikGuidesLoader({ dir: new URL("./content/guides", import.meta.url).pathname, sourceNamespace: "production-guides" });\nexport const wikiLoader = topikWikiLoader({ dir: new URL("./content/wiki", import.meta.url).pathname, sourceNamespace: "production-wiki" });\n`,
+    `import { createProjectAssetNameGenerator } from "@topik/core";\nimport { topikGuidesLoader, topikWikiLoader } from ${JSON.stringify(TOPIK_ASTRO_SOURCE)};\nexport const guidesLoader = topikGuidesLoader({ dir: new URL("./content/guides", import.meta.url).pathname, name: "production-guides", assets: { generateName: createProjectAssetNameGenerator({ projectRoot: new URL("./content", import.meta.url).pathname, projectNamespace: "astro-project" }) } });\nexport const wikiLoader = topikWikiLoader({ dir: new URL("./content/wiki", import.meta.url).pathname, name: "production-wiki", assets: { generateName: createProjectAssetNameGenerator({ projectRoot: new URL("./content", import.meta.url).pathname, projectNamespace: "astro-project" }) } });\n`,
   );
   await writeFile(
     join(root, "src/content.config.mjs"),

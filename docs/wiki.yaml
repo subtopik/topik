@@ -16,4 +16,5 @@ navigation:
     children:
       - index
       - navigation
+      - manifest
       - assets

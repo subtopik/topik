@@ -187,7 +187,7 @@ async function createFixture(): Promise<string> {
   await writeFile(join(root, "content/guides/intro.md"), "# Guide\n\n![Hero](hero.png)\n");
   await writeFile(
     join(root, "topik-loaders.mjs"),
-    `import { topikGuidesLoader } from ${JSON.stringify(TOPIK_ASTRO_SOURCE)};\nexport const guidesLoader = topikGuidesLoader({ dir: new URL("./content/guides", import.meta.url).pathname, sourceNamespace: "development-guides" });\n`,
+    `import { createProjectAssetNameGenerator } from "@topik/core";\nimport { topikGuidesLoader } from ${JSON.stringify(TOPIK_ASTRO_SOURCE)};\nexport const guidesLoader = topikGuidesLoader({ dir: new URL("./content/guides", import.meta.url).pathname, name: "development-guides", assets: { generateName: createProjectAssetNameGenerator({ projectRoot: new URL("./content", import.meta.url).pathname, projectNamespace: "astro-project" }) } });\n`,
   );
   await updateContentConfig(root, 0);
   await writeFile(

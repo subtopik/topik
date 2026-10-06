@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DEFAULT_ASSET_DIRECTORY, sourceAssetsConfigSchema } from "./assets";
 import wikiV1Schema from "@topik/schema/wiki/v1.json" with { type: "json" };
 
 const wikiNavIconPattern = new RegExp(wikiV1Schema.$defs.groupNode.properties.icon.pattern);
@@ -281,6 +282,7 @@ const wikiConfigSchema = z
       )
       .regex(nameRegex),
     title: z.string().min(1).max(256),
+    assets: sourceAssetsConfigSchema.default({ directory: DEFAULT_ASSET_DIRECTORY }),
     description: z.union([z.string().max(1024), z.null()]).optional(),
     navigation: z.array(navNodeSchema).optional(),
     theme: themeSchema.optional(),

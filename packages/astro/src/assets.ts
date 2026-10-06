@@ -1,9 +1,4 @@
-import {
-  validateStableSourceNamespace,
-  type AssetCompilationResult,
-  type AssetPayload,
-  type CompiledAsset,
-} from "@topik/core";
+import { type AssetCompilationResult, type AssetPayload, type CompiledAsset } from "@topik/core";
 import type { Loader } from "astro/loaders";
 
 interface TopikAssetSnapshot {
@@ -14,7 +9,7 @@ interface TopikAssetSnapshot {
 
 interface TopikAssetLoaderIdentity {
   kind: "guides" | "wiki";
-  sourceNamespace: string;
+  name: string;
   sourceRoot: string;
 }
 
@@ -53,13 +48,14 @@ const EMPTY_SNAPSHOT: TopikAssetSnapshot = {
 const RUNTIME_ASSET_URLS = Symbol.for("@topik/astro/runtime-asset-urls");
 // Astro may evaluate configuration and content loaders in separate module graphs.
 // A global symbol bridges only their process-local, logically keyed current snapshots.
-const LOGICAL_ASSET_SNAPSHOTS = Symbol.for("@topik/astro/logical-asset-snapshots/v1");
+const LOGICAL_ASSET_SNAPSHOTS = Symbol.for("@topik/astro/logical-asset-snapshots/v2");
 const registeredLoaders = new WeakMap<object, RegisteredTopikAssetLoader>();
 
-export function requireTopikSourceNamespace(value: string): string {
-  const validated = validateStableSourceNamespace(value);
-  if (!validated.ok) throw new TypeError("Topik Asset source namespace is not portable text");
-  return validated.value;
+export function requireTopikLoaderName(value: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new TypeError("Topik loader name must be nonblank");
+  }
+  return value;
 }
 
 export function withTopikAssetSnapshot<T extends Loader>(
@@ -182,13 +178,13 @@ export function collectTopikAssetUrls(
 
 function getLogicalSnapshot(identity: TopikAssetLoaderIdentity): LogicalTopikAssetSnapshot {
   const registry = logicalSnapshotRegistry();
-  const key = JSON.stringify([identity.kind, identity.sourceRoot, identity.sourceNamespace]);
+  const key = JSON.stringify([identity.kind, identity.sourceRoot, identity.name]);
   const existing = registry.get(key);
   if (existing !== undefined) {
     if (
       existing.identity.kind !== identity.kind ||
       existing.identity.sourceRoot !== identity.sourceRoot ||
-      existing.identity.sourceNamespace !== identity.sourceNamespace
+      existing.identity.name !== identity.name
     ) {
       throw new TypeError("Topik Asset loader identity collision");
     }

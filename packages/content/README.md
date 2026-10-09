@@ -49,8 +49,9 @@ not rendered. Raw HTML and footnotes are refused. URLs and email addresses remai
 text unless expressed as explicit Markdown links or angle-bracket autolinks.
 
 Block tags occupy their own lines; inline tags appear inside prose. Properties
-are literal strings, numbers, and booleans. Unsupported syntax is diagnosed
-instead of silently discarded.
+are literal strings, numbers, and booleans; selected built-in text properties also
+accept explicit templates. Unsupported syntax is diagnosed instead of silently
+discarded.
 
 | Component                                   | Content and principal properties                                                                    |
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------- |
@@ -115,6 +116,62 @@ branches or interpolating text, matching `analyzeTopikContent`. Hidden headings
 still reserve their IDs. Use explicit IDs, such as `## Hello {% $name %} {% #hello %}`,
 when a stable descriptive anchor is needed for a variable heading.
 
+## Text and code templates
+
+Use `t"..."` to interpolate `title` on `callout`, `accordion`, `card`, `tab`,
+`step`, and `codeTab`, or `alt`/`caption` on `figure`. Ordinary quoted properties
+stay literal. Empty and literal-only templates retain their template identity;
+an evaluated empty template remains a present empty value.
+
+Wrap exactly one fenced code block in `{% template code %}` and
+`{% /template code %}` on their own block lines. The markers and fence must share
+one logical parent, including a `codeTab` body. Empty payloads are valid; nested,
+missing, crossing, multi-fence, or indented-code scopes are refused. Language and
+metadata remain literal. Templated `mermaid` fences are refused before diagram
+dispatch; unknown languages remain ordinary code. Inline code and unwrapped code
+blocks stay literal.
+
+```ts
+import { compileTopikContent, formatTopikContent } from "@topik/content";
+
+const source = [
+  '{% callout title=t"Install {% $package.name %}" %}',
+  "{% template code %}",
+  "~~~sh",
+  "npm install {% $package.name %}@{% $package.version %}",
+  "~~~",
+  "{% /template code %}",
+  "{% /callout %}",
+].join("\n");
+const formatted = formatTopikContent(source);
+if (!formatted.ok) throw new Error(JSON.stringify(formatted.diagnostics));
+const compiled = compileTopikContent(source, {
+  config: { variables: { package: { name: "example-kit", version: "1.2.3" } } },
+});
+if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+// Store source or formatted.formatted; compiled.tree contains reader values.
+if (compiled.source !== source) throw new Error("Authoring source changed");
+```
+
+Inside templates, `{% $path %}` inserts a scalar and `{%%` writes a literal `{%`
+opener. Scanning is single-pass: inserted values and escaped literals are never
+interpreted as new tokens. Code backslashes are unchanged; attribute templates
+retain ordinary quoted-string escapes. Dotted paths use identifier segments;
+expressions, functions, defaults, and bracket paths are unsupported.
+
+Strings, finite numbers, and booleans become raw text; null and empty strings
+become empty text. Missing/incompatible values and injected C0/DEL controls,
+including newlines and tabs, fail visibly. Each substitution is single-line.
+Values create no Markdown/HTML structure and receive normal renderer escaping;
+authors supply any shell/JSON/language quoting. Inactive branches validate source
+without resolving their variables.
+
+URLs, image sources, icons, math, enums, and custom component properties remain
+literal-only. Formatting preserves unevaluated templates and every branch;
+evaluation produces a separate derived result. See the [template
+reference](https://github.com/subtopik/topik/blob/main/docs/content/templates.md)
+for complete scope, escape, diagnostic, and source-storage rules.
+
 ## Custom components
 
 Add declarative schemas through `config.components`. Built-in schemas cannot be
@@ -175,10 +232,11 @@ compiler's closed asset-occurrence protocol.
 ## Further documentation
 
 - [Format, normalization, and reference scopes](https://github.com/subtopik/topik/blob/main/docs/content/content-design.md)
+- [Text and code templates](https://github.com/subtopik/topik/blob/main/docs/content/templates.md)
 - [Explicit links and plain URLs](https://github.com/subtopik/topik/blob/main/docs/content/autolinks.md)
 - [Rendering and migration from content-schema](https://github.com/subtopik/topik/blob/main/docs/content/rendering.md)
 
-The schema version is `0.2.0` and `FORMAT_VERSION` is `1`. This package is alpha
+The schema version is `0.2.1` and `FORMAT_VERSION` is `1`. This package is alpha
 software. Review canonical output when upgrading and keep compiler and renderer
 versions aligned. The package verifier type-checks and executes every TypeScript
 example above against the published-package layout.

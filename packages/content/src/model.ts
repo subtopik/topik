@@ -3,6 +3,21 @@ import type { Expression } from "./expressions.js";
 
 export type Scalar = string | number | boolean;
 
+/** Unevaluated text with an explicit distinction between literals and references. */
+export type TextTemplate = {
+  type: "topikTextTemplate";
+  segments: Array<{ type: "literal"; value: string } | { type: "variable"; path: string[] }>;
+};
+
+export type AuthoredAttributeValue = Scalar | TextTemplate;
+
+export interface CodeTemplate extends Node {
+  type: "topikCodeTemplate";
+  lang?: string | null;
+  meta?: string | null;
+  template: TextTemplate;
+}
+
 export interface Variable extends Node {
   type: "topikVariable";
   path: string[];
@@ -22,7 +37,7 @@ export interface Conditional extends Node {
 export interface Component extends Node {
   type: "topikComponent";
   name: string;
-  props: Record<string, Scalar>;
+  props: Record<string, AuthoredAttributeValue>;
   children: Array<RootContent | Component>;
 }
 
@@ -30,6 +45,7 @@ declare module "mdast" {
   interface BlockContentMap {
     topikComponent: Component;
     topikConditional: Conditional;
+    topikCodeTemplate: CodeTemplate;
   }
   interface PhrasingContentMap {
     topikComponent: Component;
@@ -39,6 +55,7 @@ declare module "mdast" {
     topikComponent: Component;
     topikConditional: Conditional;
     topikVariable: Variable;
+    topikCodeTemplate: CodeTemplate;
   }
 }
 
@@ -68,8 +85,11 @@ export type TreeNode = {
     end: { line: number; column: number; offset?: number };
   };
   name?: string;
-  attributes?: Record<string, Scalar | null | undefined>;
+  attributes?: Record<string, AuthoredAttributeValue | null | undefined>;
   path?: string | string[];
   condition?: string | Expression | null;
-  props?: Record<string, Scalar>;
+  props?: Record<string, AuthoredAttributeValue>;
+  lang?: string | null;
+  meta?: string | null;
+  template?: TextTemplate;
 };

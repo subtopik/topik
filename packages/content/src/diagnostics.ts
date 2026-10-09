@@ -20,6 +20,10 @@ export interface TopikContentDiagnostic {
   lines: number[];
   /** Optional sanitized source label. Absolute directories and URL secrets are removed. */
   file?: string;
+  /** Authored template text slot, when available. */
+  attribute?: string;
+  /** Bounded authored variable path; context values are never included. */
+  variable?: string;
 }
 
 const TOPIK_LINK_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
@@ -114,6 +118,15 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "topik-frontmatter-placement": "Frontmatter must be the first node in the document.",
   "topik-variable-path": "Variable paths must use supported property names.",
   "topik-variable-placement": "Variables must appear in inline content.",
+  "topik-template-syntax": "Text templates require valid variable tokens or escaped openers.",
+  "topik-template-location": "Text templates are not supported in this attribute.",
+  "topik-code-template-structure":
+    "A code template requires exactly one closed fenced code block in the same content scope.",
+  "topik-code-template-language": "Code templates require a language that displays plain text.",
+  "topik-template-variable-missing": "A template variable is not defined.",
+  "topik-template-variable-type":
+    "Template variables require strings, finite numbers, booleans, or null.",
+  "topik-template-control": "Template text contains an unsupported control character.",
   "topik-expression-invalid": "The conditional expression is not supported.",
   "topik-conditional-placement": "Conditions must appear in ordinary block content.",
   "topik-conditional-branches": "A condition requires one branch and at most one alternative.",
@@ -146,8 +159,29 @@ export function sanitizeTopikContentDiagnostic(
     ? TOPIK_CONTENT_DIAGNOSTIC_MESSAGES[diagnostic.id]
     : "Content validation failed.";
   const file = sanitizeTopikDiagnosticFile(diagnostic.file);
-  const { file: _untrustedFile, message: _untrustedMessage, ...safe } = diagnostic;
-  return { ...safe, message, ...(file === undefined ? {} : { file }) };
+  const {
+    file: _untrustedFile,
+    message: _untrustedMessage,
+    attribute,
+    variable,
+    ...safe
+  } = diagnostic;
+  const template =
+    diagnostic.id.startsWith("topik-template-") || diagnostic.id === "topik-variable-path";
+  return {
+    ...safe,
+    message,
+    ...(file === undefined ? {} : { file }),
+    ...(template && attribute !== undefined && ["title", "alt", "caption"].includes(attribute)
+      ? { attribute }
+      : {}),
+    ...(template &&
+    typeof variable === "string" &&
+    variable.length <= 256 &&
+    /^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$/.test(variable)
+      ? { variable }
+      : {}),
+  };
 }
 
 export function toTopikContentDiagnostic(error: ContentValidationIssue): TopikContentDiagnostic {

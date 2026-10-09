@@ -1,4 +1,4 @@
-import type { Component, Scalar } from "../model.js";
+import type { AuthoredAttributeValue, Component } from "../model.js";
 import type { ComponentDefinition, ValidationIssue } from "../registry.js";
 
 export const quizDefinition: ComponentDefinition = {
@@ -9,7 +9,10 @@ export const quizDefinition: ComponentDefinition = {
   children: { components: ["question"], min: 1 },
 };
 
-function validateQuestion(component: Component, props: Record<string, Scalar>): ValidationIssue[] {
+function validateQuestion(
+  component: Component,
+  props: Record<string, AuthoredAttributeValue>,
+): ValidationIssue[] {
   const choices = component.children.filter(
     (child): child is Component => child.type === "topikComponent" && child.name === "choice",
   );

@@ -1,4 +1,4 @@
-import type { ContentDocument, Diagnostic, Scalar, TreeNode } from "./model.js";
+import type { AuthoredAttributeValue, ContentDocument, Diagnostic, TreeNode } from "./model.js";
 import { fromMarkdown } from "mdast-util-from-markdown";
 import { frontmatter } from "micromark-extension-frontmatter";
 import { frontmatterFromMarkdown } from "mdast-util-frontmatter";
@@ -55,8 +55,16 @@ export function convertTags(root: TreeNode, registry: Registry): Diagnostic[] {
         return { ...child, type: "topikBranch" };
       }
       if (child.type === "tagConditional") return { ...child, type: "topikConditional" };
+      if (child.type === "tagCodeTemplate")
+        return {
+          type: "topikCodeTemplate",
+          lang: child.lang,
+          meta: child.meta,
+          template: child.template,
+          position: child.position,
+        };
       if (!["tagText", "tagLeaf", "tagContainer"].includes(child.type)) return child;
-      const props: Record<string, Scalar> = {};
+      const props: Record<string, AuthoredAttributeValue> = {};
       for (const [key, value] of Object.entries(child.attributes ?? {})) {
         if (value !== null && value !== undefined) props[key] = value;
       }

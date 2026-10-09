@@ -1,4 +1,5 @@
 import type { TagAttributeValue, TagDeclarations, TagSyntaxOptions } from "./types.js";
+import { parseTextTemplate, TemplateSyntaxError } from "./templates.js";
 
 export function validateDeclarations(
   declarations: TagDeclarations,
@@ -23,6 +24,7 @@ interface ParsedComponentTag {
 export type ParsedTag =
   | ParsedComponentTag
   | { kind: "variable"; path: string }
+  | { kind: "codeTemplate"; close: boolean }
   | { kind: "if"; close: true }
   | { kind: "if"; close: false; expression: string }
   | { kind: "else" };
@@ -32,6 +34,21 @@ export function hasControlCharacter(value: string): boolean {
     const code = value.charCodeAt(index);
     if (code < 32 || code === 127) return true;
   }
+  return false;
+}
+
+export function invalidCodeTemplateHeader(lang: unknown, meta: unknown): boolean {
+  if (
+    (lang != null &&
+      (typeof lang !== "string" || !lang || hasControlCharacter(lang) || lang.includes(" "))) ||
+    (meta != null && (typeof meta !== "string" || !meta || !lang))
+  )
+    return true;
+  if (typeof meta === "string")
+    for (let index = 0; index < meta.length; index++) {
+      const unit = meta.charCodeAt(index);
+      if ((unit < 32 && unit !== 9) || unit === 127) return true;
+    }
   return false;
 }
 
@@ -59,6 +76,13 @@ export function parseTag(raw: string, options: TagSyntaxOptions): ParsedTag | st
   if (!raw.startsWith("{%") || !raw.trimEnd().endsWith("%}")) return "Unterminated tag";
   const inner = raw.trim().slice(2, -2).trim();
   if (options.expressions) {
+    if (/^\/?template[ \t]+code$/.test(inner))
+      return { kind: "codeTemplate", close: inner.startsWith("/") };
+    if (/^\/?template[ \t]+code(?:[ \t]|\/|$)/.test(inner))
+      throw new TemplateSyntaxError(
+        "Invalid code template scope marker",
+        "topik-code-template-structure",
+      );
     if (inner.startsWith("$"))
       return variablePath.test(inner.slice(1))
         ? { kind: "variable", path: inner.slice(1) }
@@ -96,6 +120,8 @@ export function parseTag(raw: string, options: TagSyntaxOptions): ParsedTag | st
     index += key.length;
     if (inner[index++] !== "=") return `Attribute ${key} requires a value`;
     let value: TagAttributeValue;
+    const template = options.expressions && inner[index] === "t" && inner[index + 1] === '"';
+    if (template) index++;
     if (inner[index] === '"') {
       index++;
       let literal = "";
@@ -120,8 +146,8 @@ export function parseTag(raw: string, options: TagSyntaxOptions): ParsedTag | st
         } else literal += char;
       }
       if (!ended) return `Unterminated attribute ${key}`;
-      if (hasControlCharacter(literal)) return `Control character in ${key}`;
-      value = literal;
+      if (!template && hasControlCharacter(literal)) return `Control character in ${key}`;
+      value = template ? parseTextTemplate(literal) : literal;
     } else {
       const match = /^(?:true|false|[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)/.exec(
         inner.slice(index),

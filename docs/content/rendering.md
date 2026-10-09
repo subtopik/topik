@@ -68,6 +68,13 @@ Formatting and storage should use authored source so that variable references
 and all alternatives survive. See [Content format](./content-design.md#variables-and-conditions)
 for the expression language and evaluation rules.
 
+The same values resolve supported `t"..."` component properties and paired
+`{% template code %}` examples. The plain renderer, rich code fallback, syntax
+highlighter, and code copy control receive resolved code text. Server rendering
+escapes text and properties normally; supply raw scalar values without HTML
+pre-escaping. See [Text and code templates](./templates.md) for locations and
+escaping. Ordinary quoted properties and unwrapped code remain literal.
+
 ## Handle invalid content
 
 The default behavior is to throw `InvalidTopikContentError` when source cannot

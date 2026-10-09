@@ -204,7 +204,7 @@ function verifyConsumer(consumer) {
   writeFileSync(
     script,
     `import assert from "node:assert/strict";
-import { parseDocument, writeDocument, validateTopikContent, formatTopikContent, TOPIK_CONTENT_SCHEMA_VERSION } from "@topik/content";
+import { parseDocument, writeDocument, evaluateDocument, compileTopikContent, isContentTag, validateTopikContent, formatTopikContent, TOPIK_CONTENT_SCHEMA_VERSION } from "@topik/content";
 import remarkTags, { remarkTags as namedRemarkTags } from "@topik/remark-tags";
 import { isGeneratedAssetName, validateResources } from "@topik/core";
 import { renderTopikMarkdown } from "@topik/content-react";
@@ -292,7 +292,79 @@ assert.equal(codeRunResult.diagnostics[0].id, "topik-content-limit");
 assert.ok(performance.now() - codeRunStarted < 5000, "Packed unmatched code runs exceeded the parser-work budget");
 assert.equal(typeof remarkTags, "function");
 assert.equal(remarkTags, namedRemarkTags);
-assert.equal(TOPIK_CONTENT_SCHEMA_VERSION, "0.2.0");
+assert.equal(TOPIK_CONTENT_SCHEMA_VERSION, "0.2.1");
+// Establish template support in the installed cohort, beyond source-level tests.
+const templateFence = String.fromCharCode(96).repeat(3);
+const templateSource = [
+  '{% callout title=t"Install {% $package.name %}" %}',
+  '{% template code %}',
+  templateFence + 'sh',
+  'npm install {% $package.name %}@{% $package.version %}',
+  'echo {%% $literal %}',
+  templateFence,
+  '{% /template code %}',
+  '{% /callout %}',
+  '',
+  '{% figure src="./install.png" alt=t"{% $package.name %} installation" caption=t"Version {% $package.version %}" /%}',
+  '',
+  '{% callout title="Literal {% $missing %}" %}',
+  'Ordinary attributes remain literal.',
+  '{% /callout %}',
+  '',
+  templateFence + 'sh',
+  'echo {% $missing %}',
+  templateFence,
+].join(String.fromCharCode(10));
+const templateParsed = parseDocument(templateSource);
+assert.equal(templateParsed.ok, true);
+const authoredTemplate = templateParsed.document.children[0];
+assert.equal(authoredTemplate.type, 'topikComponent');
+assert.equal(authoredTemplate.props.title.type, 'topikTextTemplate');
+assert.equal(authoredTemplate.children[0].type, 'topikCodeTemplate');
+const templateSnapshot = JSON.stringify(templateParsed.document);
+const templateFormatted = formatTopikContent(templateSource);
+assert.equal(templateFormatted.ok, true);
+assert.ok(templateFormatted.formatted.includes('title=t"Install {% $package.name %}"'));
+assert.ok(templateFormatted.formatted.includes('echo {%% $literal %}'));
+assert.equal(formatTopikContent(templateFormatted.formatted).formatted, templateFormatted.formatted);
+const templateReopened = parseDocument(writeDocument(templateParsed.document));
+assert.equal(templateReopened.ok, true);
+assert.deepEqual(JSON.parse(JSON.stringify(templateReopened.document, withoutPositions)), JSON.parse(JSON.stringify(templateParsed.document, withoutPositions)));
+const templateConfig = { variables: { package: { name: '<kit&>', version: '1.2.3' } } };
+const templateCompiled = compileTopikContent(templateSource, { config: templateConfig });
+assert.equal(templateCompiled.ok, true);
+assert.equal(templateCompiled.source, templateSource);
+const tags = [];
+const collectTags = (node) => {
+  if (Array.isArray(node)) return node.forEach(collectTags);
+  if (isContentTag(node)) { tags.push(node); node.children.forEach(collectTags); }
+};
+collectTags(templateCompiled.tree);
+assert.equal(tags.find((tag) => tag.name === 'TopikCallout').attributes.title, 'Install <kit&>');
+assert.equal(tags.find((tag) => tag.name === 'TopikFigure').attributes.alt, '<kit&> installation');
+assert.equal(tags.find((tag) => tag.name === 'TopikFigure').attributes.caption, 'Version 1.2.3');
+assert.equal(tags.find((tag) => tag.name === 'TopikCodeBlock').attributes.content, 'npm install <kit&>@1.2.3\\necho {% $literal %}\\n');
+assert.equal(tags.filter((tag) => tag.name === 'TopikCodeBlock')[1].attributes.content, 'echo {% $missing %}\\n');
+const templateEvaluated = evaluateDocument(templateParsed.document, templateConfig.variables);
+assert.equal(templateEvaluated.children[0].props.title, 'Install <kit&>');
+assert.equal(templateEvaluated.children[0].children[0].type, 'code');
+assert.equal(JSON.stringify(templateParsed.document), templateSnapshot);
+const templateHtml = renderToStaticMarkup(renderTopikMarkdown(templateSource, { config: templateConfig, components: theme.defaultTopikComponents }));
+assert.ok(templateHtml.includes('Install &lt;kit&amp;&gt;'));
+assert.ok(templateHtml.includes('npm install &lt;kit&amp;&gt;@1.2.3'));
+assert.ok(!templateHtml.includes('&amp;lt;kit'), 'Template values must not be pre-escaped');
+const templateRichHtml = renderToStaticMarkup(createElement(rich.RichTopikContentProvider, { theme: 'light' }, createElement(theme.TopikContent, { content: templateSource, config: templateConfig })));
+assert.ok(templateRichHtml.includes('npm install &lt;kit&amp;&gt;@1.2.3'));
+for (const [source, variables, diagnostic] of [
+  ['{% callout title=t"{% $missing %}" %}\\nBody\\n{% /callout %}', {}, 'topik-template-variable-missing'],
+  ['{% callout title=t"{% $name %}" %}\\nBody\\n{% /callout %}', { name: 'two\\nlines' }, 'topik-template-control'],
+]) {
+  const failed = compileTopikContent(source, { config: { variables } });
+  assert.equal(failed.ok, false);
+  assert.equal(failed.source, source);
+  assert.equal(failed.diagnostics[0].id, diagnostic);
+  assert.equal('tree' in failed, false);
+}
 const conditional = '{% if $teacher %}\\nTeacher\\n{% else /%}\\nHello {% $name %}\\n{% /if %}';
 assert.equal(formatTopikContent(conditional).ok, true);
 const personalized = renderToStaticMarkup(renderTopikMarkdown(conditional, {config: {variables: {teacher: false, name: "Ada"}}}));
@@ -374,7 +446,7 @@ void TopikContent;
   const contentFixture = join(consumer, "content-types.mts");
   writeFileSync(
     contentFixture,
-    `import { parseDocument, mergeTopikContentConfig, validateTopikContent, type Component, type ComponentSchema, type ContentDocument, type TopikContentConfig } from "@topik/content";
+    `import { parseDocument, mergeTopikContentConfig, validateTopikContent, type AuthoredAttributeValue, type CodeTemplate, type TextTemplate, type Component, type ComponentSchema, type ContentDocument, type TopikContentConfig } from "@topik/content";
 import type { TagContainerNode, TagTextNode } from "@topik/remark-tags";
 import type { RootContent } from "mdast";
 
@@ -403,6 +475,11 @@ if (parsed.ok) {
       const branches = node.children;
       void branches;
     }
+    if (node.type === "topikCodeTemplate") {
+      const template: TextTemplate = node.template;
+      const language: string | null | undefined = node.lang;
+      void template; void language;
+    }
     if (node.type === "paragraph") {
       for (const child of node.children) {
         if (child.type === "topikVariable") {
@@ -423,6 +500,18 @@ const component: Component = {
   type: "topikComponent", name: "badge", props: {},
   children: [{ type: "text", value: "Ready" }],
 };
+const template: TextTemplate = {
+  type: "topikTextTemplate",
+  segments: [{ type: "literal", value: "Install " }, { type: "variable", path: ["package", "name"] }],
+};
+const title: AuthoredAttributeValue = template;
+const codeTemplate: CodeTemplate = {
+  type: "topikCodeTemplate", lang: "sh", meta: null,
+  template: { type: "topikTextTemplate", segments: [{ type: "variable", path: ["command"] }] },
+};
+const templateComponent: Component = {
+  type: "topikComponent", name: "callout", props: { title }, children: [codeTemplate],
+};
 const document: ContentDocument = {
   type: "root", children: [{
     type: "topikConditional", children: [{
@@ -441,7 +530,7 @@ const nestedBlock: TagContainerNode = {
     type: "tagContainer", name: "callout", children: [],
   }],
 };
-const ecosystemNodes: RootContent[] = [component, nestedInline, nestedBlock];
+const ecosystemNodes: RootContent[] = [component, templateComponent, codeTemplate, nestedInline, nestedBlock];
 void document; void ecosystemNodes;
 `,
   );

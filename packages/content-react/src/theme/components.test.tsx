@@ -8,6 +8,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 import { TopikContentProvider } from "../core/context";
 import type { TopikLinkRenderProps } from "../core/components";
+import { TopikContent } from "./TopikContent";
 import {
   TopikAccordion,
   TopikBadge,
@@ -399,6 +400,60 @@ describe("default Topik theme components", () => {
       "/provider-preview/provider-card",
     );
     expect(providerDom.querySelector("a")?.hasAttribute("data-provider-link")).toBe(true);
+  });
+
+  it("publishes resolved ref hrefs for ordinary and modified clicks", () => {
+    const handled: string[] = [];
+    const dom = mount(
+      <TopikContent
+        content={
+          '[Install](ref://guide/install)\n\n{% card title="Install" href="ref://guide/install" /%}'
+        }
+        resolveLink={() => "/learn/install#setup"}
+        onNavigateLink={(href) => {
+          handled.push(href);
+          return true;
+        }}
+      />,
+    );
+    const anchors = [...dom.querySelectorAll<HTMLAnchorElement>("a")];
+    expect(anchors).toHaveLength(2);
+    for (const anchor of anchors) {
+      expect(anchor.getAttribute("href")).toBe("/learn/install#setup");
+      act(() => anchor.click());
+      const modifiedClick = new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+        ctrlKey: true,
+      });
+      // Prevent jsdom navigation after React has observed the unhandled modified click.
+      let preventedByRenderer: boolean | undefined;
+      anchor.addEventListener(
+        "click",
+        (event) => {
+          preventedByRenderer = event.defaultPrevented;
+          event.preventDefault();
+        },
+        { once: true },
+      );
+      act(() => {
+        anchor.dispatchEvent(modifiedClick);
+      });
+      expect(preventedByRenderer).toBe(false);
+    }
+    expect(handled).toEqual(["/learn/install#setup", "/learn/install#setup"]);
+  });
+
+  it("does not expose unresolved refs from standalone themed components", () => {
+    const html = renderToStaticMarkup(
+      <>
+        <TopikLink href="ref://guide/install">Install</TopikLink>
+        <TopikCard title="Install" href="ref://guide/install" resolveLink={() => undefined} />
+      </>,
+    );
+    expect(html).toContain("Install");
+    expect(html).not.toContain("href=");
+    expect(html).not.toContain("ref://");
   });
 
   it("renders unsafe link targets as non-interactive content", () => {

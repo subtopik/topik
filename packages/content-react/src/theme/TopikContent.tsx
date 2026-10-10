@@ -66,6 +66,7 @@ export function TopikContent({
         ...compileOptions,
         components: mergedComponents,
         resolveAsset: effectiveResolveAsset,
+        resolveLink: effectiveResolveLink,
       }),
     // Keep every RenderTopikMarkdownOptions field read above in this manually maintained list.
     [
@@ -75,9 +76,11 @@ export function TopikContent({
       compileOptions.invalidContentPlaceholder,
       compileOptions.onAssetDiagnostic,
       compileOptions.onDiagnostic,
+      compileOptions.onLinkDiagnostic,
       compileOptions.onNavigationDiagnostic,
       content,
       effectiveResolveAsset,
+      effectiveResolveLink,
       mergedComponents,
     ],
   );

@@ -62,6 +62,23 @@ const typeParityFixture = [
   { type: "tab", title: "GitHub", href: "https://github.com/subtopik/topik" },
 ] satisfies WikiNavigation;
 
+test("compiled WikiPage references resolve by name independently of source or public slug", () => {
+  const resolved = resolveWikiNavigation(
+    [{ type: "page", page: "installation", slug: "getting-started", sourcePath: "moved/install" }],
+    { sourceVersion: 1 },
+  );
+  expect(
+    resolveWikiContentHref("ref://wiki-page/installation?view=full#setup", "missing", resolved),
+  ).toMatchObject({
+    page: { page: "installation" },
+    route: "getting-started",
+    search: "?view=full",
+    hash: "setup",
+  });
+  expect(resolveWikiContentHref("ref://guide/installation", "installation", resolved)).toBeNull();
+  expect(resolveWikiContentHref("ref://wiki-page/missing", "installation", resolved)).toBeNull();
+});
+
 test("compiled-reference classification distinguishes missing context from external and Asset links", () => {
   const resolved = resolveWikiNavigation(
     [

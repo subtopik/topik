@@ -2,105 +2,393 @@ import type {
   AnalyzeTopikContentResult,
   TopikContentDiagnostic,
   TopikContentLink,
+  TopikResourceReference,
 } from "@topik/content";
-import { topikLinkDiagnosticMessage } from "@topik/content";
-import type { LinkValidationPolicy } from "./shared";
-import { resolveWikiContentHref, type ResolvedWikiNavigation } from "../wiki-navigation";
+import {
+  analyzeTopikContent,
+  parseTopikResourceReference,
+  rewriteTopikNavigationReferences,
+  serializeTopikResourceReference,
+  topikLinkDiagnosticMessage,
+} from "@topik/content";
+import { posix } from "node:path";
+import { classifyPortableNavigationPath, readPortableAssetFile } from "../assets/files";
+import { validateTopikPath } from "../assets/path";
+import {
+  resolveCourseContentHref,
+  resolveCourseNavigation,
+  type ResolvedCourseNavigation,
+} from "../course-navigation";
+import type { SourceResource } from "../resource";
+import { PublicCompileError } from "./public-errors";
+import {
+  linkValidationPolicy,
+  type CompileValidationOptions,
+  type LinkValidationPolicy,
+} from "./shared";
+import {
+  resolveWikiContentHref,
+  resolveWikiNavigation,
+  type ResolvedWikiNavigation,
+} from "../wiki-navigation";
 
-const NON_PAGE_SCHEME = /^(?:asset|https?|mailto|tel):/i;
-const LINK_BASE = "https://topik.local";
-
-export interface WikiPageLinkAnalysis {
-  analysis: AnalyzeTopikContentResult;
-  sourcePath: string;
-  slug: string;
-  name?: string;
+/** Optional application-provided catalogue; Topik never fetches targets. */
+export interface CompileResourceReferenceTarget {
+  type: TopikResourceReference["type"];
+  name: string;
+  /** Published heading IDs, when known. Without them a fragment remains deferred. */
+  headings?: readonly string[];
 }
 
-export function validateWikiLinks(
-  pages: WikiPageLinkAnalysis[],
-  policy: LinkValidationPolicy,
-  nonPageLinks: ReadonlySet<TopikContentLink> = new Set(),
-  navigation?: ResolvedWikiNavigation,
-): TopikContentDiagnostic[] {
-  if (policy === "off") return [];
+export interface CompiledResourceReference {
+  resource: string;
+  sourcePath: string;
+  kind: "link" | "card";
+  position: string;
+  /** The original authored destination, retained for source round trips. */
+  href: string;
+  reference: TopikResourceReference;
+  status: "verified" | "deferred" | "invalid";
+}
 
-  const level = policy === "error" ? "error" : "warning";
-  const pagesBySlug = new Map(pages.map((page) => [page.slug, page]));
-  const pagesByName = new Map(pages.map((page) => [page.name, page]));
+export interface CompileResourceLinksInput {
+  rootDir: string;
+  resources: readonly SourceResource[];
+  sourcePathsByResource: Readonly<Record<string, string>>;
+  sourceDirectoriesByResource?: Readonly<Record<string, string>>;
+  referenceTargets?: readonly CompileResourceReferenceTarget[];
+  /** @internal Source round-trip comparison may already contain compiled Asset locators. */
+  allowCompiledAssetReferences?: boolean;
+  validation?: CompileValidationOptions;
+}
+
+type DocumentResource = Extract<SourceResource, { type: "WikiPage" | "Guide" | "CoursePage" }>;
+type ReferenceResource = Extract<SourceResource, { type: "WikiPage" | "Guide" }>;
+
+/** Resolve document identity after all declared sources have been discovered, before Assets. */
+export async function compileResourceLinks(input: CompileResourceLinksInput): Promise<{
+  resources: SourceResource[];
+  diagnostics: TopikContentDiagnostic[];
+  references: CompiledResourceReference[];
+}> {
+  const policy = linkValidationPolicy(input.validation);
   const diagnostics: TopikContentDiagnostic[] = [];
+  const references: CompiledResourceReference[] = [];
+  const analyses = new Map<string, AnalyzeTopikContentResult>();
+  const localTargets = new Map<string, ReferenceResource>();
+  const targetsByPath = new Map<string, ReferenceResource[]>();
+  const targetsByExtensionlessPath = new Map<string, ReferenceResource[]>();
+  const catalogues = new Map<string, CompileResourceReferenceTarget[]>();
+  const navigation = new Map<string, ResolvedWikiNavigation>();
+  const courseNavigationByPage = new Map<string, ResolvedCourseNavigation>();
+  const documents = input.resources.filter(isDocumentResource).sort((left, right) => {
+    const leftKey = resourceKey(left);
+    const rightKey = resourceKey(right);
+    return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+  });
 
-  for (const page of pages) {
-    for (const link of page.analysis.links) {
-      if (NON_PAGE_SCHEME.test(link.href)) continue;
+  for (const resource of input.resources) {
+    if (resource.type === "Wiki")
+      navigation.set(
+        resource.name,
+        resolveWikiNavigation(resource.spec.navigation ?? [], {
+          sourceVersion: resource.spec.sourceVersion,
+        }),
+      );
+  }
+  for (const resource of documents) {
+    const key = resourceKey(resource);
+    const sourcePath = input.sourcePathsByResource[key];
+    if (sourcePath === undefined || resource.spec.content.format !== "topik") continue;
+    analyses.set(key, analyzeTopikContent(resource.spec.content.value, { file: sourcePath }));
+    if (resource.type === "CoursePage") continue;
+    localTargets.set(key, resource);
+    const targets = targetsByPath.get(sourcePath) ?? [];
+    targets.push(resource);
+    targetsByPath.set(sourcePath, targets);
+    const extensionlessPath = stripMarkdownExtension(sourcePath);
+    const extensionlessTargets = targetsByExtensionlessPath.get(extensionlessPath) ?? [];
+    extensionlessTargets.push(resource);
+    targetsByExtensionlessPath.set(extensionlessPath, extensionlessTargets);
+  }
+  for (const target of admitReferenceTargets(input.referenceTargets)) {
+    const key = resourceKey(target);
+    const entries = catalogues.get(key) ?? [];
+    entries.push(target);
+    catalogues.set(key, entries);
+  }
+  for (const course of input.resources.filter((resource) => resource.type === "Course")) {
+    const modules = input.resources.filter(
+      (resource): resource is Extract<SourceResource, { type: "CourseModule" }> =>
+        resource.type === "CourseModule" && resource.spec.course === course.name,
+    );
+    const moduleNames = new Set(modules.map((module) => module.name));
+    const pages = documents.filter(
+      (resource): resource is Extract<DocumentResource, { type: "CoursePage" }> =>
+        resource.type === "CoursePage" && moduleNames.has(resource.spec.module),
+    );
+    const resolved = resolveCourseNavigation({
+      course: course.name,
+      modules: modules.map((module) => ({ name: module.name, slug: module.spec.slug })),
+      pages: pages.map((page) => {
+        const key = resourceKey(page);
+        const directory = input.sourceDirectoriesByResource?.[key] ?? "";
+        const path = stripMarkdownExtension(input.sourcePathsByResource[key]);
+        return {
+          name: page.name,
+          module: page.spec.module,
+          slug: page.spec.slug,
+          sourcePath: directory ? path.slice(directory.length + 1) : path,
+        };
+      }),
+    });
+    for (const page of pages) courseNavigationByPage.set(page.name, resolved);
+  }
 
-      const target = resolveInternalTarget(link.href, page.sourcePath);
-      if (!target) continue;
-      const resolved =
-        navigation && page.name
-          ? resolveWikiContentHref(link.href, page.name, navigation)
-          : undefined;
-      const targetPage = navigation
-        ? resolved
-          ? pagesByName.get(resolved.page.page)
-          : undefined
-        : pagesBySlug.get(target.slug);
-      if (!targetPage) {
-        if (nonPageLinks.has(link)) continue;
-        diagnostics.push(linkDiagnostic("link-page-not-found", level, link));
+  const existingPaths = new Map<string, boolean>();
+  const compiledByKey = new Map<string, DocumentResource>();
+  for (const resource of documents) {
+    const key = resourceKey(resource);
+    const sourcePath = input.sourcePathsByResource[key];
+    const analysis = analyses.get(key);
+    if (!analysis || sourcePath === undefined) continue;
+    const directory = input.sourceDirectoriesByResource?.[key] ?? "";
+    const replacements = new Map<
+      string,
+      { reference: TopikResourceReference; status: CompiledResourceReference["status"] }
+    >();
+
+    for (const link of analysis.links) {
+      const explicit = parseTopikResourceReference(link.href);
+      if (explicit) {
+        const targetKey = resourceKey(explicit);
+        const target = localTargets.get(targetKey);
+        const entries = catalogues.get(targetKey);
+        let status: CompiledResourceReference["status"] = "deferred";
+        if (target) {
+          status = validateFragment(
+            explicit.hash,
+            analyses.get(targetKey)?.headings.map((heading) => heading.id) ?? [],
+            link,
+            policy,
+            diagnostics,
+          );
+        } else if (entries?.length === 1) {
+          const headings = entries[0].headings;
+          status =
+            explicit.hash && headings === undefined
+              ? "deferred"
+              : validateFragment(explicit.hash, headings ?? [], link, policy, diagnostics);
+        } else if (entries && entries.length > 1) {
+          status = "invalid";
+          appendLinkDiagnostic("link-reference-ambiguous", link, policy, diagnostics);
+        }
+        replacements.set(link.href, { reference: explicit, status });
         continue;
       }
-
-      if (
-        target.fragment &&
-        !targetPage.analysis.headings.some((heading) => heading.id === target.fragment)
-      ) {
-        diagnostics.push(linkDiagnostic("link-fragment-not-found", level, link));
+      if (NON_PAGE_SCHEME.test(link.href)) continue;
+      if (link.href.startsWith("#")) {
+        if (link.href !== "#" && (resource.type !== "CoursePage" || link.kind === "link"))
+          validateFragment(
+            link.href.slice(1),
+            analysis.headings.map((heading) => heading.id),
+            link,
+            policy,
+            diagnostics,
+          );
+        continue;
       }
+      const path = resolveSourceReferencePath(link.href, sourcePath, directory);
+      const markdown = /\.(?:mdx?|markdown)$/i.test(path ?? link.href.split(/[?#]/, 1)[0]);
+      const extensionless = path !== undefined && posix.extname(path) === "";
+      const candidates =
+        path === undefined || (link.href.startsWith("/") && !markdown)
+          ? undefined
+          : markdown
+            ? targetsByPath.get(path)
+            : extensionless
+              ? targetsByExtensionlessPath.get(path)
+              : undefined;
+      let target = candidates?.length === 1 ? candidates[0] : undefined;
+      if (!target && extensionless && resource.type === "WikiPage") {
+        const resolved = navigation.get(resource.spec.wiki);
+        const wikiTarget = resolved && resolveWikiContentHref(link.href, resource.name, resolved);
+        if (wikiTarget) target = localTargets.get(`WikiPage/${wikiTarget.page.page}`);
+      }
+      if (target) {
+        const url = new URL(link.href, LINK_BASE);
+        const reference: TopikResourceReference = {
+          type: target.type,
+          name: target.name,
+          search: url.search,
+          hash: url.hash.slice(1),
+        };
+        const status = validateFragment(
+          reference.hash,
+          analyses.get(resourceKey(target))?.headings.map((heading) => heading.id) ?? [],
+          link,
+          policy,
+          diagnostics,
+        );
+        replacements.set(link.href, { reference, status });
+        continue;
+      }
+      // Guides retain application URL links, while Markdown source links must be declared.
+      // Course-to-course references remain under the existing Course resolver.
+      if (resource.type === "CoursePage") {
+        if (link.kind !== "link") continue;
+        const resolved = courseNavigationByPage.get(resource.name);
+        const courseTarget =
+          resolved && resolveCourseContentHref(link.href, resource.name, resolved);
+        if (courseTarget) {
+          validateFragment(
+            courseTarget.hash,
+            analyses
+              .get(`CoursePage/${courseTarget.page.page}`)
+              ?.headings.map((heading) => heading.id) ?? [],
+            link,
+            policy,
+            diagnostics,
+          );
+          continue;
+        }
+      }
+      if (resource.type === "Guide" && !markdown) continue;
+      if (!markdown && path !== undefined && link.kind === "link") {
+        let exists = existingPaths.get(path);
+        if (exists === undefined) {
+          const kind = await classifyPortableNavigationPath({ root: input.rootDir, path });
+          const proof =
+            kind === "directory"
+              ? undefined
+              : await readPortableAssetFile({ root: input.rootDir, path });
+          exists =
+            kind === "directory" ||
+            proof?.ok === true ||
+            proof?.diagnostics.some(
+              (diagnostic) => diagnostic.id !== "TOPIK_ASSET_FILE_MISSING",
+            ) === true;
+          existingPaths.set(path, exists);
+        }
+        if (exists) continue;
+      }
+      appendLinkDiagnostic("link-page-not-found", link, policy, diagnostics);
     }
-  }
 
-  return diagnostics;
+    if (replacements.size === 0) continue;
+    const rewritten = rewriteTopikNavigationReferences(
+      resource.spec.content.value,
+      (navigationReference) => {
+        const replacement = replacements.get(navigationReference.href);
+        if (!replacement) return undefined;
+        references.push({
+          resource: key,
+          sourcePath,
+          ...navigationReference,
+          reference: replacement.reference,
+          status: replacement.status,
+        });
+        return serializeTopikResourceReference(replacement.reference);
+      },
+      { file: sourcePath, allowCompiledAssetReferences: input.allowCompiledAssetReferences },
+    );
+    if (!rewritten.ok) {
+      diagnostics.push(...rewritten.diagnostics);
+      continue;
+    }
+    compiledByKey.set(key, {
+      ...resource,
+      spec: { ...resource.spec, content: { ...resource.spec.content, value: rewritten.content } },
+    } as DocumentResource);
+  }
+  return {
+    resources: input.resources.map(
+      (resource) => compiledByKey.get(resourceKey(resource)) ?? resource,
+    ),
+    diagnostics,
+    references,
+  };
 }
 
-export function validateLocalFragments(
-  analysis: AnalyzeTopikContentResult,
+function validateFragment(
+  hash: string,
+  headings: readonly string[],
+  link: TopikContentLink,
   policy: LinkValidationPolicy,
-): TopikContentDiagnostic[] {
-  if (policy === "off") return [];
-
-  const level = policy === "error" ? "error" : "warning";
-  const headingIds = new Set(analysis.headings.map((heading) => heading.id));
-  const diagnostics: TopikContentDiagnostic[] = [];
-
-  for (const link of analysis.links) {
-    if (!link.href.startsWith("#") || link.href === "#") continue;
-    const fragment = decodeFragment(link.href.slice(1));
-    if (fragment && !headingIds.has(fragment)) {
-      diagnostics.push(linkDiagnostic("link-fragment-not-found", level, link));
-    }
+  diagnostics: TopikContentDiagnostic[],
+): CompiledResourceReference["status"] {
+  if (hash && !headings.includes(decodeFragment(hash))) {
+    appendLinkDiagnostic("link-fragment-not-found", link, policy, diagnostics);
+    return "invalid";
   }
-
-  return diagnostics;
+  return "verified";
 }
 
-function resolveInternalTarget(
+function appendLinkDiagnostic(
+  id: string,
+  link: TopikContentLink,
+  policy: LinkValidationPolicy,
+  diagnostics: TopikContentDiagnostic[],
+): void {
+  if (policy !== "off")
+    diagnostics.push(linkDiagnostic(id, policy === "error" ? "error" : "warning", link));
+}
+
+function resolveSourceReferencePath(
   href: string,
   sourcePath: string,
-): { fragment: string; slug: string } | undefined {
-  let url: URL;
+  directory: string,
+): string | undefined {
+  if (/^[a-z][a-z0-9+.-]*:/i.test(href)) return undefined;
   try {
-    url = new URL(href, `${LINK_BASE}/${sourcePath}`);
+    const path = decodeURIComponent(href.split(/[?#]/, 1)[0]);
+    const joined = path.startsWith("/")
+      ? posix.join(directory, path.slice(1))
+      : posix.join(posix.dirname(sourcePath), path || posix.basename(sourcePath));
+    const result = validateTopikPath(joined.replace(/\/+$/, ""));
+    return result.ok ? result.value.path : undefined;
   } catch {
     return undefined;
   }
-  if (url.origin !== LINK_BASE) return undefined;
-
-  return {
-    fragment: decodeFragment(url.hash.slice(1)),
-    slug: decodePath(url.pathname),
-  };
 }
+
+function admitReferenceTargets(value: unknown): readonly CompileResourceReferenceTarget[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new PublicCompileError("reference-targets-invalid");
+  for (const target of value) {
+    if (
+      target === null ||
+      typeof target !== "object" ||
+      Array.isArray(target) ||
+      (target.type !== "WikiPage" && target.type !== "Guide") ||
+      typeof target.name !== "string" ||
+      target.name.length > 63 ||
+      !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(target.name) ||
+      (target.headings !== undefined &&
+        (!Array.isArray(target.headings) ||
+          target.headings.some((heading: unknown) => typeof heading !== "string")))
+    )
+      throw new PublicCompileError("reference-targets-invalid");
+  }
+  return value;
+}
+
+function stripMarkdownExtension(path: string): string {
+  return path.replace(/\.(?:mdx?|markdown)$/i, "");
+}
+
+function isDocumentResource(resource: SourceResource): resource is DocumentResource {
+  return (
+    resource.type === "WikiPage" || resource.type === "Guide" || resource.type === "CoursePage"
+  );
+}
+
+function resourceKey(resource: { type: string; name: string }): string {
+  return `${resource.type}/${resource.name}`;
+}
+
+const NON_PAGE_SCHEME = /^(?:asset|https?|mailto|tel):/i;
+const LINK_BASE = "https://topik.local";
 
 function decodeFragment(value: string): string {
   if (!value) return "";
@@ -109,25 +397,6 @@ function decodeFragment(value: string): string {
   } catch {
     return value;
   }
-}
-
-function decodePath(pathname: string): string {
-  const decoded = pathname
-    .replace(/^\/+|\/+$/g, "")
-    .split("/")
-    .filter(Boolean)
-    .map((segment) => {
-      try {
-        return decodeURIComponent(segment);
-      } catch {
-        return segment;
-      }
-    })
-    .join("/");
-
-  const normalized = decoded.replace(/\.(?:mdx?|markdown)$/i, "");
-  if (normalized === "index") return "";
-  return normalized.replace(/\/index$/, "");
 }
 
 function linkDiagnostic(

@@ -657,7 +657,7 @@ navigation:
           "",
           "[Root](../root.md#root)",
           "",
-          '{% card title="Child card" href="./child.md#child" /%}',
+          '{% card title="Child card" href="./child.mdx#child" /%}',
           "",
           "## Runtime",
           "",

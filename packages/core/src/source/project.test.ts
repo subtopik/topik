@@ -10,6 +10,43 @@ const file = (path: string, value: string) => ({
   bytes: encodeSource(value),
 });
 
+test("source provenance retains authored links and records cross-kind and deferred reference targets", async () => {
+  const project = await readSourceProject({
+    tree: [
+      file(
+        ".topik.yaml",
+        "version: 1\nnamespace: refs\nsources: [{kind: wiki, config: docs/wiki.yaml}, {kind: collection, config: guides/collection.yaml}]\n",
+      ),
+      file("docs/wiki.yaml", "sourceVersion: 1\nid: docs\ntitle: Docs\nnavigation: [index]\n"),
+      file(
+        "docs/index.md",
+        "---\nid: home\n---\n# Home\n\n[Install](../guides/install.md#setup)\n",
+      ),
+      file("guides/collection.yaml", "sourceVersion: 1\nid: guides\ntitle: Guides\n"),
+      file(
+        "guides/install.md",
+        "---\nid: install\n---\n# Setup\n\n[Home](ref://wiki-page/home)\n\n[Elsewhere](ref://guide/external-guide?view=full#details)\n",
+      ),
+    ],
+  });
+  expect(
+    project.documents.find((document) => document.resource === "WikiPage/home")?.references,
+  ).toMatchObject([
+    { href: "../guides/install.md#setup", target: "Guide/install", search: "", hash: "setup" },
+  ]);
+  expect(
+    project.documents.find((document) => document.resource === "Guide/install")?.references,
+  ).toMatchObject([
+    { href: "ref://wiki-page/home", target: "WikiPage/home" },
+    {
+      href: "ref://guide/external-guide?view=full#details",
+      target: "Guide/external-guide",
+      search: "?view=full",
+      hash: "details",
+    },
+  ]);
+});
+
 test("aggregate source-tree limits reject reused buffers before any byte copy", () => {
   const ByteArray = Uint8Array;
   const bytes = new ByteArray(64 * 1024 * 1024);

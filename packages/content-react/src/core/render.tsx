@@ -9,6 +9,8 @@ import {
 } from "@topik/content";
 import {
   validateTopikAssetReference,
+  parseTopikResourceReference,
+  validateTopikBrowserHref,
   validateTopikHref,
   validateTopikNavigationHref,
   type TopikContentDiagnostic,
@@ -18,6 +20,7 @@ import {
   getTopikComponents,
   type TopikAssetResolver,
   type TopikComponentOverrides,
+  type TopikLinkResolver,
 } from "./components";
 
 export {
@@ -31,7 +34,9 @@ export {
 export interface RenderTrustedTopikTreeOptions {
   components?: TopikComponentOverrides;
   resolveAsset?: TopikAssetResolver;
+  resolveLink?: TopikLinkResolver;
   onAssetDiagnostic?: (diagnostic: TopikAssetResolutionDiagnostic) => void;
+  onLinkDiagnostic?: (diagnostic: TopikLinkResolutionDiagnostic) => void;
   onNavigationDiagnostic?: (diagnostic: TopikNavigationResolutionDiagnostic) => void;
 }
 
@@ -61,6 +66,12 @@ export interface TopikNavigationResolutionDiagnostic {
   slot: "card.href";
 }
 
+export interface TopikLinkResolutionDiagnostic {
+  id: "TOPIK_RESOURCE_REFERENCE_MALFORMED" | "TOPIK_RESOURCE_REFERENCE_UNRESOLVED";
+  message: string;
+  slot: "link.href" | "card.href";
+}
+
 export interface RenderTopikMarkdownOptions
   extends CompileTopikContentOptions, RenderTopikContentOptions {}
 
@@ -88,6 +99,8 @@ export function renderTrustedTopikTree(
 ): React.ReactNode {
   const resolved = resolveTopikAssetReferences(tree, options.resolveAsset, {
     onDiagnostic: options.onAssetDiagnostic,
+    resolveLink: options.resolveLink,
+    onLinkDiagnostic: options.onLinkDiagnostic,
     onNavigationDiagnostic: options.onNavigationDiagnostic,
   });
   const components = getTopikComponents(options.components);
@@ -116,6 +129,8 @@ function renderInvalidTopikContent(Placeholder: React.ComponentType | undefined)
 
 interface ResolveTopikAssetReferencesOptions {
   onDiagnostic?: (diagnostic: TopikAssetResolutionDiagnostic) => void;
+  resolveLink?: TopikLinkResolver;
+  onLinkDiagnostic?: (diagnostic: TopikLinkResolutionDiagnostic) => void;
   onNavigationDiagnostic?: (diagnostic: TopikNavigationResolutionDiagnostic) => void;
 }
 
@@ -136,10 +151,50 @@ export function resolveTopikAssetReferences<T>(
     const { attribute } = definition;
     if (!Object.hasOwn(attributes, attribute)) continue;
     const reference = attributes[attribute];
+    if (
+      attribute === "href" &&
+      typeof reference === "string" &&
+      usesReservedScheme(reference, "ref")
+    ) {
+      const parsed = parseTopikResourceReference(reference);
+      let resolved: string | undefined;
+      if (parsed !== null) {
+        try {
+          resolved = options.resolveLink?.(reference);
+        } catch {
+          resolved = undefined;
+        }
+      }
+      if (
+        parsed === null ||
+        typeof resolved !== "string" ||
+        usesReservedAssetScheme(resolved) ||
+        validateTopikBrowserHref(resolved).length > 0
+      ) {
+        delete attributes[attribute];
+        options.onLinkDiagnostic?.({
+          id:
+            parsed === null
+              ? "TOPIK_RESOURCE_REFERENCE_MALFORMED"
+              : "TOPIK_RESOURCE_REFERENCE_UNRESOLVED",
+          message:
+            parsed === null
+              ? "Resource reference is malformed"
+              : "Resource reference could not be resolved to a browser URL",
+          slot: value.name === "TopikCard" ? "card.href" : "link.href",
+        });
+      } else {
+        attributes[attribute] = resolved;
+        // The application resolver already ran; themed components must not apply it again.
+        attributes.__topikResolvedHref = true;
+      }
+      continue;
+    }
     if (definition.kind === "navigation") {
       if (
         typeof reference !== "string" ||
         usesReservedAssetScheme(reference) ||
+        validateTopikBrowserHref(reference).length > 0 ||
         validateTopikNavigationHref(reference).length > 0
       ) {
         delete attributes[attribute];
@@ -225,7 +280,7 @@ function isSafeRenderedReference(
   if (slot !== "link.href") return false;
   const scheme = /^([a-z][a-z0-9+.-]*):/iu.exec(reference)?.[1].toLowerCase();
   if (scheme !== undefined && scheme !== "mailto" && scheme !== "tel") return false;
-  return validateTopikHref(reference).length === 0;
+  return validateTopikBrowserHref(reference).length === 0;
 }
 
 function isSafeResolvedAssetReference(reference: string): boolean {
@@ -236,8 +291,12 @@ function isSafeResolvedAssetReference(reference: string): boolean {
 }
 
 function usesReservedAssetScheme(value: string): boolean {
+  return usesReservedScheme(value, "asset");
+}
+
+function usesReservedScheme(value: string, scheme: "asset" | "ref"): boolean {
   let prefix = "";
-  for (let index = 0; index < value.length && prefix.length < "asset:".length; index++) {
+  for (let index = 0; index < value.length && prefix.length < scheme.length + 1; index++) {
     if (value[index] === "%" && /^[0-9a-f]{2}$/iu.test(value.slice(index + 1, index + 3))) {
       prefix += String.fromCharCode(Number.parseInt(value.slice(index + 1, index + 3), 16));
       index += 2;
@@ -253,7 +312,7 @@ function usesReservedAssetScheme(value: string): boolean {
     }
     prefix += value[index];
   }
-  return /^asset:/iu.test(prefix);
+  return prefix.toLowerCase() === `${scheme}:`;
 }
 
 type RenderedReferenceSlot =

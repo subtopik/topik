@@ -210,6 +210,92 @@ describe("TopikContent", () => {
     expect(html).toContain('href="/preview/card"');
   });
 
+  it("resolves resource links and cards once before SSR and framework adapters", () => {
+    const resolveLink = vi.fn((href: string) =>
+      href === "ref://guide/getting-started?view=full#setup"
+        ? "/learn/start?view=full#setup"
+        : undefined,
+    );
+    const html = renderToStaticMarkup(
+      <TopikContent
+        content={
+          '[Install](ref://guide/getting-started?view=full#setup)\n\n{% card title="Start" href="ref://guide/getting-started?view=full#setup" /%}'
+        }
+        resolveLink={resolveLink}
+        renderLink={(props) => <a {...props} data-framework-link />}
+      />,
+    );
+
+    expect(html.match(/href="\/learn\/start\?view=full#setup"/gu)).toHaveLength(2);
+    expect(html.match(/data-framework-link/gu)).toHaveLength(2);
+    expect(html).not.toContain("ref://");
+    expect(resolveLink).toHaveBeenCalledTimes(2);
+    expect(resolveLink).toHaveBeenNthCalledWith(1, "ref://guide/getting-started?view=full#setup");
+    expect(resolveLink).toHaveBeenNthCalledWith(2, "ref://guide/getting-started?view=full#setup");
+  });
+
+  it("resolves refs for custom components using provider routes", () => {
+    const html = renderToStaticMarkup(
+      <TopikContentProvider resolveLink={() => "/docs/current"}>
+        <TopikContent
+          content={
+            '[Wiki](ref://wiki-page/wiki-name)\n\n{% card title="Wiki" href="ref://wiki-page/wiki-name" /%}'
+          }
+          components={{
+            TopikLink: ({ children, href }) => <a href={String(href)}>{children}</a>,
+            TopikCard: ({ href }) => <a href={String(href)}>Card</a>,
+          }}
+        />
+      </TopikContentProvider>,
+    );
+
+    expect(html.match(/href="\/docs\/current"/gu)).toHaveLength(2);
+    expect(html).not.toContain("ref://");
+  });
+
+  it.each([
+    undefined,
+    () => undefined,
+    () => "ref://guide/still-unresolved",
+    () => "javascript:alert(1)",
+    () => {
+      throw new Error("private route failure");
+    },
+  ])(
+    "removes unresolved refs before custom rendering and reports safe diagnostics",
+    (resolveLink) => {
+      const diagnostics: string[] = [];
+      const received: unknown[] = [];
+      const html = renderToStaticMarkup(
+        <TopikContent
+          content={
+            '[Wiki](ref://wiki-page/wiki-name)\n\n{% card title="Wiki" href="ref://wiki-page/wiki-name" /%}'
+          }
+          resolveLink={resolveLink}
+          onLinkDiagnostic={(diagnostic) => diagnostics.push(diagnostic.id)}
+          components={{
+            TopikLink: ({ children, href }) => {
+              received.push(href);
+              return <>{children}</>;
+            },
+            TopikCard: ({ href }) => {
+              received.push(href);
+              return <span>Card</span>;
+            },
+          }}
+        />,
+      );
+
+      expect(received).toEqual([undefined, undefined]);
+      expect(diagnostics).toEqual([
+        "TOPIK_RESOURCE_REFERENCE_UNRESOLVED",
+        "TOPIK_RESOURCE_REFERENCE_UNRESOLVED",
+      ]);
+      expect(html).not.toContain("ref://");
+      expect(html).not.toContain("private route failure");
+    },
+  );
+
   it("renders links and cards through a framework adapter", () => {
     const html = renderToStaticMarkup(
       <TopikContent

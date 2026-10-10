@@ -2,12 +2,268 @@ import { expect, test } from "vite-plus/test";
 import type { Guide } from "@topik/schema/guide/v1";
 import type { Wiki } from "@topik/schema/wiki/v1";
 import type { WikiPage } from "@topik/schema/wiki-page/v1";
+import type { CoursePage } from "@topik/schema/course-page/v1";
 import { readSourceProject, type SourceTreeFile, type SourceProject } from "./project";
 import { planSourceUpdates, type SourceWriteAuthority } from "./plan";
 import { encodeSource, decodeSource, sourceHash } from "./syntax";
 import { generateAutomaticAssetName, parseAssetBlobUri } from "../assets/asset";
 
 const cohort = "a".repeat(64);
+
+test("editing compiled content preserves each authored relative or explicit reference spelling", async () => {
+  const raw =
+    "---\nid: home\n---\n# Home\n\n[Relative](./install.md?view=full#setup)\n\n[Explicit](ref://wiki-page/install#setup)\n";
+  const project = await readSourceProject({
+    tree: [
+      file(
+        ".topik.yaml",
+        "version: 1\nnamespace: refs\nsources: [{kind: wiki, config: wiki.yaml}]\n",
+      ),
+      file("wiki.yaml", "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation: [home, install]\n"),
+      file("home.md", raw),
+      file("install.md", "---\nid: install\n---\n# Setup\n"),
+    ],
+  });
+  const unchanged = await planSourceUpdates({
+    project,
+    expectedTreeDigest: project.treeDigest,
+    packageCohort: cohort,
+    desiredResources: project.compilation.resources,
+    operations: [],
+    authority: authority(project),
+  });
+  expect(unchanged.ok, JSON.stringify(unchanged)).toBe(true);
+  if (unchanged.ok) expect(unchanged.plan.changes).toEqual([]);
+  const desired = structuredClone(project.compilation.resources);
+  const home = desired.find(
+    (resource): resource is WikiPage => resource.type === "WikiPage" && resource.name === "home",
+  )!;
+  home.spec.content.value += "\nAdded paragraph.\n";
+  const result = await planSourceUpdates({
+    project,
+    expectedTreeDigest: project.treeDigest,
+    packageCohort: cohort,
+    desiredResources: desired,
+    operations: [{ kind: "update", resource: "WikiPage/home" }],
+    authority: authority(project),
+  });
+  expect(result.ok, JSON.stringify(result)).toBe(true);
+  if (!result.ok) return;
+  const written = decodeSource(
+    result.plan.candidate.tree.find((entry) => entry.path === "home.md")!.bytes,
+  );
+  expect(written).toContain("[Relative](./install.md?view=full#setup)");
+  expect(written).toContain("[Explicit](ref://wiki-page/install#setup)");
+  expect(result.plan.candidate.compilation.resources).toEqual(desired);
+  const wiki = desired.find((resource): resource is Wiki => resource.type === "Wiki")!;
+  const install = wiki.spec.navigation!.find(
+    (node) => node.type === "page" && node.page === "install",
+  )!;
+  if (install.type !== "page") throw new Error("Expected a page");
+  install.slug = "public-install";
+  const routeEdit = await planSourceUpdates({
+    project,
+    expectedTreeDigest: project.treeDigest,
+    packageCohort: cohort,
+    desiredResources: desired,
+    operations: [
+      { kind: "update", resource: "WikiPage/home" },
+      { kind: "update", resource: "Wiki/docs" },
+    ],
+    authority: authority(project),
+  });
+  expect(routeEdit.ok, JSON.stringify(routeEdit)).toBe(true);
+});
+
+test("cross-kind relative links are repaired on moves and stale locally owned refs block deletion", async () => {
+  const project = await readSourceProject({
+    tree: [
+      file(
+        ".topik.yaml",
+        "version: 1\nnamespace: refs\nsources: [{kind: wiki, config: docs/wiki.yaml}, {kind: collection, config: guides/collection.yaml}]\n",
+      ),
+      file("docs/wiki.yaml", "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation: [home]\n"),
+      file("docs/home.md", "---\nid: home\n---\n# Home\n\n[Install](../guides/install.md#setup)\n"),
+      file("guides/collection.yaml", "id: guides\ntitle: Guides\nsourceVersion: 1\n"),
+      file("guides/install.md", "---\nid: install\n---\n# Setup\n\n[Home](../docs/home.md)\n"),
+    ],
+  });
+  const result = await planSourceUpdates({
+    project,
+    expectedTreeDigest: project.treeDigest,
+    packageCohort: cohort,
+    desiredResources: project.compilation.resources,
+    operations: [{ kind: "move", resource: "Guide/install", path: "guides/renamed.md" }],
+    authority: { ...authority(project), create: ["guides/renamed.md"] },
+  });
+  expect(result.ok, JSON.stringify(result)).toBe(true);
+  if (result.ok) {
+    expect(result.plan.candidate.compilation.resources).toEqual(project.compilation.resources);
+    expect(
+      decodeSource(
+        result.plan.candidate.tree.find((entry) => entry.path === "docs/home.md")!.bytes,
+      ),
+    ).toContain("../guides/renamed.md#setup");
+    expect(result.plan.derivedRepairs).toContainEqual(
+      expect.objectContaining({ resource: "WikiPage/home", kind: "reference", target: "install" }),
+    );
+    const moved = result.plan.candidate;
+    const edited = structuredClone(moved.compilation.resources);
+    edited.find((resource): resource is Guide => resource.type === "Guide")!.spec.content.value +=
+      "\nAdded guide text.\n";
+    const saved = await planSourceUpdates({
+      project: moved,
+      expectedTreeDigest: moved.treeDigest,
+      packageCohort: cohort,
+      desiredResources: edited,
+      operations: [{ kind: "update", resource: "Guide/install" }],
+      authority: authority(moved),
+    });
+    expect(saved.ok, JSON.stringify(saved)).toBe(true);
+    if (saved.ok)
+      expect(
+        decodeSource(
+          saved.plan.candidate.tree.find((entry) => entry.path === "guides/renamed.md")!.bytes,
+        ),
+      ).toContain("[Home](../docs/home.md)");
+  }
+  expect(
+    await planSourceUpdates({
+      project,
+      expectedTreeDigest: project.treeDigest,
+      packageCohort: cohort,
+      desiredResources: project.compilation.resources.filter(
+        (resource) => resource.type !== "Guide",
+      ),
+      operations: [{ kind: "delete", resource: "Guide/install" }],
+      authority: authority(project),
+    }),
+  ).toMatchObject({
+    ok: false,
+    diagnostics: [{ code: "reference-target-removed", resource: "WikiPage/home" }],
+  });
+});
+
+test("fresh relative links across resource kinds preserve authored spelling and explicit source extensions", async () => {
+  const project = await readSourceProject({
+    tree: [
+      file(
+        ".topik.yaml",
+        "version: 1\nnamespace: refs\nsources: [{kind: wiki, config: docs/wiki.yaml}, {kind: collection, config: guides/collection.yaml}, {kind: course, config: lessons/course.yaml}]\n",
+      ),
+      file("docs/wiki.yaml", "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation: [home]\n"),
+      file("docs/home.md", "---\nid: home\n---\n# Home\n"),
+      file("guides/collection.yaml", "id: guides\ntitle: Guides\nsourceVersion: 1\n"),
+      file("guides/install.md", "---\nid: install-md\nslug: install-markdown\n---\n# Setup\n"),
+      file("guides/install.mdx", "---\nid: install-mdx\nslug: install-mdx\n---\n# Other\n"),
+      file(
+        "lessons/course.yaml",
+        "sourceVersion: 1\nid: lessons\ntitle: Lessons\nslug: lessons\nmodules: [{id: basics, title: Basics, slug: basics, order: 0, pages: [intro]}]\n",
+      ),
+      file(
+        "lessons/intro.md",
+        "---\nid: tutorial\ntitle: Intro\nslug: intro\norder: 0\n---\n# Intro\n",
+      ),
+    ],
+  });
+  const desired = structuredClone(project.compilation.resources);
+  desired.find(
+    (resource): resource is WikiPage => resource.type === "WikiPage",
+  )!.spec.content.value = "# Home\n\n[Install](../guides/install.md#setup)\n";
+  desired.find(
+    (resource): resource is Guide => resource.type === "Guide" && resource.name === "install-md",
+  )!.spec.content.value = "# Setup\n\n[Home](../docs/home.md?view=full#home)\n";
+  desired.find(
+    (resource): resource is CoursePage => resource.type === "CoursePage",
+  )!.spec.content.value = "# Intro\n\n[Install](../guides/install.md#setup)\n";
+  const request = {
+    project,
+    expectedTreeDigest: project.treeDigest,
+    packageCohort: cohort,
+    desiredResources: desired,
+    operations: [
+      { kind: "update" as const, resource: "WikiPage/home" },
+      { kind: "update" as const, resource: "Guide/install-md" },
+      { kind: "update" as const, resource: "CoursePage/tutorial" },
+    ],
+    authority: authority(project),
+  };
+  const saved = await planSourceUpdates(request);
+  expect(saved.ok, JSON.stringify(saved)).toBe(true);
+  if (saved.ok) {
+    expect(
+      saved.plan.candidate.compilation.resources.find(
+        (resource): resource is WikiPage => resource.type === "WikiPage",
+      )!.spec.content.value,
+    ).toContain("ref://guide/install-md#setup");
+    expect(
+      decodeSource(saved.plan.candidate.tree.find((entry) => entry.path === "docs/home.md")!.bytes),
+    ).toContain("[Install](../guides/install.md#setup)");
+    expect(
+      decodeSource(
+        saved.plan.candidate.tree.find((entry) => entry.path === "guides/install.md")!.bytes,
+      ),
+    ).toContain("[Home](../docs/home.md?view=full#home)");
+    expect(
+      decodeSource(
+        saved.plan.candidate.tree.find((entry) => entry.path === "lessons/intro.md")!.bytes,
+      ),
+    ).toContain("[Install](../guides/install.md#setup)");
+  }
+  const moved = await planSourceUpdates({
+    ...request,
+    operations: [
+      { kind: "update", resource: "WikiPage/home" },
+      { kind: "move", resource: "Guide/install-md", path: "guides/renamed.md" },
+      { kind: "update", resource: "CoursePage/tutorial" },
+    ],
+    authority: { ...request.authority, create: ["guides/renamed.md"] },
+  });
+  expect(moved.ok, JSON.stringify(moved)).toBe(true);
+  if (moved.ok)
+    expect(
+      decodeSource(moved.plan.candidate.tree.find((entry) => entry.path === "docs/home.md")!.bytes),
+    ).toContain("[Install](../guides/renamed.md#setup)");
+});
+test("fresh non-Markdown application links remain distinct from dotted Guide source stems", async () => {
+  const project = await readSourceProject({
+    tree: [
+      file(
+        ".topik.yaml",
+        "version: 1\nnamespace: refs\nsources: [{kind: collection, config: guides/collection.yaml}]\n",
+      ),
+      file("guides/collection.yaml", "id: guides\ntitle: Guides\nsourceVersion: 1\n"),
+      file("guides/intro.md", "---\nid: intro\n---\n# Intro\n"),
+      file("guides/api.json.md", "---\nid: api-guide\nslug: api-reference\n---\n# API\n"),
+    ],
+  });
+  const desired = structuredClone(project.compilation.resources);
+  desired.find(
+    (resource): resource is Guide => resource.type === "Guide" && resource.name === "intro",
+  )!.spec.content.value =
+    "# Intro\n\n[Application](./api.json)\n[Guide](./api.json.md?view=full#api)\n";
+  const result = await planSourceUpdates({
+    project,
+    expectedTreeDigest: project.treeDigest,
+    packageCohort: cohort,
+    desiredResources: desired,
+    operations: [{ kind: "update", resource: "Guide/intro" }],
+    authority: authority(project),
+  });
+  expect(result.ok, JSON.stringify(result)).toBe(true);
+  if (!result.ok) return;
+  const intro = result.plan.candidate.compilation.resources.find(
+    (resource): resource is Guide => resource.type === "Guide" && resource.name === "intro",
+  )!;
+  expect(intro.spec.content.value).toContain("[Application](./api.json)");
+  expect(intro.spec.content.value).toContain("[Guide](ref://guide/api-guide?view=full#api)");
+  expect(
+    decodeSource(
+      result.plan.candidate.tree.find((entry) => entry.path === "guides/intro.md")!.bytes,
+    ),
+  ).toContain("[Guide](./api.json.md?view=full#api)");
+});
+
 test.each(["yaml", "json"])(
   "BOM-prefixed %s config edits retain original byte coordinates",
   async (format) => {
@@ -517,7 +773,7 @@ test("a Wiki page move preserves identity, incoming targets and untouched naviga
   const start = result.plan.candidate.compilation.resources.find(
     (resource) => resource.type === "WikiPage" && resource.name === "start",
   ) as WikiPage;
-  expect(start.spec.content.value).toContain("/next?q=a%20b#heading");
+  expect(start.spec.content.value).toContain("ref://wiki-page/target?q=a%20b#heading");
   expect(result.plan.derivedRepairs).toContainEqual({
     resource: "WikiPage/start",
     kind: "reference",

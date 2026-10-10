@@ -1,5 +1,5 @@
 import { posix } from "node:path";
-import { rewriteTopikNavigationReferences } from "@topik/content";
+import { parseTopikResourceReference, rewriteTopikNavigationReferences } from "@topik/content";
 import type { Course } from "@topik/schema/course/v1";
 import type { CourseModule } from "@topik/schema/course-module/v1";
 import type { CoursePage } from "@topik/schema/course-page/v1";
@@ -129,12 +129,18 @@ export function transportCourseReferences(
     after?: string;
     target?: string;
   }>,
+  resolveOtherReference?: (href: string) => string | undefined,
 ): boolean {
   const key = `CoursePage/${page.name}`;
   const rewritten = rewriteTopikNavigationReferences(
     page.spec.content.value,
     (reference) => {
+      if (parseTopikResourceReference(reference.href)) return undefined;
       const savedReference = resolveCourseContentReference(reference.href, page.name, saved);
+      if (savedReference.kind === "unresolved") {
+        const other = resolveOtherReference?.(reference.href);
+        if (other !== undefined) return other;
+      }
       if (savedReference.kind === "unresolved")
         fail(
           "reference-target-unresolved",

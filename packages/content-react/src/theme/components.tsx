@@ -1,4 +1,8 @@
-import { validateTopikHref } from "@topik/content";
+import {
+  parseTopikResourceReference,
+  validateTopikBrowserHref,
+  validateTopikHref,
+} from "@topik/content";
 import {
   Children,
   isValidElement,
@@ -101,10 +105,25 @@ function useTopikLinkBehavior({
   };
 }
 
-function resolveSafeHref(target: string, resolveLink?: TopikLinkResolver): string | undefined {
+function resolveSafeHref(
+  target: string,
+  resolveLink?: TopikLinkResolver,
+  alreadyResolved = false,
+): string | undefined {
   if (validateTopikHref(target).length > 0) return undefined;
-  const resolvedTarget = resolveLink?.(target) ?? target;
-  return typeof resolvedTarget === "string" && validateTopikHref(resolvedTarget).length === 0
+  let resolvedTarget: string | undefined;
+  try {
+    resolvedTarget = alreadyResolved ? target : resolveLink?.(target);
+  } catch {
+    return undefined;
+  }
+  if (resolvedTarget === undefined && parseTopikResourceReference(target) === null) {
+    resolvedTarget = target;
+  }
+  if (parseTopikResourceReference(target) !== null && /^asset:/iu.test(resolvedTarget ?? "")) {
+    return undefined;
+  }
+  return typeof resolvedTarget === "string" && validateTopikBrowserHref(resolvedTarget).length === 0
     ? resolvedTarget
     : undefined;
 }
@@ -175,6 +194,7 @@ export function TopikCardGrid({ children, columns }: TopikComponentProps) {
 }
 
 export function TopikCard({
+  __topikResolvedHref,
   children,
   href,
   icon,
@@ -198,13 +218,16 @@ export function TopikCard({
 
   const target = stringAttribute(href);
   if (target) {
-    const resolvedTarget = resolveSafeHref(target, linkResolver);
+    const resolvedTarget = resolveSafeHref(target, linkResolver, __topikResolvedHref === true);
     if (resolvedTarget) {
       const linkProps = {
         children: content,
         className: "topik-card",
         href: resolvedTarget,
-        onClick: createLinkClickHandler(target, handleNavigate),
+        onClick: createLinkClickHandler(
+          parseTopikResourceReference(target) === null ? target : resolvedTarget,
+          handleNavigate,
+        ),
       };
       return <>{linkRenderer ? linkRenderer(linkProps) : <a {...linkProps} />}</>;
     }
@@ -395,6 +418,7 @@ export function TopikImage({ alt, src, title }: TopikComponentProps) {
 }
 
 export function TopikLink({
+  __topikResolvedHref,
   children,
   href,
   onNavigateLink,
@@ -408,14 +432,17 @@ export function TopikLink({
     resolveLink,
   });
   const target = stringAttribute(href) ?? "";
-  const resolvedTarget = resolveSafeHref(target, linkResolver);
+  const resolvedTarget = resolveSafeHref(target, linkResolver, __topikResolvedHref === true);
 
   if (!resolvedTarget) return <>{children}</>;
 
   const linkProps = {
     children,
     href: resolvedTarget,
-    onClick: createLinkClickHandler(target, handleNavigate),
+    onClick: createLinkClickHandler(
+      parseTopikResourceReference(target) === null ? target : resolvedTarget,
+      handleNavigate,
+    ),
     title: stringAttribute(title),
   };
   return <>{linkRenderer ? linkRenderer(linkProps) : <a {...linkProps} />}</>;

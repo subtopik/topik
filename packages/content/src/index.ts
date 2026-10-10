@@ -66,6 +66,12 @@ export {
 } from "./rewrite";
 export { assignTopikHeadingIds, type TopikHeading } from "./headings";
 export {
+  TOPIK_RESOURCE_REFERENCE_VERSION,
+  parseTopikResourceReference,
+  serializeTopikResourceReference,
+  type TopikResourceReference,
+} from "./resource-references.js";
+export {
   rewriteTopikNavigationReferences,
   type TopikNavigationReference,
   type RewriteTopikNavigationResult,
@@ -75,6 +81,7 @@ export {
   removeInvalidTopikNavigationReferences,
   validateTopikNavigationHref,
   validateTopikHref,
+  validateTopikBrowserHref,
   type AnalyzeTopikContentOptions,
   type AnalyzeTopikContentResult,
   type TopikAnalyzedHeading,

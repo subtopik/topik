@@ -13,6 +13,7 @@ import { serializeTopikJson } from "../assets/json";
 import {
   FORMAT_VERSION,
   extractTopikAssetOccurrences,
+  parseTopikResourceReference,
   rewriteTopikNavigationReferences,
   type TopikNavigationReference,
 } from "@topik/content";
@@ -49,8 +50,8 @@ export const SOURCE_WRITER_DESCRIPTOR = {
   sourceVersions: [0, 1],
   formatter: FORMAT_VERSION,
   resourceSchema: "v1",
-  references: "source-links-v2",
-  provenance: 4,
+  references: "source-links-v3",
+  provenance: 5,
   graph: "authored-resource-bytes-v1",
   packageVersion: corePackage.version,
 } as const;
@@ -415,15 +416,14 @@ export async function readSourceProject(input: {
           configValues.get(source.config)!,
           configuration,
         ),
-        references: wiki
-          ? sourceReferences(markdown.body, portable.name, wiki)
-          : course
-            ? courseSourceReferences(
-                markdown.body,
-                portable.name,
-                courseContexts[`Course/${course.name}`],
-              )
-            : [],
+        references: sourceReferences(
+          markdown.body,
+          portable.name,
+          resource,
+          compilation,
+          wiki,
+          course ? courseContexts[`Course/${course.name}`] : undefined,
+        ),
       });
     }
   }
@@ -588,47 +588,50 @@ function markdownOrigins(
   return result;
 }
 
-function courseSourceReferences(
-  source: string,
-  name: string,
-  context: CourseReferenceContext,
-): SourceDocumentProvenance["references"] {
-  const navigation = resolveCourseNavigation(context);
-  const references: Array<
-    TopikNavigationReference & { target?: string; search?: string; hash?: string }
-  > = [];
-  const inspected = rewriteTopikNavigationReferences(source, (reference) => {
-    const target = resolveCourseContentHref(reference.href, name, navigation);
-    references.push({
-      ...reference,
-      ...(target
-        ? { target: `CoursePage/${target.page.page}`, search: target.search, hash: target.hash }
-        : {}),
-    });
-    return undefined;
-  });
-  if (!inspected.ok) throw new TypeError("Course reference provenance cannot be inspected");
-  return references;
-}
-
 function sourceReferences(
   source: string,
   name: string,
-  wiki: Wiki,
+  resource: string,
+  compilation: ManifestCompileResult,
+  wiki?: Wiki,
+  course?: CourseReferenceContext,
 ): SourceDocumentProvenance["references"] {
-  const resolved = resolveWikiNavigation(wiki.spec.navigation ?? [], {
-    sourceVersion: wiki.spec.sourceVersion,
-  });
+  const resolved = wiki
+    ? resolveWikiNavigation(wiki.spec.navigation ?? [], { sourceVersion: wiki.spec.sourceVersion })
+    : undefined;
+  const courseNavigation = course ? resolveCourseNavigation(course) : undefined;
+  const compiled = new Map(
+    compilation.references
+      .filter((reference) => reference.resource === resource)
+      .map((reference) => [reference.position, reference.reference]),
+  );
   const references: Array<
     TopikNavigationReference & { target?: string; search?: string; hash?: string }
   > = [];
   const inspected = rewriteTopikNavigationReferences(source, (reference) => {
-    const target = resolveWikiContentHref(reference.href, name, resolved);
+    const identity =
+      compiled.get(reference.position) ?? parseTopikResourceReference(reference.href);
+    const target = resolved ? resolveWikiContentHref(reference.href, name, resolved) : undefined;
+    const courseTarget = courseNavigation
+      ? resolveCourseContentHref(reference.href, name, courseNavigation)
+      : undefined;
     references.push({
       ...reference,
-      ...(target
-        ? { target: `WikiPage/${target.page.page}`, search: target.search, hash: target.hash }
-        : {}),
+      ...(identity
+        ? {
+            target: `${identity.type}/${identity.name}`,
+            search: identity.search,
+            hash: identity.hash,
+          }
+        : target
+          ? { target: `WikiPage/${target.page.page}`, search: target.search, hash: target.hash }
+          : courseTarget
+            ? {
+                target: `CoursePage/${courseTarget.page.page}`,
+                search: courseTarget.search,
+                hash: courseTarget.hash,
+              }
+            : {}),
     });
     return undefined;
   });

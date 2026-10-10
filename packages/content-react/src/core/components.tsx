@@ -44,7 +44,8 @@ export type TopikComponentMap = Record<TopikComponentName, TopikComponent>;
 export type TopikComponentOverrides = Partial<TopikComponentMap>;
 export type TopikColorScheme = "light" | "dark";
 export type TopikAssetResolver = (name: TopikGeneratedAssetName) => string | undefined;
-export type TopikLinkResolver = (href: string) => string;
+/** Resolve a content link to a browser URL; return undefined for an unknown resource. */
+export type TopikLinkResolver = (href: string) => string | undefined;
 export type TopikLinkRenderProps = Omit<ComponentPropsWithoutRef<"a">, "href"> & {
   href: string;
 };

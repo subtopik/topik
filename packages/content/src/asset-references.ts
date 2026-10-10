@@ -1,5 +1,5 @@
 import type { Node } from "mdast";
-import type { ContentDocument, TreeNode } from "./model.js";
+import type { ContentDocument, TextTemplate, TreeNode } from "./model.js";
 import type { TopikAssetReferenceRole } from "./registry.js";
 import type { TopikContentConfig } from "./config.js";
 import { parseTopikContent } from "./content.js";
@@ -59,9 +59,12 @@ export type TopikAssetOccurrenceKind =
 
 export interface TopikAssetOccurrenceSemantics {
   alt?: string;
+  /** Authored text, detached from source nodes and never resolved by asset operations. */
+  altTemplate?: TextTemplate;
   decorative?: boolean;
   title?: string;
   caption?: string;
+  captionTemplate?: TextTemplate;
   lightDarkRole?: "light" | "dark";
   linkLabel?: string;
 }
@@ -185,8 +188,12 @@ export function locateDocumentAssetOccurrences(
         kind,
         semantics: {
           ...(typeof alt === "string" ? { alt, decorative: alt.length === 0 } : {}),
+          ...(alt && typeof alt === "object" ? { altTemplate: structuredClone(alt) } : {}),
           ...(typeof title === "string" ? { title } : {}),
           ...(typeof caption === "string" ? { caption } : {}),
+          ...(caption && typeof caption === "object"
+            ? { captionTemplate: structuredClone(caption) }
+            : {}),
           ...(slot.slot === "figure.src" ? { lightDarkRole: "light" as const } : {}),
           ...(slot.slot === "figure.darkSrc" ? { lightDarkRole: "dark" as const } : {}),
           ...(link ? { linkLabel: plainText(node) } : {}),
@@ -287,7 +294,7 @@ export function removeInvalidTopikAssetReferences(
       const figure = node.type === "topikComponent";
       const value = figure
         ? [node.props?.alt, node.props?.caption]
-            .filter((part) => typeof part === "string" && part)
+            .filter((part): part is string => typeof part === "string" && part.length > 0)
             .join("\n")
         : ((node as ResourceNode).alt ?? "");
       if (!value) return [];

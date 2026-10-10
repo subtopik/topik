@@ -51,6 +51,8 @@ function allowedFields(value: Record<string, unknown>, fields: readonly string[]
 }
 
 function validAttribute(attribute: unknown): attribute is AttributeDefinition {
+  // Template eligibility is owned by the canonical catalog, never custom schemas.
+  if (plainObject(attribute) && Object.hasOwn(attribute, "interpolation")) return false;
   if (
     !plainObject(attribute) ||
     !allowedFields(attribute, [

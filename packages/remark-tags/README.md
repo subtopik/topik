@@ -51,7 +51,8 @@ built library on Node.js 22.12 separately from the test runner.
   booleans: `title="Preview" columns=2 open=true`. Strings support `\\`, `\"`,
   `\|`, `\[`, and `\]` escapes. Empty strings are preserved; control characters
   are refused. Applications can explicitly admit `\n`, `\r` and `\t`
-  for named attributes with `escapedWhitespace: { component: ["attribute"] }`;
+  for named ordinary string attributes with
+  `escapedWhitespace: { component: ["attribute"] }`;
   raw control characters and all other control escapes remain refused.
   The writer escapes brackets in attributes inside Markdown labels,
   including native directive labels, to preserve their surrounding structure.
@@ -67,7 +68,10 @@ Markdown features are enabled through their own plugins.
 The writer sorts attribute names by code unit, escapes values, and normalizes
 spacing. It preserves an empty block container as a container; empty inline tags
 normalize to self-closing tags. Null and undefined attribute values in constructed
-trees are omitted. Formatting preserves supported tree meaning, not source bytes.
+trees are omitted. Caller-built attribute maps must be plain objects (including
+null-prototype objects) with enumerable own data properties; accessors and custom
+prototypes are refused without invoking their getters. Formatting preserves
+supported tree meaning, not source bytes.
 HTML blocks remain separated from following tag markers by a blank line. Blank
 lines inside a block tag do not make its enclosing list item loose; blank lines
 between the item's direct block children still do.
@@ -78,14 +82,15 @@ after each tag.
 
 ## AST and extensions
 
-| Node             | Meaning                                                               |
-| ---------------- | --------------------------------------------------------------------- |
-| `tagText`        | Inline tag with phrasing children; self-closing tags have no children |
-| `tagLeaf`        | Self-closing block tag with no children                               |
-| `tagContainer`   | Paired block tag with block/definition children                       |
-| `tagVariable`    | Opt-in variable reference with a string `path`                        |
-| `tagConditional` | Opt-in conditional containing one or two `tagBranch` nodes            |
-| `tagBranch`      | Flow children with a condition string, or `null` for the else branch  |
+| Node              | Meaning                                                               |
+| ----------------- | --------------------------------------------------------------------- |
+| `tagText`         | Inline tag with phrasing children; self-closing tags have no children |
+| `tagLeaf`         | Self-closing block tag with no children                               |
+| `tagContainer`    | Paired block tag with block/definition children                       |
+| `tagVariable`     | Opt-in variable reference with a string `path`                        |
+| `tagConditional`  | Opt-in conditional containing one or two `tagBranch` nodes            |
+| `tagBranch`       | Flow children with a condition string, or `null` for the else branch  |
+| `tagCodeTemplate` | Opt-in fenced code with literal language/metadata and a text template |
 
 Component nodes contain `name` and `attributes`. Parsed nodes retain source
 positions. Exported node interfaces augment mdast's node maps for TypeScript users.
@@ -130,6 +135,59 @@ evaluates them nor validates an expression language. Applications must supply th
 behavior. `if` and `else` are reserved declaration names when expressions are
 enabled. Conditions are block-only, with at most one else branch.
 
+### Explicit text templates
+
+The same option enables `t"..."` attribute values and paired code-template scopes:
+
+````md
+{% panel title=t"Install {% $package.name %}" %}
+{% template code %}
+
+```sh
+npm install {% $package.name %}
+echo '{%% $literal.example %}'
+```
+
+{% /template code %}
+{% /panel %}
+````
+
+Ordinary quoted attributes and ordinary code blocks retain their literal meaning.
+Inside an explicit template, `{% $path %}` is a reference and `{%%` produces the
+literal opener `{%`. Escape processing runs once: `{%%%` produces `{%%`. Code
+backslashes stay literal; attribute templates use the usual quoted-string escapes
+before scanning their references. Attribute template literals cannot contain
+controls or line breaks. Code literals cannot contain NUL or carriage returns;
+source line endings normalize to LF. Template paths use dot-separated ASCII
+identifiers and refuse `__proto__`, `prototype`, and `constructor` segments.
+
+Code scope markers occupy their own block lines and contain exactly one closed
+fenced block in the same Markdown parent. They can appear inside lists,
+blockquotes, declared block tags, and conditional branches. Extra content,
+nested scopes, indented code, missing closers, and interpreted `mermaid` code are
+refused. Language and metadata stay literal. The special two-word markers leave
+custom tags named `template` and `codeTemplate` available.
+
+Template attributes contain an exported `TagTextTemplate` value:
+
+```ts
+{
+  type: "topikTextTemplate",
+  segments: [
+    { type: "literal", value: "Install " },
+    { type: "variable", path: ["package", "name"] },
+  ],
+}
+```
+
+`tagCodeTemplate` is a leaf with `lang`, `meta`, and `template`; it has no ordinary
+`value` or children. Empty and literal-only templates keep their template identity.
+The writer merges adjacent literal segments, escapes literal openers, and chooses
+a fence that preserves the payload. It preserves decoded fence metadata through
+character references when needed, including tabs and leading spaces. Applications
+choose eligible attribute slots, resolve references, and render the resulting text;
+this package preserves the authored structure without evaluating it.
+
 ## Diagnostics and limits
 
 Malformed source throws `TagSyntaxError`. Its `diagnostics` array contains a
@@ -137,6 +195,15 @@ Malformed source throws `TagSyntaxError`. Its `diagnostics` array contains a
 errors also have `id: "tag-content-limit"`. Invalid declarations and unsupported
 writer inputs throw ordinary errors.
 
+Template syntax uses stable `topik-template-syntax`, `topik-variable-path`,
+`topik-template-control`, `topik-code-template-structure`, and
+`topik-code-template-language` diagnostic IDs.
+
 `TAG_LIMITS` bounds both the incoming Markdown tree and the converted tag tree to
-depth 128 and 50,000 nodes. These are tree limits, not source-size limits. Host
-applications remain responsible for their own input limits and rendering policy.
+depth 128 and 50,000 nodes, counting template objects and segments in the converted
+tree. It also bounds each template's decoded input payload and generated source
+value to 1,000,000 UTF-16 units. Quoted template output counts the `t` prefix,
+quotes, and surrounding Markdown escape rules; code output counts generated
+fences and scope markers.
+These limits do not bound an entire source document. Host applications remain
+responsible for their own input limits and rendering policy.

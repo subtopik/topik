@@ -8,9 +8,13 @@ import type {
   TagBranchNode,
   TagDeclarations,
   TagSyntaxOptions,
+  TagCodeTemplateNode,
 } from "./types.js";
+import { TAG_LIMITS } from "./types.js";
+import { writeTextTemplate } from "./templates.js";
 import {
   hasControlCharacter,
+  invalidCodeTemplateHeader,
   validConditionSource,
   variablePath,
   validateDeclarations,
@@ -23,6 +27,91 @@ declare module "mdast-util-to-markdown" {
 }
 
 type ComponentNode = TagTextNode | TagLeafNode | TagContainerNode;
+
+function attributeEntries(node: ComponentNode): Array<[string, unknown]> {
+  const property = Object.getOwnPropertyDescriptor(node, "attributes");
+  if (!property) {
+    if ("attributes" in node) throw new Error("Invalid inherited tag attributes");
+    return [];
+  }
+  if (!property.enumerable || !("value" in property)) throw new Error("Invalid tag attributes");
+  const attributes = property.value;
+  if (attributes == null) return [];
+  if (typeof attributes !== "object" || Array.isArray(attributes))
+    throw new Error("Invalid tag attributes");
+  const prototype = Object.getPrototypeOf(attributes);
+  if (prototype !== Object.prototype && prototype !== null)
+    throw new Error("Invalid tag attributes");
+  const entries: Array<[string, unknown]> = [];
+  for (const key of Reflect.ownKeys(attributes)) {
+    const descriptor = Object.getOwnPropertyDescriptor(attributes, key)!;
+    if (typeof key !== "string" || !descriptor.enumerable || !("value" in descriptor))
+      throw new Error("Invalid tag attributes");
+    entries.push([key, descriptor.value]);
+  }
+  return entries.sort(([first], [second]) => (first < second ? -1 : first > second ? 1 : 0));
+}
+
+function assertQuotedTemplateLength(source: string, state: State): void {
+  let length = source.length + 3; // The t prefix and both quotes are source too.
+  const table = state.stack.includes("tableCell");
+  const label = state.stack.includes("label");
+  for (let index = 0; index < source.length && length <= TAG_LIMITS.templateLength; index++) {
+    const char = source[index];
+    if (
+      char === "\\" ||
+      char === '"' ||
+      (table && char === "|") ||
+      (label && (char === "[" || char === "]"))
+    )
+      length++;
+  }
+  if (length > TAG_LIMITS.templateLength)
+    throw new Error("Quoted template exceeds the text length limit");
+}
+
+function plainCodeTemplateNode(node: TagCodeTemplateNode): boolean {
+  const prototype = Object.getPrototypeOf(node);
+  if (prototype !== Object.prototype && prototype !== null) return false;
+  const fields = new Set(["type", "lang", "meta", "template", "position", "data"]);
+  return Reflect.ownKeys(node).every((key) => {
+    const descriptor = Object.getOwnPropertyDescriptor(node, key)!;
+    return (
+      typeof key === "string" && fields.has(key) && descriptor.enumerable && "value" in descriptor
+    );
+  });
+}
+
+function headerLength(value: string, metadata = false): number {
+  let length = value.length + (metadata && value.startsWith(" ") ? 5 : 0);
+  for (let index = 0; index < value.length; index++) {
+    const char = value[index];
+    if (char === "&" || char === "\t") length += 4;
+    else if (char === "\\" || char === "`") length += 5;
+  }
+  return length;
+}
+
+function headerSource(value: string, metadata = false): string {
+  const escapes: Record<string, string> = {
+    "&": "&amp;",
+    "\\": "&#x5C;",
+    "`": "&#x60;",
+    "\t": "&#x9;",
+  };
+  const chunks: string[] = [];
+  let start = 0;
+  for (let index = 0; index < value.length; index++) {
+    // Keep decoded leading spaces separate from the language/meta separator.
+    const escaped =
+      metadata && index === 0 && value[index] === " " ? "&#x20;" : escapes[value[index]];
+    if (!escaped) continue;
+    chunks.push(value.slice(start, index), escaped);
+    start = index + 1;
+  }
+  chunks.push(value.slice(start));
+  return chunks.join("");
+}
 
 function tagStart(
   node: ComponentNode,
@@ -42,24 +131,27 @@ function tagStart(
 
   let result = `{% ${node.name}`;
   // Code-unit ordering makes output independent of the host's locale/ICU.
-  for (const name of Object.keys(node.attributes ?? {}).sort()) {
+  for (const [name, value] of attributeEntries(node)) {
     if (!/^[a-z][A-Za-z0-9-]*$/.test(name)) throw new Error(`Invalid attribute ${name}`);
-    const value = node.attributes![name];
     if (value === null || value === undefined) continue;
     if (typeof value === "boolean") result += ` ${name}=${value}`;
     else if (typeof value === "number" && Number.isFinite(value))
       result += ` ${name}=${Object.is(value, -0) ? "-0" : String(value)}`;
     else if (
-      typeof value === "string" &&
-      !hasControlCharacter(value, options.escapedWhitespace?.[node.name]?.includes(name))
+      (typeof value === "string" &&
+        !hasControlCharacter(value, options.escapedWhitespace?.[node.name]?.includes(name))) ||
+      (options.expressions && typeof value === "object")
     ) {
-      let escaped = value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+      const template = typeof value !== "string";
+      const source = template ? writeTextTemplate(value) : value;
+      if (template) assertQuotedTemplateLength(source, state);
+      let escaped = source.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
       escaped = escaped.replaceAll("\n", "\\n").replaceAll("\r", "\\r").replaceAll("\t", "\\t");
       if (state.stack.includes("tableCell")) escaped = escaped.replaceAll("|", "\\|");
       // Directive labels scan brackets before the tag tokenizer sees its attributes.
       if (state.stack.includes("label"))
         escaped = escaped.replaceAll("[", "\\[").replaceAll("]", "\\]");
-      result += ` ${name}="${escaped}"`;
+      result += ` ${name}=${template ? "t" : ""}"${escaped}"`;
     } else throw new Error(`Invalid value for attribute ${name}`);
   }
   return result;
@@ -78,6 +170,44 @@ export function tagToMarkdown(
 ): Options {
   validateDeclarations(declarations, options);
   const handlers: NonNullable<Options["handlers"]> = {
+    tagCodeTemplate(node: TagCodeTemplateNode): string {
+      if (!options.expressions || !plainCodeTemplateNode(node))
+        throw new Error("Invalid code template node");
+      if (invalidCodeTemplateHeader(node.lang, node.meta))
+        throw new Error("Invalid code template language or metadata");
+      if (node.lang === "mermaid")
+        throw new Error("Code templates cannot use the interpreted mermaid language");
+      const value = writeTextTemplate(node.template, true);
+      let backticks = 0;
+      let tildes = 0;
+      let backtickRun = 0;
+      let tildeRun = 0;
+      for (let index = 0; index < value.length; index++) {
+        backtickRun = value[index] === "`" ? backtickRun + 1 : 0;
+        tildeRun = value[index] === "~" ? tildeRun + 1 : 0;
+        backticks = Math.max(backticks, backtickRun);
+        tildes = Math.max(tildes, tildeRun);
+      }
+      const backtickLength = Math.max(3, backticks + 1);
+      const tildeLength = Math.max(3, tildes + 1);
+      const marker =
+        node.lang?.includes("`") || node.meta?.includes("`") || tildeLength < backtickLength
+          ? "~"
+          : "`";
+      const fenceLength = marker === "`" ? backtickLength : tildeLength;
+      const encodedHeaderLength =
+        headerLength(node.lang ?? "") + (node.meta ? 1 + headerLength(node.meta, true) : 0);
+      const outputLength =
+        42 + 2 * fenceLength + encodedHeaderLength + (value ? value.length + 1 : 0);
+      if (outputLength > TAG_LIMITS.templateLength)
+        throw new Error("Code template exceeds the text length limit");
+      // Encode only string-parser-sensitive header characters. Passing a huge
+      // fence as `before` to the host's safe() makes its position work quadratic.
+      const header =
+        headerSource(node.lang ?? "") + (node.meta ? ` ${headerSource(node.meta, true)}` : "");
+      const fence = marker.repeat(fenceLength);
+      return `{% template code %}\n${fence}${header}\n${value ? value + "\n" : ""}${fence}\n{% /template code %}`;
+    },
     tagVariable(node: TagVariableNode): string {
       if (!options.expressions || !node.path || !variablePath.test(node.path))
         throw new Error("Invalid variable tag");

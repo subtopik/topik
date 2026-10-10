@@ -64,6 +64,25 @@ export function assertTreeLimits(root: TreeNode): number {
       throw new ContentLimitError(
         `Content exceeds the tree node limit of ${CONTENT_LIMITS.treeNodes}`,
       );
+    const templates =
+      (node.type === "topikCodeTemplate" || node.type === "tagCodeTemplate") && node.template
+        ? [node.template]
+        : [];
+    const properties =
+      node.type === "topikComponent"
+        ? node.props
+        : ["tagText", "tagLeaf", "tagContainer"].includes(node.type)
+          ? node.attributes
+          : undefined;
+    for (const value of Object.values(properties ?? {}))
+      if (value && typeof value === "object" && value.type === "topikTextTemplate")
+        templates.push(value);
+    for (const template of templates)
+      count += 1 + (Array.isArray(template.segments) ? template.segments.length : 0);
+    if (count > CONTENT_LIMITS.treeNodes)
+      throw new ContentLimitError(
+        `Content exceeds the tree node limit of ${CONTENT_LIMITS.treeNodes}`,
+      );
     active.add(node);
     stack.push({ node, depth, exit: true });
     if (Array.isArray(node.children)) {
@@ -79,15 +98,22 @@ export function assertTreeLimits(root: TreeNode): number {
 }
 
 /** Include metadata and expressions so cloning cannot bypass the authoring-tree limits. */
-export function assertDataLimits(root: unknown, options: { plain?: boolean } = {}): void {
+export function assertDataLimits(
+  root: unknown,
+  options: {
+    plain?: boolean;
+    /** @internal Count deferred output strings before allocating their contents. */
+    stringLengths?: WeakMap<object, ReadonlyMap<string, number>>;
+  } = {},
+): void {
   const active = new Set<object>();
-  const stack: Array<{ value: unknown; depth: number; exit: boolean }> = [
+  const stack: Array<{ value: unknown; depth: number; exit: boolean; stringLength?: number }> = [
     { value: root, depth: 0, exit: false },
   ];
   let entries = 0;
   let strings = 0;
   while (stack.length) {
-    const { value, depth, exit } = stack.pop()!;
+    const { value, depth, exit, stringLength } = stack.pop()!;
     if (exit) {
       active.delete(value as object);
       continue;
@@ -97,7 +123,7 @@ export function assertDataLimits(root: unknown, options: { plain?: boolean } = {
         `Content exceeds the data entry limit of ${CONTENT_LIMITS.dataEntries}`,
       );
     if (typeof value === "string") {
-      strings += value.length;
+      strings += stringLength ?? value.length;
       if (strings > CONTENT_LIMITS.dataStringLength)
         throw new ContentLimitError(
           `Content exceeds the data string limit of ${CONTENT_LIMITS.dataStringLength}`,
@@ -140,7 +166,12 @@ export function assertDataLimits(root: unknown, options: { plain?: boolean } = {
       // ASTs are plain data. Do not invoke accessors while inspecting caller input.
       if (!("value" in descriptor))
         throw new ContentDataError("Content data must not contain accessors");
-      stack.push({ value: descriptor.value, depth: depth + 1, exit: false });
+      stack.push({
+        value: descriptor.value,
+        depth: depth + 1,
+        exit: false,
+        stringLength: options.stringLengths?.get(value)?.get(key as string),
+      });
     }
   }
 }

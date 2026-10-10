@@ -2,6 +2,7 @@ import type { TopikContentConfig } from "./config.js";
 import { sanitizeTopikContentDiagnostic, type TopikContentDiagnostic } from "./diagnostics.js";
 import { transformDocument, type RenderableTreeNode } from "./render.js";
 import { prepareSource } from "./source.js";
+import { TemplateEvaluationError } from "./evaluate.js";
 
 export interface CompileTopikContentOptions {
   file?: string;
@@ -48,13 +49,19 @@ export function compileTopikContent(
       diagnostics: [],
       tree: transformDocument(prepared.document, prepared.config),
     };
-  } catch {
+  } catch (error) {
     const diagnostic = sanitizeTopikContentDiagnostic({
-      id: "topik-transform-failed",
-      type: "document",
-      level: "critical",
+      id: error instanceof TemplateEvaluationError ? error.id : "topik-transform-failed",
+      type: error instanceof TemplateEvaluationError ? error.type : "document",
+      level: error instanceof TemplateEvaluationError ? "error" : "critical",
       message: "",
-      lines: [],
+      lines: error instanceof TemplateEvaluationError ? error.lines : [],
+      ...(error instanceof TemplateEvaluationError && error.attribute !== undefined
+        ? { attribute: error.attribute }
+        : {}),
+      ...(error instanceof TemplateEvaluationError && error.variable !== undefined
+        ? { variable: error.variable }
+        : {}),
       ...(options.file === undefined ? {} : { file: options.file }),
     });
     options.onDiagnostic?.(diagnostic);

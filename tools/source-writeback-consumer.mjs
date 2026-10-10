@@ -25,6 +25,23 @@ const authority = (project) => ({
 /** Public artifacts alone must perform a source-preserving round trip. */
 export async function verifySourceWritebackConsumer(packageCohort = "c".repeat(64)) {
   assert.equal(SOURCE_WRITER_DESCRIPTOR.writer, "topik-source-writer-v1");
+  const body = [
+    "# Original",
+    "",
+    '{% callout title=t"Hello {% $name %}" %}',
+    "Body",
+    "{% /callout %}",
+    "",
+    "{% template code %}",
+    "```sh",
+    "echo {% $name %}",
+    "```",
+    "{% /template code %}",
+    "",
+    String.raw`{% math content="a\nb" /%}`,
+    "",
+  ].join("\r\n");
+  const authored = `---\r\nid: stable\r\ntitle: Original # keep\r\ncustom: exact\r\n---\r\n${body}`;
   const project = await readSourceProject({
     tree: [
       file(
@@ -32,11 +49,7 @@ export async function verifySourceWritebackConsumer(packageCohort = "c".repeat(6
         "version: 1\nnamespace: packed/example\nsources: [{kind: collection, config: guides/custom.yml}]\n",
       ),
       file("guides/custom.yml", "id: blog\ntitle: Blog\nsourceVersion: 1\n"),
-      file(
-        "guides/page.md",
-        "---\r\nid: stable\r\ntitle: Original # keep\r\ncustom: exact\r\n---\r\n# Original\r\n",
-        "100755",
-      ),
+      file("guides/page.md", authored, "100755"),
       file("README.md", "Unowned exact bytes\r\n", "100755"),
     ],
   });
@@ -56,7 +69,7 @@ export async function verifySourceWritebackConsumer(packageCohort = "c".repeat(6
   assert.equal(plan.changes.length, 1);
   assert.equal(
     decode(plan.changes[0].candidate.bytes),
-    '---\r\nid: stable\r\ntitle: "Edited" # keep\r\ncustom: exact\r\n---\r\n# Original\r\n',
+    authored.replace("title: Original # keep", 'title: "Edited" # keep'),
   );
   assert.equal(plan.changes[0].candidate.mode, "100755");
   assert.deepEqual(
@@ -73,6 +86,31 @@ export async function verifySourceWritebackConsumer(packageCohort = "c".repeat(6
   });
   assert.equal(repeated.ok, true, JSON.stringify(repeated));
   assert.equal(repeated.plan.changes.length, 0);
+  const edited = structuredClone(plan.candidate.compilation.resources);
+  const editedGuide = edited.find((resource) => resource.type === "Guide");
+  editedGuide.spec.content.value = editedGuide.spec.content.value.replaceAll(
+    "$name",
+    "$displayName",
+  );
+  const bodyEdit = await planSourceUpdates({
+    project: plan.candidate,
+    expectedTreeDigest: plan.candidateTreeDigest,
+    packageCohort,
+    desiredResources: edited,
+    operations: [{ kind: "update", resource: "Guide/stable" }],
+    authority: authority(plan.candidate),
+  });
+  assert.equal(bodyEdit.ok, true, JSON.stringify(bodyEdit));
+  const candidateBody = bodyEdit.plan.candidate.compilation.resources.find(
+    (resource) => resource.type === "Guide",
+  ).spec.content.value;
+  const before = parseDocument(editedGuide.spec.content.value);
+  const after = parseDocument(candidateBody);
+  assert.ok(before.ok && after.ok);
+  assert.equal(sameDocumentMeaning(before.document, after.document), true);
+  assert.ok(candidateBody.includes('title=t"Hello {% $displayName %}"'));
+  assert.ok(candidateBody.includes("echo {% $displayName %}"));
+  assert.ok(candidateBody.includes(String.raw`content="a\nb"`));
   const denied = await planSourceUpdates({
     project,
     expectedTreeDigest: project.treeDigest,

@@ -1,4 +1,4 @@
-import type { ContentDocument, TreeNode } from "./model.js";
+import type { ContentDocument, TextTemplate, TreeNode } from "./model.js";
 import { referenceIdentifier } from "./document-index.js";
 
 /** Compare admitted authoring trees, retaining explicit heading IDs and every authored branch.
@@ -23,10 +23,18 @@ function meaning(node: TreeNode): Record<string, unknown> {
   if (node.type === "link" || node.type === "image" || node.type === "definition")
     fields.title ??= null;
   if (node.type === "image" || node.type === "imageReference") fields.alt ??= "";
-  if (node.type === "code") {
+  if (node.type === "code" || node.type === "topikCodeTemplate") {
     fields.lang ??= null;
     fields.meta ??= null;
   }
+  if (node.type === "topikCodeTemplate") fields.template = templateMeaning(node.template!);
+  if (node.type === "topikComponent" && node.props)
+    fields.props = Object.fromEntries(
+      Object.entries(node.props).map(([key, value]) => [
+        key,
+        typeof value === "object" ? templateMeaning(value) : value,
+      ]),
+    );
   if (["definition", "linkReference", "imageReference"].includes(node.type)) {
     fields.identifier = referenceIdentifier(fields.identifier as string);
     // A full label can replace a shortcut without changing its definition binding.
@@ -64,6 +72,19 @@ function meaning(node: TreeNode): Record<string, unknown> {
     fields.children = children;
   }
   return fields;
+}
+
+function templateMeaning(template: TextTemplate): TextTemplate {
+  const segments: TextTemplate["segments"] = [];
+  for (const segment of template.segments) {
+    if (segment.type === "literal") {
+      if (!segment.value) continue;
+      const previous = segments.at(-1);
+      if (previous?.type === "literal") previous.value += segment.value;
+      else segments.push({ type: "literal", value: segment.value });
+    } else segments.push({ type: "variable", path: segment.path });
+  }
+  return { type: "topikTextTemplate", segments };
 }
 
 function equal(left: unknown, right: unknown): boolean {

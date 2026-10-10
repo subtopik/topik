@@ -7,6 +7,7 @@ export const blockTypes = new Set([
   "blockquote",
   "list",
   "code",
+  "topikCodeTemplate",
   "table",
   "thematicBreak",
   "definition",

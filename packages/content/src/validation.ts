@@ -1,9 +1,9 @@
 import type {
   Branch,
+  AuthoredAttributeValue,
   Component,
   ContentDocument,
   Diagnostic,
-  Scalar,
   TreeNode,
   Variable,
 } from "./model.js";
@@ -15,7 +15,7 @@ import {
   ContentDataError,
   limitDiagnostic,
 } from "./limits.js";
-import { nodeShapeProblem } from "./node-validation.js";
+import { codeTemplateProblem, nodeShapeProblem, textTemplateProblem } from "./node-validation.js";
 import { nodeTypes as allowed, isContentKind, isInlineParent } from "./node-grammar.js";
 import {
   indexDocument,
@@ -36,7 +36,7 @@ export interface Tag {
   name: string;
   close: boolean;
   selfClosing: boolean;
-  props: Record<string, Scalar>;
+  props: Record<string, AuthoredAttributeValue>;
 }
 
 function issue(id: string, message: string): ValidationIssue {
@@ -56,7 +56,11 @@ function hasControl(value: string): boolean {
 }
 
 /** Validate the literal source form and properties before tree-level checks. */
-export function validateTag(tag: Tag, registry: Registry): ValidationIssue | undefined {
+export function validateTag(
+  tag: Tag,
+  registry: Registry,
+  templateData = new Set<object>(),
+): ValidationIssue | undefined {
   const definition = Object.hasOwn(registry, tag.name) ? registry[tag.name] : undefined;
   if (!definition) return issue("tag-undefined", `Unknown component ${tag.name}`);
   if (tag.close) return;
@@ -79,6 +83,25 @@ export function validateTag(tag: Tag, registry: Registry): ValidationIssue | und
   for (const [key, value] of Object.entries(tag.props)) {
     const attr = Object.hasOwn(definition.attributes, key) ? definition.attributes[key] : undefined;
     if (!attr) return issue("attribute-undefined", `Unknown attribute ${key} on ${tag.name}`);
+    if (value !== null && typeof value === "object" && value.type === "topikTextTemplate") {
+      const canonicalDefinition = Object.hasOwn(components, tag.name)
+        ? components[tag.name]
+        : undefined;
+      const canonical = canonicalDefinition?.attributes[key];
+      if (
+        definition.kind !== canonicalDefinition?.kind ||
+        attr.type !== "string" ||
+        attr.interpolation !== "text" ||
+        attr.asset ||
+        attr.assetReference ||
+        canonical?.type !== "string" ||
+        canonical.interpolation !== "text"
+      )
+        return issue("topik-template-location", `Attribute ${key} on ${tag.name} is literal-only`);
+      const invalid = textTemplateProblem(value, false, templateData);
+      if (invalid) return invalid;
+      continue;
+    }
     if (typeof value !== (attr.type === "enum" ? "string" : attr.type))
       return issue(
         "attribute-type-invalid",
@@ -230,6 +253,7 @@ export function validateDocumentWithIndex(
     throw error;
   }
   const errors: Diagnostic[] = [];
+  const templateData = new Set<object>();
   function add(problem: string | ValidationIssue, node: TreeNode, id?: string): void {
     errors.push(diagnostic(problem, node, id));
   }
@@ -285,6 +309,10 @@ export function validateDocumentWithIndex(
         add("Invalid variable path", node, "topik-variable-path");
       if (!parent || !isInlineParent(parent, registry))
         add("Variable has invalid placement", node, "topik-variable-placement");
+    }
+    if (node.type === "topikCodeTemplate") {
+      const invalid = codeTemplateProblem(node, templateData);
+      if (invalid) add(invalid, node);
     }
     if (node.type === "topikConditional") {
       const branches = node.children ?? [];
@@ -344,6 +372,7 @@ export function validateDocumentWithIndex(
           props: component.props,
         },
         registry,
+        templateData,
       );
       if (invalid) add(invalid, node);
       for (const problem of [

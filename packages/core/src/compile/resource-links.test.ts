@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, expect, test } from "vite-plus/test";
@@ -328,3 +328,112 @@ test("a Wiki file download does not fall back to a dotted source alias", async (
   expect(result.references).toEqual([]);
   expect(result.resources.filter((resource) => resource.type === "Asset")).toHaveLength(1);
 });
+
+test.each(["wiki", "guide"] as const)(
+  "%s keeps an extensionless download distinct from a declared Markdown source",
+  async (kind) => {
+    const dir = await fixture({
+      ...(kind === "wiki"
+        ? {
+            "wiki.yaml": "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation: [home, manual]\n",
+          }
+        : { "collection.yaml": guideConfig }),
+      "home.md": "---\nid: home\n---\n# Home\n\n[Download](./manual)\n[Page](./manual.md)\n",
+      "manual.md": "---\nid: manual-page\n---\n# Manual\n",
+      manual: "Download these exact bytes.\n",
+    });
+    const compile = kind === "wiki" ? compileWiki : compileGuides;
+    const options = {
+      dir,
+      assets: {
+        generateName: createProjectAssetNameGenerator({
+          projectRoot: dir,
+          projectNamespace: "example/extensionless-download",
+        }),
+      },
+    };
+    const result = await compile(options);
+    const home = result.resources.find((resource) => resource.name === "home");
+    if (home?.type !== "WikiPage" && home?.type !== "Guide") throw new Error("Expected home");
+    expect(home.spec.content.value).toContain("[Download](asset:auto-v1-");
+    expect(home.spec.content.value).toContain(
+      `[Page](ref://${kind === "wiki" ? "wiki-page" : "guide"}/manual-page)`,
+    );
+    expect(result.references).toMatchObject([{ href: "./manual.md", status: "verified" }]);
+    expect(result.resources.filter((resource) => resource.type === "Asset")).toHaveLength(1);
+    expect(result.payloads).toHaveLength(1);
+    expect(new TextDecoder().decode(result.payloads[0].bytes)).toBe(
+      "Download these exact bytes.\n",
+    );
+
+    // An absent download still permits the existing extensionless document alias.
+    await rm(join(dir, "manual"));
+    const withoutDownload = await compile(options);
+    expect(withoutDownload.references.map((reference) => reference.href)).toEqual([
+      "./manual",
+      "./manual.md",
+    ]);
+    expect(withoutDownload.payloads).toEqual([]);
+
+    // A same-stem page must not mask an unsupported file at the download path.
+    const outside = await fixture({ secret: "Outside bytes must not be published.\n" });
+    await symlink(join(outside, "secret"), join(dir, "manual"));
+    await expect(compile(options)).rejects.toMatchObject({
+      name: "AssetCompilationError",
+      diagnostics: [expect.objectContaining({ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" })],
+    });
+  },
+);
+
+test.each([undefined, 1] as const)(
+  "Wiki source version %s resolves the root route without admitting escaping paths",
+  async (sourceVersion) => {
+    const dir = await fixture({
+      "wiki.yaml": `id: docs\ntitle: Docs\n${sourceVersion === 1 ? "sourceVersion: 1\n" : ""}navigation: [index, intro]\n`,
+      "index.md": "---\nid: home-page\n---\n# Home\n",
+      "intro.md":
+        '# Intro\n\n[Home](/)\n[Heading][home]\n\n[home]: /?view=a%20b&view=c#home\n\n{% card title="Home" href="/#home" /%}\n',
+    });
+    const result = await compileWiki({ dir });
+    const home = result.resources.find(
+      (resource) => resource.type === "WikiPage" && resource.spec.title === "Home",
+    )!;
+    expect(result.diagnostics).toEqual([]);
+    expect(result.references).toMatchObject([
+      { href: "/", reference: { name: home.name, search: "", hash: "" }, status: "verified" },
+      {
+        href: "/?view=a%20b&view=c#home",
+        reference: { name: home.name, search: "?view=a%20b&view=c", hash: "home" },
+        status: "verified",
+      },
+      {
+        href: "/#home",
+        kind: "card",
+        reference: { name: home.name, hash: "home" },
+        status: "verified",
+      },
+    ]);
+    const intro = result.resources.find(
+      (resource) => resource.type === "WikiPage" && resource.spec.title === "Intro",
+    );
+    if (intro?.type !== "WikiPage") throw new Error("Expected intro");
+    expect(intro.spec.content.value).toContain(`[Home](ref://wiki-page/${home.name})`);
+
+    await writeFile(join(dir, "intro.md"), "# Intro\n\n[Missing](/#missing)\n");
+    await expect(compileWiki({ dir })).rejects.toMatchObject({
+      diagnostics: [expect.objectContaining({ id: "link-fragment-not-found" })],
+    });
+
+    await writeFile(
+      join(dir, "intro.md"),
+      "# Intro\n\n[Escape](../../)\n[Encoded](%2E%2E/%2E%2E/)\n[Absolute](/../)\n",
+    );
+    await expect(compileWiki({ dir })).rejects.toMatchObject({
+      diagnostics: [
+        expect.objectContaining({ id: "link-page-not-found" }),
+        expect.objectContaining({ id: "link-page-not-found" }),
+        expect.objectContaining({ id: "link-page-not-found" }),
+      ],
+    });
+  },
+);

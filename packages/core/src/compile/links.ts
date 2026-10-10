@@ -10,6 +10,7 @@ import {
   rewriteTopikNavigationReferences,
   serializeTopikResourceReference,
   topikLinkDiagnosticMessage,
+  validateTopikAssetReference,
 } from "@topik/content";
 import { posix } from "node:path";
 import { classifyPortableNavigationPath, readPortableAssetFile } from "../assets/files";
@@ -146,6 +147,23 @@ export async function compileResourceLinks(input: CompileResourceLinksInput): Pr
   }
 
   const existingPaths = new Map<string, boolean>();
+  const hasNonPagePath = async (path: string): Promise<boolean> => {
+    let exists = existingPaths.get(path);
+    if (exists === undefined) {
+      const kind = await classifyPortableNavigationPath({ root: input.rootDir, path });
+      const proof =
+        kind === "directory"
+          ? undefined
+          : await readPortableAssetFile({ root: input.rootDir, path });
+      exists =
+        kind === "directory" ||
+        proof?.ok === true ||
+        proof?.diagnostics.some((diagnostic) => diagnostic.id !== "TOPIK_ASSET_FILE_MISSING") ===
+          true;
+      existingPaths.set(path, exists);
+    }
+    return exists;
+  };
   const compiledByKey = new Map<string, DocumentResource>();
   for (const resource of documents) {
     const key = resourceKey(resource);
@@ -201,6 +219,12 @@ export async function compileResourceLinks(input: CompileResourceLinksInput): Pr
       const path = resolveSourceReferencePath(link.href, sourcePath, directory);
       const markdown = /\.(?:mdx?|markdown)$/i.test(path ?? link.href.split(/[?#]/, 1)[0]);
       const extensionless = path !== undefined && posix.extname(path) === "";
+      if (path !== undefined && extensionless && link.kind === "link") {
+        const asset = validateTopikAssetReference(link.href);
+        // A real download keeps its Asset semantics even when a document shares its stem.
+        // Leave unsupported files to the Asset pipeline so its safety checks still apply.
+        if (asset.valid && asset.kind === "local" && (await hasNonPagePath(path))) continue;
+      }
       const candidates =
         path === undefined || (link.href.startsWith("/") && !markdown)
           ? undefined
@@ -210,7 +234,10 @@ export async function compileResourceLinks(input: CompileResourceLinksInput): Pr
               ? targetsByExtensionlessPath.get(path)
               : undefined;
       let target = candidates?.length === 1 ? candidates[0] : undefined;
-      if (!target && extensionless && resource.type === "WikiPage") {
+      // The root route has no portable file path; admit only the literal route, not
+      // paths that normalize outside the source root and happen to resolve to it as URLs.
+      const rootRoute = link.href.split(/[?#]/, 1)[0] === "/";
+      if (!target && (extensionless || rootRoute) && resource.type === "WikiPage") {
         const resolved = navigation.get(resource.spec.wiki);
         const wikiTarget = resolved && resolveWikiContentHref(link.href, resource.name, resolved);
         if (wikiTarget) target = localTargets.get(`WikiPage/${wikiTarget.page.page}`);
@@ -255,22 +282,7 @@ export async function compileResourceLinks(input: CompileResourceLinksInput): Pr
       }
       if (resource.type === "Guide" && !markdown) continue;
       if (!markdown && path !== undefined && link.kind === "link") {
-        let exists = existingPaths.get(path);
-        if (exists === undefined) {
-          const kind = await classifyPortableNavigationPath({ root: input.rootDir, path });
-          const proof =
-            kind === "directory"
-              ? undefined
-              : await readPortableAssetFile({ root: input.rootDir, path });
-          exists =
-            kind === "directory" ||
-            proof?.ok === true ||
-            proof?.diagnostics.some(
-              (diagnostic) => diagnostic.id !== "TOPIK_ASSET_FILE_MISSING",
-            ) === true;
-          existingPaths.set(path, exists);
-        }
-        if (exists) continue;
+        if (await hasNonPagePath(path)) continue;
       }
       appendLinkDiagnostic("link-page-not-found", link, policy, diagnostics);
     }

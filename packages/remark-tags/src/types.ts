@@ -1,11 +1,19 @@
 import type { BlockContent, DefinitionContent, Node, Parent, PhrasingContent } from "mdast";
 
 export type TagDeclarations = Record<string, { kind: "inline" | "block" }>;
-export type TagAttributeValue = string | number | boolean;
+export interface TagTextTemplate {
+  type: "topikTextTemplate";
+  segments: Array<{ type: "literal"; value: string } | { type: "variable"; path: string[] }>;
+}
+export type TagAttributeValue = string | number | boolean | TagTextTemplate;
 /** Bounds on both the incoming mdast tree and the converted tag tree. */
-export const TAG_LIMITS = Object.freeze({ treeDepth: 128, treeNodes: 50_000 });
+export const TAG_LIMITS = Object.freeze({
+  treeDepth: 128,
+  treeNodes: 50_000,
+  templateLength: 1_000_000,
+});
 export interface TagSyntaxOptions {
-  /** Opt in to variable and conditional syntax; literal component tags remain unchanged. */
+  /** Opt in to variables, conditions, text templates, and bounded code templates. */
   expressions?: boolean;
 }
 export type TagNode =
@@ -13,7 +21,8 @@ export type TagNode =
   | TagLeafNode
   | TagContainerNode
   | TagVariableNode
-  | TagConditionalNode;
+  | TagConditionalNode
+  | TagCodeTemplateNode;
 
 interface NamedTag extends Parent {
   name: string;
@@ -39,6 +48,12 @@ export interface TagVariableNode extends Node {
   type: "tagVariable";
   path: string;
 }
+export interface TagCodeTemplateNode extends Node {
+  type: "tagCodeTemplate";
+  lang?: string | null;
+  meta?: string | null;
+  template: TagTextTemplate;
+}
 export interface TagBranchNode extends Parent {
   type: "tagBranch";
   condition: string | null;
@@ -58,6 +73,7 @@ declare module "mdast" {
     tagLeaf: TagLeafNode;
     tagContainer: TagContainerNode;
     tagConditional: TagConditionalNode;
+    tagCodeTemplate: TagCodeTemplateNode;
   }
   interface RootContentMap {
     tagBranch: TagBranchNode;
@@ -66,10 +82,11 @@ declare module "mdast" {
     tagContainer: TagContainerNode;
     tagVariable: TagVariableNode;
     tagConditional: TagConditionalNode;
+    tagCodeTemplate: TagCodeTemplateNode;
   }
 }
 export interface TagDiagnostic {
-  id?: "tag-content-limit";
+  id?: string;
   message: string;
   line?: number;
   column?: number;

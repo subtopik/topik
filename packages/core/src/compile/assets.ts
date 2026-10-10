@@ -630,8 +630,14 @@ function addMapping(
 function hasAccessibleMeaning(occurrence: TopikAssetOccurrence): boolean {
   if (occurrence.role === "download")
     return (occurrence.semantics.linkLabel?.trim().length ?? 0) > 0;
+  // Templates declare accessible authoring intent without resolving application context.
   if (occurrence.slot.startsWith("figure."))
-    return (occurrence.semantics.alt?.trim().length ?? 0) > 0;
+    return (
+      (occurrence.semantics.alt?.trim().length ?? 0) > 0 ||
+      occurrence.semantics.altTemplate?.segments.some(
+        (segment) => segment.type === "variable" || segment.value.trim().length > 0,
+      ) === true
+    );
   return (
     occurrence.semantics.decorative === true || (occurrence.semantics.alt?.trim().length ?? 0) > 0
   );

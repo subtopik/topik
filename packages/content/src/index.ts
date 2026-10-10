@@ -8,12 +8,15 @@ export type {
 } from "./registry.js";
 export type {
   Branch,
+  AuthoredAttributeValue,
+  CodeTemplate,
   Component,
   Conditional,
   ContentDocument,
   Diagnostic,
   ParseResult,
   Scalar,
+  TextTemplate,
   Variable,
 } from "./model.js";
 export type { Expression } from "./expressions.js";

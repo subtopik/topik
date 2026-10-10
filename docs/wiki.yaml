@@ -9,6 +9,7 @@ navigation:
     children:
       - content-design
       - autolinks
+      - templates
       - rendering
   - type: group
     title: Resources

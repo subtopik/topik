@@ -24,8 +24,9 @@ Status: {% badge variant="success" %}ready{% /badge %}.
 ```
 
 Block tags occupy their own lines. Inline tags appear inside prose. Properties
-are literal strings, numbers, or booleans; Topik checks their names, values, and
-placement against the component schema.
+are literal strings, numbers, or booleans; selected built-in text properties also
+accept explicit [text templates](./templates.md). Topik checks their names,
+values, and placement against the component schema.
 
 ## Supported Markdown
 
@@ -83,8 +84,9 @@ when evaluating or rendering; formatting preserves the distinction between an
 absent property and an explicitly empty value such as `title=""`.
 
 Applications can add schemas through `config.components`, but cannot replace the
-built-in schemas. Custom schemas are declarative. JavaScript callbacks, imports,
-partials, and expressions inside component properties are unsupported. See the
+built-in schemas. Custom schemas are declarative and their properties remain
+literal-only. JavaScript callbacks, imports, partials, and arbitrary expressions
+inside component properties are unsupported. See the
 [package reference](https://github.com/subtopik/topik/blob/main/packages/content/README.md)
 for a complete custom-schema example.
 
@@ -108,6 +110,11 @@ its reference is evaluated.
 Evaluation selects a branch and inserts values as literal text. A value such as
 `**Ada**` stays literal text rather than becoming Markdown emphasis. Null and
 empty-string values insert no text. Empty prose wrappers are omitted.
+
+Use `t"..."` for supported component text attributes and a paired
+`{% template code %}` scope for a fenced code example. Ordinary quoted attributes,
+inline code, and unwrapped code blocks remain literal. See [Text and code
+templates](./templates.md) for supported locations, escaping, and value rules.
 
 Keep the authored source when saving content. Saving evaluated output would
 replace variable references with their current values and discard other branches.
@@ -163,6 +170,6 @@ AST APIs require independent plain-data nodes: cycles, shared node objects,
 getters, and executable values are refused. Applications manipulating trees must
 preserve those constraints as well as the component rules.
 
-The current content schema version is `0.2.0` and `FORMAT_VERSION` is `1`. These
+The current content schema version is `0.2.1` and `FORMAT_VERSION` is `1`. These
 versions describe the content contract, separately from package versions and the
 `apiVersion` of [resource envelopes](../resources/index.md).

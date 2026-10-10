@@ -1,5 +1,7 @@
 import type { TreeNode } from "./model.js";
-import type { Registry } from "./registry.js";
+import type { Registry, ValidationIssue } from "./registry.js";
+import { validPath } from "./expressions.js";
+import { CONTENT_LIMITS } from "./limits.js";
 
 import {
   parentTypes as parents,
@@ -17,6 +19,104 @@ function string(value: unknown): value is string {
 
 function optionalString(value: unknown): boolean {
   return value === undefined || value === null || string(value);
+}
+
+function dense(array: unknown[]): boolean {
+  const keys = Object.keys(array);
+  return keys.length === array.length && keys.every((key, index) => key === String(index));
+}
+
+function controls(value: string, allowTab = false, includeSpace = false): boolean {
+  for (let index = 0; index < value.length; index++) {
+    const unit = value.charCodeAt(index);
+    if ((unit < (includeSpace ? 33 : 32) && !(allowTab && unit === 9)) || unit === 127) return true;
+  }
+  return false;
+}
+
+/** Admission runs after descriptor-based plain-data checks, before cloning or callbacks. */
+export function textTemplateProblem(
+  value: unknown,
+  code = false,
+  seen = new Set<object>(),
+): ValidationIssue | undefined {
+  const invalid = (message: string): ValidationIssue => ({ id: "topik-template-syntax", message });
+  if (
+    !record(value) ||
+    value.type !== "topikTextTemplate" ||
+    Object.keys(value).some((key) => key !== "type" && key !== "segments") ||
+    !Array.isArray(value.segments) ||
+    !dense(value.segments)
+  )
+    return invalid("Templates require a discriminator and an array of segments");
+  const claim = (object: object): boolean => {
+    if (seen.has(object)) return false;
+    seen.add(object);
+    return true;
+  };
+  if (!claim(value) || !claim(value.segments))
+    return invalid("Template data must not be shared between authoring positions");
+  for (const segment of value.segments) {
+    if (!record(segment) || !claim(segment))
+      return invalid("Templates require independent plain-data segment objects");
+    if (segment.type === "literal") {
+      if (
+        Object.keys(segment).some((key) => key !== "type" && key !== "value") ||
+        typeof segment.value !== "string"
+      )
+        return invalid("Literal template segments require a string value");
+      if (code ? /[\0\r]/.test(segment.value) : controls(segment.value))
+        return {
+          id: "topik-template-control",
+          message: code
+            ? "Code template literals cannot contain NUL or carriage returns"
+            : "Attribute template literals must be single-line without controls",
+        };
+    } else if (segment.type === "variable") {
+      if (Object.keys(segment).some((key) => key !== "type" && key !== "path"))
+        return invalid("Variable template segments require only a path");
+      if (Array.isArray(segment.path) && segment.path.length > CONTENT_LIMITS.treeNodes)
+        return { id: "topik-content-limit", message: "Template path exceeds the item limit" };
+      if (!Array.isArray(segment.path) || !dense(segment.path) || !validPath(segment.path))
+        return { id: "topik-variable-path", message: "Invalid template variable path" };
+      if (!claim(segment.path))
+        return invalid("Template paths must not be shared between authoring positions");
+    } else return invalid("Unsupported template segment discriminator");
+  }
+}
+
+export function codeTemplateProblem(
+  node: TreeNode,
+  seen = new Set<object>(),
+): ValidationIssue | undefined {
+  if (
+    Object.keys(node).some(
+      (key) => !["type", "lang", "meta", "template", "position", "data"].includes(key),
+    )
+  )
+    return {
+      id: "topik-code-template-structure",
+      message: "Code templates have one authoritative template payload",
+    };
+  if (
+    !optionalString(node.lang) ||
+    !optionalString(node.meta) ||
+    node.lang === "" ||
+    node.meta === "" ||
+    (node.meta != null && !node.lang) ||
+    (typeof node.lang === "string" && controls(node.lang, false, true)) ||
+    (typeof node.meta === "string" && controls(node.meta, true))
+  )
+    return {
+      id: "topik-code-template-structure",
+      message: "Code template language and metadata must fit one fence header",
+    };
+  if (node.lang === "mermaid")
+    return {
+      id: "topik-code-template-language",
+      message: "Code templates require a text code renderer",
+    };
+  return textTemplateProblem(node.template, true, seen);
 }
 
 /** Validate mdast fields and grammar before callbacks, cloning, or serialization. */

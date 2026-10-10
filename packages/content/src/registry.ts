@@ -1,4 +1,4 @@
-import type { Component, Scalar } from "./model.js";
+import type { AuthoredAttributeValue, Component, Scalar } from "./model.js";
 import { accordionDefinition } from "./extensions/accordion.js";
 import { badgeDefinition } from "./extensions/badge.js";
 import { calloutDefinition } from "./extensions/callout.js";
@@ -17,7 +17,7 @@ import { stepDefinition, stepsDefinition } from "./extensions/steps.js";
 import { tabDefinition, tabsDefinition } from "./extensions/tabs.js";
 import { underlineDefinition } from "./extensions/underline.js";
 
-export const TOPIK_CONTENT_SCHEMA_VERSION = "0.2.0";
+export const TOPIK_CONTENT_SCHEMA_VERSION = "0.2.1";
 export const CALLOUT_VARIANTS = ["info", "tip", "warning", "danger"] as const;
 export const BADGE_VARIANTS = ["neutral", "info", "success", "warning", "danger"] as const;
 export const QUIZ_QUESTION_TYPES = ["single-choice", "multiple-choice"] as const;
@@ -38,7 +38,14 @@ type AttributeOptions<T extends Scalar> = {
 };
 
 export type AttributeDefinition =
-  | (AttributeOptions<string> & { type: "string"; values?: never; min?: never; max?: never })
+  | (AttributeOptions<string> & {
+      type: "string";
+      /** Canonical text slots alone admit explicit authored templates. */
+      interpolation?: "text";
+      values?: never;
+      min?: never;
+      max?: never;
+    })
   | (AttributeOptions<string> & {
       type: "enum";
       values: readonly string[];
@@ -81,7 +88,10 @@ export interface ComponentSchema {
 /** Runtime definitions additionally carry the canonical catalog's semantic rules. */
 export interface ComponentDefinition extends ComponentSchema {
   /** Only for rules depending on sibling properties, such as quiz answers. */
-  validate?: (component: Component, effectiveProps: Record<string, Scalar>) => ValidationIssue[];
+  validate?: (
+    component: Component,
+    effectiveProps: Record<string, AuthoredAttributeValue>,
+  ) => ValidationIssue[];
 }
 
 export type Registry = Record<string, ComponentDefinition>;
@@ -104,24 +114,41 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
+function textAttributes(
+  definition: ComponentDefinition,
+  names: readonly string[],
+): ComponentDefinition {
+  const attributes = { ...definition.attributes };
+  for (const name of names) {
+    const attribute = attributes[name];
+    if (attribute.type !== "string" || attribute.asset || attribute.assetReference)
+      throw new Error("Template slots must be plain string attributes");
+    attributes[name] = { ...attribute, interpolation: "text" };
+  }
+  return { ...definition, attributes };
+}
+
 const authoredComponents = {
-  accordion: accordionDefinition,
+  accordion: textAttributes(accordionDefinition, ["title"]),
   badge: badgeDefinition,
-  callout: calloutDefinition,
-  card: cardDefinition,
+  callout: textAttributes(calloutDefinition, ["title"]),
+  card: textAttributes(cardDefinition, ["title"]),
   cardGrid: cardGridDefinition,
   codeGroup: codeGroupDefinition,
-  codeTab: codeTabDefinition,
+  codeTab: {
+    ...textAttributes(codeTabDefinition, ["title"]),
+    children: { nodes: ["code", "topikCodeTemplate"], min: 1 },
+  },
   choice: choiceDefinition,
   explanation: explanationDefinition,
-  figure: figureDefinition,
+  figure: textAttributes(figureDefinition, ["alt", "caption"]),
   math: mathDefinition,
   mathInline: mathInlineDefinition,
   question: questionDefinition,
   quiz: quizDefinition,
-  step: stepDefinition,
+  step: textAttributes(stepDefinition, ["title"]),
   steps: stepsDefinition,
-  tab: tabDefinition,
+  tab: textAttributes(tabDefinition, ["title"]),
   tabs: tabsDefinition,
   underline: underlineDefinition,
 } satisfies Registry;
@@ -174,7 +201,7 @@ export type TopikComponentName = keyof typeof topikComponents;
 export function getEffectiveProps(
   component: Pick<Component, "name" | "props">,
   registry: Registry = components,
-): Record<string, Scalar> {
+): Record<string, AuthoredAttributeValue> {
   const definition = Object.hasOwn(registry, component.name) ? registry[component.name] : undefined;
   if (!definition) throw new Error(`Unknown component ${component.name}`);
   const defaults: Record<string, Scalar> = {};

@@ -1,4 +1,4 @@
-import type { ListItem, Node, Nodes } from "mdast";
+import type { Code, ListItem, Node, Nodes } from "mdast";
 import type { Extension, Handle } from "mdast-util-from-markdown";
 import {
   TAG_LIMITS,
@@ -10,12 +10,17 @@ import {
   type TagDiagnostic,
   type TagSyntaxOptions,
   type TagTextNode,
+  type TagTextTemplate,
+  type TagAttributeValue,
 } from "./types.js";
-import { parseTag, validateDeclarations } from "./grammar.js";
+import { invalidCodeTemplateHeader, parseTag, validateDeclarations } from "./grammar.js";
+import { parseTextTemplate, TemplateSyntaxError } from "./templates.js";
 
 // Structural traversal also visits children of nodes supplied by other plugins.
 interface TreeNode extends Node {
   children?: TreeNode[];
+  template?: TagTextTemplate;
+  attributes?: Record<string, TagAttributeValue | null | undefined> | null;
 }
 interface Marker extends Node {
   type: "topikTagMarker";
@@ -23,10 +28,14 @@ interface Marker extends Node {
   value: string;
 }
 interface Frame {
-  node: TagTextNode | TagContainerNode | TagConditionalNode;
+  node: TagTextNode | TagContainerNode | TagConditionalNode | CodeTemplateFrame;
   marker: Marker;
   name: string;
   target: TreeNode[];
+}
+interface CodeTemplateFrame extends TreeNode {
+  type: "tagCodeTemplateFrame";
+  children: TreeNode[];
 }
 
 function isMarker(node: TreeNode): node is Marker {
@@ -51,13 +60,23 @@ function assertTreeLimits(root: TreeNode): void {
       limitError(`Tag tree exceeds the depth limit of ${TAG_LIMITS.treeDepth}`, node);
     const children = node.children ?? [];
     count += children.length;
+    const templates = node.type === "tagCodeTemplate" && node.template ? [node.template] : [];
+    for (const value of Object.values(node.attributes ?? {}))
+      if (value && typeof value === "object" && value.type === "topikTextTemplate")
+        templates.push(value);
+    for (const template of templates) count += 1 + template.segments.length;
     if (count > TAG_LIMITS.treeNodes)
       limitError(`Tag tree exceeds the node limit of ${TAG_LIMITS.treeNodes}`, node);
     for (const child of children) pending.push({ node: child, depth: depth + 1 });
   }
 }
 
-function convert(root: TreeNode, declarations: TagDeclarations, options: TagSyntaxOptions): void {
+function convert(
+  root: TreeNode,
+  declarations: TagDeclarations,
+  options: TagSyntaxOptions,
+  closedFences: WeakSet<Code>,
+): void {
   assertTreeLimits(root);
   const errors: TagDiagnostic[] = [];
   walk(root);
@@ -84,13 +103,58 @@ function convert(root: TreeNode, declarations: TagDeclarations, options: TagSynt
     function close(name: string, marker: Marker): void {
       const current = stack.at(-1);
       if (!current || current.name !== name) {
-        errors.push(location(`Mismatched closing tag ${name}`, marker));
+        errors.push({
+          ...location(`Mismatched closing tag ${name}`, marker),
+          ...(name === "template code" || current?.node.type === "tagCodeTemplateFrame"
+            ? { id: "topik-code-template-structure" }
+            : {}),
+        });
         return;
       }
       current.node.position =
         current.marker.position && marker.position
           ? { start: current.marker.position.start, end: marker.position.end }
           : undefined;
+      if (current.node.type === "tagCodeTemplateFrame") {
+        const node = current.node;
+        const code = node.children[0] as Code | undefined;
+        if (node.children.length !== 1 || code?.type !== "code" || !closedFences.has(code)) {
+          errors.push({
+            ...location(
+              "Code template scope requires exactly one closed fenced code block",
+              current.marker,
+            ),
+            id: "topik-code-template-structure",
+          });
+        } else if (invalidCodeTemplateHeader(code.lang, code.meta)) {
+          errors.push({
+            ...location("Code template language and metadata must fit one fence header", code),
+            id: "topik-code-template-structure",
+          });
+        } else if (code.lang === "mermaid") {
+          errors.push({
+            ...location("Code templates cannot use the interpreted mermaid language", code),
+            id: "topik-code-template-language",
+          });
+        } else {
+          try {
+            const template = parseTextTemplate(
+              code.value.replaceAll("\r\n", "\n").replaceAll("\r", "\n"),
+              true,
+            );
+            Object.assign(node, {
+              type: "tagCodeTemplate",
+              lang: code.lang ?? null,
+              meta: code.meta ?? null,
+              template,
+            });
+            delete (node as TreeNode).children;
+          } catch (error) {
+            if (!(error instanceof TemplateSyntaxError)) throw error;
+            errors.push({ ...location(error.message, code), id: error.id });
+          }
+        }
+      }
       if (current.node.type === "tagConditional") {
         for (const branch of current.node.children) {
           const end = branch.children.at(-1)?.position?.end;
@@ -106,7 +170,14 @@ function convert(root: TreeNode, declarations: TagDeclarations, options: TagSynt
         append(child);
         continue;
       }
-      const tag = parseTag(child.value, options);
+      let tag: ReturnType<typeof parseTag>;
+      try {
+        tag = parseTag(child.value, options);
+      } catch (error) {
+        if (!(error instanceof TemplateSyntaxError)) throw error;
+        errors.push({ ...location(error.message, child), id: error.id });
+        continue;
+      }
       if (typeof tag === "string") {
         errors.push(location(tag, child));
         continue;
@@ -114,6 +185,29 @@ function convert(root: TreeNode, declarations: TagDeclarations, options: TagSynt
       // The tokenizer knows the context, including inside foreign node types.
       const phrasing = child.kind === "inline";
       switch (tag.kind) {
+        case "codeTemplate": {
+          if (phrasing) {
+            errors.push({
+              ...location("Code template markers require their own block lines", child),
+              id: "topik-code-template-structure",
+            });
+          } else if (tag.close) {
+            close("template code", child);
+          } else {
+            if (stack.some((frame) => frame.node.type === "tagCodeTemplateFrame"))
+              errors.push({
+                ...location("Code template scopes cannot nest", child),
+                id: "topik-code-template-structure",
+              });
+            const node: CodeTemplateFrame = {
+              type: "tagCodeTemplateFrame",
+              children: [],
+              position: child.position,
+            };
+            open({ node, marker: child, name: "template code", target: node.children });
+          }
+          break;
+        }
         case "variable":
           if (!phrasing) errors.push(location("Variable tag is not valid here", child));
           else
@@ -131,7 +225,12 @@ function convert(root: TreeNode, declarations: TagDeclarations, options: TagSynt
             current.node.type !== "tagConditional" ||
             current.node.children.length > 1
           ) {
-            errors.push(location("Misplaced else tag", child));
+            errors.push({
+              ...location("Misplaced else tag", child),
+              ...(current?.node.type === "tagCodeTemplateFrame"
+                ? { id: "topik-code-template-structure" }
+                : {}),
+            });
           } else {
             const branch: TagBranchNode = {
               type: "tagBranch",
@@ -203,7 +302,12 @@ function convert(root: TreeNode, declarations: TagDeclarations, options: TagSynt
       }
     }
     for (const current of stack)
-      errors.push(location(`Unclosed tag ${current.name}`, current.marker));
+      errors.push({
+        ...location(`Unclosed tag ${current.name}`, current.marker),
+        ...(current.node.type === "tagCodeTemplateFrame"
+          ? { id: "topik-code-template-structure" }
+          : {}),
+      });
     // Markdown saw separate markers and body blocks. Once grouped, only gaps
     // between the item's direct children count toward its spread flag.
     if (
@@ -226,15 +330,29 @@ export function tagFromMarkdown(
   options: TagSyntaxOptions = {},
 ): Extension {
   validateDeclarations(declarations, options);
+  // Micromark emits a fence event only for a valid opening/closing fence.
+  // Counting events avoids source heuristics around list/quote indentation.
+  const fenceCounts = new WeakMap<Code, number>();
+  const closedFences = new WeakSet<Code>();
   const exit: Handle = function (token) {
     this.exit(token);
   };
   return {
-    enter: { topikTextTag: enter("inline"), topikFlowTag: enter("block") },
+    enter: {
+      topikTextTag: enter("inline"),
+      topikFlowTag: enter("block"),
+      codeFencedFence() {
+        const node = this.stack.findLast((item) => item.type === "code") as Code | undefined;
+        if (!node) return;
+        const count = (fenceCounts.get(node) ?? 0) + 1;
+        fenceCounts.set(node, count);
+        if (count === 2) closedFences.add(node);
+      },
+    },
     exit: { topikTextTag: exit, topikFlowTag: exit },
     transforms: [
       (tree) => {
-        convert(tree, declarations, options);
+        convert(tree, declarations, options, closedFences);
       },
     ],
   };

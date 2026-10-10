@@ -24,9 +24,89 @@ export function tagSyntax(
 ): Extension {
   validateDeclarations(declarations, options);
   return {
-    flow: { 123: { tokenize: tokenizer(true) } },
+    flow: {
+      123: options.expressions
+        ? [{ tokenize: codeTemplateTokenizer }, { tokenize: tokenizer(true) }]
+        : { tokenize: tokenizer(true) },
+    },
     text: { 123: { tokenize: tokenizer(false) } },
   };
+
+  // Speculate on the complete special head before ordinary declaration placement.
+  // Reserving the name alone would break custom inline `template` components.
+  function codeTemplateTokenizer(
+    effects: Parameters<Tokenizer>[0],
+    ok: Parameters<Tokenizer>[1],
+    nok: Parameters<Tokenizer>[2],
+  ): ReturnType<Tokenizer> {
+    let word = "template";
+    let index = 0;
+    return start;
+    function start(code: Code): State | undefined {
+      effects.enter("topikFlowTag");
+      effects.consume(code);
+      return percent;
+    }
+    function percent(code: Code): State | undefined {
+      if (code !== 37) return nok(code);
+      effects.consume(code);
+      return beforeWord;
+    }
+    function beforeWord(code: Code): State | undefined {
+      if (horizontal(code)) {
+        effects.consume(code);
+        return beforeWord;
+      }
+      if (code === 47) {
+        effects.consume(code);
+        return name;
+      }
+      return name(code);
+    }
+    function name(code: Code): State | undefined {
+      if (code !== word.charCodeAt(index)) return nok(code);
+      effects.consume(code);
+      if (++index < word.length) return name;
+      return word === "template" ? separator : afterCode;
+    }
+    function separator(code: Code): State | undefined {
+      if (!horizontal(code)) return nok(code);
+      effects.consume(code);
+      word = "code";
+      index = 0;
+      return beforeCode;
+    }
+    function beforeCode(code: Code): State | undefined {
+      if (horizontal(code)) {
+        effects.consume(code);
+        return beforeCode;
+      }
+      return name(code);
+    }
+    function afterCode(code: Code): State | undefined {
+      if (horizontal(code)) {
+        effects.consume(code);
+        return afterCode;
+      }
+      if (code !== 37) return nok(code);
+      effects.consume(code);
+      return close;
+    }
+    function close(code: Code): State | undefined {
+      if (code !== 125) return nok(code);
+      effects.consume(code);
+      return tail;
+    }
+    function tail(code: Code): State | undefined {
+      if (horizontal(code)) {
+        effects.consume(code);
+        return tail;
+      }
+      if (!lineEnd(code)) return nok(code);
+      effects.exit("topikFlowTag");
+      return ok(code);
+    }
+  }
 
   function tokenizer(flow: boolean): Tokenizer {
     return (effects, ok, nok) => {

@@ -10,6 +10,7 @@ import type {
   WikiPageNavNode,
   WikiTabNavNode,
 } from "@topik/schema/wiki/v1";
+import { parseTopikResourceReference } from "@topik/content";
 
 const INTERNAL_WIKI_ORIGIN = "https://topik.invalid";
 
@@ -158,13 +159,21 @@ export function findWikiPageAncestors(
   return resolved.pageByName.get(pageName)?.ancestors ?? [];
 }
 
-/** Resolves an internal Markdown link against the logical source path of its current page. */
+/** Resolves compiled WikiPage references by name, or legacy links against their source context. */
 export function resolveWikiContentHref(
   href: string,
   currentPageName: string,
   resolved: ResolvedWikiNavigation,
 ): ResolvedWikiContentLink | null {
   if (href.startsWith("asset:")) return null;
+  const reference = parseTopikResourceReference(href);
+  if (reference) {
+    if (reference.type !== "WikiPage") return null;
+    const page = resolved.pageByName.get(reference.name);
+    return page
+      ? { page, route: page.route, hash: reference.hash, search: reference.search }
+      : null;
+  }
   const currentPage = resolved.pageByName.get(currentPageName);
   if (!currentPage) return null;
 

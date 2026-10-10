@@ -7,7 +7,7 @@ allowBuilds:
   sharp: true
 
 catalog:
-  "@changesets/cli": 3.0.1
+  "@changesets/cli": 3.0.3
   "@drizzle-team/brocli": ^0.12.0
   "@storybook/addon-a11y": 10.6.1
   "@storybook/addon-vitest": 10.6.1
@@ -20,7 +20,7 @@ catalog:
   github-slugger: ^2.0.0
   json-schema-to-typescript: ^15.0.4
   mdast-util-directive: ^3.1.0
-  mdast-util-from-markdown: ^2.0.3
+  mdast-util-from-markdown: ^2.1.0
   mdast-util-frontmatter: ^2.0.1
   mdast-util-gfm: ^3.1.0
   mdast-util-gfm-footnote: ^2.1.0

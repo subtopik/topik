@@ -12,7 +12,9 @@ import { validateTopikPathSet } from "../assets/path";
 import { serializeTopikJson } from "../assets/json";
 import {
   FORMAT_VERSION,
+  TOPIK_CONTENT_SCHEMA_VERSION,
   extractTopikAssetOccurrences,
+  parseTopikResourceReference,
   rewriteTopikNavigationReferences,
   type TopikNavigationReference,
 } from "@topik/content";
@@ -48,9 +50,10 @@ export const SOURCE_WRITER_DESCRIPTOR = {
   manifest: 1,
   sourceVersions: [0, 1],
   formatter: FORMAT_VERSION,
+  contentSchema: TOPIK_CONTENT_SCHEMA_VERSION,
   resourceSchema: "v1",
-  references: "source-links-v2",
-  provenance: 4,
+  references: "source-links-v3",
+  provenance: 5,
   graph: "authored-resource-bytes-v1",
   packageVersion: corePackage.version,
 } as const;
@@ -314,6 +317,12 @@ export async function readSourceProject(input: {
                 candidate.type === "Course" && module.spec.course === candidate.name,
             )
           : undefined;
+      const assets =
+        portable.type === "Guide" || portable.type === "WikiPage" || portable.type === "CoursePage"
+          ? extractTopikAssetOccurrences(portable.spec.content.value, {
+              includeGenericLinkCandidates: true,
+            }).filter((occurrence) => occurrence.kind === "asset")
+          : [];
       const base = {
         resource,
         apiVersion: portable.apiVersion,
@@ -334,20 +343,9 @@ export async function readSourceProject(input: {
           ...(wiki ? { wiki: `Wiki/${wiki.name}` } : {}),
           ...(course ? { course: `Course/${course.name}` } : {}),
         },
-        assetReferences:
-          portable.type === "Guide" ||
-          portable.type === "WikiPage" ||
-          portable.type === "CoursePage"
-            ? [
-                ...new Set(
-                  extractTopikAssetOccurrences(portable.spec.content.value, {
-                    includeGenericLinkCandidates: true,
-                  })
-                    .filter((occurrence) => occurrence.reference.startsWith("asset:"))
-                    .map((occurrence) => occurrence.reference.slice(6)),
-                ),
-              ].sort()
-            : [],
+        assetReferences: [
+          ...new Set(assets.map((occurrence) => occurrence.reference.slice(6))),
+        ].sort(),
       };
       const configuration = configurations.find((config) => config.path === source.config)!;
       if (path === source.config) {
@@ -415,15 +413,19 @@ export async function readSourceProject(input: {
           configValues.get(source.config)!,
           configuration,
         ),
-        references: wiki
-          ? sourceReferences(markdown.body, portable.name, wiki)
-          : course
-            ? courseSourceReferences(
-                markdown.body,
-                portable.name,
-                courseContexts[`Course/${course.name}`],
-              )
-            : [],
+        references: sourceReferences(
+          markdown.body,
+          portable.name,
+          resource,
+          compilation,
+          new Set(
+            assets
+              .filter((occurrence) => occurrence.slot === "link.href")
+              .map((occurrence) => occurrence.treePath.join("/")),
+          ),
+          wiki,
+          course ? courseContexts[`Course/${course.name}`] : undefined,
+        ),
       });
     }
   }
@@ -588,47 +590,57 @@ function markdownOrigins(
   return result;
 }
 
-function courseSourceReferences(
-  source: string,
-  name: string,
-  context: CourseReferenceContext,
-): SourceDocumentProvenance["references"] {
-  const navigation = resolveCourseNavigation(context);
-  const references: Array<
-    TopikNavigationReference & { target?: string; search?: string; hash?: string }
-  > = [];
-  const inspected = rewriteTopikNavigationReferences(source, (reference) => {
-    const target = resolveCourseContentHref(reference.href, name, navigation);
-    references.push({
-      ...reference,
-      ...(target
-        ? { target: `CoursePage/${target.page.page}`, search: target.search, hash: target.hash }
-        : {}),
-    });
-    return undefined;
-  });
-  if (!inspected.ok) throw new TypeError("Course reference provenance cannot be inspected");
-  return references;
-}
-
 function sourceReferences(
   source: string,
   name: string,
-  wiki: Wiki,
+  resource: string,
+  compilation: ManifestCompileResult,
+  assetPositions: ReadonlySet<string>,
+  wiki?: Wiki,
+  course?: CourseReferenceContext,
 ): SourceDocumentProvenance["references"] {
-  const resolved = resolveWikiNavigation(wiki.spec.navigation ?? [], {
-    sourceVersion: wiki.spec.sourceVersion,
-  });
+  const resolved = wiki
+    ? resolveWikiNavigation(wiki.spec.navigation ?? [], { sourceVersion: wiki.spec.sourceVersion })
+    : undefined;
+  const courseNavigation = course ? resolveCourseNavigation(course) : undefined;
+  const compiled = new Map(
+    compilation.references
+      .filter((reference) => reference.resource === resource)
+      .map((reference) => [reference.position, reference.reference]),
+  );
   const references: Array<
     TopikNavigationReference & { target?: string; search?: string; hash?: string }
   > = [];
   const inspected = rewriteTopikNavigationReferences(source, (reference) => {
-    const target = resolveWikiContentHref(reference.href, name, resolved);
+    // Preserve the compiler's per-occurrence download identity. A legacy route lookup
+    // must not turn its authored file path into provenance for a different page link.
+    if (reference.kind === "link" && assetPositions.has(reference.position)) {
+      references.push(reference);
+      return undefined;
+    }
+    const identity =
+      compiled.get(reference.position) ?? parseTopikResourceReference(reference.href);
+    const target = resolved ? resolveWikiContentHref(reference.href, name, resolved) : undefined;
+    const courseTarget = courseNavigation
+      ? resolveCourseContentHref(reference.href, name, courseNavigation)
+      : undefined;
     references.push({
       ...reference,
-      ...(target
-        ? { target: `WikiPage/${target.page.page}`, search: target.search, hash: target.hash }
-        : {}),
+      ...(identity
+        ? {
+            target: `${identity.type}/${identity.name}`,
+            search: identity.search,
+            hash: identity.hash,
+          }
+        : target
+          ? { target: `WikiPage/${target.page.page}`, search: target.search, hash: target.hash }
+          : courseTarget
+            ? {
+                target: `CoursePage/${courseTarget.page.page}`,
+                search: courseTarget.search,
+                hash: courseTarget.hash,
+              }
+            : {}),
     });
     return undefined;
   });

@@ -16,6 +16,6 @@ export const codeTabDefinition: ComponentDefinition = {
     title: { type: "string", required: true, description: "Visible code tab label." },
     icon: { type: "string", description: "Optional icon identifier." },
   },
-  children: { nodes: ["code"], min: 1 },
+  children: { nodes: ["code", "topikCodeTemplate", "topikCodePresentation"], min: 1 },
   allowedParents: ["codeGroup"],
 };

@@ -1,6 +1,19 @@
 import { compileManifest } from "./manifest";
 import { CompileError, type CompileResult, type CompileValidationOptions } from "./shared";
 
+export {
+  compileResourceLinks,
+  type CompileResourceLinksInput,
+  type CompiledResourceReference,
+  type CompileResourceReferenceTarget,
+} from "./links";
+export {
+  discoverGuideResources,
+  discoverWikiResources,
+  type DiscoverResourceOptions,
+  type SourceResourceDiscovery,
+} from "./discovery";
+
 export { compileWiki, pagePathToName } from "./wiki";
 export type { CompileWikiOptions } from "./wiki";
 export { compileGuides } from "./guide";
@@ -37,6 +50,8 @@ export {
 export interface CompileOptions {
   dir: string;
   validation?: CompileValidationOptions;
+  /** Optional application-supplied inventory for explicit resource references. */
+  referenceTargets?: readonly import("./links").CompileResourceReferenceTarget[];
 }
 
 /** Compile exactly the project declared by .topik.yaml in dir. */

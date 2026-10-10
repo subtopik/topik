@@ -10,6 +10,7 @@ export type {
   Branch,
   AuthoredAttributeValue,
   CodeTemplate,
+  CodePresentation,
   Component,
   Conditional,
   ContentDocument,
@@ -19,6 +20,13 @@ export type {
   TextTemplate,
   Variable,
 } from "./model.js";
+export {
+  CODE_PRESENTATION_LIMITS,
+  effectiveCodePresentationOptions,
+  type CodePresentationOptions,
+  type CodePresentationEffectiveOptions,
+  type CodeLineSelection,
+} from "./code-presentation.js";
 export type { Expression } from "./expressions.js";
 export { validateDocument } from "./validation.js";
 export { sameDocumentMeaning } from "./document-meaning.js";
@@ -66,6 +74,12 @@ export {
 } from "./rewrite";
 export { assignTopikHeadingIds, type TopikHeading } from "./headings";
 export {
+  TOPIK_RESOURCE_REFERENCE_VERSION,
+  parseTopikResourceReference,
+  serializeTopikResourceReference,
+  type TopikResourceReference,
+} from "./resource-references.js";
+export {
   rewriteTopikNavigationReferences,
   type TopikNavigationReference,
   type RewriteTopikNavigationResult,
@@ -75,6 +89,7 @@ export {
   removeInvalidTopikNavigationReferences,
   validateTopikNavigationHref,
   validateTopikHref,
+  validateTopikBrowserHref,
   type AnalyzeTopikContentOptions,
   type AnalyzeTopikContentResult,
   type TopikAnalyzedHeading,

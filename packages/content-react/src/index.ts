@@ -12,6 +12,7 @@ export {
   type RenderTopikMarkdownOptions,
   type RenderTrustedTopikTreeOptions,
   type TopikAssetResolutionDiagnostic,
+  type TopikLinkResolutionDiagnostic,
   type TopikNavigationResolutionDiagnostic,
   InvalidTopikContentError,
 } from "./core/render";
@@ -33,6 +34,7 @@ export {
   type TopikComponentName,
   type TopikComponentOverrides,
   type TopikComponentProps,
+  type TopikCodeBlockProps,
   type TopikLinkHandler,
   type TopikLinkRenderer,
   type TopikLinkRenderProps,

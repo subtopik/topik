@@ -1,5 +1,6 @@
-import type { Node, Root, RootContent } from "mdast";
+import type { Code, Node, Root, RootContent } from "mdast";
 import type { Expression } from "./expressions.js";
+import type { CodePresentationOptions } from "./code-presentation.js";
 
 export type Scalar = string | number | boolean;
 
@@ -16,6 +17,15 @@ export interface CodeTemplate extends Node {
   lang?: string | null;
   meta?: string | null;
   template: TextTemplate;
+}
+
+/** Authoritative, unevaluated options for one fenced code payload. */
+export interface CodePresentation extends Node {
+  type: "topikCodePresentation";
+  children: [Code | CodeTemplate];
+  options: CodePresentationOptions;
+  /** Decoded opaque metadata, including its separating spaces/tabs. */
+  opaqueMetaSuffix: string;
 }
 
 export interface Variable extends Node {
@@ -46,6 +56,7 @@ declare module "mdast" {
     topikComponent: Component;
     topikConditional: Conditional;
     topikCodeTemplate: CodeTemplate;
+    topikCodePresentation: CodePresentation;
   }
   interface PhrasingContentMap {
     topikComponent: Component;
@@ -56,6 +67,7 @@ declare module "mdast" {
     topikConditional: Conditional;
     topikVariable: Variable;
     topikCodeTemplate: CodeTemplate;
+    topikCodePresentation: CodePresentation;
   }
 }
 
@@ -66,6 +78,8 @@ export interface ContentDocument extends Omit<Root, "children"> {
 export interface Diagnostic {
   /** Stable machine-readable code for public compatibility adapters. */
   id?: string;
+  /** Bounded code-presentation option name; never an authored value. */
+  option?: string;
   type?: string;
   message: string;
   line?: number;
@@ -92,4 +106,6 @@ export type TreeNode = {
   lang?: string | null;
   meta?: string | null;
   template?: TextTemplate;
+  options?: CodePresentationOptions;
+  opaqueMetaSuffix?: string;
 };

@@ -10,6 +10,7 @@ import type { TagDeclarations, TagSyntaxOptions } from "./types.js";
 
 export * from "./types.js";
 export { tagSyntax, tagFromMarkdown, tagToMarkdown };
+export { writeTextTemplate } from "./templates.js";
 
 // Match the data fields used by remark-parse and remark-stringify without
 // requiring either plugin as a runtime dependency.

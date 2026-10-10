@@ -37,7 +37,16 @@ source version to `resolveWikiNavigation`.
 `sourceVersion` versions the interpretation of authored files, not a Wiki's
 revision or its resource `apiVersion`. A Wiki groups page identities into
 navigation; its pages carry the content. Source coordinates connect that
-navigation to authored files. For example:
+navigation to authored files.
+
+Code presentation is independently admitted by attributes on each fenced code block and
+content grammar capability. `sourceVersion: 1` does not activate it. Store its
+unevaluated source, template identity and all conditional branches; preview
+values and fold/wrap state create no saved changes. A metadata-only presentation
+edit preserves the code payload and complementary source bytes. Filename/title
+labels never create Asset references or source-file authority.
+
+For example:
 
 ```yaml
 id: handbook
@@ -238,6 +247,11 @@ the writer descriptor, package cohort, base tree, saved graph, candidate tree,
 operations, admitted authority and exact changes. Failures return diagnostics
 without an applicable plan. Semantic no-ops return no file changes and should
 not produce a Git commit.
+The writer descriptor includes the actual `contentSchema` and `FORMAT_VERSION`
+identities. Saved contexts with a different identity visibly refuse update plans
+and declaration additions; inspect the original source again with the intended
+compatible cohort before preparing an edit. Resource/Asset protocol identities
+remain independently admitted and are preserved.
 Known compiler failures retain their code, safe path, and available line or source
 declaration context. Content diagnostic lines refer to the body after frontmatter.
 Diagnostic output is bounded to 64 entries and 8 lines per entry; unexpected

@@ -167,10 +167,68 @@ to map each generated name to a delivered URL; see [Assets](../resources/assets.
 Missing or malformed generated references emit an asset diagnostic and omit the
 unresolved browser-facing URL.
 
-Use `resolveLink`, `renderLink`, or `onNavigateLink` on `TopikContent` when the
-application owns page URLs or client navigation. For a wiki, use the shared
-[Navigation helpers](../resources/navigation.md#resolve-navigation-in-an-application)
-to resolve source paths before applying the application's route prefix.
+Compiled document links identify resources through `ref://wiki-page/<name>` or
+`ref://guide/<name>`. The name is the destination's exact `resource.name`, not its
+route slug. Queries and heading fragments remain on the reference. Authors can
+also use this syntax directly; see [Links between pages](../resources/navigation.md#links-between-pages).
+
+Supply `resolveLink` to turn these identities into the application's browser
+URLs. Use the resource type and name as the lookup key, and retain the reference's
+query and fragment:
+
+```tsx
+import { parseTopikResourceReference } from "@topik/content";
+import { TopikContent } from "@topik/content-react/theme";
+
+const routes = new Map([
+  ["WikiPage/installation", "/docs/install"],
+  ["Guide/getting-started", "/learn/start"],
+]);
+
+function resolveLink(href: string): string | undefined {
+  const reference = parseTopikResourceReference(href);
+  if (!reference) return href;
+  const route = routes.get(`${reference.type}/${reference.name}`);
+  if (route === undefined) return undefined;
+  return `${route}${reference.search}${reference.hash ? `#${reference.hash}` : ""}`;
+}
+
+export function PublishedArticle({ source }: { source: string }) {
+  return (
+    <TopikContent
+      content={source}
+      resolveLink={resolveLink}
+      onLinkDiagnostic={(diagnostic) => console.warn(diagnostic.message)}
+    />
+  );
+}
+```
+
+The hook is optional for content without resource references. For a `ref://`
+target, return a permitted browser URL or `undefined` when the destination cannot
+be resolved. Missing hooks, thrown errors, and unsafe or still-unresolved results
+omit the `href` and emit `TOPIK_RESOURCE_REFERENCE_UNRESOLVED` through the optional
+`onLinkDiagnostic` callback. Malformed references in a trusted tree emit
+`TOPIK_RESOURCE_REFERENCE_MALFORMED`. Diagnostics contain a generic message and
+the `link.href` or `card.href` slot, without copying the destination or resolver
+exception. The renderer keeps link text and card content visible.
+
+References resolve before custom components and `renderLink` adapters receive
+their props. Server rendering emits the actual destination URL, so modified
+clicks and opening a link in a new tab work. `renderLink` selects the navigation
+component; `onNavigateLink` handles ordinary client navigation after resolution.
+Neither hook replaces `resolveLink` for a resource reference.
+
+`TopikContentProvider` also accepts `resolveLink`. Pass it directly in the options
+for `renderTopikMarkdown`, `renderTopikContent`, and `renderTrustedTopikTree` when
+using those lower-level functions. Existing ordinary-link rewriting continues to
+use `resolveLink`; returning `undefined` leaves an ordinary URL unchanged.
+
+For wiki route metadata, use the shared
+[Navigation helpers](../resources/navigation.md#resolve-navigation-in-an-application).
+Astro's `createTopikLinkResolver` builds the same hook from collection entries and
+application-supplied route callbacks; Astro loaders retain the compiled references
+in each entry's body.
 
 `components` overrides change React presentation. Content semantics and permitted
 properties remain governed by `config.components`; changing a renderer does not

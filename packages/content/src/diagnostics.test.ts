@@ -129,3 +129,27 @@ describe("diagnostic file sanitization", () => {
     },
   );
 });
+
+test("collapse diagnostics retain only the recognized option and safe source position", () => {
+  const result = validateTopikContent('~~~ts collapse="1-"\nx\n~~~');
+  expect(result.valid).toBe(false);
+  expect(result.errors).toContainEqual(
+    expect.objectContaining({
+      id: "topik-code-presentation-lines",
+      option: "collapse",
+      lines: [1],
+      column: 1,
+    }),
+  );
+  for (const option of ["collapseAfter", "PRIVATE_OPTION"])
+    expect(
+      sanitizeTopikContentDiagnostic({
+        id: "topik-code-presentation-lines",
+        type: "text",
+        level: "error",
+        lines: [],
+        message: "PRIVATE_VALUE",
+        option,
+      }),
+    ).not.toHaveProperty("option");
+});

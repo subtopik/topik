@@ -3,6 +3,7 @@ import { sanitizeTopikContentDiagnostic, type TopikContentDiagnostic } from "./d
 import { transformDocument, type RenderableTreeNode } from "./render.js";
 import { prepareSource } from "./source.js";
 import { TemplateEvaluationError } from "./evaluate.js";
+import { ContentLimitError } from "./limits.js";
 
 export interface CompileTopikContentOptions {
   file?: string;
@@ -51,7 +52,10 @@ export function compileTopikContent(
     };
   } catch (error) {
     const diagnostic = sanitizeTopikContentDiagnostic({
-      id: error instanceof TemplateEvaluationError ? error.id : "topik-transform-failed",
+      id:
+        error instanceof TemplateEvaluationError || error instanceof ContentLimitError
+          ? error.id
+          : "topik-transform-failed",
       type: error instanceof TemplateEvaluationError ? error.type : "document",
       level: error instanceof TemplateEvaluationError ? "error" : "critical",
       message: "",

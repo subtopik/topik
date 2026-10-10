@@ -17,7 +17,7 @@ import { stepDefinition, stepsDefinition } from "./extensions/steps.js";
 import { tabDefinition, tabsDefinition } from "./extensions/tabs.js";
 import { underlineDefinition } from "./extensions/underline.js";
 
-export const TOPIK_CONTENT_SCHEMA_VERSION = "0.2.1";
+export const TOPIK_CONTENT_SCHEMA_VERSION = "0.2.2";
 export const CALLOUT_VARIANTS = ["info", "tip", "warning", "danger"] as const;
 export const BADGE_VARIANTS = ["neutral", "info", "success", "warning", "danger"] as const;
 export const QUIZ_QUESTION_TYPES = ["single-choice", "multiple-choice"] as const;
@@ -72,6 +72,8 @@ export type ChildConstraint =
 export interface ValidationIssue {
   id: string;
   message: string;
+  /** Safe authored presentation option name, never a supplied value. */
+  option?: string;
 }
 
 /** Declarative schema accepted in application configuration. */
@@ -138,7 +140,7 @@ const authoredComponents = {
   codeGroup: codeGroupDefinition,
   codeTab: {
     ...textAttributes(codeTabDefinition, ["title"]),
-    children: { nodes: ["code", "topikCodeTemplate"], min: 1 },
+    children: { nodes: ["code", "topikCodeTemplate", "topikCodePresentation"], min: 1 },
   },
   choice: choiceDefinition,
   explanation: explanationDefinition,

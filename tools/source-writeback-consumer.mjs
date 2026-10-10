@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
-import { parseDocument, sameDocumentMeaning } from "@topik/content";
+import {
+  parseDocument,
+  sameDocumentMeaning,
+  writeDocument,
+  extractTopikAssetOccurrences,
+  TOPIK_CONTENT_SCHEMA_VERSION,
+} from "@topik/content";
 import {
   readSourceProject,
   planSourceUpdates,
@@ -8,6 +14,7 @@ import {
   addSourceToProject,
   digestSourceTree,
   SOURCE_WRITER_DESCRIPTOR,
+  validateTopikMaterializationRecord,
 } from "@topik/core";
 
 const encode = (value) => new TextEncoder().encode(value);
@@ -329,10 +336,177 @@ export async function verifyCourseSourceConsumer(packageCohort = "c".repeat(64))
   assertCreatedResources(added.plan.candidate.compilation.resources);
 }
 
+/** Guide and Wiki plans retain the unevaluated presentation grammar in packed artifacts. */
+export async function verifyPresentationSourceConsumer(packageCohort = "c".repeat(64)) {
+  assert.equal(SOURCE_WRITER_DESCRIPTOR.contentSchema, TOPIK_CONTENT_SCHEMA_VERSION);
+  const png = Buffer.from(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000000500010d0a2db40000000049454e44ae426082",
+    "hex",
+  );
+  const body = [
+    "# Original",
+    "",
+    '```ts filename="missing.png" title="A &#38;amp; label" highlight="1,2" lines collapse="2"  legacy&#38;amp; &#92; &#96;',
+    "\tconst first = 1;  ",
+    "",
+    "```",
+    "",
+    "{% if $install %}",
+    "{% template code %}",
+    '```sh title="Install"',
+    "npm install {% $package.name %}",
+    "```",
+    "{% /template code %}",
+    "{% else /%}",
+    '```text title="Alternative"',
+    "![Code only](missing.png)",
+    "```",
+    "{% /if %}",
+    "",
+    "![Actual image](hero.png)",
+    "",
+  ].join("\r\n");
+  const presentations = (source) => {
+    const parsed = parseDocument(source);
+    assert.ok(parsed.ok, JSON.stringify(parsed));
+    const nodes = [];
+    const visit = (node) => {
+      if (node.type === "topikCodePresentation") nodes.push(node);
+      node.children?.forEach(visit);
+    };
+    visit(parsed.document);
+    assert.equal(nodes.length, 3);
+    return { document: parsed.document, nodes };
+  };
+  for (const kind of ["collection", "wiki"]) {
+    const directory = kind === "collection" ? "guides" : "docs";
+    const config = `${directory}/config.yaml`;
+    const path = `${directory}/page.md`;
+    const resourceKey = `${kind === "collection" ? "Guide" : "WikiPage"}/stable`;
+    const authored = `---\r\nid: stable\r\ntitle: Original # keep\r\ncustom: exact\r\n---\r\n${body}`;
+    const project = await readSourceProject({
+      tree: [
+        file(
+          ".topik.yaml",
+          `version: 1\nnamespace: packed/presentation\nsources: [{kind: ${kind}, config: ${config}}]\n`,
+        ),
+        file(
+          config,
+          `id: examples\ntitle: Examples\nsourceVersion: 1\n${kind === "wiki" ? "navigation: [page, sibling]\n" : ""}`,
+        ),
+        file(path, authored, "100755"),
+        file(`${directory}/sibling.md`, "---\nid: sibling\n---\n# Sibling\n"),
+        { path: `${directory}/hero.png`, mode: "100644", bytes: png },
+        file("README.md", "Exact unowned bytes\r\n", "100755"),
+      ],
+    });
+    const selected = (resources) =>
+      resources.find((entry) => `${entry.type}/${entry.name}` === resourceKey);
+    const original = presentations(selected(project.compilation.resources).spec.content.value);
+    assert.equal(original.nodes[0].children[0].value, "\tconst first = 1;  \n");
+    assert.equal(original.nodes[0].options.title, "A &amp; label");
+    assert.deepEqual(original.nodes[0].options.collapse, [[2, 2]]);
+    assert.equal(original.nodes[0].opaqueMetaSuffix, "  legacy&amp; \\ `");
+    assert.equal(original.nodes[1].children[0].type, "topikCodeTemplate");
+    assert.equal(project.compilation.semantic.assetNames.length, 1);
+    assert.equal(
+      extractTopikAssetOccurrences(selected(project.compilation.resources).spec.content.value)
+        .length,
+      1,
+    );
+    const provenance = project.documents.find((entry) => entry.resource === resourceKey);
+    const admitted = {
+      resources: [resourceKey],
+      exclusive: [{ path, mode: provenance.mode, sha256: provenance.sha256 }],
+      shared: [],
+      create: [],
+    };
+    const desired = structuredClone(project.compilation.resources);
+    selected(desired).spec.title = "Edited";
+    const metadata = await planSourceUpdates({
+      project,
+      expectedTreeDigest: project.treeDigest,
+      packageCohort,
+      desiredResources: desired,
+      operations: [{ kind: "update", resource: resourceKey }],
+      authority: admitted,
+    });
+    assert.equal(metadata.ok, true, JSON.stringify(metadata));
+    assert.equal(metadata.plan.changes.length, 1);
+    assert.equal(
+      decode(metadata.plan.changes[0].candidate.bytes),
+      authored.replace("title: Original # keep", 'title: "Edited" # keep'),
+    );
+    const fresh = await readSourceProject({ tree: metadata.plan.candidate.tree });
+    assert.deepEqual(fresh.compilation.resources, desired);
+    for (const before of project.tree.filter((entry) => entry.path !== path))
+      assert.deepEqual(
+        fresh.tree.find((entry) => entry.path === before.path),
+        before,
+      );
+    const edited = structuredClone(fresh.compilation.resources);
+    const parsed = presentations(selected(edited).spec.content.value);
+    parsed.nodes[0].options.title = "Edited &amp; label";
+    selected(edited).spec.content.value = writeDocument(parsed.document);
+    const bodyEdit = await planSourceUpdates({
+      project: fresh,
+      expectedTreeDigest: fresh.treeDigest,
+      packageCohort,
+      desiredResources: edited,
+      operations: [{ kind: "update", resource: resourceKey }],
+      authority: {
+        resources: [resourceKey],
+        exclusive: fresh.documents
+          .filter((entry) => entry.resource === resourceKey)
+          .map(({ path, mode, sha256 }) => ({ path, mode, sha256 })),
+        shared: [],
+        create: [],
+      },
+    });
+    assert.equal(bodyEdit.ok, true, JSON.stringify(bodyEdit));
+    const candidate = await readSourceProject({ tree: bodyEdit.plan.candidate.tree });
+    assert.equal(bodyEdit.plan.changes.length, 1);
+    assert.equal(bodyEdit.plan.changes[0].path, path);
+    for (const before of project.tree.filter((entry) => entry.path !== path))
+      assert.deepEqual(
+        candidate.tree.find((entry) => entry.path === before.path),
+        before,
+      );
+    const after = presentations(selected(candidate.compilation.resources).spec.content.value);
+    assert.equal(sameDocumentMeaning(parsed.document, after.document), true);
+    assert.deepEqual(candidate.compilation.semantic, project.compilation.semantic);
+    assert.deepEqual(
+      candidate.compilation.resources.filter((entry) => entry.type === "Asset"),
+      project.compilation.resources.filter((entry) => entry.type === "Asset"),
+    );
+    assert.deepEqual(
+      candidate.compilation.materialization.payloads,
+      project.compilation.materialization.payloads,
+    );
+    assert.equal(
+      validateTopikMaterializationRecord(
+        candidate.compilation.materialization,
+        candidate.compilation.resources,
+        candidate.compilation.semantic,
+      ).ok,
+      true,
+    );
+    assert.equal(
+      validateTopikMaterializationRecord(
+        fresh.compilation.materialization,
+        candidate.compilation.resources,
+        candidate.compilation.semantic,
+      ).ok,
+      false,
+    );
+  }
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   await verifySourceWritebackConsumer();
   await verifyCourseSourceConsumer();
+  await verifyPresentationSourceConsumer();
   console.log(
-    "Verified packed Guide and Course source inspection, updates, moves, initialization and source addition",
+    "Verified packed Guide, Wiki presentation and Course source inspection, updates, moves, initialization and source addition",
   );
 }

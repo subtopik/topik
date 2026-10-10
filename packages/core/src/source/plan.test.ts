@@ -1,4 +1,5 @@
 import { expect, test } from "vite-plus/test";
+import { analyzeTopikContent } from "@topik/content";
 import type { Guide } from "@topik/schema/guide/v1";
 import type { Wiki } from "@topik/schema/wiki/v1";
 import type { WikiPage } from "@topik/schema/wiki-page/v1";
@@ -9,6 +10,93 @@ import { encodeSource, decodeSource, sourceHash } from "./syntax";
 import { generateAutomaticAssetName, parseAssetBlobUri } from "../assets/asset";
 
 const cohort = "a".repeat(64);
+
+const downloadPageEditCases = (["wiki", "guide"] as const).flatMap((kind) =>
+  (["inline", "reference"] as const).flatMap((style) =>
+    (["append", "replace"] as const).flatMap((edit) =>
+      (["plain", "nested", "card-first"] as const).flatMap((layout) =>
+        ["manual", "api.json"].map((filename) => ({ kind, style, edit, layout, filename })),
+      ),
+    ),
+  ),
+);
+
+test.each(downloadPageEditCases)(
+  "$kind can $edit a page ref beside a $style $layout download named $filename",
+  async ({ kind, style, edit, layout, filename }) => {
+    const download = style === "inline" ? `[Download](./${filename})` : "[Download][download]";
+    const authored =
+      [
+        "---\nid: home\n---\n# Home",
+        ...(layout === "card-first"
+          ? [`{% card title="Page" href="./${filename}${filename.includes(".") ? ".md" : ""}" /%}`]
+          : []),
+        layout === "nested" ? `> - ${download}` : download,
+        ...(style === "reference" ? [`[download]: ./${filename}`] : []),
+      ].join("\n\n") + "\n";
+    const project = await readSourceProject({
+      tree: [
+        file(
+          ".topik.yaml",
+          `version: 1\nnamespace: refs\nsources: [{kind: ${kind === "wiki" ? "wiki" : "collection"}, config: config.yaml}]\n`,
+        ),
+        file(
+          "config.yaml",
+          "id: docs\ntitle: Docs\nsourceVersion: 1\n" +
+            (kind === "wiki"
+              ? `navigation: [home, {type: page, slug: manual, source: ${filename}}]\n`
+              : ""),
+        ),
+        file("home.md", authored),
+        file(`${filename}.md`, "---\nid: manual-page\nslug: manual\n---\n# Manual\n"),
+        file(filename, "Download bytes remain intact.\n"),
+      ],
+    });
+    const desired = structuredClone(project.compilation.resources);
+    const home = desired.find(
+      (resource): resource is WikiPage | Guide =>
+        (resource.type === "WikiPage" || resource.type === "Guide") && resource.name === "home",
+    )!;
+    const asset = desired.find((resource) => resource.type === "Asset")!;
+    const href = `ref://${kind === "wiki" ? "wiki-page" : "guide"}/manual-page`;
+    home.spec.content.value =
+      edit === "append"
+        ? `${home.spec.content.value}\n[Page](${href})\n`
+        : home.spec.content.value.replace(`asset:${asset.name}`, href);
+    const result = await planSourceUpdates({
+      project,
+      expectedTreeDigest: project.treeDigest,
+      packageCohort: cohort,
+      desiredResources:
+        edit === "replace" ? desired.filter((resource) => resource.type !== "Asset") : desired,
+      operations: [{ kind: "update", resource: `${home.type}/home` }],
+      authority: authority(project),
+    });
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    if (!result.ok) return;
+    const candidate = result.plan.candidate;
+    expect(decodeSource(candidate.tree.find((entry) => entry.path === "home.md")!.bytes)).toContain(
+      href,
+    );
+    expect(decodeSource(candidate.tree.find((entry) => entry.path === filename)!.bytes)).toBe(
+      "Download bytes remain intact.\n",
+    );
+    expect(candidate.compilation.payloads).toHaveLength(edit === "append" ? 1 : 0);
+    const compiledHome = candidate.compilation.resources.find(
+      (resource): resource is WikiPage | Guide =>
+        (resource.type === "WikiPage" || resource.type === "Guide") && resource.name === "home",
+    )!;
+    const links = analyzeTopikContent(compiledHome.spec.content.value).links;
+    expect(
+      links.filter((reference) => reference.kind === "link" && reference.href === href),
+    ).toHaveLength(1);
+    expect(links.filter((reference) => reference.href === `asset:${asset.name}`)).toHaveLength(
+      edit === "append" ? 1 : 0,
+    );
+    if (layout === "card-first")
+      expect(links.find((reference) => reference.kind === "card")?.href).toBe(href);
+  },
+);
 
 test("editing compiled content preserves each authored relative or explicit reference spelling", async () => {
   const raw =

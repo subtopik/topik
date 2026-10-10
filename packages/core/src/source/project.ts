@@ -315,6 +315,12 @@ export async function readSourceProject(input: {
                 candidate.type === "Course" && module.spec.course === candidate.name,
             )
           : undefined;
+      const assets =
+        portable.type === "Guide" || portable.type === "WikiPage" || portable.type === "CoursePage"
+          ? extractTopikAssetOccurrences(portable.spec.content.value, {
+              includeGenericLinkCandidates: true,
+            }).filter((occurrence) => occurrence.kind === "asset")
+          : [];
       const base = {
         resource,
         apiVersion: portable.apiVersion,
@@ -335,20 +341,9 @@ export async function readSourceProject(input: {
           ...(wiki ? { wiki: `Wiki/${wiki.name}` } : {}),
           ...(course ? { course: `Course/${course.name}` } : {}),
         },
-        assetReferences:
-          portable.type === "Guide" ||
-          portable.type === "WikiPage" ||
-          portable.type === "CoursePage"
-            ? [
-                ...new Set(
-                  extractTopikAssetOccurrences(portable.spec.content.value, {
-                    includeGenericLinkCandidates: true,
-                  })
-                    .filter((occurrence) => occurrence.reference.startsWith("asset:"))
-                    .map((occurrence) => occurrence.reference.slice(6)),
-                ),
-              ].sort()
-            : [],
+        assetReferences: [
+          ...new Set(assets.map((occurrence) => occurrence.reference.slice(6))),
+        ].sort(),
       };
       const configuration = configurations.find((config) => config.path === source.config)!;
       if (path === source.config) {
@@ -421,6 +416,11 @@ export async function readSourceProject(input: {
           portable.name,
           resource,
           compilation,
+          new Set(
+            assets
+              .filter((occurrence) => occurrence.slot === "link.href")
+              .map((occurrence) => occurrence.treePath.join("/")),
+          ),
           wiki,
           course ? courseContexts[`Course/${course.name}`] : undefined,
         ),
@@ -593,6 +593,7 @@ function sourceReferences(
   name: string,
   resource: string,
   compilation: ManifestCompileResult,
+  assetPositions: ReadonlySet<string>,
   wiki?: Wiki,
   course?: CourseReferenceContext,
 ): SourceDocumentProvenance["references"] {
@@ -609,6 +610,12 @@ function sourceReferences(
     TopikNavigationReference & { target?: string; search?: string; hash?: string }
   > = [];
   const inspected = rewriteTopikNavigationReferences(source, (reference) => {
+    // Preserve the compiler's per-occurrence download identity. A legacy route lookup
+    // must not turn its authored file path into provenance for a different page link.
+    if (reference.kind === "link" && assetPositions.has(reference.position)) {
+      references.push(reference);
+      return undefined;
+    }
     const identity =
       compiled.get(reference.position) ?? parseTopikResourceReference(reference.href);
     const target = resolved ? resolveWikiContentHref(reference.href, name, resolved) : undefined;

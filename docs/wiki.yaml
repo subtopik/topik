@@ -10,6 +10,7 @@ navigation:
       - content-design
       - autolinks
       - templates
+      - code-presentation
       - rendering
   - type: group
     title: Resources

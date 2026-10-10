@@ -1,5 +1,5 @@
 import type { ComponentPropsWithoutRef, ComponentType, MouseEvent, ReactNode } from "react";
-import type { TopikGeneratedAssetName } from "@topik/content";
+import type { CodePresentationEffectiveOptions, TopikGeneratedAssetName } from "@topik/content";
 
 export const topikComponentNames = [
   "TopikAccordion",
@@ -37,6 +37,14 @@ export type TopikComponentName = (typeof topikComponentNames)[number];
 export interface TopikComponentProps {
   children?: ReactNode;
   [attribute: string]: unknown;
+}
+
+/** Reader text is authoritative: content is payload plus the canonical separator LF. */
+export interface TopikCodeBlockProps extends TopikComponentProps {
+  payload?: string;
+  content?: string;
+  language?: string;
+  presentation?: CodePresentationEffectiveOptions;
 }
 
 export type TopikComponent = ComponentType<TopikComponentProps>;

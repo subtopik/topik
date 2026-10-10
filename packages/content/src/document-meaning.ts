@@ -1,5 +1,9 @@
 import type { ContentDocument, TextTemplate, TreeNode } from "./model.js";
 import { referenceIdentifier } from "./document-index.js";
+import {
+  codePresentationChildRows,
+  normalizeCodePresentationOptions,
+} from "./code-presentation.js";
 
 /** Compare admitted authoring trees, retaining explicit heading IDs and every authored branch.
  * Source positions, cosmetic spelling and derived metadata do not affect equality.
@@ -28,6 +32,11 @@ function meaning(node: TreeNode): Record<string, unknown> {
     fields.meta ??= null;
   }
   if (node.type === "topikCodeTemplate") fields.template = templateMeaning(node.template!);
+  if (node.type === "topikCodePresentation")
+    fields.options = normalizeCodePresentationOptions(
+      node.options,
+      codePresentationChildRows(node.children![0]),
+    );
   if (node.type === "topikComponent" && node.props)
     fields.props = Object.fromEntries(
       Object.entries(node.props).map(([key, value]) => [

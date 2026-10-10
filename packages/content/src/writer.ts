@@ -17,6 +17,8 @@ import { referenceWriterExtension } from "./reference-writer.js";
 import { boundaryWhitespaceWriterExtension } from "./whitespace-writer.js";
 import { assertSourceLimit, CONTENT_LIMITS, ContentLimitError } from "./limits.js";
 import { codeWriterExtension, ordinaryCodeFenceLength } from "./code-writer.js";
+import { codePresentationWriterExtension } from "./code-presentation-writer.js";
+import { codePresentationMetadataLength } from "./code-presentation.js";
 
 /**
  * Count payload deltas from an empty-template/code skeleton. A cheap source
@@ -118,8 +120,15 @@ function sourceExpansion(document: ContentDocument, registry: Registry): number 
     parent?: TreeNode,
     index = 0,
   ): void {
+    if (node.type === "topikCodePresentation")
+      charge(
+        1 +
+          (node.children?.[0]?.lang ? 1 : 0) +
+          codePresentationMetadataLength(node.options!, node.opaqueMetaSuffix!),
+      );
     if (node.type === "topikCodeTemplate" || node.type === "code") {
       const explicit = node.type === "topikCodeTemplate";
+      const presented = parent?.type === "topikCodePresentation";
       const measured = measure(
         explicit
           ? node.template!
@@ -131,11 +140,12 @@ function sourceExpansion(document: ContentDocument, registry: Registry): number 
       );
       const ticks = Math.max(3, measured.longestTicks + 1);
       const tildes = Math.max(3, measured.longestTildes + 1);
-      const fence = explicit
-        ? node.lang?.includes("`") || node.meta?.includes("`")
-          ? tildes
-          : Math.min(ticks, tildes)
-        : ordinaryCodeFenceLength(node.value!);
+      const fence =
+        explicit || presented
+          ? node.lang?.includes("`") || node.meta?.includes("`")
+            ? tildes
+            : Math.min(ticks, tildes)
+          : ordinaryCodeFenceLength(node.value!);
       const prefix = prefixWidths(prefixes);
       const payload =
         (measured.length ? measured.length + 1 : 0) +
@@ -145,7 +155,7 @@ function sourceExpansion(document: ContentDocument, registry: Registry): number 
       charge(
         (explicit ? 42 : 1) +
           2 * fence +
-          (explicit ? headerLength(node.lang) : (node.lang?.length ?? 0)) +
+          (explicit || presented ? headerLength(node.lang) : (node.lang?.length ?? 0)) +
           (node.meta
             ? 1 +
               (explicit
@@ -210,8 +220,8 @@ function sourceExpansion(document: ContentDocument, registry: Registry): number 
       const next = node.children?.[childIndex + 1];
       if (
         next &&
-        [child, next].some(
-          (sibling) => sibling.type === "code" || sibling.type === "topikCodeTemplate",
+        [child, next].some((sibling) =>
+          ["code", "topikCodeTemplate", "topikCodePresentation"].includes(sibling.type),
         )
       ) {
         const spread = (node as TreeNode & { spread?: boolean }).spread;
@@ -328,6 +338,7 @@ function writeMarkdown(tree: Root, registry: Registry): string {
         tagOptions(registry),
       ),
       codeWriterExtension(),
+      codePresentationWriterExtension(),
       resourceWriterExtension(),
       referenceWriterExtension(),
       boundaryWhitespaceWriterExtension() as never,

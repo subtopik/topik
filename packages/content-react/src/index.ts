@@ -33,6 +33,7 @@ export {
   type TopikComponentName,
   type TopikComponentOverrides,
   type TopikComponentProps,
+  type TopikCodeBlockProps,
   type TopikLinkHandler,
   type TopikLinkRenderer,
   type TopikLinkRenderProps,

@@ -114,7 +114,7 @@ function headerSource(value: string, metadata = false): string {
 }
 
 function reservedCodeHead(value: string): boolean {
-  return /^(?:filename|title|lines|startLine|highlight|focus|collapseAfter|wrap|added|removed)(?:[ \t=]|$)/.test(
+  return /^(?:filename|title|lines|startLine|highlight|focus|collapse|wrap|added|removed)(?:[ \t=]|$)/.test(
     value,
   );
 }

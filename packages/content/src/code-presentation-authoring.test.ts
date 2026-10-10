@@ -21,13 +21,13 @@ describe("compact code presentation authoring", () => {
   test("retains explicit options, normalized selections, suffix, and exact payload", () => {
     const document = parsed(
       fence(
-        'lines=false highlight="3,1-2,2" startLine=10 collapseAfter=1  legacy\t&amp; \\*',
+        'lines=false highlight="3,1-2,2" startLine=10 collapse="2-3"  legacy\t&amp; \\*',
         " first\t \nsecond  \n",
       ),
     );
     expect(document.children[0]).toMatchObject({
       type: "topikCodePresentation",
-      options: { lineNumbers: false, highlight: [[1, 3]], startLine: 10, collapseAfter: 1 },
+      options: { lineNumbers: false, highlight: [[1, 3]], startLine: 10, collapse: [[2, 3]] },
       opaqueMetaSuffix: "  legacy\t& *",
       children: [{ type: "code", lang: "ts", value: " first\t \nsecond  \n" }],
     });
@@ -39,6 +39,122 @@ describe("compact code presentation authoring", () => {
     expect(sameDocumentMeaning(document, parsed(written))).toBe(true);
     expect(writeDocument(parsed(written))).toBe(written);
     expect(document).toEqual(before);
+  });
+
+  test("canonicalizes independent collapse regions from source and caller-built documents", () => {
+    const value = Array.from({ length: 9 }, (_, index) => `row ${index + 1}`).join("\n");
+    const sourceDocument = parsed(fence('startLine=100 collapse="9,4,3-4,8"', value));
+    expect(sourceDocument.children[0]).toMatchObject({
+      options: {
+        startLine: 100,
+        collapse: [
+          [3, 4],
+          [8, 9],
+        ],
+      },
+    });
+    const callerDocument = {
+      type: "root",
+      children: [
+        {
+          type: "topikCodePresentation",
+          options: {
+            startLine: 100,
+            collapse: [
+              [8, 9],
+              [4, 4],
+              [3, 3],
+              [3, 4],
+            ],
+          },
+          opaqueMetaSuffix: "",
+          children: [{ type: "code", lang: "ts", value }],
+        },
+      ],
+    } as unknown as ContentDocument;
+    expect(validateDocument(callerDocument)).toEqual([]);
+    expect(sameDocumentMeaning(sourceDocument, callerDocument)).toBe(true);
+    const written = writeDocument(sourceDocument);
+    expect(written).toContain('startLine=100 collapse="3-4,8-9"');
+    for (const document of [sourceDocument, callerDocument]) {
+      const before = structuredClone(document);
+      expect(writeDocument(document)).toBe(written);
+      const reparsed = parsed(written);
+      expect(sameDocumentMeaning(document, reparsed)).toBe(true);
+      expect(writeDocument(reparsed)).toBe(written);
+      expect(document).toEqual(before);
+    }
+  });
+
+  test.each([
+    { selection: "1", value: "only", intervals: [[1, 1]] },
+    { selection: "1-3", value: "first\nsecond\nthird", intervals: [[1, 3]] },
+  ])("admits collapse=$selection for the whole payload", ({ selection, value, intervals }) => {
+    const document = parsed(fence(`startLine=100 collapse="${selection}"`, value));
+    expect(document.children[0]).toMatchObject({
+      options: { startLine: 100, collapse: intervals },
+    });
+    expect(validateDocument(document)).toEqual([]);
+    expect(sameDocumentMeaning(document, parsed(writeDocument(document)))).toBe(true);
+  });
+
+  test.each([
+    "collapse",
+    'collapse=""',
+    'collapse="0"',
+    'collapse="-2"',
+    'collapse="2-"',
+    'collapse="2-1"',
+    'collapse="1, 2"',
+    'collapse="1,,2"',
+    'collapse="1,2,"',
+    'collapse="4"',
+    'startLine=100 collapse="100"',
+    'collapse="1" collapse="2"',
+    "collapse=true",
+    "collapse=1.5",
+  ])("refuses invalid collapse authoring %j", (metadata) => {
+    const result = parseDocumentTree(fence(metadata));
+    expect(result).not.toHaveProperty("document");
+    expect(result.diagnostics).toMatchObject([{ option: "collapse" }]);
+    expect(formatDocument(fence(metadata)).ok).toBe(false);
+  });
+
+  test("retains structural and collapse diagnostics from the same source", () => {
+    const source = `{% callout variant=1 %}\nBefore.\n{% /callout %}\n\n${fence('collapse="4"')}`;
+    const result = parseDocumentTree(source);
+    expect(result).not.toHaveProperty("document");
+    expect(result.diagnostics).toMatchObject([
+      { id: "attribute-type-invalid", line: 1, column: 1 },
+      { id: "topik-code-presentation-line-bounds", option: "collapse", line: 5, column: 1 },
+    ]);
+  });
+
+  test.each([
+    { collapse: [] },
+    { collapse: [[0, 1]] },
+    { collapse: [[2, 1]] },
+    { collapse: [[1]] },
+    { collapse: [[1, 4]] },
+    { collapse: "1-2" },
+    { collapse: 1 },
+    { collapse: null },
+  ])("refuses invalid caller-built collapse selections $collapse", ({ collapse }) => {
+    const document = {
+      type: "root",
+      children: [
+        {
+          type: "topikCodePresentation",
+          options: { collapse, startLine: 100 },
+          opaqueMetaSuffix: "",
+          children: [{ type: "code", lang: "text", value: "first\nsecond\nthird" }],
+        },
+      ],
+    } as unknown as ContentDocument;
+    expect(validateDocument(document)).toEqual(
+      expect.arrayContaining([expect.objectContaining({ option: "collapse" })]),
+    );
+    expect(() => writeDocument(document)).toThrow();
   });
 
   test("scans raw quoted attributes before CommonMark decoding and preserves opaque suffix", () => {
@@ -60,6 +176,8 @@ describe("compact code presentation authoring", () => {
       'custom-code:1 {"unknown":true}',
       'legacy filename="literal.ts"',
       "lineNumbers=true",
+      "collapseAfter=1",
+      'collapseAfter=1 collapse="1"',
       "Lines",
     ])
       expect(parsed(fence(meta)).children[0]).toMatchObject({ type: "code", meta });
@@ -69,32 +187,39 @@ describe("compact code presentation authoring", () => {
     });
   });
 
-  test.each(["lines:note", "wrap:note", "filename:note", "lines\\=false"])(
-    "round-trips caller-built literal metadata %j in code and templates",
-    (meta) => {
-      for (const type of ["code", "topikCodeTemplate"]) {
-        const node =
-          type === "code"
-            ? { type, lang: "text", meta, value: "value" }
-            : {
-                type,
-                lang: "text",
-                meta,
-                template: {
-                  type: "topikTextTemplate",
-                  segments: [{ type: "literal", value: "value" }],
-                },
-              };
-        const document = { type: "root", children: [node] } as unknown as ContentDocument;
-        expect(validateDocument(document)).toEqual([]);
-        const written = writeDocument(document);
-        const reparsed = parsed(written);
-        expect(reparsed.children[0]).toMatchObject({ type, lang: "text", meta });
-        expect(sameDocumentMeaning(document, reparsed)).toBe(true);
-        expect(writeDocument(reparsed)).toBe(written);
-      }
-    },
-  );
+  test.each([
+    "lines:note",
+    "wrap:note",
+    "filename:note",
+    "lines\\=false",
+    'collapse="1"',
+    "collapse",
+    "collapse=1",
+    "collapse:note",
+    "collapse\\=1",
+  ])("round-trips caller-built literal metadata %j in code and templates", (meta) => {
+    for (const type of ["code", "topikCodeTemplate"]) {
+      const node =
+        type === "code"
+          ? { type, lang: "text", meta, value: "value" }
+          : {
+              type,
+              lang: "text",
+              meta,
+              template: {
+                type: "topikTextTemplate",
+                segments: [{ type: "literal", value: "value" }],
+              },
+            };
+      const document = { type: "root", children: [node] } as unknown as ContentDocument;
+      expect(validateDocument(document)).toEqual([]);
+      const written = writeDocument(document);
+      const reparsed = parsed(written);
+      expect(reparsed.children[0]).toMatchObject({ type, lang: "text", meta });
+      expect(sameDocumentMeaning(document, reparsed)).toBe(true);
+      expect(writeDocument(reparsed)).toBe(written);
+    }
+  });
 
   test("preserves ordinary custom components", () => {
     const inlineRegistry = {
@@ -143,12 +268,18 @@ describe("compact code presentation authoring", () => {
   );
 
   test("supports language-free flags and attributes while bare string keys remain languages", () => {
-    for (const header of ["lines", "wrap", 'filename="a b.ts"', 'filename="foo&#32;bar"'])
+    for (const header of [
+      "lines",
+      "wrap",
+      'filename="a b.ts"',
+      'filename="foo&#32;bar"',
+      'collapse="1"',
+    ])
       expect(parsed(fence(header, "value", "")).children[0]).toMatchObject({
         type: "topikCodePresentation",
         children: [{ lang: null }],
       });
-    for (const language of ["filename", "title", "highlight", "focus", "startLine"])
+    for (const language of ["filename", "title", "highlight", "focus", "collapse", "startLine"])
       expect(parsed(fence("", "value", language)).children[0]).toMatchObject({
         type: "code",
         lang: language,
@@ -175,10 +306,10 @@ describe("compact code presentation authoring", () => {
   });
 
   test("preserves unevaluated code-template composition through repeated writing", () => {
-    const source = `{% template code %}\n${fence('focus="2"', "npm install {% $package.name %}\n{%% $literal %}")}\n{% /template code %}`;
+    const source = `{% template code %}\n${fence('focus="2" collapse="1"', "npm install {% $package.name %}\n{%% $literal %}")}\n{% /template code %}`;
     const document = parsed(source);
     expect(document.children[0]).toMatchObject({
-      options: { focus: [[2, 2]] },
+      options: { focus: [[2, 2]], collapse: [[1, 1]] },
       children: [
         {
           type: "topikCodeTemplate",
@@ -212,7 +343,7 @@ describe("compact code presentation authoring", () => {
     });
   });
 
-  test.each(["lines", "wrap", "filename=literal"])(
+  test.each(["lines", "wrap", "filename=literal", "collapse", "collapse=1"])(
     "round-trips literal reserved language %j",
     (language) => {
       const encoded = `&#${language.charCodeAt(0)};${language.slice(1)}`;
@@ -351,6 +482,7 @@ describe("compact code presentation authoring", () => {
     ).toBe(false);
     for (const candidate of [
       make({ highlight: [[3, 3]] }),
+      make({ collapseAfter: 1 }),
       make({}, { type: "code", value: "x", lang: "mermaid" }),
       make({}, { type: "code", value: "x", lang: "text", meta: "duplicate" }),
       make({}, undefined, "suffix without separator"),
@@ -409,6 +541,7 @@ describe("compact code presentation authoring", () => {
     const manyRows = () => fence("lines", "x\n".repeat(6_000));
     for (const source of [
       notice(fence('highlight="4"')),
+      notice(fence('collapse="4"')),
       notice(fence('highlight="4"')) + "\n\n" + notice(fence('focus="0"')),
       notice(fence("lines", "x\n".repeat(12_000))),
       notice(manyRows()) + "\n\n" + notice(manyRows()),

@@ -199,7 +199,7 @@ export function sanitizeTopikContentDiagnostic(
       "startLine",
       "highlight",
       "focus",
-      "collapseAfter",
+      "collapse",
       "wrap",
       "added",
       "removed",

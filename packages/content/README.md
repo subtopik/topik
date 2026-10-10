@@ -81,6 +81,14 @@ The exported `components` registry contains complete property, placement, and
 child constraints. Defaults are applied when reading or rendering; absent authored
 properties remain absent when writing.
 
+Fenced code accepts presentation attributes such as `filename="Client.java"`,
+`lines`, `highlight="2"` and `collapse="3-4,8-9"`. Selections use closed physical-row
+ranges and normalize to sorted, merged intervals. Each collapsed interval has an
+independent inline control; Copy always retains the full exact code, and every row
+remains visible before hydration or without JavaScript. See the
+[code presentation reference](https://github.com/subtopik/topik/blob/main/docs/content/code-presentation.md)
+for options, limits and source-preservation rules.
+
 ## Variables and conditions
 
 Evaluation selects branches and inserts variable values as literal text. It does

@@ -30,6 +30,9 @@ describe("compact code presentation options", () => {
       "unknown=true lines",
       "custom-code:1 {}",
       "lineNumbers=true",
+      "collapseAfter=2",
+      "collapse:note",
+      "collapse\\=1",
       "lines:note",
       "wrap:note",
       "filename:note",
@@ -55,7 +58,7 @@ describe("compact code presentation options", () => {
   test("accepts flags and single/double quoted or bare values with normalization", () => {
     expect(
       metadata(
-        'filename="client.ts" title=\'Create a client\' lines startLine = 10 highlight="4,1,3,3-4" focus=3-4 collapseAfter=2 wrap=false added=3 removed="4"',
+        'filename="client.ts" title=\'Create a client\' lines startLine = 10 highlight="4,1,3,3-4" focus=3-4 collapse="2-4" wrap=false added=3 removed="4"',
       ).options,
     ).toEqual({
       filename: "client.ts",
@@ -67,7 +70,7 @@ describe("compact code presentation options", () => {
         [3, 4],
       ],
       focus: [[3, 4]],
-      collapseAfter: 2,
+      collapse: [[2, 4]],
       wrap: false,
       added: [[3, 3]],
       removed: [[4, 4]],
@@ -101,6 +104,56 @@ describe("compact code presentation options", () => {
       [1, 1],
       [3, 4],
     ]);
+  });
+
+  test("collapse keeps independent physical-row regions and merges overlaps and adjacency", () => {
+    const collapse = [
+      [9, 9],
+      [3, 3],
+      [8, 9],
+      [4, 4],
+      [3, 4],
+    ];
+    const original = structuredClone(collapse);
+    const expected = {
+      collapse: [
+        [3, 4],
+        [8, 9],
+      ],
+      startLine: 100,
+    };
+    expect(normalizeCodePresentationOptions({ collapse, startLine: 100 }, 9)).toEqual(expected);
+    expect(collapse).toEqual(original);
+    expect(metadata('collapse="9,3,8-9,4,3-4" startLine=100', 9).options).toEqual(expected);
+    const written = serializeCodePresentationMetadata(expected as never, "");
+    expect(written).toBe('startLine=100 collapse="3-4,8-9"');
+    expect(codePresentationMetadataLength(expected as never, "")).toBe(written.length);
+    expect(metadata(written, 9).options).toEqual(expected);
+    expect(() => normalizeCodePresentationOptions({ collapseAfter: 2 }, 9)).toThrow();
+    expect(metadata("lines collapseAfter=2", 9)).toEqual({
+      options: { lineNumbers: true },
+      opaqueMetaSuffix: " collapseAfter=2",
+    });
+  });
+
+  test("collapse retains selection limits and refuses open or unsafe ranges before expansion", () => {
+    for (const value of ["", "1-", "-2", "3-2", "0", "10", "1, 2", "1-1000000000"])
+      expect(() => metadata(`collapse="${value}"`, 9)).toThrow();
+    expect(() =>
+      metadata(`collapse="${Array.from({ length: 1025 }, () => "1").join(",")}"`, 9),
+    ).toThrow();
+    expect(
+      metadata(`collapse="${Array.from({ length: 1024 }, () => "1").join(",")}"`, 9).options
+        .collapse,
+    ).toEqual([[1, 1]]);
+    const selection = Array.from({ length: 1024 }, () => [1, 1]);
+    expect(normalizeCodePresentationOptions({ collapse: selection }, 9).collapse).toEqual([[1, 1]]);
+    expect(() =>
+      normalizeCodePresentationOptions({ collapse: [...selection, [1, 1]] }, 9),
+    ).toThrow();
+    expect(
+      metadata('collapse="1-9" highlight="1-9" focus=3 added=3 removed=4', 9).options.collapse,
+    ).toEqual([[1, 9]]);
   });
 
   test.each([
@@ -148,8 +201,8 @@ describe("compact code presentation options", () => {
     "startLine=1000000001",
     "startLine=1.1",
     "startLine=1e2",
-    "collapseAfter=0",
-    "collapseAfter=4",
+    "collapse=0",
+    "collapse=5",
     "added=1-2 removed=2-3",
     "highlight=",
     'highlight=""',
@@ -185,7 +238,8 @@ describe("compact code presentation options", () => {
       highlight: [[1, 4]],
       focus: [[2, 2]],
     });
-    expect(() => metadata("collapseAfter=1", 1)).toThrow();
+    expect(metadata("collapse=1", 1).options.collapse).toEqual([[1, 1]]);
+    expect(metadata("collapse=1-4", 4).options.collapse).toEqual([[1, 4]]);
     expect(metadata("startLine=1000000000", 4).options.startLine).toBe(1_000_000_000);
   });
 
@@ -193,6 +247,7 @@ describe("compact code presentation options", () => {
     for (const [source, option] of [
       ["wrap=no", "wrap"],
       ["focus=0", "focus"],
+      ["collapse=0", "collapse"],
       ["removed=5", "removed"],
       ['title=""', "title"],
       ["lines=no", "lineNumbers"],
@@ -283,7 +338,11 @@ describe("compact raw metadata and canonical headers", () => {
       " lines",
       ' title="opaque"',
       " filename=opaque",
+      " collapse=1",
+      " collapse",
       " collapseAfter=100",
+      " collapse:note",
+      " collapse\\=1",
       " lines:note",
       " wrap:note",
       " filename:note",
@@ -448,7 +507,7 @@ describe("compact presentation authoring node admission", () => {
       normalizeCodePresentationOptions({ highlight: [interval, interval] }, 2),
     ).toThrow();
     expect(() =>
-      normalizeCodePresentationOptions({ highlight: [interval], added: [interval] }, 2),
+      normalizeCodePresentationOptions({ highlight: [interval], collapse: [interval] }, 2),
     ).toThrow();
     const options = { wrap: false };
     const seen = new Set<object>();

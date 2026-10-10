@@ -346,7 +346,7 @@ export async function verifyPresentationSourceConsumer(packageCohort = "c".repea
   const body = [
     "# Original",
     "",
-    '```ts filename="missing.png" title="A &#38;amp; label" highlight="1,2" lines collapseAfter=1  legacy&#38;amp; &#92; &#96;',
+    '```ts filename="missing.png" title="A &#38;amp; label" highlight="1,2" lines collapse="2"  legacy&#38;amp; &#92; &#96;',
     "\tconst first = 1;  ",
     "",
     "```",
@@ -405,6 +405,7 @@ export async function verifyPresentationSourceConsumer(packageCohort = "c".repea
     const original = presentations(selected(project.compilation.resources).spec.content.value);
     assert.equal(original.nodes[0].children[0].value, "\tconst first = 1;  \n");
     assert.equal(original.nodes[0].options.title, "A &amp; label");
+    assert.deepEqual(original.nodes[0].options.collapse, [[2, 2]]);
     assert.equal(original.nodes[0].opaqueMetaSuffix, "  legacy&amp; \\ `");
     assert.equal(original.nodes[1].children[0].type, "topikCodeTemplate");
     assert.equal(project.compilation.semantic.assetNames.length, 1);

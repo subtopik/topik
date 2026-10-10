@@ -177,7 +177,7 @@ export function codeWriterExtension(): NonNullable<Options["extensions"]>[number
           // Parsed presentation options have their own handler and readable spelling.
           if (
             typeof input === "string" &&
-            /^(?:(?:lines|wrap)(?=[ \t=]|$)|(?:filename|title|startLine|highlight|focus|collapseAfter|added|removed)(?=[ \t=]|$))/.test(
+            /^(?:(?:lines|wrap)(?=[ \t=]|$)|(?:filename|title|startLine|highlight|focus|collapse|added|removed)(?=[ \t=]|$))/.test(
               input,
             ) &&
             escaped[0] === input[0]

@@ -128,11 +128,14 @@ export function RichTopikCodeBlock(props: TopikComponentProps) {
   const language = stringAttribute(props.language) ?? "text";
   const theme = useRichTopikTheme();
   const presented = Boolean(props.presentation);
+  const foldCount =
+    (props.presentation as CodePresentationEffectiveOptions | undefined)?.collapse?.length ?? 0;
   const [rendered, setRendered] = useState<{
     payload: string;
     language: string;
     theme: RichTopikTheme;
     presented: boolean;
+    foldCount: number;
     highlight: CodeHighlight;
   }>();
 
@@ -182,19 +185,20 @@ export function RichTopikCodeBlock(props: TopikComponentProps) {
           }
         }
         // Reuse the unused worst-case text escaping allowance for syntax spans.
-        // Leave 512 units per row and 2048 per block for presentation markup.
+        // Leave 512 units per row, 768 per fold control and 2048 per block for markup.
         const escapedLength = escapedCodeLength(payload);
         const decorationBudget = Math.min(
           2048 + rows.length * 256 + payload.length * 6 - escapedLength,
           CONTENT_LIMITS.presentationOutputLength -
             escapedLength -
             2048 -
-            (presented ? rows.length * 512 : 0),
+            (presented ? rows.length * 512 : 0) -
+            foldCount * 768,
         );
         if (decorationLength > decorationBudget) {
           throw new Error("Syntax highlighting exceeds the code decoration budget");
         }
-        if (!cancelled) setRendered({ payload, language, theme, presented, highlight });
+        if (!cancelled) setRendered({ payload, language, theme, presented, foldCount, highlight });
       })
       .catch(() => {
         console.warn("Failed to highlight code; using plain code");
@@ -202,13 +206,14 @@ export function RichTopikCodeBlock(props: TopikComponentProps) {
     return () => {
       cancelled = true;
     };
-  }, [payload, language, theme, presented]);
+  }, [payload, language, theme, presented, foldCount]);
 
   const highlight =
     rendered?.payload === payload &&
     rendered.language === language &&
     rendered.theme === theme &&
-    rendered.presented === presented
+    rendered.presented === presented &&
+    rendered.foldCount === foldCount
       ? rendered.highlight
       : undefined;
 

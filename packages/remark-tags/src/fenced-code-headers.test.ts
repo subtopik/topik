@@ -49,7 +49,7 @@ describe("host-owned raw fence metadata", () => {
     ).toThrow("Code template language and metadata must fit one fence header");
   });
 
-  test.each(["lines", "wrap", "filename", "title=literal"])(
+  test.each(["lines", "wrap", "filename", "title=literal", "collapse", "collapse=1"])(
     "protects literal template language %j when writing",
     (lang) => {
       const tree = {
@@ -77,29 +77,37 @@ describe("host-owned raw fence metadata", () => {
     },
   );
 
-  test.each(["lines", "wrap=false", 'filename="literal.ts"', "title missing"])(
-    "protects opaque template metadata %j when writing",
-    (meta) => {
-      const tree = {
-        type: "root" as const,
-        children: [
-          {
-            type: "tagCodeTemplate" as const,
-            lang: "text",
-            meta,
-            template: { type: "topikTextTemplate" as const, segments: [] },
-          },
-        ],
-      };
-      const options = { expressions: true };
-      const written = toMarkdown(tree, { extensions: [tagToMarkdown({}, options)] });
-      expect(written).toContain(`&#${meta.charCodeAt(0)};${meta.slice(1)}`);
-      expect(
-        fromMarkdown(written, {
-          extensions: [tagSyntax({}, options)],
-          mdastExtensions: [tagFromMarkdown({}, options)],
-        }).children[0],
-      ).toMatchObject({ type: "tagCodeTemplate", meta });
-    },
-  );
+  test.each([
+    ["lines", true],
+    ["wrap=false", true],
+    ['filename="literal.ts"', true],
+    ["title missing", true],
+    ['collapse="1"', true],
+    ["collapse", true],
+    ["collapse=1", true],
+    ["collapse:note", false],
+    ["collapse\\=1", false],
+  ] as const)("round-trips opaque template metadata %j when writing", (meta, shielded) => {
+    const tree = {
+      type: "root" as const,
+      children: [
+        {
+          type: "tagCodeTemplate" as const,
+          lang: "text",
+          meta,
+          template: { type: "topikTextTemplate" as const, segments: [] },
+        },
+      ],
+    };
+    const options = { expressions: true };
+    const written = toMarkdown(tree, { extensions: [tagToMarkdown({}, options)] });
+    if (shielded) expect(written).toContain(`&#${meta.charCodeAt(0)};${meta.slice(1)}`);
+    else expect(written).not.toContain(`&#${meta.charCodeAt(0)};`);
+    expect(
+      fromMarkdown(written, {
+        extensions: [tagSyntax({}, options)],
+        mdastExtensions: [tagFromMarkdown({}, options)],
+      }).children[0],
+    ).toMatchObject({ type: "tagCodeTemplate", meta });
+  });
 });

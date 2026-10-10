@@ -80,7 +80,7 @@ export function convertTags(
         const rawHeader = rawHeaders?.get(originalChild);
         if (rawHeader === undefined) return child;
         const unlabelled =
-          /^(?:(?:lines|wrap)(?:[ \t=]|$)|(?:filename|title|startLine|highlight|focus|collapseAfter|added|removed)[ \t]*=)/.test(
+          /^(?:(?:lines|wrap)(?:[ \t=]|$)|(?:filename|title|startLine|highlight|focus|collapse|added|removed)[ \t]*=)/.test(
             rawHeader,
           );
         const rawMeta = unlabelled ? rawHeader : rawHeader.replace(/^[^ \t]+[ \t]*/, "");

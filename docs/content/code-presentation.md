@@ -8,7 +8,7 @@ description: Label, number, select, fold, wrap and compare fenced code without c
 Add presentation options after the language on an ordinary fenced code block:
 
 ````markdown
-```ts filename="client.ts" lines highlight="2" added="3" collapseAfter=2
+```ts filename="client.ts" lines highlight="2" added="3" collapse="3"
 const endpoint = "https://example.com";
 const retries = 3;
 const client = makeClient(endpoint);
@@ -16,21 +16,21 @@ const client = makeClient(endpoint);
 ````
 
 This displays a filename and line numbers, highlights row 2, marks row 3 as added,
-and initially folds after row 2. Each fence has its own options, including several
+and initially folds row 3. Each fence has its own options, including several
 fences in a `codeTab`. Options work with backtick or tilde fences wherever code
 blocks are allowed: the root, lists, blockquotes, block components and conditional
 branches. Unknown or missing text languages display plain code. Mermaid diagrams
 cannot use text-code presentation options.
 
-| Option               | Example                                        | Reader behavior                                                          |
-| -------------------- | ---------------------------------------------- | ------------------------------------------------------------------------ |
-| `filename`, `title`  | `filename="client.ts" title="Create a client"` | Separate labels; title is primary. Labels grant no file/path authority.  |
-| `lines`              | `lines` or `lines=false`                       | Show line numbers; default false. Gutter is excluded from copy.          |
-| `startLine`          | `startLine=10`                                 | First displayed number; default 1, maximum 1,000,000,000.                |
-| `highlight`, `focus` | `highlight="1,3-5" focus="3-5"`                | Highlight rows or de-emphasize other rows without hiding them.           |
-| `collapseAfter`      | `collapseAfter=2`                              | Initially fold after this row; expand retains every row.                 |
-| `wrap`               | `wrap` or `wrap=false`                         | Initial visual wrapping; default false. An accessible toggle changes it. |
-| `added`, `removed`   | `added="3" removed="4"`                        | Disjoint row selections with visible and accessible diff meaning.        |
+| Option               | Example                                        | Reader behavior                                                            |
+| -------------------- | ---------------------------------------------- | -------------------------------------------------------------------------- |
+| `filename`, `title`  | `filename="client.ts" title="Create a client"` | Separate labels; title is primary. Labels grant no file/path authority.    |
+| `lines`              | `lines` or `lines=false`                       | Show line numbers; default false. Gutter is excluded from copy.            |
+| `startLine`          | `startLine=10`                                 | First displayed number; default 1, maximum 1,000,000,000.                  |
+| `highlight`, `focus` | `highlight="1,3-5" focus="3-5"`                | Highlight rows or de-emphasize other rows without hiding them.             |
+| `collapse`           | `collapse="3-4,8-9"`                           | Initially fold selected rows; each normalized range expands independently. |
+| `wrap`               | `wrap` or `wrap=false`                         | Initial visual wrapping; default false. An accessible toggle changes it.   |
+| `added`, `removed`   | `added="3" removed="4"`                        | Disjoint row selections with visible and accessible diff meaning.          |
 
 Use bare flags for true booleans, or explicit `=true` / `=false`. String values can
 be double-quoted, single-quoted or unquoted when they contain no spaces. Recognized
@@ -41,8 +41,31 @@ Duplicate options and malformed recognized values are errors.
 Selections count physical code rows from **1**, independently of `startLine`.
 Use positive rows or closed ranges separated by commas, such as `"1,3-5"`.
 Intervals normalize to sorted, merged pairs. Spaces, zero, descending or open
-ranges, signs and decimals are invalid. Every endpoint must fit the physical rows,
-and `collapseAfter` must leave at least one row available to expand.
+ranges, signs and decimals are invalid. Every endpoint must fit the physical rows.
+
+`collapse` uses the same selection notation as `highlight` and `focus`. It can fold
+a prefix, suffix, multiple middle sections, one row or the whole block. Adjacent
+and overlapping intervals merge, and each normalized interval has its own inline
+control. Expanding one interval leaves the others folded.
+
+For example, keep method signatures and closing braces visible while folding two
+method bodies:
+
+````markdown
+```java filename="Client.java" lines collapse="3-4,8-9"
+class Client {
+  void connect() {
+    openSocket();
+    authenticate();
+  }
+
+  void close() {
+    flush();
+    disconnect();
+  }
+}
+```
+````
 
 Labels are nonblank single-line strings of at most 256 UTF-16 units without
 controls. Admission allows at most 1,024 input intervals per selection, 16,384
@@ -68,8 +91,10 @@ one LF.
 Plain and rich renderers share rows/options. Shiki receives payload, with exact
 token-row fidelity checks; unavailable/unknown highlighting or errors retain
 readable plain code. Native buttons provide keyboard activation, accessible
-wrap/expand state and visible focus. Diff markers and row meanings supplement
-color. Before hydration every row is displayed and controls are disabled.
+wrap/expand state and visible focus. Each fold control stays available when its
+rows are hidden and can expand or collapse that interval independently. Diff
+markers and row meanings supplement color. Server-rendered content and readers
+without JavaScript display every row; controls are disabled before hydration.
 
 ## Formatting and source preservation
 

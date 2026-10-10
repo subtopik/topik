@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, type ComponentType, type ReactNode } from "react";
+import { act, useLayoutEffect, type ComponentType, type ReactNode } from "react";
 import { createRoot, hydrateRoot, type Root } from "react-dom/client";
 import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -56,6 +56,16 @@ function button(dom: HTMLElement, label: string): HTMLButtonElement {
   return found;
 }
 
+function hiddenLines(dom: HTMLElement): Element[] {
+  return [...dom.querySelectorAll(".topik-code-block__region[hidden] [data-line]")];
+}
+
+function visibleLines(dom: HTMLElement): number[] {
+  return [...dom.querySelectorAll<HTMLElement>("[data-line]")]
+    .filter((row) => !row.closest(".topik-code-block__region[hidden]"))
+    .map((row) => Number(row.dataset.line));
+}
+
 const options = {
   title: "Update client",
   filename: "client.ts",
@@ -66,7 +76,7 @@ const options = {
   focus: [[2, 2]],
   added: [[1, 1]],
   removed: [[2, 2]],
-  collapseAfter: 1,
+  collapse: [[2, 3]],
 } satisfies CodePresentationEffectiveOptions;
 
 describe.each([
@@ -76,7 +86,7 @@ describe.each([
   it("renders compact fence attributes with full SSR text and canonical hydrated copy", async () => {
     const payload = "+authored addition  \n\t−authored removal\n";
     const source = [
-      '```ts filename="client.ts" title="Update client" lines startLine=90 highlight="2" focus="2" collapseAfter=1 wrap=false added="1" removed="2"',
+      '```ts filename="client.ts" title="Update client" lines startLine=90 highlight="2" focus="2" collapse="2-3" wrap=false added="1" removed="2"',
       payload,
       "```",
     ].join("\n");
@@ -85,7 +95,7 @@ describe.each([
     container.innerHTML = renderToString(element);
     document.body.append(container);
     expect(container.querySelectorAll("[data-line]")).toHaveLength(3);
-    expect(container.querySelectorAll("[data-line][hidden]")).toHaveLength(0);
+    expect(hiddenLines(container)).toHaveLength(0);
     expect(
       [...container.querySelectorAll(".topik-code-block__text")]
         .map((row) => row.textContent)
@@ -99,7 +109,7 @@ describe.each([
       root = hydrateRoot(container!, element, { onRecoverableError: recoverableError });
     });
     expect(recoverableError).not.toHaveBeenCalled();
-    expect(container.querySelectorAll("[data-line][hidden]")).toHaveLength(2);
+    expect(hiddenLines(container)).toHaveLength(2);
     await act(async () => button(container!, "Copy").click());
     expect(writeText).toHaveBeenCalledWith(`${payload}\n`);
   });
@@ -113,9 +123,9 @@ describe.each([
     container.innerHTML = renderToString(element);
     document.body.append(container);
     expect(container.querySelectorAll("[data-line]")).toHaveLength(3);
-    expect(container.querySelectorAll("[data-line][hidden]")).toHaveLength(0);
-    expect(button(container, "Show fewer lines").disabled).toBe(true);
-    expect(button(container, "Show fewer lines").getAttribute("aria-expanded")).toBe("true");
+    expect(hiddenLines(container)).toHaveLength(0);
+    expect(button(container, "Hide lines 91–92").disabled).toBe(true);
+    expect(button(container, "Hide lines 91–92").getAttribute("aria-expanded")).toBe("true");
 
     const recoverableError = vi.fn();
     await act(async () => {
@@ -123,18 +133,22 @@ describe.each([
     });
 
     expect(recoverableError).not.toHaveBeenCalled();
-    expect(container.querySelectorAll("[data-line][hidden]")).toHaveLength(2);
-    const expand = button(container, "Show all 3 lines");
+    expect(hiddenLines(container)).toHaveLength(2);
+    const expand = button(container, "Show lines 91–92");
     expect(expand.disabled).toBe(false);
     expect(expand.getAttribute("aria-expanded")).toBe("false");
     expect(document.getElementById(expand.getAttribute("aria-controls")!)).toBe(
-      container.querySelector("pre"),
+      container.querySelector(".topik-code-block__region"),
     );
     expand.focus();
     act(() => expand.click());
     expect(document.activeElement).toBe(expand);
     expect(expand.getAttribute("aria-expanded")).toBe("true");
-    expect(container.querySelectorAll("[data-line][hidden]")).toHaveLength(0);
+    expect(hiddenLines(container)).toHaveLength(0);
+    act(() => expand.click());
+    expect(document.activeElement).toBe(expand);
+    expect(expand.getAttribute("aria-expanded")).toBe("false");
+    expect(hiddenLines(container)).toHaveLength(2);
   });
 
   it("copies full canonical text across collapse, wrapping, focus and diff state", async () => {
@@ -161,9 +175,133 @@ describe.each([
     expect(wrap.getAttribute("aria-pressed")).toBe("true");
     await act(async () => button(dom, "Copy").click());
     expect(writeText).toHaveBeenLastCalledWith(`${payload}\n`);
-    act(() => button(dom, "Show all 3 lines").click());
+    act(() => button(dom, "Show lines 91–92").click());
     await act(async () => button(dom, "Copied").click());
     expect(writeText).toHaveBeenLastCalledWith(`${payload}\n`);
+  });
+
+  it.each([
+    ["prefix", [[1, 2]], [3, 4, 5, 6]],
+    ["suffix", [[5, 6]], [1, 2, 3, 4]],
+    [
+      "middle regions",
+      [
+        [2, 3],
+        [5, 5],
+      ],
+      [1, 4, 6],
+    ],
+    ["one row", [[3, 3]], [1, 2, 4, 5, 6]],
+    ["whole block", [[1, 6]], []],
+  ] satisfies [string, [number, number][], number[]][])(
+    "folds %s with operable controls and full copy",
+    async (_kind, collapse, visible) => {
+      const payload = "first\nsecond\nthird\nfourth\nfifth\nsixth";
+      const dom = await mount(
+        <Code
+          payload={payload}
+          content={`${payload}\n`}
+          presentation={{ lineNumbers: true, startLine: 100, wrap: false, collapse }}
+        />,
+      );
+      expect(visibleLines(dom)).toEqual(visible);
+      const controls = [
+        ...dom.querySelectorAll<HTMLButtonElement>(".topik-code-block__fold-toggle"),
+      ];
+      expect(controls).toHaveLength(collapse.length);
+      for (const [index, control] of controls.entries()) {
+        const [start, end] = collapse[index];
+        expect(control.textContent).toBe(
+          start === end ? `Show line ${start + 99}` : `Show lines ${start + 99}–${end + 99}`,
+        );
+        expect(control.closest("[hidden]")).toBeNull();
+        expect(control.disabled).toBe(false);
+        const region = document.getElementById(control.getAttribute("aria-controls")!);
+        expect(region?.getAttribute("hidden")).toBe("");
+        control.focus();
+        act(() => control.click());
+        expect(document.activeElement).toBe(control);
+        expect(control.getAttribute("aria-expanded")).toBe("true");
+        expect(region?.hasAttribute("hidden")).toBe(false);
+        for (const other of controls.filter((item) => item !== control))
+          expect(other.getAttribute("aria-expanded")).toBe("false");
+        act(() => control.click());
+        expect(document.activeElement).toBe(control);
+        expect(control.getAttribute("aria-expanded")).toBe("false");
+        expect(region?.hasAttribute("hidden")).toBe(true);
+      }
+      expect(visibleLines(dom)).toEqual(visible);
+      await act(async () => button(dom, "Copy").click());
+      expect(writeText).toHaveBeenLastCalledWith(`${payload}\n`);
+    },
+  );
+
+  it("folds a one-row entire block while keeping its control available", async () => {
+    const dom = await mount(
+      <Code
+        payload="only"
+        content={"only\n"}
+        presentation={{ lineNumbers: false, wrap: false, collapse: [[1, 1]] }}
+      />,
+    );
+    expect(visibleLines(dom)).toEqual([]);
+    const control = button(dom, "Show line 1");
+    act(() => control.click());
+    expect(visibleLines(dom)).toEqual([1]);
+    expect(button(dom, "Hide line 1")).toBe(control);
+  });
+
+  it("resets fold, wrapping and copy state before changed content/options commit", async () => {
+    const commits: number[][] = [];
+    function ObservedCode(props: TopikComponentProps) {
+      useLayoutEffect(() => {
+        commits.push(visibleLines(container!));
+      });
+      return <Code {...props} />;
+    }
+    const payload = "first\nsecond\nthird";
+    const initial = {
+      lineNumbers: false,
+      startLine: 1,
+      wrap: false,
+      collapse: [[1, 1]],
+    } satisfies CodePresentationEffectiveOptions;
+    const dom = await mount(
+      <ObservedCode payload={payload} content={`${payload}\n`} presentation={initial} />,
+    );
+    act(() => button(dom, "Show line 1").click());
+    act(() => button(dom, "Wrap lines").click());
+    await act(async () => button(dom, "Copy").click());
+    expect(visibleLines(dom)).toEqual([1, 2, 3]);
+    expect(button(dom, "Wrap lines").getAttribute("aria-pressed")).toBe("true");
+    expect(button(dom, "Copied")).toBeDefined();
+    const changed = { ...initial, collapse: [[3, 3]] } satisfies CodePresentationEffectiveOptions;
+    await act(async () => {
+      root!.render(
+        <ObservedCode payload={payload} content={`${payload}\n`} presentation={changed} />,
+      );
+    });
+    expect(commits.at(-1)).toEqual([1, 2]);
+    expect(button(dom, "Show line 3").getAttribute("aria-expanded")).toBe("false");
+    expect(button(dom, "Wrap lines").getAttribute("aria-pressed")).toBe("false");
+    expect(button(dom, "Copy")).toBeDefined();
+    act(() => button(dom, "Show line 3").click());
+    await act(async () => {
+      root!.render(
+        <ObservedCode
+          payload={"new\ncode\ntext"}
+          content={"new\ncode\ntext\n"}
+          presentation={changed}
+        />,
+      );
+    });
+    expect(commits.at(-1)).toEqual([1, 2]);
+    await act(async () => {
+      root!.render(
+        <ObservedCode payload={payload} content={`${payload}\n`} presentation={initial} />,
+      );
+    });
+    expect(commits.at(-1)).toEqual([2, 3]);
   });
 
   it.each(["", "\t a  ", "\n", "a\n", "a\n\n", "<script>&amp;\"'\\"])(
@@ -298,7 +436,7 @@ describe("highlighting and groups", () => {
     );
     expect(dom.querySelector("pre.shiki")).toBeNull();
     expect(dom.querySelectorAll("[data-line]")).toHaveLength(3);
-    expect(dom.querySelectorAll("[data-line][hidden]")).toHaveLength(2);
+    expect(hiddenLines(dom)).toHaveLength(2);
     expect(dom.querySelector(".topik-code-block__filename")?.textContent).toBe("client.ts");
     await act(async () => button(dom, "Copy").click());
     expect(writeText).toHaveBeenCalledWith(`${payload}\n`);

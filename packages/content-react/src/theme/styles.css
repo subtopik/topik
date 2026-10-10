@@ -176,7 +176,7 @@
   }
 
   .topik-code-block__controls button,
-  .topik-code-block__expand {
+  .topik-code-block__fold-toggle {
     background: var(--topik-color-canvas, #ffffff);
     border: 1px solid var(--topik-color-border, #d0d5dd);
     border-radius: 0.35rem;
@@ -188,7 +188,7 @@
   }
 
   .topik-code-block__controls button:disabled,
-  .topik-code-block__expand:disabled {
+  .topik-code-block__fold-toggle:disabled {
     cursor: default;
   }
 
@@ -197,8 +197,24 @@
     outline-offset: -3px;
   }
 
-  .topik-code-block__expand {
-    margin: 0.5rem 0.75rem;
+  .topik-code-block__fold {
+    display: block;
+    padding-block: 0.2rem;
+    user-select: none;
+    white-space: normal;
+  }
+
+  .topik-code-block__fold-toggle {
+    max-width: 100%;
+    user-select: none;
+  }
+
+  .topik-code-block__region {
+    display: block;
+  }
+
+  .topik-code-block__region[hidden] {
+    display: none;
   }
 
   .topik-code-block__legend {
@@ -312,6 +328,28 @@
   }
 
   @media (forced-colors: active) {
+    .topik-code-block {
+      background: Canvas;
+      border-color: CanvasText;
+      color: CanvasText;
+    }
+
+    .topik-code-block .shiki {
+      background: Canvas !important;
+    }
+
+    .topik-code-block .shiki,
+    .topik-code-block .shiki span {
+      color: CanvasText !important;
+    }
+
+    .topik-code-block__controls button,
+    .topik-code-block__fold-toggle {
+      background: ButtonFace;
+      border-color: ButtonText;
+      color: ButtonText;
+    }
+
     .topik-code-block__row[data-diff]::before,
     .topik-code-block__row[data-focused="true"]::before {
       border-color: CanvasText;

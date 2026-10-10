@@ -58,7 +58,7 @@ function presented(source: string) {
 const body = [
   "# Original",
   "",
-  '```ts filename="missing.png" title="A &#38;amp; label" lines startLine=10 highlight="1,2-3,2" focus="2-3" collapseAfter=2 wrap=false added="2" removed="3"  legacy&#38;amp; &#92; &#96;',
+  '```ts filename="missing.png" title="A &#38;amp; label" lines startLine=10 highlight="1,2-3,2" focus="2-3" collapse="3-4" wrap=false added="2" removed="3"  legacy&#38;amp; &#92; &#96;',
   "\tconst first = 1;  ",
   "  + source marker",
   "- source marker",
@@ -150,7 +150,7 @@ test.each(["collection", "wiki"] as const)(
       startLine: 10,
       highlight: [[1, 3]],
       focus: [[2, 3]],
-      collapseAfter: 2,
+      collapse: [[3, 4]],
       wrap: false,
       added: [[2, 2]],
       removed: [[3, 3]],

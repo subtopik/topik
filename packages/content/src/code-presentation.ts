@@ -23,7 +23,7 @@ export interface CodePresentationOptions {
   startLine?: number;
   highlight?: CodeLineSelection;
   focus?: CodeLineSelection;
-  collapseAfter?: number;
+  collapse?: CodeLineSelection;
   wrap?: boolean;
   added?: CodeLineSelection;
   removed?: CodeLineSelection;
@@ -43,13 +43,13 @@ export const CODE_PRESENTATION_OPTION_KEYS = [
   "startLine",
   "highlight",
   "focus",
-  "collapseAfter",
+  "collapse",
   "wrap",
   "added",
   "removed",
 ] as const;
 
-const selectionKeys = new Set(["highlight", "focus", "added", "removed"]);
+const selectionKeys = new Set(["highlight", "focus", "collapse", "added", "removed"]);
 const unsafeKeys = new Set(["__proto__", "constructor", "prototype"]);
 const authoredKeys = new Map<string, keyof CodePresentationOptions>([
   ["filename", "filename"],
@@ -58,7 +58,7 @@ const authoredKeys = new Map<string, keyof CodePresentationOptions>([
   ["startLine", "startLine"],
   ["highlight", "highlight"],
   ["focus", "focus"],
-  ["collapseAfter", "collapseAfter"],
+  ["collapse", "collapse"],
   ["wrap", "wrap"],
   ["added", "added"],
   ["removed", "removed"],
@@ -249,31 +249,27 @@ export function normalizeCodePresentationOptions(
           key,
         );
       result.startLine = input;
-    } else if (key === "collapseAfter") {
-      if (!positive(input) || input >= rowCount)
-        fail(
-          "option",
-          "collapseAfter must leave at least one physical row available to expand",
-          key,
-        );
-      result.collapseAfter = input;
     } else if (selectionKeys.has(key)) {
-      result[key as "highlight" | "focus" | "added" | "removed"] = withOption(key, () => {
-        if (input && typeof input === "object") {
-          if (claimed.has(input)) fail("metadata", "Code presentation data must not be shared");
-          claimed.add(input);
-          for (const item of ownArray(
-            input,
-            "Normalized line selections require interval arrays",
-          )) {
-            if (item && typeof item === "object") {
-              if (claimed.has(item)) fail("metadata", "Code presentation data must not be shared");
-              claimed.add(item);
+      result[key as "highlight" | "focus" | "collapse" | "added" | "removed"] = withOption(
+        key,
+        () => {
+          if (input && typeof input === "object") {
+            if (claimed.has(input)) fail("metadata", "Code presentation data must not be shared");
+            claimed.add(input);
+            for (const item of ownArray(
+              input,
+              "Normalized line selections require interval arrays",
+            )) {
+              if (item && typeof item === "object") {
+                if (claimed.has(item))
+                  fail("metadata", "Code presentation data must not be shared");
+                claimed.add(item);
+              }
             }
           }
-        }
-        return normalizeSelection(input, rowCount);
-      });
+          return normalizeSelection(input, rowCount);
+        },
+      );
     }
   }
   if (result.added && result.removed && overlap(result.added, result.removed))
@@ -359,7 +355,7 @@ export function parseCodePresentationMetadata(
         if (value !== "true" && value !== "false")
           fail("option", `${name} must be true or false`, key);
         input = value === "true";
-      } else if (key === "startLine" || key === "collapseAfter") {
+      } else if (key === "startLine") {
         if (!/^[1-9][0-9]*$/.test(value))
           fail("option", `${name} requires a positive decimal integer`, key);
         input = Number(value);

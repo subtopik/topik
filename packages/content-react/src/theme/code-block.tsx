@@ -22,6 +22,19 @@ interface CodeBlockViewProps {
   rich?: boolean;
 }
 
+type CodeViewKey = readonly [payload: string, content: string, options: string];
+
+interface CodeViewState {
+  key: CodeViewKey;
+  expanded: Set<number>;
+  wrap: boolean;
+  copied: boolean;
+}
+
+function sameView(state: CodeViewState, key: CodeViewKey): boolean {
+  return state.key.every((value, index) => value === key[index]);
+}
+
 function includesLine(intervals: [number, number][] | undefined, line: number): boolean {
   if (!intervals) return false;
   let low = 0;
@@ -94,13 +107,23 @@ export function CodeBlockView({
   const lineNumberWidth = presentation?.lineNumbers
     ? `${String((presentation.startLine ?? 1) + rows.length - 1).length}ch`
     : undefined;
+  const optionsKey = JSON.stringify(presentation ?? null);
+  const viewKey: CodeViewKey = [payload, content, optionsKey];
+  const initialView = (): CodeViewState => ({
+    key: viewKey,
+    expanded: new Set(),
+    wrap: presentation?.wrap ?? false,
+    copied: false,
+  });
   const [hydrated, setHydrated] = useState(false);
-  const [expanded, setExpanded] = useState(false);
-  const [wrap, setWrap] = useState(presentation?.wrap ?? false);
-  const [copied, setCopied] = useState(false);
+  const [view, setView] = useState(initialView);
+  // Reset before committing new content/options, rather than briefly using old row ranges.
+  const currentView = sameView(view, viewKey) ? view : initialView();
+  if (currentView !== view) setView(currentView);
+  const { wrap, copied } = currentView;
   const copyTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const collapseAfter = presentation?.collapseAfter;
-  const collapsed = hydrated && collapseAfter !== undefined && !expanded;
+  const copySequence = useRef(0);
+  const collapse = presentation?.collapse ?? [];
   const hasDiff = Boolean(presentation?.added?.length || presentation?.removed?.length);
 
   useEffect(() => {
@@ -109,23 +132,116 @@ export function CodeBlockView({
   }, []);
 
   useEffect(() => {
-    setExpanded(false);
-    setCopied(false);
+    copySequence.current++;
     clearTimeout(copyTimeout.current);
-  }, [payload, collapseAfter]);
-
-  useEffect(() => setWrap(presentation?.wrap ?? false), [presentation?.wrap]);
+  }, [payload, content, optionsKey]);
 
   async function copyCode() {
     if (!navigator.clipboard) return;
+    const sequence = ++copySequence.current;
     try {
       await navigator.clipboard.writeText(content);
-      setCopied(true);
+      if (sequence !== copySequence.current) return;
+      setView((state) => (sameView(state, viewKey) ? { ...state, copied: true } : state));
       clearTimeout(copyTimeout.current);
-      copyTimeout.current = setTimeout(() => setCopied(false), 1600);
+      copyTimeout.current = setTimeout(() => {
+        setView((state) => (sameView(state, viewKey) ? { ...state, copied: false } : state));
+      }, 1600);
     } catch {
-      setCopied(false);
+      if (sequence === copySequence.current)
+        setView((state) => (sameView(state, viewKey) ? { ...state, copied: false } : state));
     }
+  }
+
+  function toggleRegion(index: number) {
+    setView((state) => {
+      const next = sameView(state, viewKey) ? state : initialView();
+      const expanded = new Set(next.expanded);
+      if (expanded.has(index)) expanded.delete(index);
+      else expanded.add(index);
+      return { ...next, expanded };
+    });
+  }
+
+  function renderRow(index: number): ReactNode {
+    const line = index + 1;
+    const added = includesLine(presentation?.added, line);
+    const removed = includesLine(presentation?.removed, line);
+    return (
+      <span
+        className="topik-code-block__row"
+        data-diff={added ? "added" : removed ? "removed" : undefined}
+        data-focused={presentation?.focus ? includesLine(presentation.focus, line) : undefined}
+        data-highlighted={includesLine(presentation?.highlight, line) || undefined}
+        data-line={line}
+        key={index}
+      >
+        {presentation?.lineNumbers ? (
+          <span aria-hidden="true" className="topik-code-block__line-number">
+            {(presentation.startLine ?? 1) + index}
+          </span>
+        ) : null}
+        {hasDiff ? (
+          <span aria-hidden="true" className="topik-code-block__diff-marker">
+            {added ? "+" : removed ? "−" : " "}
+          </span>
+        ) : null}
+        {added || removed ? (
+          <span className="topik-code-block__sr-only">
+            {added ? "Added line: " : "Removed line: "}
+          </span>
+        ) : null}
+        <span className="topik-code-block__text">
+          {highlight
+            ? highlightedCode([highlight.tokens[index]], highlight.fg, false)
+            : rows[index]}
+          {index < rows.length - 1 || content.endsWith("\n") ? "\n" : null}
+        </span>
+      </span>
+    );
+  }
+
+  function renderPresentedRows(): ReactNode[] {
+    const result: ReactNode[] = [];
+    let index = 0;
+    for (const [regionIndex, [start, end]] of collapse.entries()) {
+      while (index < start - 1) result.push(renderRow(index++));
+      const expanded = !hydrated || currentView.expanded.has(regionIndex);
+      const regionId = `${id}-region-${regionIndex}`;
+      const offset = presentation?.lineNumbers ? (presentation.startLine ?? 1) - 1 : 0;
+      const label =
+        start === end ? `line ${start + offset}` : `lines ${start + offset}–${end + offset}`;
+      result.push(
+        <span className="topik-code-block__fold" key={`fold-${regionIndex}`}>
+          <button
+            aria-controls={regionId}
+            aria-expanded={expanded}
+            className="topik-code-block__expand topik-code-block__fold-toggle"
+            data-collapse-start={start}
+            data-collapse-end={end}
+            disabled={!hydrated}
+            onClick={() => toggleRegion(regionIndex)}
+            type="button"
+          >
+            {expanded ? `Hide ${label}` : `Show ${label}`}
+          </button>
+        </span>,
+      );
+      const regionRows: ReactNode[] = [];
+      while (index < end) regionRows.push(renderRow(index++));
+      result.push(
+        <span
+          className="topik-code-block__region"
+          hidden={!expanded}
+          id={regionId}
+          key={`region-${regionIndex}`}
+        >
+          {regionRows}
+        </span>,
+      );
+    }
+    while (index < rows.length) result.push(renderRow(index++));
+    return result;
   }
 
   return (
@@ -157,7 +273,7 @@ export function CodeBlockView({
             aria-controls={rowsId}
             aria-pressed={wrap}
             disabled={!hydrated}
-            onClick={() => setWrap((value) => !value)}
+            onClick={() => setView((state) => ({ ...state, wrap: !state.wrap }))}
             type="button"
           >
             Wrap lines
@@ -190,60 +306,9 @@ export function CodeBlockView({
             ? highlight
               ? highlightedCode(highlight.tokens, highlight.fg, content.endsWith("\n"))
               : content
-            : rows.map((text, index) => {
-                const line = index + 1;
-                const added = includesLine(presentation?.added, line);
-                const removed = includesLine(presentation?.removed, line);
-                return (
-                  <span
-                    className="topik-code-block__row"
-                    data-diff={added ? "added" : removed ? "removed" : undefined}
-                    data-focused={
-                      presentation?.focus ? includesLine(presentation.focus, line) : undefined
-                    }
-                    data-highlighted={includesLine(presentation?.highlight, line) || undefined}
-                    data-line={line}
-                    hidden={collapsed && index >= (collapseAfter ?? rows.length)}
-                    key={index}
-                  >
-                    {presentation?.lineNumbers ? (
-                      <span aria-hidden="true" className="topik-code-block__line-number">
-                        {(presentation.startLine ?? 1) + index}
-                      </span>
-                    ) : null}
-                    {hasDiff ? (
-                      <span aria-hidden="true" className="topik-code-block__diff-marker">
-                        {added ? "+" : removed ? "−" : " "}
-                      </span>
-                    ) : null}
-                    {added || removed ? (
-                      <span className="topik-code-block__sr-only">
-                        {added ? "Added line: " : "Removed line: "}
-                      </span>
-                    ) : null}
-                    <span className="topik-code-block__text">
-                      {highlight
-                        ? highlightedCode([highlight.tokens[index]], highlight.fg, false)
-                        : text}
-                      {index < rows.length - 1 || content.endsWith("\n") ? "\n" : null}
-                    </span>
-                  </span>
-                );
-              })}
+            : renderPresentedRows()}
         </code>
       </pre>
-      {collapseAfter !== undefined ? (
-        <button
-          aria-controls={rowsId}
-          aria-expanded={!collapsed}
-          className="topik-code-block__expand"
-          disabled={!hydrated}
-          onClick={() => setExpanded((value) => !value)}
-          type="button"
-        >
-          {collapsed ? `Show all ${rows.length} lines` : "Show fewer lines"}
-        </button>
-      ) : null}
     </div>
   );
 }

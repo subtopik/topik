@@ -1,10 +1,12 @@
 import type { ContentDocument, TreeNode } from "./model.js";
 import { CONTENT_LIMITS, ContentLimitError } from "./limits.js";
+import { normalizeCodePresentationOptions } from "./code-presentation.js";
 
 /**
  * Reserve a conservative serialization budget before allocating reader rows.
  * Each text unit can expand to six HTML units; each row reserves 768 units for
- * its number, diff meaning, state classes and surrounding elements. Syntax
+ * its number, diff meaning, state classes and surrounding elements. Each
+ * independent collapse region reserves another 768 units for its visible control. Syntax
  * highlighting is optional and must fall back when its tokens exceed a budget.
  */
 export function assertCodePresentationOutputLimit(document: ContentDocument): void {
@@ -25,7 +27,10 @@ export function assertCodePresentationOutputLimit(document: ContentDocument): vo
       else
         for (const segment of child?.template?.segments ?? [])
           if (segment.type === "literal") measure(segment.value);
-      length += payloadLength * 6 + rows * 768 + 4096;
+      const collapseRegions = node.options?.collapse
+        ? normalizeCodePresentationOptions(node.options, rows).collapse!.length
+        : 0;
+      length += payloadLength * 6 + (rows + collapseRegions) * 768 + 4096;
       length += (child?.lang?.length ?? 0) * 6;
       length += ((node.options?.title?.length ?? 0) + (node.options?.filename?.length ?? 0)) * 6;
       if (length > CONTENT_LIMITS.presentationOutputLength)

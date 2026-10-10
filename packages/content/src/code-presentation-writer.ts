@@ -25,7 +25,7 @@ export function codePresentationWriterExtension(): Options {
         let language = (child.lang ?? "").replace(/[&\\`]/g, (unit) => `&#${unit.charCodeAt(0)};`);
         // Keep literal language names distinct from language-less option headers.
         if (
-          /^(?:lines|wrap)$|^(?:filename|title|lines|startLine|highlight|focus|collapseAfter|wrap|added|removed)=/.test(
+          /^(?:lines|wrap)$|^(?:filename|title|lines|startLine|highlight|focus|collapse|wrap|added|removed)=/.test(
             language,
           )
         )

@@ -86,7 +86,7 @@ export function verifyCodePresentationConsumer() {
     startLine: 10,
     highlight: "4,1-2,2",
     focus: "3-4",
-    collapseAfter: 2,
+    collapse: "3-4",
     wrap: true,
     added: "1",
     removed: "2",
@@ -108,6 +108,7 @@ export function verifyCodePresentationConsumer() {
     [1, 2],
     [4, 4],
   ]);
+  assert.deepEqual(node.options.collapse, [[3, 4]]);
   const snapshot = JSON.stringify(parsed.document);
   const written = writeDocument(parsed.document);
   const reopened = parseDocument(written);
@@ -151,12 +152,20 @@ export function verifyCodePresentationConsumer() {
   }
 
   for (const payload of ["", "one", "a\n\n", "\t  \nlast  "]) {
-    const result = compileTopikContent(presented(payload, { lineNumbers: false }));
+    const rowCount = payload.split("\n").length;
+    const result = compileTopikContent(
+      presented(payload, { lineNumbers: false, collapse: rowCount === 1 ? "1" : `1-${rowCount}` }),
+    );
     assert.equal(result.ok, true, JSON.stringify(result));
     const code = tags(result.tree, "TopikCodeBlock")[0].attributes;
     assert.equal(code.payload, payload);
     assert.equal(code.content, payload + "\n");
-    assert.deepEqual(code.presentation, { lineNumbers: false, startLine: 1, wrap: false });
+    assert.deepEqual(code.presentation, {
+      lineNumbers: false,
+      startLine: 1,
+      collapse: [[1, rowCount]],
+      wrap: false,
+    });
     for (const components of [defaultTopikComponents, getRichTopikComponents()]) {
       const html = renderToStaticMarkup(renderTopikContent(result, { components }));
       assert.equal(
@@ -164,6 +173,45 @@ export function verifyCodePresentationConsumer() {
         payload.split("\n").length,
       );
     }
+  }
+
+  const disjointSource = presented("one\ntwo\nthree\nfour\nfive\nsix", {
+    startLine: 90,
+    collapse: "5,2,4",
+  });
+  const disjointParsed = parseDocument(disjointSource);
+  assert.equal(disjointParsed.ok, true, JSON.stringify(disjointParsed));
+  assert.deepEqual(disjointParsed.document.children[0].options.collapse, [
+    [2, 2],
+    [4, 5],
+  ]);
+  const disjointWritten = writeDocument(disjointParsed.document);
+  assert.ok(disjointWritten.includes('collapse="2,4-5"'));
+  assert.equal(
+    sameDocumentMeaning(disjointParsed.document, parseDocument(disjointWritten).document),
+    true,
+  );
+  const disjoint = compileTopikContent(disjointWritten);
+  assert.equal(disjoint.ok, true, JSON.stringify(disjoint));
+  for (const components of [defaultTopikComponents, getRichTopikComponents()]) {
+    const html = renderToStaticMarkup(renderTopikContent(disjoint, { components }));
+    assert.equal((html.match(/class="topik-code-block__row"/g) ?? []).length, 6);
+    assert.ok(!/\shidden(?:=|\s|>)/.test(html));
+    const controls = [...html.matchAll(/<button\b[^>]*>/g)]
+      .map(([button]) => button)
+      .filter((button) => button.includes("topik-code-block__fold-toggle"));
+    assert.equal(controls.length, 2);
+    for (const [index, [start, end]] of [
+      [2, 2],
+      [4, 5],
+    ].entries()) {
+      assert.ok(controls[index].includes(`data-collapse-start="${start}"`));
+      assert.ok(controls[index].includes(`data-collapse-end="${end}"`));
+      assert.ok(controls[index].includes('aria-expanded="true"'));
+      assert.ok(/\sdisabled(?:=|\s|>)/.test(controls[index]));
+    }
+    assert.ok(html.includes("Hide line 2"));
+    assert.ok(html.includes("Hide lines 4–5"));
   }
 
   const grouped = [
@@ -225,6 +273,8 @@ export function verifyCodePresentationConsumer() {
     `${fence}ts wrap=maybe\none\n${fence}`,
     `${fence}ts title="&#10;"\none\n${fence}`,
     presented("one", { highlight: "2" }),
+    presented("one", { collapse: "2" }),
+    presented("one\ntwo", { collapse: "1-" }),
     presented("one\ntwo", { added: "1", removed: "1" }),
     presented("graph LR; A-->B", { lineNumbers: true }, "mermaid"),
   ]) {
@@ -306,7 +356,7 @@ export async function verifyHydratedCodePresentationConsumer(domModulePath) {
   const container = dom.window.document.getElementById("reader");
   let root;
   try {
-    const payload = "+ source marker\t  \n<old&>  \nthird\n";
+    const payload = "+ source marker\t  \n<old&>  \nthird\nfourth  \nfifth\n";
     const source = presented(
       payload,
       {
@@ -314,7 +364,7 @@ export async function verifyHydratedCodePresentationConsumer(domModulePath) {
         lineNumbers: true,
         startLine: 10,
         focus: "1",
-        collapseAfter: 2,
+        collapse: "5,2,4",
         wrap: true,
         added: "1",
         removed: "2",
@@ -325,7 +375,13 @@ export async function verifyHydratedCodePresentationConsumer(domModulePath) {
     assert.equal(compiled.ok, true, JSON.stringify(compiled));
     const reader = renderTopikContent(compiled, { components: getRichTopikComponents() });
     container.innerHTML = renderToString(reader);
-    assert.equal(container.querySelectorAll(".topik-code-block__row[hidden]").length, 0);
+    assert.equal(container.querySelectorAll(".topik-code-block__region[hidden]").length, 0);
+    const serverControls = [...container.querySelectorAll(".topik-code-block__fold-toggle")];
+    assert.equal(serverControls.length, 2);
+    for (const control of serverControls) {
+      assert.equal(control.disabled, true);
+      assert.equal(control.getAttribute("aria-expanded"), "true");
+    }
     const hydrationErrors = [];
     await act(async () => {
       root = hydrateRoot(container, reader, {
@@ -334,8 +390,12 @@ export async function verifyHydratedCodePresentationConsumer(domModulePath) {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     assert.deepEqual(hydrationErrors, []);
-    assert.equal(container.querySelectorAll(".topik-code-block__row").length, 4);
-    assert.equal(container.querySelectorAll(".topik-code-block__row[hidden]").length, 2);
+    assert.equal(container.querySelectorAll(".topik-code-block__row").length, 6);
+    const hiddenLines = () =>
+      [...container.querySelectorAll(".topik-code-block__region[hidden] [data-line]")].map((row) =>
+        Number(row.getAttribute("data-line")),
+      );
+    assert.deepEqual(hiddenLines(), [2, 4, 5]);
     assert.equal(
       container.querySelector(".shiki"),
       null,
@@ -352,22 +412,41 @@ export async function verifyHydratedCodePresentationConsumer(domModulePath) {
     const buttons = [...container.querySelectorAll("button")];
     const copy = buttons.find((button) => button.textContent === "Copy");
     const wrap = buttons.find((button) => button.textContent === "Wrap lines");
-    const expand = container.querySelector(".topik-code-block__expand");
+    const firstFold = container.querySelector(
+      '.topik-code-block__fold-toggle[data-collapse-start="2"]',
+    );
+    const secondFold = container.querySelector(
+      '.topik-code-block__fold-toggle[data-collapse-start="4"]',
+    );
     assert.equal(copy.disabled, false);
-    assert.equal(expand.getAttribute("aria-expanded"), "false");
+    assert.equal(firstFold.getAttribute("aria-expanded"), "false");
+    assert.equal(secondFold.getAttribute("aria-expanded"), "false");
+    assert.equal(firstFold.textContent, "Show line 11");
+    assert.equal(secondFold.textContent, "Show lines 13–14");
     await act(async () => copy.click());
     assert.deepEqual(copied, [payload + "\n"]);
-    expand.focus();
-    await act(async () => expand.click());
-    assert.equal(expand.getAttribute("aria-expanded"), "true");
-    assert.equal(container.querySelectorAll(".topik-code-block__row[hidden]").length, 0);
+    firstFold.focus();
+    await act(async () => firstFold.click());
+    assert.equal(firstFold.getAttribute("aria-expanded"), "true");
+    assert.equal(firstFold.textContent, "Hide line 11");
+    assert.equal(secondFold.getAttribute("aria-expanded"), "false");
+    assert.deepEqual(hiddenLines(), [4, 5]);
+    assert.equal(dom.window.document.activeElement, firstFold);
+    secondFold.focus();
+    await act(async () => secondFold.click());
+    assert.equal(secondFold.getAttribute("aria-expanded"), "true");
+    assert.deepEqual(hiddenLines(), []);
     assert.equal(
       [...container.querySelectorAll(".topik-code-block__text")]
         .map((node) => node.textContent)
         .join(""),
       payload + "\n",
     );
-    assert.equal(dom.window.document.activeElement, expand);
+    assert.equal(dom.window.document.activeElement, secondFold);
+    await act(async () => firstFold.click());
+    assert.equal(firstFold.getAttribute("aria-expanded"), "false");
+    assert.equal(secondFold.getAttribute("aria-expanded"), "true");
+    assert.deepEqual(hiddenLines(), [2]);
     wrap.focus();
     await act(async () => wrap.click());
     assert.equal(wrap.getAttribute("aria-pressed"), "false");

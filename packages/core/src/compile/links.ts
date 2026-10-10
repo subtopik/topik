@@ -201,7 +201,7 @@ export async function compileResourceLinks(input: CompileResourceLinksInput): Pr
           status = "invalid";
           appendLinkDiagnostic("link-reference-ambiguous", link, policy, diagnostics);
         }
-        replacements.set(link.href, { reference: explicit, status });
+        replacements.set(navigationReferenceKey(link), { reference: explicit, status });
         continue;
       }
       if (NON_PAGE_SCHEME.test(link.href)) continue;
@@ -257,7 +257,7 @@ export async function compileResourceLinks(input: CompileResourceLinksInput): Pr
           policy,
           diagnostics,
         );
-        replacements.set(link.href, { reference, status });
+        replacements.set(navigationReferenceKey(link), { reference, status });
         continue;
       }
       // Guides retain application URL links, while Markdown source links must be declared.
@@ -291,7 +291,7 @@ export async function compileResourceLinks(input: CompileResourceLinksInput): Pr
     const rewritten = rewriteTopikNavigationReferences(
       resource.spec.content.value,
       (navigationReference) => {
-        const replacement = replacements.get(navigationReference.href);
+        const replacement = replacements.get(navigationReferenceKey(navigationReference));
         if (!replacement) return undefined;
         references.push({
           resource: key,
@@ -398,6 +398,11 @@ function isDocumentResource(resource: SourceResource): resource is DocumentResou
 
 function resourceKey(resource: { type: string; name: string }): string {
   return `${resource.type}/${resource.name}`;
+}
+
+function navigationReferenceKey(reference: Pick<TopikContentLink, "kind" | "href">): string {
+  // The same href can be a download in a Markdown link and a page destination in a card.
+  return `${reference.kind}:${reference.href}`;
 }
 
 const NON_PAGE_SCHEME = /^(?:asset|https?|mailto|tel):/i;

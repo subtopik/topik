@@ -1,7 +1,8 @@
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, expect, test } from "vite-plus/test";
+import { analyzeTopikContent } from "@topik/content";
 import { compileManifest } from "./manifest";
 import { compileGuides } from "./guide";
 import { compileWiki } from "./wiki";
@@ -435,5 +436,93 @@ test.each([undefined, 1] as const)(
         expect.objectContaining({ id: "link-page-not-found" }),
       ],
     });
+  },
+);
+
+const sharedHrefCases = (["wiki", "guide"] as const).flatMap((kind) =>
+  (["link-first", "card-first"] as const).flatMap((order) =>
+    (["inline", "reference"] as const).flatMap((style) =>
+      (["regular", "symlink", "hardlink", "executable"] as const).map((fileType) => ({
+        kind,
+        order,
+        style,
+        fileType,
+      })),
+    ),
+  ),
+);
+
+test.each(sharedHrefCases)(
+  "$kind keeps $style downloads and cards independent: $order, $fileType file",
+  async ({ kind, order, style, fileType }) => {
+    const download =
+      style === "inline" ? "[Download](./manual)" : "[Download][download]\n\n[download]: ./manual";
+    const card = '{% card title="Manual page" href="./manual" /%}';
+    const content = (order === "link-first" ? [download, card] : [card, download]).join("\n\n");
+    const source = (body: string) => `---\nid: home\n---\n# Home\n\n${body}\n`;
+    const dir = await fixture({
+      ...(kind === "wiki"
+        ? {
+            "wiki.yaml": "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation: [home, manual]\n",
+          }
+        : { "collection.yaml": guideConfig }),
+      "home.md": source(download),
+      "manual.md": "---\nid: manual-page\n---\n# Manual\n",
+    });
+    const bytes = "Download these exact bytes.\n";
+    if (fileType === "symlink" || fileType === "hardlink") {
+      const outside = await fixture({ secret: "Outside bytes must not be published.\n" });
+      await (fileType === "symlink" ? symlink : link)(join(outside, "secret"), join(dir, "manual"));
+    } else {
+      await writeFile(join(dir, "manual"), bytes);
+      if (fileType === "executable") await chmod(join(dir, "manual"), 0o755);
+    }
+    const compile = kind === "wiki" ? compileWiki : compileGuides;
+    const options = {
+      dir,
+      assets: {
+        generateName: createProjectAssetNameGenerator({
+          projectRoot: dir,
+          projectNamespace: "example/shared-link-card-href",
+        }),
+      },
+    };
+    const unsupported = {
+      name: "AssetCompilationError",
+      diagnostics: [expect.objectContaining({ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" })],
+    };
+    // Adding a card with the same href must not alter the download's admission or identity.
+    if (fileType !== "regular") {
+      await expect(compile(options)).rejects.toMatchObject(unsupported);
+      await writeFile(join(dir, "home.md"), source(content));
+      await expect(compile(options)).rejects.toMatchObject(unsupported);
+      return;
+    }
+    const withoutCard = await compile(options);
+    expect(withoutCard.payloads).toHaveLength(1);
+    await writeFile(join(dir, "home.md"), source(content));
+    const result = await compile(options);
+    expect(result.payloads).toEqual(withoutCard.payloads);
+    expect(new TextDecoder().decode(result.payloads[0].bytes)).toBe(bytes);
+    const asset = result.resources.find((resource) => resource.type === "Asset")!;
+    const home = result.resources.find((resource) => resource.name === "home");
+    if (home?.type !== "WikiPage" && home?.type !== "Guide") throw new Error("Expected home");
+    const links = analyzeTopikContent(home.spec.content.value).links;
+    expect(links.find((reference) => reference.kind === "link")?.href).toBe(`asset:${asset.name}`);
+    expect(links.find((reference) => reference.kind === "card")?.href).toBe(
+      `ref://${kind === "wiki" ? "wiki-page" : "guide"}/manual-page`,
+    );
+    expect(result.references).toMatchObject([
+      { kind: "card", href: "./manual", reference: { name: "manual-page" }, status: "verified" },
+    ]);
+
+    await rm(join(dir, "manual"));
+    const withoutDownload = await compile(options);
+    expect(withoutDownload.payloads).toEqual([]);
+    expect(withoutDownload.references).toHaveLength(2);
+    expect(withoutDownload.references.map((reference) => reference.reference.name)).toEqual([
+      "manual-page",
+      "manual-page",
+    ]);
   },
 );

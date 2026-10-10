@@ -4,6 +4,16 @@ import type { Resource } from "../resource";
 import type { Wiki } from "@topik/schema/wiki/v1";
 import type { Guide } from "@topik/schema/guide/v1";
 import type { WikiPage } from "@topik/schema/wiki-page/v1";
+import type { Course } from "@topik/schema/course/v1";
+import type { CourseModule } from "@topik/schema/course-module/v1";
+import type { CoursePage } from "@topik/schema/course-page/v1";
+import { resolveCourseNavigation, type CourseReferenceContext } from "../course-navigation";
+import {
+  sourceCourseContext,
+  sourceCourseModules,
+  resolveSourceCourseContext,
+  transportCourseReferences,
+} from "./course";
 import { resolveSourceReferenceContext } from "./reference-context";
 import { sourcePlanDiagnostics, SourcePlanningError } from "./diagnostics";
 import {
@@ -13,6 +23,7 @@ import {
 import { parseTopikManifest, type TopikManifestSource } from "../config/manifest";
 import { parseWikiConfig } from "../config/wiki";
 import { parseCollectionConfig } from "../config/collection";
+import { parseCourseConfig } from "../config/course";
 import { parseSafeConfigurationYaml } from "../compile/config";
 import { validateResources } from "../validate";
 import { serializeTopikJson, parseStrictTopikJson } from "../assets/json";
@@ -72,7 +83,8 @@ export interface InitializeSourceProjectInput {
   media?: readonly SourceMediaSelection[];
   /** Immutable Wiki context retained with each saved page body. */
   referenceContexts?: Readonly<Record<string, Wiki>>;
-  /** Explicit new Guide file paths, independently admitted in createPaths. */
+  courseReferenceContexts?: Readonly<Record<string, CourseReferenceContext>>;
+  /** Explicit new Guide or CoursePage file paths, independently admitted in createPaths. */
   documentPaths?: Readonly<Record<string, string>>;
   assetReferenceContexts?: SourceAssetReferenceContexts;
   /** Exact expected-absence paths admitted from the complete inventory. */
@@ -94,6 +106,7 @@ export interface AddSourceToProjectInput {
   resources: readonly Resource[];
   media?: readonly SourceMediaSelection[];
   referenceContexts?: Readonly<Record<string, Wiki>>;
+  courseReferenceContexts?: Readonly<Record<string, CourseReferenceContext>>;
   documentPaths?: Readonly<Record<string, string>>;
   assetReferenceContexts?: SourceAssetReferenceContexts;
   createPaths: readonly string[];
@@ -117,6 +130,7 @@ export async function addSourceToProject(
         resources: input.resources,
         media: input.media,
         referenceContexts: input.referenceContexts,
+        courseReferenceContexts: input.courseReferenceContexts,
         assetReferenceContexts: input.assetReferenceContexts,
         documentPaths: input.documentPaths,
         createPaths: input.createPaths,
@@ -162,11 +176,16 @@ async function buildSource(
       Object.keys(input.documentPaths).some(
         (identity) =>
           !input.resources.some(
-            (resource) => resource.type === "Guide" && identity === `Guide/${resource.name}`,
+            (resource) =>
+              (resource.type === "Guide" || resource.type === "CoursePage") &&
+              identity === `${resource.type}/${resource.name}`,
           ),
       )
     )
-      return failure("source-mapping-invalid", "Explicit document paths must identify new Guides.");
+      return failure(
+        "source-mapping-invalid",
+        "Explicit document paths must identify new Guides or Course pages.",
+      );
     if (
       !existing &&
       occupied.some(
@@ -331,7 +350,7 @@ async function buildSource(
         paths.set(`Guide/${guide.name}`, path);
         allocated.add(path);
       }
-    } else {
+    } else if (source.kind === "wiki") {
       const wikis = expected.filter((resource): resource is Wiki => resource.type === "Wiki");
       if (
         wikis.length !== 1 ||
@@ -442,17 +461,96 @@ async function buildSource(
           : {}),
       };
       parseWikiConfig(config);
+    } else {
+      const courses = expected.filter((resource): resource is Course => resource.type === "Course");
+      if (
+        courses.length !== 1 ||
+        courses[0].name !== source.id ||
+        expected.some(
+          (resource) =>
+            !["Course", "CourseModule", "CoursePage", "Person", "Asset"].includes(resource.type),
+        )
+      )
+        return failure(
+          "resource-unrepresentable",
+          "A Course initializes exactly one Course, its modules/pages, Persons and media.",
+        );
+      const course = courses[0];
+      const modules = expected.filter(
+        (resource): resource is CourseModule => resource.type === "CourseModule",
+      );
+      const pages = expected.filter(
+        (resource): resource is CoursePage => resource.type === "CoursePage",
+      );
+      if (
+        modules.some((module) => module.spec.course !== course.name) ||
+        pages.some((page) => !modules.some((module) => module.name === page.spec.module))
+      )
+        return failure(
+          "source-mapping-missing",
+          "Every Course module and page must belong to the selected Course.",
+        );
+      for (const page of pages) {
+        const module = modules.find((module) => module.name === page.spec.module)!;
+        paths.set(
+          `CoursePage/${page.name}`,
+          input.documentPaths?.[`CoursePage/${page.name}`] ??
+            posix.join(directory, module.spec.slug, `${page.spec.slug}.md`),
+        );
+      }
+      const context = sourceCourseContext(expected, course, paths, directory);
+      const current = resolveCourseNavigation(context);
+      for (const page of pages) {
+        const saved = resolveSourceCourseContext(
+          input.courseReferenceContexts?.[`CoursePage/${page.name}`] ?? context,
+          course.name,
+          page.name,
+        );
+        transportCourseReferences(page, saved, current, derivedRepairs);
+      }
+      config = {
+        id: course.name,
+        title: course.spec.title,
+        slug: course.spec.slug,
+        sourceVersion: 1,
+        ...(course.labels !== undefined ? { labels: course.labels } : {}),
+        ...(Object.hasOwn(course.spec, "description")
+          ? { description: course.spec.description }
+          : {}),
+        ...(course.spec.authors !== undefined ? { authors: course.spec.authors } : {}),
+        ...(source.assetDirectory !== undefined ? { assets: { directory: assetDirectory } } : {}),
+        ...(expected.some((resource) => resource.type === "Person")
+          ? {
+              persons: expected
+                .filter((resource) => resource.type === "Person")
+                .map((person) => ({
+                  id: person.name,
+                  ...(person.labels !== undefined ? { labels: person.labels } : {}),
+                  spec: person.spec,
+                })),
+            }
+          : {}),
+        modules: sourceCourseModules(expected, course, paths, directory),
+      };
+      parseCourseConfig(config);
     }
     for (const resource of expected.filter(
-      (resource): resource is Guide | WikiPage =>
-        resource.type === "Guide" || resource.type === "WikiPage",
+      (resource): resource is Guide | WikiPage | CoursePage =>
+        resource.type === "Guide" || resource.type === "WikiPage" || resource.type === "CoursePage",
     )) {
       const path = paths.get(`${resource.type}/${resource.name}`)!;
       const metadata = {
         id: resource.name,
         title: resource.spec.title,
-        ...(Object.hasOwn(resource.spec, "description")
+        ...(resource.type !== "CoursePage" && Object.hasOwn(resource.spec, "description")
           ? { description: resource.spec.description }
+          : {}),
+        ...(resource.type === "CoursePage"
+          ? {
+              slug: resource.spec.slug,
+              order: resource.spec.order,
+              ...(resource.spec.authors !== undefined ? { authors: resource.spec.authors } : {}),
+            }
           : {}),
         ...(resource.labels !== undefined ? { labels: resource.labels } : {}),
         ...(resource.type === "Guide"
@@ -538,11 +636,21 @@ async function buildSource(
     });
     // Compiler remaps local media identities; supplied byte metadata must still match exactly.
     for (const resource of expected) {
-      if (resource.type !== "Guide" && resource.type !== "WikiPage") continue;
+      if (
+        resource.type !== "Guide" &&
+        resource.type !== "WikiPage" &&
+        resource.type !== "CoursePage"
+      )
+        continue;
       const original = candidate.compilation.resources.find(
         (other) => other.type === resource.type && other.name === resource.name,
       );
-      if (!original || (original.type !== "Guide" && original.type !== "WikiPage"))
+      if (
+        !original ||
+        (original.type !== "Guide" &&
+          original.type !== "WikiPage" &&
+          original.type !== "CoursePage")
+      )
         return failure(
           "round-trip-mismatch",
           "A created document did not compile to its stable identity.",
@@ -616,6 +724,7 @@ async function buildSource(
       desiredGraphDigest,
       intent: input.intent,
       referenceContexts: input.referenceContexts ?? null,
+      courseReferenceContexts: input.courseReferenceContexts ?? null,
       assetReferenceContexts: input.assetReferenceContexts ?? null,
       documentPaths: input.documentPaths ?? null,
       createPaths: input.createPaths,

@@ -16,7 +16,9 @@ sources:
 
 The manifest declares the project namespace and points to existing configurations. Wiki identity, navigation and settings stay in each Wiki configuration; collection settings stay in each collection configuration. Markdown, frontmatter and ordinary media remain the source files. Generated JSON resources belong in compiler output. A Git checkout is not required.
 
-`version: 1` versions only manifest syntax. It does not enable the extended content metadata. Version 1 supports `wiki` and `collection`; Course compilation and publishing remain separate capabilities. [Source writing](./source-writing.md) describes the separately opted-in `sourceVersion: 1` and project-writing APIs.
+`version: 1` versions only manifest syntax. It does not enable the extended content
+metadata. Sources support `wiki`, `collection` and `course`. [Source writing](./source-writing.md)
+describes the separately selected `sourceVersion: 1` grammar and project-writing APIs.
 
 ## Project namespace
 

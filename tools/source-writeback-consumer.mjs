@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
+import { parseDocument, sameDocumentMeaning } from "@topik/content";
 import {
   readSourceProject,
   planSourceUpdates,
@@ -147,9 +148,153 @@ export async function verifySourceWritebackConsumer(packageCohort = "c".repeat(6
   return { project, plan, authority: admitted };
 }
 
+/** Course compilation and writing use public packages without an application adapter. */
+export async function verifyCourseSourceConsumer(packageCohort = "c".repeat(64)) {
+  const project = await readSourceProject({
+    tree: [
+      file(
+        ".topik.yaml",
+        "version: 1\nnamespace: packed/course\nsources: [{kind: course, config: course/course.yaml}]\n",
+      ),
+      file(
+        "course/course.yaml",
+        "# Keep course configuration\nid: training\ntitle: Training\nslug: training\nsourceVersion: 1\nauthors: [ada]\npersons: [{id: ada, spec: {name: Ada, email: null, bio: Teacher}}]\ncustom: exact\nmodules:\n  - id: foundations\n    title: Foundations\n    slug: foundations\n    order: 0\n    pages: [lessons/intro, lessons/next]\n",
+      ),
+      file(
+        "course/lessons/intro.md",
+        "---\r\nid: intro\r\ntitle: Original # keep\r\nslug: introduction\r\norder: 0\r\nauthors: [ada]\r\ncustom: exact\r\n---\r\n# Intro\r\n\r\n[Next](next.md?mode=read#topic)\r\n",
+        "100755",
+      ),
+      file(
+        "course/lessons/next.md",
+        "---\nid: next\ntitle: Next\nslug: next\norder: 1\n---\n# Topic\n",
+      ),
+      file("README.md", "Unowned exact bytes\r\n", "100755"),
+    ],
+  });
+  const context = project.courseContexts["Course/training"];
+  assert.ok(context);
+  const desired = structuredClone(project.compilation.resources);
+  const page = desired.find(
+    (resource) => resource.type === "CoursePage" && resource.name === "intro",
+  );
+  assert.ok(page);
+  page.spec.title = "Edited lesson";
+  const updated = await planSourceUpdates({
+    project,
+    expectedTreeDigest: project.treeDigest,
+    packageCohort,
+    desiredResources: desired,
+    operations: [{ kind: "update", resource: "CoursePage/intro" }],
+    authority: authority(project),
+    courseReferenceContexts: { "CoursePage/intro": context },
+  });
+  assert.equal(updated.ok, true, JSON.stringify(updated));
+  assert.equal(updated.plan.changes.length, 1);
+  assert.equal(updated.plan.changes[0].path, "course/lessons/intro.md");
+  assert.equal(updated.plan.changes[0].candidate.mode, "100755");
+  assert.ok(
+    decode(updated.plan.changes[0].candidate.bytes).includes('title: "Edited lesson" # keep\r\n'),
+  );
+  assert.ok(
+    decode(updated.plan.changes[0].candidate.bytes).endsWith(
+      "# Intro\r\n\r\n[Next](next.md?mode=read#topic)\r\n",
+    ),
+  );
+  assert.deepEqual(
+    updated.plan.candidate.tree.find((entry) => entry.path === "course/course.yaml"),
+    project.tree.find((entry) => entry.path === "course/course.yaml"),
+  );
+
+  const moved = await planSourceUpdates({
+    project,
+    expectedTreeDigest: project.treeDigest,
+    packageCohort,
+    desiredResources: project.compilation.resources,
+    operations: [{ kind: "move", resource: "CoursePage/next", path: "course/moved/next.md" }],
+    authority: { ...authority(project), create: ["course/moved/next.md"] },
+  });
+  assert.equal(moved.ok, true, JSON.stringify(moved));
+  assert.deepEqual(
+    moved.plan.candidate.tree.find((entry) => entry.path === "README.md"),
+    project.tree.find((entry) => entry.path === "README.md"),
+  );
+  assert.equal(
+    moved.plan.candidate.documents.find((entry) => entry.resource === "CoursePage/next").path,
+    "course/moved/next.md",
+  );
+
+  const occupied = [file("README.md", "Unowned\n", "100755")];
+  const source = {
+    kind: "course",
+    config: "course/course.yaml",
+    id: "training",
+    title: "Training",
+  };
+  const documentPaths = {
+    "CoursePage/intro": "course/lessons/intro.md",
+    "CoursePage/next": "course/lessons/next.md",
+  };
+  const courseReferenceContexts = { "CoursePage/intro": context, "CoursePage/next": context };
+  const assertCreatedResources = (actual) => {
+    const expected = structuredClone(project.compilation.resources);
+    for (const page of expected.filter((resource) => resource.type === "CoursePage")) {
+      const compiled = actual.find(
+        (resource) => resource.type === "CoursePage" && resource.name === page.name,
+      );
+      assert.ok(compiled);
+      const before = parseDocument(page.spec.content.value);
+      const after = parseDocument(compiled.spec.content.value);
+      assert.ok(before.ok && after.ok);
+      assert.equal(sameDocumentMeaning(before.document, after.document), true);
+      // Newly created files use the content writer's formatting; metadata remains exact.
+      page.spec.content.value = compiled.spec.content.value;
+    }
+    assert.deepEqual(actual, expected);
+  };
+  const created = await initializeSourceProject({
+    tree: occupied,
+    expectedTreeDigest: digestSourceTree(occupied),
+    packageCohort,
+    intent: { namespace: "packed/new-course", source },
+    resources: project.compilation.resources,
+    documentPaths,
+    courseReferenceContexts,
+    createPaths: [".topik.yaml", source.config, ...Object.values(documentPaths)],
+  });
+  assert.equal(created.ok, true, JSON.stringify(created));
+  assertCreatedResources(created.plan.candidate.compilation.resources);
+
+  const empty = await readSourceProject({
+    tree: [
+      ...occupied,
+      file(".topik.yaml", "# Keep namespace\nversion: 1\nnamespace: packed/empty\nsources: []\n"),
+    ],
+  });
+  const root = empty.configurations.find((entry) => entry.path === ".topik.yaml");
+  const added = await addSourceToProject({
+    project: empty,
+    expectedTreeDigest: empty.treeDigest,
+    packageCohort,
+    source,
+    resources: project.compilation.resources,
+    documentPaths,
+    courseReferenceContexts,
+    createPaths: [source.config, ...Object.values(documentPaths)],
+    manifestAuthority: {
+      ...root,
+      fields: root.fields.filter((entry) => entry.selector === "sources/+"),
+    },
+  });
+  assert.equal(added.ok, true, JSON.stringify(added));
+  assert.equal(added.plan.candidate.manifest.namespace, "packed/empty");
+  assertCreatedResources(added.plan.candidate.compilation.resources);
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   await verifySourceWritebackConsumer();
+  await verifyCourseSourceConsumer();
   console.log(
-    "Verified packed source inspection, update, no-op, initialization and source addition",
+    "Verified packed Guide and Course source inspection, updates, moves, initialization and source addition",
   );
 }

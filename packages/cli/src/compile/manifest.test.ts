@@ -82,6 +82,13 @@ test("manifest diagnostics show safe entry, kind, and root-relative config", () 
   );
   expect(
     formatPublicCliError(
+      new ManifestSourceError("config-not-found", 1, "course", "lessons/course.yaml"),
+    ),
+  ).toBe(
+    ".topik.yaml sources[1] (course) lessons/course.yaml: Required configuration file was not found.",
+  );
+  expect(
+    formatPublicCliError(
       new ManifestSourceError("config-read-failed", 0, "collection", "/private/secret.yaml"),
     ),
   ).not.toContain("private");

@@ -12,8 +12,11 @@ export {
   type TopikManifestSource,
   parseCollectionConfig,
   parseWikiConfig,
+  parseCourseConfig,
   type CollectionConfig,
   type WikiConfig,
+  type CourseConfig,
+  type CourseModuleConfig,
 } from "./config";
 
 export {
@@ -28,6 +31,7 @@ export {
   lint,
   compileWiki,
   compileGuides,
+  compileCourse,
   compileAssetResources,
   createProjectAssetNameGenerator,
   type ProjectAssetNameOptions,
@@ -40,6 +44,7 @@ export {
   type CompileOptions,
   type CompileWikiOptions,
   type CompileGuidesOptions,
+  type CompileCourseOptions,
   type CompileResult,
   type CompileValidationOptions,
   type PublicCompileErrorId,
@@ -80,6 +85,17 @@ export {
   type ResolvedWikiPage,
   type WikiSwitcherNode,
 } from "./wiki-navigation";
+
+export {
+  resolveCourseNavigation,
+  resolveCourseContentHref,
+  resolveCourseContentReference,
+  type CourseReferenceContext,
+  type ResolvedCoursePage,
+  type ResolvedCourseNavigation,
+  type ResolvedCourseContentLink,
+  type ResolvedCourseContentReference,
+} from "./course-navigation";
 
 export { watch, type WatchOptions, type Watcher } from "./watch";
 

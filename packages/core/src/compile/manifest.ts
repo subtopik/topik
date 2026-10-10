@@ -12,6 +12,7 @@ import { createProjectAssetNameGenerator } from "./asset-names";
 import { readConfigurationText, parseSafeConfigurationYaml, readExactConfigFile } from "./config";
 import { discoverGuides, validateGuideAuthors, type CompileResourceDiscovery } from "./guide";
 import { discoverWiki } from "./wiki";
+import { discoverCourse, validateCourseAuthors } from "./course";
 import { PublicCompileError, type PublicCompileErrorId } from "./public-errors";
 import { throwOnCompileErrors, type CompileResult } from "./shared";
 import type { SourceResource } from "../resource";
@@ -80,7 +81,10 @@ export async function loadTopikManifest(dir: string): Promise<TopikManifest> {
       const source = (value as { sources?: unknown[] })?.sources?.[index];
       const entry =
         source !== null && typeof source === "object" ? (source as Record<string, unknown>) : {};
-      const kind = entry.kind === "wiki" || entry.kind === "collection" ? entry.kind : undefined;
+      const kind =
+        entry.kind === "wiki" || entry.kind === "collection" || entry.kind === "course"
+          ? entry.kind
+          : undefined;
       throw new ManifestSourceError(
         "manifest-invalid",
         index,
@@ -135,7 +139,9 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
       const localOptions = { dir: join(root, source.directory), validation: options.validation };
       discovered = await (source.kind === "wiki"
         ? discoverWiki(localOptions, selected)
-        : discoverGuides(localOptions, selected));
+        : source.kind === "course"
+          ? discoverCourse(localOptions, selected)
+          : discoverGuides(localOptions, selected));
     } catch (error) {
       throw new ManifestSourceError(
         error instanceof PublicCompileError ? error.id : "manifest-source-failed",
@@ -188,6 +194,10 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
   }
   throwOnCompileErrors(diagnostics);
   validateGuideAuthors(resources, sourcePathsByResource, versionedGuideNames);
+  validateCourseAuthors(
+    resources,
+    Object.assign({}, ...provenance.map((source) => source.sourcePathsByResource)),
+  );
   const compiled = await compileAssetResources({
     rootDir: root,
     resources,

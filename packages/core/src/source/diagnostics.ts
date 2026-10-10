@@ -11,7 +11,7 @@ export interface SourcePlanDiagnostic {
   /** One-based lines in the compiled document body, excluding frontmatter. */
   lines?: readonly number[];
   sourceIndex?: number;
-  kind?: "wiki" | "collection";
+  kind?: "wiki" | "collection" | "course";
   config?: string;
 }
 

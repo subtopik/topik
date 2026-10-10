@@ -49,7 +49,10 @@ export function formatPublicCliError(error: unknown): string {
       Number.isSafeInteger(error.sourceIndex) && error.sourceIndex >= 0
         ? `sources[${error.sourceIndex}]`
         : "source";
-    const kind = error.kind === "wiki" || error.kind === "collection" ? ` (${error.kind})` : "";
+    const kind =
+      error.kind === "wiki" || error.kind === "collection" || error.kind === "course"
+        ? ` (${error.kind})`
+        : "";
     return `.topik.yaml ${index}${kind}${location ? ` ${location}` : ""}: ${message}`;
   }
   if (error instanceof PublicCompileError) {

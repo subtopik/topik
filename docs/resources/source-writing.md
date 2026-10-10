@@ -1,14 +1,14 @@
 ---
 title: Source writing
-description: Plan reviewed changes to a portable Guide or Wiki source project.
+description: Plan reviewed changes to portable Guide, Wiki and Course source projects.
 ---
 
 # Source writing
 
-`@topik/core` can inspect a complete source tree and plan Guide, Wiki, WikiPage
-and Person changes. These APIs return candidate files; they do not edit a checkout,
-create a Git commit, publish content or authorize a write. Course source writing
-is not supported.
+`@topik/core` can inspect a complete source tree and plan Guide, Wiki, WikiPage,
+Course, CourseModule, CoursePage and Person changes. These APIs return candidate
+files; they do not edit a checkout, create a Git commit, publish content or
+authorize a write. Applications decide when and how to apply a plan.
 
 ## Opt into source metadata
 
@@ -33,6 +33,81 @@ links resolve from the current page's source directory. Root-relative links with
 a Markdown extension address source paths; extensionless root links address
 public routes. Hidden pages remain valid targets. Readers must pass the Wiki's
 source version to `resolveWikiNavigation`.
+
+`sourceVersion` versions the interpretation of authored files, not a Wiki's
+revision or its resource `apiVersion`. A Wiki groups page identities into
+navigation; its pages carry the content. Source coordinates connect that
+navigation to authored files. For example:
+
+```yaml
+id: handbook
+title: Handbook
+sourceVersion: 1
+navigation:
+  - type: page
+    slug: getting-started
+    source: pages/start
+```
+
+With `id: intro` in `pages/start.md` frontmatter, the compiled page node has
+`page: intro`, `slug: getting-started` and `sourcePath: pages/start`. Those fields
+represent the page identity, public route and config-relative Markdown location,
+respectively. Source paths omit the extension and remain portable; they are not
+absolute filesystem paths. Moving the file need not change its identity or URL.
+
+## Course sources
+
+A manifest declaration with `kind: course` selects a Course configuration.
+Course source files use the new `sourceVersion: 1` grammar explicitly:
+
+```yaml
+id: learning
+title: Learning
+slug: learning
+sourceVersion: 1
+modules:
+  - id: foundations
+    title: Foundations
+    slug: foundations
+    order: 0
+    pages:
+      - lessons/start
+```
+
+The declaration reads `lessons/start.md` or `lessons/start.mdx` relative to the
+configuration directory. Each page has explicit frontmatter:
+
+```markdown
+---
+id: first-lesson
+title: First lesson
+slug: introduction
+order: 0
+---
+
+# First lesson
+```
+
+The configuration supplies the Course and module metadata and each page's module
+membership. Markdown supplies the page metadata and body. Course and module
+descriptions distinguish absence from null; labels are string maps. Course and
+page authors refer to Persons declared in the configuration's `persons` list.
+Module and page `order` values are explicit nonnegative integers. IDs remain
+stable independently of file names, public slugs and ordering.
+
+Relative links resolve against a page's source path. Extensionless root links
+address public module/page routes such as `/foundations/introduction`; root links
+with a Markdown extension address source paths. Compilation preserves query
+strings and fragments and validates targets and headings. Images and downloads
+use the shared project Asset pipeline and the Course's local `assets.directory`.
+
+Course source context is separate from the Course resource. Inspection returns
+`courseContexts`, keyed by `Course/<id>`, containing the module/page routes and
+source positions. Retain that immutable context with saved content and pass it as
+`courseReferenceContexts["CoursePage/<id>"]` when planning or initializing changes.
+This preserves a saved link's target when modules, routes or files move; missing
+or incomplete required context blocks planning. Applications can import the
+browser-safe resolver from `@topik/core/course-navigation`.
 
 ## Inspect and plan
 
@@ -177,7 +252,9 @@ manifest or unresolved source configuration cannot be treated as absence.
 Unrelated files are preserved and every generated path uses no-overwrite rules.
 Optional `documentPaths` assigns explicitly admitted Guide filenames separately
 from their public slugs, including safe names for reserved or long slug spellings.
-Wiki filenames follow each page's explicit navigation `sourcePath` instead.
+It also assigns explicit CoursePage filenames. Wiki filenames follow each page's
+explicit navigation `sourcePath` instead. A Course initializer writes its Course
+and module configuration plus explicitly identified page Markdown and media.
 
 `addSourceToProject` handles a valid existing manifest, including `sources: []`.
 It requires a new source intent and independently admitted `sources/+` root

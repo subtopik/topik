@@ -106,7 +106,9 @@ import { findFirstWikiPage, resolveWikiContentHref, resolveWikiNavigation } from
 import type { Wiki } from "@topik/schema/wiki/v1";
 
 export function resolvePageLink(wiki: Wiki, currentPageName: string, href: string) {
-  const navigation = resolveWikiNavigation(wiki.spec.navigation ?? []);
+  const navigation = resolveWikiNavigation(wiki.spec.navigation ?? [], {
+    sourceVersion: wiki.spec.sourceVersion,
+  });
   return {
     firstPage: findFirstWikiPage(wiki.spec.navigation ?? []),
     target: resolveWikiContentHref(href, currentPageName, navigation),

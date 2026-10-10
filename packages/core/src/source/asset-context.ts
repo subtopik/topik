@@ -16,7 +16,7 @@ export function applySourceAssetReferenceContexts(
     if (
       !scope.includes(key) ||
       !resource ||
-      (resource.type !== "Guide" && resource.type !== "WikiPage")
+      (resource.type !== "Guide" && resource.type !== "WikiPage" && resource.type !== "CoursePage")
     )
       throw new TypeError("Asset reference context exceeds the admitted document scope");
     for (const target of Object.values(mappings))

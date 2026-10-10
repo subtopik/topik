@@ -205,7 +205,7 @@ describe("root manifest compilation", () => {
     "version: 1",
     "version: 1\nnamespace: example/project\nsources: [!executable {}]",
     "version: 1\nnamespace: example/project\nsources: &a [*a]",
-    "version: 1\nnamespace: example/project\nsources: [{kind: course, config: course.yaml}]",
+    "version: 1\nnamespace: example/project\nsources: [{kind: unsupported, config: source.yaml}]",
     "version: 1\nnamespace: example/project\nsources: [{kind: wiki, config: wiki.yaml, extra: true}]",
     "[".repeat(1000),
   ])("invalid manifest never falls back (%s)", async (manifest) => {

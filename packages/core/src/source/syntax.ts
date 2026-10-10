@@ -104,14 +104,23 @@ export function inspectSourceSyntax(raw: string, json = false) {
     for (const [index, child] of sequence.items.entries()) {
       if (!isNode(child) || !child.range) throw new TypeError("Missing sequence ranges");
       let identity = String(index);
-      if ((selector === "persons" || selector === "sources") && isMap(child)) {
+      if (
+        (selector === "persons" || selector === "sources" || selector === "modules") &&
+        isMap(child)
+      ) {
         const key =
-          selector === "persons"
+          selector !== "sources"
             ? child.get("id")
             : `${String(child.get("kind"))}/${String(child.get("config"))}`;
         if (typeof key !== "string") continue;
         identity = encodeURIComponent(key);
       }
+      if (
+        /^modules\/[^/]+\/pages$/.test(selector) &&
+        isScalar(child) &&
+        typeof child.value === "string"
+      )
+        identity = encodeURIComponent(child.value);
       const itemSelector = `${selector}/${identity}`;
       let start = child.range[0];
       let end = child.range[2];

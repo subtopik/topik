@@ -17,8 +17,15 @@ import {
   type TopikNavigationReference,
 } from "@topik/content";
 import type { Wiki } from "@topik/schema/wiki/v1";
+import type { Course } from "@topik/schema/course/v1";
 import type { Resource } from "../resource";
 import { resolveWikiContentHref, resolveWikiNavigation } from "../wiki-navigation";
+import {
+  resolveCourseContentHref,
+  resolveCourseNavigation,
+  type CourseReferenceContext,
+} from "../course-navigation";
+import { sourceCourseContext } from "./course";
 import { parseMarkdownFrontmatter } from "../compile/shared";
 import corePackage from "../../package.json" with { type: "json" };
 import {
@@ -42,8 +49,8 @@ export const SOURCE_WRITER_DESCRIPTOR = {
   sourceVersions: [0, 1],
   formatter: FORMAT_VERSION,
   resourceSchema: "v1",
-  references: "wiki-source-links-v1",
-  provenance: 3,
+  references: "source-links-v2",
+  provenance: 4,
   graph: "authored-resource-bytes-v1",
   packageVersion: corePackage.version,
 } as const;
@@ -77,6 +84,8 @@ export interface SourceDocumentProvenance {
     extension: string;
     /** Key in SourceProject.wikiContexts; retain that snapshot with saved content. */
     wiki?: string;
+    /** Key in SourceProject.courseContexts for a Course page's immutable saved links. */
+    course?: string;
   };
   references: readonly (TopikNavigationReference & {
     target?: string;
@@ -109,6 +118,7 @@ export interface SourceProject {
   documents: readonly SourceDocumentProvenance[];
   configurations: readonly SourceConfigurationProvenance[];
   wikiContexts: Readonly<Record<string, Wiki>>;
+  courseContexts: Readonly<Record<string, CourseReferenceContext>>;
   descriptor: typeof SOURCE_WRITER_DESCRIPTOR;
 }
 
@@ -228,6 +238,9 @@ export async function readSourceProject(input: {
         "navigation",
         "theme",
         "persons",
+        "slug",
+        "authors",
+        "modules",
       ])
         if (!syntax.fields.has(selector)) fields.push({ selector, insertion: syntax.insertion });
     for (const [prefix, keys] of [
@@ -261,6 +274,22 @@ export async function readSourceProject(input: {
   const resources = new Map(
     compilation.resources.map((resource) => [`${resource.type}/${resource.name}`, resource]),
   );
+  const courseContexts: Record<string, CourseReferenceContext> = {};
+  for (const source of compilation.provenance) {
+    if (source.kind !== "course") continue;
+    const course = compilation.resources.find(
+      (resource): resource is Course =>
+        resource.type === "Course" &&
+        Object.hasOwn(source.sourcePathsByResource, `Course/${resource.name}`),
+    );
+    if (!course) throw new TypeError("Course source provenance has no Course resource");
+    courseContexts[`Course/${course.name}`] = sourceCourseContext(
+      compilation.resources,
+      course,
+      new Map(Object.entries(source.sourcePathsByResource)),
+      source.directory,
+    );
+  }
   for (const source of compilation.provenance) {
     for (const [resource, path] of Object.entries(source.sourcePathsByResource)) {
       const file = byPath.get(path)!;
@@ -272,6 +301,17 @@ export async function readSourceProject(input: {
           ? compilation.resources.find(
               (candidate): candidate is Wiki =>
                 candidate.type === "Wiki" && candidate.name === portable.spec.wiki,
+            )
+          : undefined;
+      const module =
+        portable.type === "CoursePage"
+          ? resources.get(`CourseModule/${portable.spec.module}`)
+          : undefined;
+      const course =
+        module?.type === "CourseModule"
+          ? compilation.resources.find(
+              (candidate): candidate is Course =>
+                candidate.type === "Course" && module.spec.course === candidate.name,
             )
           : undefined;
       const base = {
@@ -292,9 +332,12 @@ export async function readSourceProject(input: {
           path: posix.relative(source.directory, path),
           extension: posix.extname(path),
           ...(wiki ? { wiki: `Wiki/${wiki.name}` } : {}),
+          ...(course ? { course: `Course/${course.name}` } : {}),
         },
         assetReferences:
-          portable.type === "Guide" || portable.type === "WikiPage"
+          portable.type === "Guide" ||
+          portable.type === "WikiPage" ||
+          portable.type === "CoursePage"
             ? [
                 ...new Set(
                   extractTopikAssetOccurrences(portable.spec.content.value, {
@@ -372,7 +415,15 @@ export async function readSourceProject(input: {
           configValues.get(source.config)!,
           configuration,
         ),
-        references: wiki ? sourceReferences(markdown.body, portable.name, wiki) : [],
+        references: wiki
+          ? sourceReferences(markdown.body, portable.name, wiki)
+          : course
+            ? courseSourceReferences(
+                markdown.body,
+                portable.name,
+                courseContexts[`Course/${course.name}`],
+              )
+            : [],
       });
     }
   }
@@ -385,6 +436,7 @@ export async function readSourceProject(input: {
     documents,
     configurations,
     wikiContexts,
+    courseContexts,
     descriptor: SOURCE_WRITER_DESCRIPTOR,
   };
 }
@@ -411,7 +463,12 @@ function configurationOrigins(
   resource: Resource,
   config: SourceConfigurationProvenance,
 ): SourceFieldOrigin[] {
-  const prefix = resource.type === "Person" ? `persons/${encodeURIComponent(resource.name)}/` : "";
+  const prefix =
+    resource.type === "Person"
+      ? `persons/${encodeURIComponent(resource.name)}/`
+      : resource.type === "CourseModule"
+        ? `modules/${encodeURIComponent(resource.name)}/`
+        : "";
   const explicit = (field: string, selector: string) =>
     origin(
       field,
@@ -424,19 +481,28 @@ function configurationOrigins(
     );
   const result = [
     explicit("name", `${prefix}id`),
-    resource.type === "Person" || (resource.type === "Wiki" && resource.spec.sourceVersion === 1)
+    resource.type === "Person" ||
+    resource.type === "Course" ||
+    resource.type === "CourseModule" ||
+    (resource.type === "Wiki" && resource.spec.sourceVersion === 1)
       ? explicit("labels", `${prefix}labels`)
       : origin("labels", "default"),
   ];
   for (const field of resource.type === "Person"
     ? ["name", "email", "bio"]
-    : ["title", "description", "navigation", "theme", "sourceVersion"])
+    : resource.type === "Course"
+      ? ["title", "slug", "description", "authors"]
+      : resource.type === "CourseModule"
+        ? ["title", "slug", "order", "description"]
+        : ["title", "description", "navigation", "theme", "sourceVersion"])
     result.push(
       explicit(
         `spec/${field}`,
         `${prefix}${resource.type === "Person" ? "spec/" : ""}${encodeURIComponent(field)}`,
       ),
     );
+  if (resource.type === "CourseModule")
+    result.push(origin("spec/course", "inherited", config.path, "id", config.fields));
   return result;
 }
 
@@ -472,12 +538,16 @@ function markdownOrigins(
     typeof metadata.title === "string"
       ? explicit("spec/title", "title")
       : origin("spec/title", "derived", path, undefined, [], body),
-    explicit(
-      "spec/description",
-      "description",
-      typeof metadata.description === "string" ||
-        (sourceVersion === 1 && metadata.description === null),
-    ),
+    ...(resource.type === "CoursePage"
+      ? []
+      : [
+          explicit(
+            "spec/description",
+            "description",
+            typeof metadata.description === "string" ||
+              (sourceVersion === 1 && metadata.description === null),
+          ),
+        ]),
     origin("spec/content", "explicit", path, undefined, [], body),
   ];
   if (resource.type === "WikiPage")
@@ -499,7 +569,46 @@ function markdownOrigins(
     if (explicitTags) result.push(explicit("spec/tags", "tags"));
     if (!inherited && !explicitTags) result.push(origin("spec/tags", "default"));
   }
+  if (resource.type === "CoursePage") {
+    result.push(
+      explicit("spec/slug", "slug"),
+      explicit("spec/order", "order"),
+      explicit("spec/authors", "authors", resource.spec.authors !== undefined),
+    );
+    result.push(
+      origin(
+        "spec/module",
+        "inherited",
+        configuration.path,
+        `modules/${encodeURIComponent(resource.spec.module)}/pages/${encodeURIComponent(posix.relative(posix.dirname(configuration.path), path).replace(/\.mdx?$/i, ""))}`,
+        configuration.fields,
+      ),
+    );
+  }
   return result;
+}
+
+function courseSourceReferences(
+  source: string,
+  name: string,
+  context: CourseReferenceContext,
+): SourceDocumentProvenance["references"] {
+  const navigation = resolveCourseNavigation(context);
+  const references: Array<
+    TopikNavigationReference & { target?: string; search?: string; hash?: string }
+  > = [];
+  const inspected = rewriteTopikNavigationReferences(source, (reference) => {
+    const target = resolveCourseContentHref(reference.href, name, navigation);
+    references.push({
+      ...reference,
+      ...(target
+        ? { target: `CoursePage/${target.page.page}`, search: target.search, hash: target.hash }
+        : {}),
+    });
+    return undefined;
+  });
+  if (!inspected.ok) throw new TypeError("Course reference provenance cannot be inspected");
+  return references;
 }
 
 function sourceReferences(

@@ -213,6 +213,7 @@ import { parseDocument, writeDocument, validateTopikContent, formatTopikContent,
 import remarkTags, { remarkTags as namedRemarkTags } from "@topik/remark-tags";
 import { isGeneratedAssetName, validateResources } from "@topik/core";
 import { resolveWikiNavigation, resolveWikiContentHref, resolveWikiContentReference } from "@topik/core/wiki-navigation";
+import { resolveCourseNavigation, resolveCourseContentHref, resolveCourseContentReference } from "@topik/core/course-navigation";
 import { renderTopikMarkdown } from "@topik/content-react";
 import * as rich from "@topik/content-react/rich";
 import * as theme from "@topik/content-react/theme";
@@ -222,7 +223,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 const modulePrefix = new URL("./node_modules/", import.meta.url).href;
 const topikPrefix = new URL("./node_modules/@topik/", import.meta.url).href;
-for (const specifier of ["@topik/remark-tags", "@topik/content", "@topik/core", "@topik/core/wiki-navigation", "@topik/content-react", "@topik/content-react/rich", "@topik/content-react/theme", "@topik/schema/guide/v1.json"]) {
+for (const specifier of ["@topik/remark-tags", "@topik/content", "@topik/core", "@topik/core/wiki-navigation", "@topik/core/course-navigation", "@topik/content-react", "@topik/content-react/rich", "@topik/content-react/theme", "@topik/schema/guide/v1.json"]) {
   assert.ok(import.meta.resolve(specifier).startsWith(topikPrefix), specifier + " resolved outside the packed cohort");
 }
 assert.ok(import.meta.resolve("react-dom/server").startsWith(modulePrefix), "react-dom resolved outside the clean consumer");
@@ -230,6 +231,10 @@ assert.equal(guideSchema.properties.type.const, "Guide");
 const wikiLinks = resolveWikiNavigation([{type: "page", page: "home", slug: "", title: "Home", sourcePath: "index"}, {type: "page", page: "setup", slug: "install", title: "Setup", sourcePath: "setup"}], {sourceVersion: 1});
 assert.equal(resolveWikiContentHref("./setup.md?mode=full#start", "home", wikiLinks)?.page.page, "setup");
 assert.equal(resolveWikiContentReference("./missing.md", "home", wikiLinks).kind, "unresolved");
+const courseLinks = resolveCourseNavigation({course: "training", modules: [{name: "foundations", slug: "foundations"}], pages: [{name: "intro", module: "foundations", slug: "introduction", sourcePath: "lessons/intro"}, {name: "next", module: "foundations", slug: "next", sourcePath: "lessons/next"}]});
+assert.equal(resolveCourseContentHref("next.md?mode=read#topic", "intro", courseLinks)?.page.page, "next");
+assert.equal(resolveCourseContentHref("/foundations/next", "intro", courseLinks)?.route, "foundations/next");
+assert.equal(resolveCourseContentReference("missing.md", "intro", courseLinks).kind, "unresolved");
 const headingOne = parseDocument("# Heading {% #one %}");
 const headingTwo = parseDocument("# Heading {% #two %}");
 assert.ok(headingOne.ok && headingTwo.ok);

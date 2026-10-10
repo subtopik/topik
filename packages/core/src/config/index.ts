@@ -4,6 +4,9 @@ export type { CollectionConfig } from "./collection";
 export { parseWikiConfig } from "./wiki";
 export type { WikiConfig } from "./wiki";
 
+export { parseCourseConfig } from "./course";
+export type { CourseConfig, CourseModuleConfig } from "./course";
+
 export {
   TOPIK_MANIFEST_FILENAME,
   TOPIK_MANIFEST_LIMITS,

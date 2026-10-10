@@ -31,22 +31,22 @@ schemas and TypeScript types; `@topik/core` validates resource envelopes.
 Authors work with Markdown, local configurations, and a [project manifest](./manifest.md). The compiler
 produces resources from those files:
 
-| Source                                    | Output                                    |
-| ----------------------------------------- | ----------------------------------------- |
-| `wiki.yaml` and pages in navigation       | One `Wiki` plus its `WikiPage` resources. |
-| `collection.yaml` and root Markdown files | A `Guide` for each Markdown file.         |
-| Supported local images and downloads      | Generated `Asset` resources and payloads. |
+| Source                                    | Output                                                     |
+| ----------------------------------------- | ---------------------------------------------------------- |
+| `wiki.yaml` and pages in navigation       | One `Wiki` plus its `WikiPage` resources.                  |
+| `collection.yaml` and root Markdown files | A `Guide` for each Markdown file.                          |
+| `course.yaml` and declared module pages   | A `Course`, its `CourseModule` and `CoursePage` resources. |
+| Supported local images and downloads      | Generated `Asset` resources and payloads.                  |
 
 Configuration can also use `.yml` or `.json`. Markdown inputs may use `.md` or
 `.mdx`; the latter extension does not enable executable MDX. Wikis read pages
 listed in navigation, including nested paths. Guide collections read Markdown
 files directly in their compilation directory, without recursive discovery.
 
-The schema also describes `Person`, `Course`, `CourseModule`, and `CoursePage`.
-Versioned collections can declare Person records and Guide author references in
-their configuration. Course resource types can be supplied by applications; the
-file compiler does not discover a Course directory. See [Source writing](./source-writing.md)
-for versioned metadata and reviewed project edits.
+Versioned collections and Courses can declare Person records and author
+references in their configuration. Courses use an explicit module hierarchy and
+declared Markdown paths rather than directory discovery. See [Source writing](./source-writing.md)
+for Course source layout, versioned metadata and reviewed project edits.
 
 ## Compile a wiki
 

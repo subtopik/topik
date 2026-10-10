@@ -10,7 +10,7 @@ export const TOPIK_MANIFEST_LIMITS = {
 } as const;
 
 export const topikManifestSourceSchema = z.strictObject({
-  kind: z.enum(["wiki", "collection"]),
+  kind: z.enum(["wiki", "collection", "course"]),
   config: z.string().refine(isConfigurationPath, "Expected a portable YAML/YML/JSON path"),
 });
 

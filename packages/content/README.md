@@ -40,6 +40,12 @@ data with independent node objects: cycles, shared nodes, accessors, and executa
 values are refused. Use `validateTopikContent` for source admission, including
 navigation and asset policies.
 
+`sameDocumentMeaning(left, right)` compares already-admitted authoring trees. It
+ignores source positions, cosmetic spelling and derived metadata while retaining
+explicit heading IDs, reference bindings, ordered content and every conditional
+branch. It does not validate arbitrary trees or treat application editor defaults
+as authored defaults.
+
 ## Markdown and components
 
 Supported Markdown includes headings, emphasis, strong and strikethrough marks,
@@ -66,6 +72,10 @@ discarded.
 | `badge`                                     | Inline content; optional `variant`                                                                  |
 | `underline` (alias `u`)                     | Inline content                                                                                      |
 | `quiz`, `question`, `choice`, `explanation` | Questions with at least two choices; `type` selects single/multiple choice, `correct` marks answers |
+
+Math `content` preserves line breaks and tabs using `\n`, `\r` and `\t`
+escapes. Other attributes continue to refuse control characters. These escapes
+remain literal formula data; they do not add Markdown blocks or inline nodes.
 
 The exported `components` registry contains complete property, placement, and
 child constraints. Defaults are applied when reading or rendering; absent authored

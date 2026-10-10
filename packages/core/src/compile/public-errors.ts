@@ -17,6 +17,12 @@ const PUBLIC_COMPILE_ERROR_MESSAGES = {
   "frontmatter-invalid": "Document frontmatter is invalid.",
   "reference-list-invalid": "Document resource references are invalid.",
   "wiki-page-not-found": "A configured Wiki page file was not found.",
+  "wiki-page-ambiguous":
+    "A Wiki source path matches more than one Markdown file. Keep exactly one source file.",
+  "course-page-not-found": "A configured Course page file was not found.",
+  "course-page-ambiguous":
+    "A Course source path matches more than one Markdown file. Keep exactly one source file.",
+  "author-not-found": "An author must reference a Person in the declared project.",
 } as const;
 
 export type PublicCompileErrorId = keyof typeof PUBLIC_COMPILE_ERROR_MESSAGES;

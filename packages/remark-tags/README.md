@@ -50,7 +50,11 @@ built library on Node.js 22.12 separately from the test runner.
 - Attributes use `key=value` with double-quoted strings, finite numbers, or
   booleans: `title="Preview" columns=2 open=true`. Strings support `\\`, `\"`,
   `\|`, `\[`, and `\]` escapes. Empty strings are preserved; control characters
-  are refused. The writer escapes brackets in attributes inside Markdown labels,
+  are refused. Applications can explicitly admit `\n`, `\r` and `\t`
+  for named ordinary string attributes with
+  `escapedWhitespace: { component: ["attribute"] }`;
+  raw control characters and all other control escapes remain refused.
+  The writer escapes brackets in attributes inside Markdown labels,
   including native directive labels, to preserve their surrounding structure.
 - Tag-looking text in code, escaped openers, and raw HTML blocks remains literal.
 - Tags nest within Markdown boundaries. Opening inside emphasis and closing

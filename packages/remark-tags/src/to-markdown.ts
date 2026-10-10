@@ -138,13 +138,15 @@ function tagStart(
     else if (typeof value === "number" && Number.isFinite(value))
       result += ` ${name}=${Object.is(value, -0) ? "-0" : String(value)}`;
     else if (
-      (typeof value === "string" && !hasControlCharacter(value)) ||
+      (typeof value === "string" &&
+        !hasControlCharacter(value, options.escapedWhitespace?.[node.name]?.includes(name))) ||
       (options.expressions && typeof value === "object")
     ) {
       const template = typeof value !== "string";
       const source = template ? writeTextTemplate(value) : value;
       if (template) assertQuotedTemplateLength(source, state);
       let escaped = source.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+      escaped = escaped.replaceAll("\n", "\\n").replaceAll("\r", "\\r").replaceAll("\t", "\\t");
       if (state.stack.includes("tableCell")) escaped = escaped.replaceAll("|", "\\|");
       // Directive labels scan brackets before the tag tokenizer sees its attributes.
       if (state.stack.includes("label"))

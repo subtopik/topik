@@ -5,6 +5,8 @@ export { compileWiki, pagePathToName } from "./wiki";
 export type { CompileWikiOptions } from "./wiki";
 export { compileGuides } from "./guide";
 export type { CompileGuidesOptions } from "./guide";
+export { compileCourse } from "./course";
+export type { CompileCourseOptions } from "./course";
 export {
   compileAssetResources,
   AssetCompilationError,

@@ -4,9 +4,9 @@ import {
   formatTopikContent,
   parseDocument,
   rewriteTopikAssetOccurrences,
+  sameDocumentMeaning,
   writeDocument,
 } from "./index.js";
-import { sameDocumentMeaning } from "./document-meaning.js";
 import { parse } from "./test-helpers.js";
 import * as writer from "./writer.js";
 

@@ -1,3 +1,4 @@
+import { tagOptions } from "./tag-options.js";
 import type { AuthoredAttributeValue, ContentDocument, Diagnostic, TreeNode } from "./model.js";
 import { fromMarkdown } from "mdast-util-from-markdown";
 import { frontmatter } from "micromark-extension-frontmatter";
@@ -124,7 +125,7 @@ export function parseDocumentTree(
       extensions: [
         frontmatter(),
         ...gfmSyntax(),
-        tagSyntax(declarations(registry), { expressions: true }),
+        tagSyntax(declarations(registry), tagOptions(registry)),
         headingIdSyntax(),
         parserLimitSyntax(normalized.source),
       ],
@@ -139,7 +140,7 @@ export function parseDocumentTree(
         },
         ...gfmFromMarkdown(),
         frontmatterFromMarkdown(),
-        tagFromMarkdown(declarations(registry), { expressions: true }),
+        tagFromMarkdown(declarations(registry), tagOptions(registry)),
         {
           transforms: [
             (root) => {

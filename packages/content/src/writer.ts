@@ -1,3 +1,4 @@
+import { tagOptions } from "./tag-options.js";
 import type { Root } from "mdast";
 import { toMarkdown } from "mdast-util-to-markdown";
 import { frontmatterToMarkdown } from "mdast-util-frontmatter";
@@ -324,7 +325,7 @@ function writeMarkdown(tree: Root, registry: Registry): string {
         Object.fromEntries(
           Object.entries(registry).map(([name, definition]) => [name, { kind: definition.kind }]),
         ),
-        { expressions: true },
+        tagOptions(registry),
       ),
       codeWriterExtension(),
       resourceWriterExtension(),

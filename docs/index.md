@@ -7,7 +7,7 @@ description: Write portable Markdown, compile resources, and render content in y
 
 Topik is a Markdown content format and a set of libraries for validating,
 compiling, and rendering it. You can use it for a single document or organize
-many documents into guides and wikis. Applications provide editing, storage,
+many documents into guides, wikis and courses. Applications provide editing, storage,
 publishing, and access control.
 
 There are two levels to work with:
@@ -37,7 +37,7 @@ content are outputs derived from it.
 | ---------------------- | ---------------------------------------------------------------------- |
 | `@topik/content`       | Parse, validate, format, evaluate, and compile individual documents.   |
 | `@topik/content-react` | Render content with React, with optional themed and rich components.   |
-| `@topik/core`          | Compile wikis and guide collections; validate and resolve resources.   |
+| `@topik/core`          | Compile wikis, guide collections and courses; validate resources.      |
 | `@topik/schema`        | JSON schemas and TypeScript types for resource envelopes.              |
 | `@topik/cli`           | Compile, lint, and validate content directories from the command line. |
 | `@topik/remark-tags`   | Low-level Markdown tag syntax for remark and micromark integrations.   |

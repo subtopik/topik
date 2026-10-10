@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { DEFAULT_ASSET_DIRECTORY, sourceAssetsConfigSchema } from "./assets";
 import wikiV1Schema from "@topik/schema/wiki/v1.json" with { type: "json" };
+import { sourceVersionSchema, sourceLabelsSchema, pageSourcePathSchema } from "./source-version";
 
 const wikiNavIconPattern = new RegExp(wikiV1Schema.$defs.groupNode.properties.icon.pattern);
 const wikiExternalHrefPattern = new RegExp(
@@ -10,6 +11,7 @@ const wikiExternalHrefPattern = new RegExp(
 type WikiPageNavNode = {
   type: "page";
   slug: string;
+  source?: string;
   icon?: string;
   hidden?: boolean;
 };
@@ -102,6 +104,7 @@ const navNodeSchema: z.ZodType<WikiNavNode> = z.lazy(() =>
       .object({
         type: z.literal("page"),
         slug: wikiPagePath,
+        source: pageSourcePathSchema.optional(),
         icon,
         hidden: z.boolean().optional(),
       })
@@ -282,12 +285,30 @@ const wikiConfigSchema = z
       )
       .regex(nameRegex),
     title: z.string().min(1).max(256),
+    sourceVersion: sourceVersionSchema,
+    labels: z.unknown().optional(),
     assets: sourceAssetsConfigSchema.default({ directory: DEFAULT_ASSET_DIRECTORY }),
     description: z.union([z.string().max(1024), z.null()]).optional(),
     navigation: z.array(navNodeSchema).optional(),
     theme: themeSchema.optional(),
   })
   .superRefine((config, context) => {
+    const sources = new Set<string>();
+    const visit = (nodes: WikiNavNode[]) => {
+      for (const node of nodes) {
+        if (typeof node === "string") continue;
+        if (node.type === "page" && node.source !== undefined) {
+          if (config.sourceVersion !== 1 || sources.has(node.source))
+            context.addIssue({
+              code: "custom",
+              path: ["navigation"],
+              message: "Page source needs sourceVersion 1 and a unique source path",
+            });
+          sources.add(node.source);
+        } else if ("children" in node) visit(node.children);
+      }
+    };
+    if (config.navigation) visit(config.navigation);
     if (config.navigation) {
       validateHomogeneousLevel(
         config.navigation,
@@ -299,8 +320,17 @@ const wikiConfigSchema = z
     }
   });
 
-export type WikiConfig = z.infer<typeof wikiConfigSchema>;
+export type WikiConfig = Omit<z.infer<typeof wikiConfigSchema>, "labels"> & {
+  labels?: Record<string, string>;
+};
 
 export function parseWikiConfig(raw: unknown): WikiConfig {
-  return wikiConfigSchema.parse(raw);
+  const config = wikiConfigSchema.parse(raw);
+  const { labels, ...rest } = config;
+  return {
+    ...rest,
+    ...(config.sourceVersion === 1 && labels !== undefined
+      ? { labels: sourceLabelsSchema.parse(labels) }
+      : {}),
+  };
 }

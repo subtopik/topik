@@ -1,7 +1,10 @@
 import type { ContentDocument, TextTemplate, TreeNode } from "./model.js";
 import { referenceIdentifier } from "./document-index.js";
 
-/** Compare authored meaning, excluding source spelling and derived metadata. */
+/** Compare admitted authoring trees, retaining explicit heading IDs and every authored branch.
+ * Source positions, cosmetic spelling and derived metadata do not affect equality.
+ * This compares meaning; it does not validate arbitrary caller-constructed trees.
+ */
 export function sameDocumentMeaning(left: ContentDocument, right: ContentDocument): boolean {
   return equal(meaning(left as TreeNode), meaning(right as TreeNode));
 }

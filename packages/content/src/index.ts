@@ -21,6 +21,7 @@ export type {
 } from "./model.js";
 export type { Expression } from "./expressions.js";
 export { validateDocument } from "./validation.js";
+export { sameDocumentMeaning } from "./document-meaning.js";
 export { FORMAT_VERSION, formatDocument, parseDocument, writeDocument } from "./markdown.js";
 export { rewriteAssets } from "./assets.js";
 export { ContentEvaluationError, evaluateDocument } from "./evaluate.js";
@@ -64,6 +65,11 @@ export {
   type RewriteTopikAssetOccurrencesSuccess,
 } from "./rewrite";
 export { assignTopikHeadingIds, type TopikHeading } from "./headings";
+export {
+  rewriteTopikNavigationReferences,
+  type TopikNavigationReference,
+  type RewriteTopikNavigationResult,
+} from "./navigation-rewrite";
 export {
   analyzeTopikContent,
   removeInvalidTopikNavigationReferences,

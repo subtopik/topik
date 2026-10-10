@@ -104,7 +104,22 @@ const expected = new Map([
       "package.json",
     ].sort(),
   ],
-  [coreRoot, ["LICENSE", "dist/index.d.mts", "dist/index.mjs", "package.json"]],
+  [
+    coreRoot,
+    [
+      "LICENSE",
+      "dist/index.d.mts",
+      "dist/index.mjs",
+      "dist/course-navigation.d.mts",
+      "dist/course-navigation.mjs",
+      "dist/wiki-navigation.d.mts",
+      "dist/wiki-navigation.mjs",
+      ...readdirSync(join(coreRoot, "dist"))
+        .filter((file) => /^course-navigation-[A-Za-z0-9_-]+\.mjs$/u.test(file))
+        .map((file) => `dist/${file}`),
+      "package.json",
+    ].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0)),
+  ],
 ]);
 
 for (const [directory, expectedFiles] of expected) {

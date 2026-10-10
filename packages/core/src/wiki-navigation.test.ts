@@ -9,6 +9,7 @@ import {
   isInternalWikiDropdown,
   isInternalWikiTab,
   resolveWikiContentHref,
+  resolveWikiContentReference,
   resolveWikiNavigation,
 } from "./wiki-navigation";
 
@@ -60,6 +61,43 @@ const typeParityFixture = [
   },
   { type: "tab", title: "GitHub", href: "https://github.com/subtopik/topik" },
 ] satisfies WikiNavigation;
+
+test("compiled-reference classification distinguishes missing context from external and Asset links", () => {
+  const resolved = resolveWikiNavigation(
+    [
+      { type: "page", page: "home", slug: "", sourcePath: "pages/home" },
+      { type: "page", page: "next", slug: "next", sourcePath: "pages/next" },
+    ],
+    { sourceVersion: 1 },
+  );
+  expect(resolveWikiContentReference("next.md?view=a#part", "home", resolved)).toMatchObject({
+    kind: "page",
+    target: { page: { page: "next" }, search: "?view=a", hash: "part" },
+  });
+  expect(resolveWikiContentReference("#part", "home", resolved)).toMatchObject({
+    kind: "page",
+    target: { page: { page: "home" } },
+  });
+  for (const href of ["#part", "next.md", "missing.md", "file.pdf", "//example.com/path"])
+    expect(resolveWikiContentReference(href, "missing-page", resolved)).toEqual({
+      kind: "unresolved",
+    });
+  expect(resolveWikiContentReference("missing.md", "home", resolved)).toEqual({
+    kind: "unresolved",
+  });
+  expect(resolveWikiContentReference("asset:admitted-name", "home", resolved)).toEqual({
+    kind: "asset",
+  });
+  for (const href of [
+    "https://topik.invalid/next",
+    "https://example.com/path",
+    "mailto:a@example.com",
+    "tel:123",
+  ])
+    expect(resolveWikiContentReference(href, "missing-page", resolved)).toEqual({
+      kind: "external",
+    });
+});
 
 describe("wiki navigation type guards", () => {
   test("keeps representative public TypeScript types aligned", () => {

@@ -49,10 +49,13 @@ export function topikWikiLoader(options: TopikWikiOptions): TopikAssetLoader & {
           const pageResources = compiled.resources.filter(
             (resource): resource is WikiPage => resource.type === "WikiPage",
           );
-          const navigation =
-            compiled.resources.find((resource): resource is Wiki => resource.type === "Wiki")?.spec
-              .navigation ?? [];
-          const resolvedNavigation = resolveWikiNavigation(navigation);
+          const wiki = compiled.resources.find(
+            (resource): resource is Wiki => resource.type === "Wiki",
+          );
+          const navigation = wiki?.spec.navigation ?? [];
+          const resolvedNavigation = resolveWikiNavigation(navigation, {
+            sourceVersion: wiki?.spec.sourceVersion,
+          });
 
           context.store.clear();
           for (const page of pageResources) {

@@ -15,6 +15,8 @@ export const TAG_LIMITS = Object.freeze({
 export interface TagSyntaxOptions {
   /** Opt in to variables, conditions, text templates, and bounded code templates. */
   expressions?: boolean;
+  /** Named attributes that can encode LF, CR and TAB with backslash escapes. */
+  escapedWhitespace?: Readonly<Record<string, readonly string[]>>;
 }
 export type TagNode =
   | TagTextNode

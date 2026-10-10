@@ -4,6 +4,7 @@ import { analyzeTopikContent, validateTopikContent } from "@topik/content";
 import type { Guide } from "@topik/schema/guide/v1";
 import type { SourceResource } from "../resource";
 import { parseCollectionConfig } from "../config/collection";
+import { parseGuideMetadata } from "../config/source-version";
 import { compileAssetResources, type AssetCompilationOptions } from "./assets";
 import {
   readOptionalConfigFileWithPath,
@@ -37,6 +38,7 @@ export interface CompileGuidesOptions {
 }
 
 export interface CompileResourceDiscovery {
+  sourceVersion?: 1;
   /** Destination relative to the selected configuration directory, if a config was loaded. */
   assetDirectory?: string;
   diagnostics: CompileResult["diagnostics"];
@@ -53,6 +55,8 @@ export async function compileGuides(options: CompileGuidesOptions): Promise<Comp
 
 export async function inspectGuides(options: CompileGuidesOptions): Promise<CompileResult> {
   const discovered = await discoverGuides(options);
+  if (discovered.sourceVersion === 1)
+    validateGuideAuthors(discovered.resources, discovered.sourcePathsByResource);
   const compiled = await compileAssetResources({
     rootDir: configurationDirectory(options.dir, options.configFile),
     resources: discovered.resources,
@@ -93,7 +97,7 @@ export async function discoverGuides(
   const files = await readdir(dir);
   const markdownFiles = files.filter((f) => f.endsWith(".md") || f.endsWith(".mdx")).sort();
 
-  const resources: SourceResource[] = [];
+  const resources: SourceResource[] = [...(config.persons ?? [])];
   const diagnostics: CompileResult["diagnostics"] = [];
   const sourcePathsByResource: Record<string, string> = {};
 
@@ -127,21 +131,45 @@ export async function discoverGuides(
       }
       throw error;
     }
-    const { frontmatter, content } = parseMarkdownFrontmatter(rawContent, file);
+    const parsed = parseMarkdownFrontmatter(rawContent, file, config.sourceVersion);
+    const { content } = parsed;
+    let frontmatter = parsed.frontmatter;
+    if (config.sourceVersion === 1) {
+      try {
+        frontmatter = parseGuideMetadata(frontmatter);
+      } catch {
+        throw new PublicCompileError("frontmatter-invalid", file);
+      }
+    }
     const validation = validateTopikContent(content, { file });
     diagnostics.push(...validation.errors);
     if (!validation.valid) continue;
-    const slug = fileToSlug(file);
-    const name = `${config.id}-${slug}`;
+    const slug =
+      config.sourceVersion === 1 && typeof frontmatter.slug === "string"
+        ? frontmatter.slug
+        : fileToSlug(file);
+    const name =
+      config.sourceVersion === 1 && typeof frontmatter.id === "string"
+        ? frontmatter.id
+        : `${config.id}-${fileToSlug(file)}`;
     const title =
       typeof frontmatter.title === "string"
         ? frontmatter.title
         : extractMarkdownTitle(content, slug);
 
-    const tags = mergeTags(config.tags, frontmatter.tags);
-    const authors = parseReferenceList(frontmatter.authors, "authors", file);
+    const tags =
+      config.sourceVersion === 1 && frontmatter.inheritTags === false
+        ? ((frontmatter.tags as string[] | undefined) ?? [])
+        : mergeTags(config.tags, frontmatter.tags);
+    const authors =
+      config.sourceVersion === 1
+        ? (frontmatter.authors as string[] | undefined)
+        : parseReferenceList(frontmatter.authors, "authors", file);
     const description =
-      typeof frontmatter.description === "string" ? frontmatter.description : undefined;
+      typeof frontmatter.description === "string" ||
+      (config.sourceVersion === 1 && frontmatter.description === null)
+        ? frontmatter.description
+        : undefined;
     const analysis = analyzeTopikContent(content, { file });
     diagnostics.push(...analysis.diagnostics);
     diagnostics.push(...validateLocalFragments(analysis, linkValidationPolicy(options.validation)));
@@ -150,12 +178,17 @@ export async function discoverGuides(
       apiVersion: "v1",
       type: "Guide",
       name,
+      ...(config.sourceVersion === 1 && frontmatter.labels !== undefined
+        ? { labels: frontmatter.labels as Record<string, string> }
+        : {}),
       spec: {
         title,
         slug,
-        ...(description != null ? { description } : {}),
-        ...(authors != null ? { authors } : {}),
-        ...(tags.length > 0 ? { tags } : {}),
+        ...(description !== undefined ? { description } : {}),
+        ...(authors !== undefined ? { authors } : {}),
+        ...(tags.length > 0 || (config.sourceVersion === 1 && frontmatter.tags !== undefined)
+          ? { tags }
+          : {}),
         content: {
           format: "topik",
           value: content,
@@ -173,6 +206,7 @@ export async function discoverGuides(
     sourcePathsByResource,
     consumedSourcePaths: [loadedConfig.path],
     assetDirectory: config.assets.directory,
+    sourceVersion: config.sourceVersion,
   };
 }
 
@@ -181,6 +215,23 @@ function fileToSlug(filename: string): string {
 }
 
 export { extractMarkdownTitle as extractTitle } from "./shared";
+
+export function validateGuideAuthors(
+  resources: readonly SourceResource[],
+  paths: Readonly<Record<string, string>>,
+  guideNames?: ReadonlySet<string>,
+): void {
+  const persons = new Set(
+    resources.filter((resource) => resource.type === "Person").map((resource) => resource.name),
+  );
+  for (const resource of resources)
+    if (
+      resource.type === "Guide" &&
+      (!guideNames || guideNames.has(resource.name)) &&
+      resource.spec.authors?.some((author) => !persons.has(author))
+    )
+      throw new PublicCompileError("author-not-found", paths[`Guide/${resource.name}`]);
+}
 
 function mergeTags(collectionTags: string[] | undefined, frontmatterTags: unknown): string[] {
   const tags = new Set<string>();

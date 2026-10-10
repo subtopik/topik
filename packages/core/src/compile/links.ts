@@ -5,6 +5,7 @@ import type {
 } from "@topik/content";
 import { topikLinkDiagnosticMessage } from "@topik/content";
 import type { LinkValidationPolicy } from "./shared";
+import { resolveWikiContentHref, type ResolvedWikiNavigation } from "../wiki-navigation";
 
 const NON_PAGE_SCHEME = /^(?:asset|https?|mailto|tel):/i;
 const LINK_BASE = "https://topik.local";
@@ -13,17 +14,20 @@ export interface WikiPageLinkAnalysis {
   analysis: AnalyzeTopikContentResult;
   sourcePath: string;
   slug: string;
+  name?: string;
 }
 
 export function validateWikiLinks(
   pages: WikiPageLinkAnalysis[],
   policy: LinkValidationPolicy,
   nonPageLinks: ReadonlySet<TopikContentLink> = new Set(),
+  navigation?: ResolvedWikiNavigation,
 ): TopikContentDiagnostic[] {
   if (policy === "off") return [];
 
   const level = policy === "error" ? "error" : "warning";
   const pagesBySlug = new Map(pages.map((page) => [page.slug, page]));
+  const pagesByName = new Map(pages.map((page) => [page.name, page]));
   const diagnostics: TopikContentDiagnostic[] = [];
 
   for (const page of pages) {
@@ -32,7 +36,15 @@ export function validateWikiLinks(
 
       const target = resolveInternalTarget(link.href, page.sourcePath);
       if (!target) continue;
-      const targetPage = pagesBySlug.get(target.slug);
+      const resolved =
+        navigation && page.name
+          ? resolveWikiContentHref(link.href, page.name, navigation)
+          : undefined;
+      const targetPage = navigation
+        ? resolved
+          ? pagesByName.get(resolved.page.page)
+          : undefined
+        : pagesBySlug.get(target.slug);
       if (!targetPage) {
         if (nonPageLinks.has(link)) continue;
         diagnostics.push(linkDiagnostic("link-page-not-found", level, link));

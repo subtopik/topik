@@ -14,6 +14,8 @@
   "type": "module",
   "exports": {
     ".": "./dist/index.mjs",
+    "./course-navigation": "./dist/course-navigation.mjs",
+    "./wiki-navigation": "./dist/wiki-navigation.mjs",
     "./package.json": "./package.json"
   },
   "publishConfig": {

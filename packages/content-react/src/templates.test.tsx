@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+
 import { ContentTag, compileTopikContent, type RenderableTreeNode } from "@topik/content";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";

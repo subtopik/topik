@@ -3,6 +3,7 @@ import {
   formatTopikContent,
   rewriteTopikAssetOccurrences,
   rewriteTopikNavigationReferences,
+  parseTopikResourceReference,
 } from "@topik/content";
 import type { Wiki, WikiNavNode } from "@topik/schema/wiki/v1";
 import type { Guide } from "@topik/schema/guide/v1";
@@ -21,6 +22,11 @@ import type { WikiNavNode as SourceWikiNavNode } from "../config/wiki";
 import type { Resource } from "../resource";
 import type { SourceMediaSelection } from "./initialize";
 import { resolveSourceReferenceContext } from "./reference-context";
+import {
+  normalizeSourceResourceReferences,
+  prepareSourceResourceReferences,
+  restoreSourceResourceReferences,
+} from "./resource-references";
 import {
   sourcePlanDiagnostics,
   SourcePlanningError,
@@ -176,6 +182,24 @@ export function canonicalResource(resource: Resource): string {
 }
 const sameResource = (a: Resource, b: Resource): boolean =>
   canonicalResource(a) === canonicalResource(b);
+
+function hasSourceContextReferences(page: WritableDocument): boolean {
+  let found = false;
+  const inspected = rewriteTopikNavigationReferences(
+    page.spec.content.value,
+    ({ href }) => {
+      if (
+        !parseTopikResourceReference(href) &&
+        !/^(?:asset|https?|mailto|tel):/i.test(href) &&
+        !href.startsWith("#")
+      )
+        found = true;
+      return undefined;
+    },
+    { allowCompiledAssetReferences: true },
+  );
+  return !inspected.ok || found;
+}
 
 function sameAuthoredResource(
   a: Resource,
@@ -418,6 +442,8 @@ function writeMarkdown(
   moved: boolean,
   path: string,
   assets: ReadonlyMap<string, string>,
+  sourceContent?: string,
+  referenceRepair = false,
 ): Uint8Array {
   const sections = base ? sourceMarkdownSections(base.bytes) : undefined;
   const oldContent = prior
@@ -432,8 +458,20 @@ function writeMarkdown(
       "Authoring content must remain writable.",
       resourceKey(desired),
     );
-  const bodyChanged = !oldContent || oldContent.formatted !== newContent.formatted || moved;
-  const body = bodyChanged ? authoredBody(desired, path, assets) : sections!.body;
+  const bodyChanged =
+    !oldContent || oldContent.formatted !== newContent.formatted || moved || referenceRepair;
+  const body = bodyChanged
+    ? authoredBody(
+        sourceContent === undefined
+          ? desired
+          : ({
+              ...desired,
+              spec: { ...desired.spec, content: { ...desired.spec.content, value: sourceContent } },
+            } as WritableDocument),
+        path,
+        assets,
+      )
+    : sections!.body;
   const updates: Record<string, unknown> = {};
   if (
     !prior ||
@@ -772,6 +810,43 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
       configUpdates.set(config, { sourceVersion: 1 });
     }
     const derivedKeys = new Set<string>();
+    const originalPaths = new Map(
+      project.documents.map((document) => [document.resource, document.path]),
+    );
+    const referenceDocuments = new Map(
+      project.documents.map((document) => [document.resource, document]),
+    );
+    for (const [key, resource] of desired) {
+      if (
+        resource.type !== "WikiPage" &&
+        resource.type !== "Guide" &&
+        resource.type !== "CoursePage"
+      )
+        continue;
+      const path = paths.get(key);
+      if (!path) continue;
+      const document = referenceDocuments.get(key);
+      const creation = input.operations.find(
+        (operation): operation is Extract<SourceResourceOperation, { kind: "create" }> =>
+          operation.resource === key && operation.kind === "create",
+      );
+      const config = document?.config ?? creation?.config;
+      const directory =
+        document?.directory ??
+        project.compilation.provenance.find((source) => source.config === config)?.directory ??
+        "";
+      const prepared = prepareSourceResourceReferences(
+        resource,
+        document,
+        path,
+        directory,
+        originalPaths,
+        paths,
+        base,
+        desired,
+      );
+      if (prepared) referenceDocuments.set(key, prepared);
+    }
     for (const course of desired.values()) {
       if (course.type !== "Course") continue;
       const document = project.documents.find(
@@ -819,6 +894,7 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
         const prior = base.get(key);
         if (
           !input.courseReferenceContexts?.[key] &&
+          hasSourceContextReferences(page) &&
           prior?.type === "CoursePage" &&
           canonicalResource(prior) !==
             canonicalResource({ ...prior, spec: { ...prior.spec, content: page.spec.content } }) &&
@@ -876,6 +952,7 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
         const priorPage = base.get(key);
         if (
           !input.referenceContexts?.[key] &&
+          hasSourceContextReferences(page) &&
           priorPage?.type === "WikiPage" &&
           canonicalResource(priorPage) !==
             canonicalResource({
@@ -906,6 +983,8 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
         const rewritten = rewriteTopikNavigationReferences(
           page.spec.content.value,
           (reference) => {
+            // Compiled resource references have project-wide identity semantics.
+            if (parseTopikResourceReference(reference.href)) return undefined;
             const saved = resolveWikiContentReference(reference.href, page.name, savedNavigation);
             if (saved.kind === "unresolved")
               block(
@@ -963,6 +1042,31 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
           page.spec.content.value = rewritten.content;
           derivedKeys.add(key);
         }
+      }
+    }
+    const referenceRepairKeys = new Set<string>();
+    for (const [key, resource] of desired) {
+      if (
+        resource.type !== "WikiPage" &&
+        resource.type !== "Guide" &&
+        resource.type !== "CoursePage"
+      )
+        continue;
+      const path = paths.get(key);
+      if (!path) continue;
+      const restored = restoreSourceResourceReferences(
+        resource,
+        referenceDocuments.get(key),
+        path,
+        paths,
+        originalPaths,
+        base,
+        desired,
+      );
+      if (restored.repairs.length) {
+        derivedRepairs.push(...restored.repairs);
+        derivedKeys.add(key);
+        referenceRepairKeys.add(key);
       }
     }
     const effectiveOperations = [
@@ -1066,7 +1170,14 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
     for (const op of effectiveOperations) {
       const next = desired.get(op.resource);
       const previous = base.get(op.resource);
-      if (next && previous && sameResource(previous, next) && op.kind === "update") continue;
+      if (
+        next &&
+        previous &&
+        sameResource(previous, next) &&
+        op.kind === "update" &&
+        !referenceRepairKeys.has(op.resource)
+      )
+        continue;
       if ((next ?? previous)?.type === "Person") {
         const name = (next ?? previous)!.name;
         for (const authoringResource of [...base.values(), ...desired.values()]) {
@@ -1306,6 +1417,16 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
           op.kind === "move",
           path,
           assets,
+          restoreSourceResourceReferences(
+            next,
+            referenceDocuments.get(op.resource),
+            path,
+            paths,
+            originalPaths,
+            base,
+            desired,
+          ).content,
+          referenceRepairKeys.has(op.resource),
         ),
       );
       if (op.kind === "move") deleted.add(document!.path);
@@ -1401,6 +1522,9 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
       if (!files.has(path) && !deleted.has(path))
         tree.push({ path, mode: createdModes.get(path) ?? "100644", bytes });
     const candidate = await readSourceProject({ tree });
+    desired = resourceMap(
+      await normalizeSourceResourceReferences([...desired.values()], candidate),
+    );
     const compiled = resourceMap(candidate.compilation.resources);
     if (
       compiled.size !== desired.size ||

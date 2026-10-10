@@ -28,6 +28,7 @@
     "prepublishOnly": "vp run build"
   },
   "dependencies": {
+    "@topik/content": "workspace:*",
     "@topik/core": "workspace:*",
     "@topik/schema": "workspace:*"
   },

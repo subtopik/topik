@@ -13,12 +13,14 @@ export interface CompileResult {
   payloads: AssetPayload[];
   semantic: TopikAssetSemanticRecordV1;
   materialization: TopikMaterializationRecordV1;
+  /** Portable document references and their compilation-time validation state. */
+  references: import("./links").CompiledResourceReference[];
 }
 
 export type LinkValidationPolicy = "error" | "warning" | "off";
 
 export interface CompileValidationOptions {
-  /** How unresolved wiki page links and same-page guide fragments are handled. */
+  /** How unresolved document targets and invalid destination fragments are handled. */
   links?: LinkValidationPolicy;
 }
 

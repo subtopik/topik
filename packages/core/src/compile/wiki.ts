@@ -1,11 +1,6 @@
 import { createHash } from "node:crypto";
-import { join, posix } from "node:path";
-import {
-  analyzeTopikContent,
-  validateTopikAssetReference,
-  validateTopikContent,
-  type TopikContentLink,
-} from "@topik/content";
+import { join } from "node:path";
+import { analyzeTopikContent, validateTopikContent } from "@topik/content";
 import type {
   Wiki,
   WikiDropdownNavNode,
@@ -27,19 +22,15 @@ import {
 } from "./config";
 import { readRegularFileWithinRoot } from "./files";
 import { PublicCompileError } from "./public-errors";
-import { classifyPortableNavigationPath, readPortableAssetFile } from "../assets/files";
-import { validateTopikPath } from "../assets/path";
 import {
   extractMarkdownTitle,
-  hasCompileErrors,
-  linkValidationPolicy,
   parseMarkdownFrontmatter,
   throwOnCompileErrors,
   type CompileValidationOptions,
   type CompileResult,
 } from "./shared";
-import { validateWikiLinks, type WikiPageLinkAnalysis } from "./links";
-import { joinWikiPath, resolveWikiNavigation } from "../wiki-navigation";
+import { compileResourceLinks, type CompileResourceReferenceTarget } from "./links";
+import { joinWikiPath } from "../wiki-navigation";
 
 export interface CompileWikiOptions {
   dir: string;
@@ -47,6 +38,7 @@ export interface CompileWikiOptions {
   configFile?: string;
   validation?: CompileValidationOptions;
   assets?: AssetCompilationOptions;
+  referenceTargets?: readonly CompileResourceReferenceTarget[];
 }
 
 export async function compileWiki(options: CompileWikiOptions): Promise<CompileResult> {
@@ -57,14 +49,26 @@ export async function compileWiki(options: CompileWikiOptions): Promise<CompileR
 
 export async function inspectWiki(options: CompileWikiOptions): Promise<CompileResult> {
   const discovered = await discoverWiki(options);
-  const compiled = await compileAssetResources({
+  const linked = await compileResourceLinks({
     rootDir: configurationDirectory(options.dir, options.configFile),
     resources: discovered.resources,
+    sourcePathsByResource: discovered.sourcePathsByResource,
+    validation: options.validation,
+    referenceTargets: options.referenceTargets,
+  });
+  throwOnCompileErrors(linked.diagnostics);
+  const compiled = await compileAssetResources({
+    rootDir: configurationDirectory(options.dir, options.configFile),
+    resources: linked.resources,
     sourcePathsByResource: discovered.sourcePathsByResource,
     protectedSourcePaths: discovered.consumedSourcePaths,
     ...options.assets,
   });
-  return { diagnostics: discovered.diagnostics, ...compiled };
+  return {
+    diagnostics: [...discovered.diagnostics, ...linked.diagnostics],
+    references: linked.references,
+    ...compiled,
+  };
 }
 
 /** @internal Discovery phase used by the mixed top-level compiler. */
@@ -99,7 +103,6 @@ export async function discoverWiki(
 
   const resources: SourceResource[] = [];
   const diagnostics: CompileResult["diagnostics"] = [];
-  const pageAnalyses: WikiPageLinkAnalysis[] = [];
   const sourcePathsByResource: Record<string, string> = {};
   const pageNamesBySource = new Map<string, string>();
 
@@ -137,12 +140,6 @@ export async function discoverWiki(
         : normalizeWikiPageDescription(frontmatter.description);
     const analysis = analyzeTopikContent(content, { file: sourcePath });
     diagnostics.push(...analysis.diagnostics);
-    pageAnalyses.push({
-      analysis,
-      name,
-      slug: pages.find((page) => page.sourcePath === pagePath)!.route,
-      sourcePath: pagePath,
-    });
 
     const pageResource: WikiPage = {
       apiVersion: "v1",
@@ -195,20 +192,6 @@ export async function discoverWiki(
 
   resources.push(wikiResource);
 
-  if (!hasCompileErrors(diagnostics)) {
-    const nonPageLinks = await classifyWikiNonPageLinks(dir, pageAnalyses, config.sourceVersion);
-    diagnostics.push(
-      ...validateWikiLinks(
-        pageAnalyses,
-        linkValidationPolicy(options.validation),
-        nonPageLinks,
-        resolveWikiNavigation(wikiResource.spec.navigation ?? [], {
-          sourceVersion: config.sourceVersion,
-        }),
-      ),
-    );
-  }
-
   return {
     diagnostics,
     resources,
@@ -217,43 +200,6 @@ export async function discoverWiki(
     assetDirectory: config.assets.directory,
     sourceVersion: config.sourceVersion,
   };
-}
-
-async function classifyWikiNonPageLinks(
-  root: string,
-  pages: readonly WikiPageLinkAnalysis[],
-  sourceVersion?: 1,
-): Promise<ReadonlySet<TopikContentLink>> {
-  const nonPageLinks = new Set<TopikContentLink>();
-  const existingByPath = new Map<string, boolean>();
-  for (const page of pages) {
-    for (const link of page.analysis.links) {
-      if (link.kind !== "link") continue;
-      if (sourceVersion === 1 && /\.(?:mdx?|markdown)(?:[?#]|$)/i.test(link.href)) continue;
-      const reference = validateTopikAssetReference(link.href);
-      if (!reference.valid || reference.kind !== "local") continue;
-      const path = validateTopikPath(
-        posix.join(posix.dirname(page.sourcePath), reference.decodedPath),
-      );
-      if (!path.ok) continue;
-
-      let existing = existingByPath.get(path.value.path);
-      if (existing === undefined) {
-        const kind = await classifyPortableNavigationPath({ root, path: path.value.path });
-        if (kind === "directory") {
-          existing = true;
-        } else {
-          const proof = await readPortableAssetFile({ root, path: path.value.path });
-          existing =
-            proof.ok ||
-            proof.diagnostics.some((diagnostic) => diagnostic.id !== "TOPIK_ASSET_FILE_MISSING");
-        }
-        existingByPath.set(path.value.path, existing);
-      }
-      if (existing) nonPageLinks.add(link);
-    }
-  }
-  return nonPageLinks;
 }
 
 // Keep compiled WikiPage spec.description within the WikiPage/v1 schema's 1024-character limit.

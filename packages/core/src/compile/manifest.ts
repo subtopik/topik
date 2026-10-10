@@ -17,6 +17,7 @@ import { PublicCompileError, type PublicCompileErrorId } from "./public-errors";
 import { throwOnCompileErrors, type CompileResult } from "./shared";
 import type { SourceResource } from "../resource";
 import type { CompileOptions } from "./index";
+import { compileResourceLinks } from "./links";
 
 export interface ManifestSourceDescriptor extends TopikManifestSource {
   /** Zero-based declaration index, used only for provenance and diagnostics. */
@@ -198,9 +199,19 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
     resources,
     Object.assign({}, ...provenance.map((source) => source.sourcePathsByResource)),
   );
-  const compiled = await compileAssetResources({
+  const linked = await compileResourceLinks({
     rootDir: root,
     resources,
+    sourcePathsByResource,
+    sourceDirectoriesByResource,
+    validation: options.validation,
+    referenceTargets: options.referenceTargets,
+  });
+  diagnostics.push(...linked.diagnostics);
+  throwOnCompileErrors(diagnostics);
+  const compiled = await compileAssetResources({
+    rootDir: root,
+    resources: linked.resources,
     sourcePathsByResource,
     sourceDirectoriesByResource,
     protectedSourcePaths,
@@ -209,5 +220,5 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
       projectNamespace: manifest.namespace,
     }),
   });
-  return { diagnostics, provenance, ...compiled };
+  return { diagnostics, references: linked.references, provenance, ...compiled };
 }

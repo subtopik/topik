@@ -16,6 +16,7 @@ const PUBLIC_COMPILE_ERROR_MESSAGES = {
   "file-outside-compilation-root": "Compilation input resolves outside the source root.",
   "frontmatter-invalid": "Document frontmatter is invalid.",
   "reference-list-invalid": "Document resource references are invalid.",
+  "reference-targets-invalid": "Resource reference target catalogue is invalid.",
   "wiki-page-not-found": "A configured Wiki page file was not found.",
   "wiki-page-ambiguous":
     "A Wiki source path matches more than one Markdown file. Keep exactly one source file.",

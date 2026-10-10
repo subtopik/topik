@@ -304,6 +304,7 @@ export function serializeDocument(
   const expansion = sourceExpansion(document, registry);
   const baseline = writeMarkdown(asTags(document, registry, true), registry);
   assertSourceLimit(baseline);
+  if (expansion === 0) return baseline;
   if (baseline.length + expansion > CONTENT_LIMITS.sourceLength)
     throw new ContentLimitError(
       `Content exceeds the source length limit of ${CONTENT_LIMITS.sourceLength}`,

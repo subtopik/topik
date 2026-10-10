@@ -118,6 +118,14 @@ export async function addSourceToProject(
   input: AddSourceToProjectInput,
 ): Promise<SourcePlanResult> {
   try {
+    if (
+      serializeTopikJson(input.project.descriptor) !== serializeTopikJson(SOURCE_WRITER_DESCRIPTOR)
+    )
+      throw new SourcePlanningError({
+        code: "source-writer-incompatible",
+        message:
+          "The saved source grammar or writer has changed. Reinspect the source project before retrying.",
+      });
     if (digestSourceTree(input.project.tree) !== input.expectedTreeDigest)
       throw new TypeError("Stale source base");
     const project = await readSourceProject({ tree: input.project.tree });

@@ -172,7 +172,18 @@ export function codeWriterExtension(): NonNullable<Options["extensions"]>[number
         let remaining = CONTENT_LIMITS.sourceLength - base;
         const previous = state.safe;
         state.safe = (input, config) => {
-          const escaped = escapedHeader(state, input, config, remaining);
+          let escaped = escapedHeader(state, input, config, remaining);
+          // Literal AST headers must not become presentation attributes on reparse.
+          // Parsed presentation options have their own handler and readable spelling.
+          if (
+            typeof input === "string" &&
+            /^(?:(?:lines|wrap)(?=[ \t=]|$)|(?:filename|title|startLine|highlight|focus|collapseAfter|added|removed)(?=[ \t=]|$))/.test(
+              input,
+            ) &&
+            escaped[0] === input[0]
+          )
+            escaped = `&#${input.charCodeAt(0)};${escaped.slice(1)}`;
+          if (escaped.length > remaining) overflow();
           remaining -= escaped.length;
           return escaped;
         };

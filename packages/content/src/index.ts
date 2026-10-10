@@ -10,6 +10,7 @@ export type {
   Branch,
   AuthoredAttributeValue,
   CodeTemplate,
+  CodePresentation,
   Component,
   Conditional,
   ContentDocument,
@@ -19,6 +20,13 @@ export type {
   TextTemplate,
   Variable,
 } from "./model.js";
+export {
+  CODE_PRESENTATION_LIMITS,
+  effectiveCodePresentationOptions,
+  type CodePresentationOptions,
+  type CodePresentationEffectiveOptions,
+  type CodeLineSelection,
+} from "./code-presentation.js";
 export type { Expression } from "./expressions.js";
 export { validateDocument } from "./validation.js";
 export { sameDocumentMeaning } from "./document-meaning.js";

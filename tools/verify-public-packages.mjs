@@ -13,6 +13,7 @@ import {
 } from "node:fs";
 import { join, sep } from "node:path";
 import { tmpdir } from "node:os";
+import { createRequire } from "node:module";
 import { parseArgs } from "node:util";
 import { packPublicPackages } from "./pack-public-package.mjs";
 import { listNpmRootMetadata } from "./public-packlist.mjs";
@@ -49,7 +50,10 @@ try {
         dependencies: Object.fromEntries(
           publicPackages.map((packageName) => [packageName, `file:${archives.get(packageName)}`]),
         ),
-        devDependencies: { typescript: lockedTypescriptVersion() },
+        devDependencies: {
+          typescript: lockedTypescriptVersion(),
+          "@types/react": installedReactTypesVersion(),
+        },
       },
       null,
       2,
@@ -91,6 +95,20 @@ try {
   copyFileSync(join(root, "tools/source-writeback-consumer.mjs"), sourceFixture);
   for (const runtime of runtimeNodes)
     execFileSync(runtime, [sourceFixture], { cwd: consumer, stdio: "inherit", timeout: 30_000 });
+  const presentationFixture = join(consumer, "code-presentation.mjs");
+  copyFileSync(join(root, "tools/code-presentation-consumer.mjs"), presentationFixture);
+  const rendererTestRequire = createRequire(join(root, "packages/content-react/package.json"));
+  const domTestModule = rendererTestRequire.resolve("jsdom");
+  for (const runtime of runtimeNodes)
+    execFileSync(
+      runtime,
+      [presentationFixture, ...(runtime === process.execPath ? [domTestModule] : [])],
+      {
+        cwd: consumer,
+        stdio: "inherit",
+        timeout: 30_000,
+      },
+    );
   const contentManifest = readJson(join(modules, "@topik/content/package.json"));
   if (contentManifest.dependencies?.["linkify-it"]) {
     throw new Error("Packed content must not depend on implicit autolinking");
@@ -310,7 +328,7 @@ assert.equal(codeRunResult.diagnostics[0].id, "topik-content-limit");
 assert.ok(performance.now() - codeRunStarted < 5000, "Packed unmatched code runs exceeded the parser-work budget");
 assert.equal(typeof remarkTags, "function");
 assert.equal(remarkTags, namedRemarkTags);
-assert.equal(TOPIK_CONTENT_SCHEMA_VERSION, "0.2.1");
+assert.equal(TOPIK_CONTENT_SCHEMA_VERSION, "0.2.2");
 // Establish template support in the installed cohort, beyond source-level tests.
 const templateFence = String.fromCharCode(96).repeat(3);
 const templateSource = [
@@ -464,7 +482,9 @@ void TopikContent;
   const contentFixture = join(consumer, "content-types.mts");
   writeFileSync(
     contentFixture,
-    `import { parseDocument, mergeTopikContentConfig, validateTopikContent, type AuthoredAttributeValue, type CodeTemplate, type TextTemplate, type Component, type ComponentSchema, type ContentDocument, type TopikContentConfig } from "@topik/content";
+    `import { parseDocument, mergeTopikContentConfig, validateTopikContent, effectiveCodePresentationOptions, CODE_PRESENTATION_LIMITS, type CodePresentation, type CodePresentationOptions, type CodePresentationEffectiveOptions, type CodeLineSelection, type AuthoredAttributeValue, type CodeTemplate, type TextTemplate, type Component, type ComponentSchema, type ContentDocument, type TopikContentConfig } from "@topik/content";
+import type { TopikCodeBlockProps } from "@topik/content-react";
+import type { TopikCodeBlockProps as ThemeCodeBlockProps } from "@topik/content-react/theme";
 import type { TagContainerNode, TagTextNode } from "@topik/remark-tags";
 import type { RootContent } from "mdast";
 
@@ -498,6 +518,14 @@ if (parsed.ok) {
       const language: string | null | undefined = node.lang;
       void template; void language;
     }
+    if (node.type === "topikCodePresentation") {
+      const options: CodePresentationOptions = node.options;
+      const suffix: string = node.opaqueMetaSuffix;
+      const child = node.children[0];
+      if (child.type === "code") { const payload: string = child.value; void payload; }
+      else { const segments: TextTemplate = child.template; void segments; }
+      void options; void suffix;
+    }
     if (node.type === "paragraph") {
       for (const child of node.children) {
         if (child.type === "topikVariable") {
@@ -530,6 +558,20 @@ const codeTemplate: CodeTemplate = {
 const templateComponent: Component = {
   type: "topikComponent", name: "callout", props: { title }, children: [codeTemplate],
 };
+const selection: CodeLineSelection = [[1, 1]];
+const presentationOptions: CodePresentationOptions = { title: "Installed", highlight: selection };
+const effectiveOptions: CodePresentationEffectiveOptions = effectiveCodePresentationOptions(presentationOptions);
+const presentation: CodePresentation = {
+  type: "topikCodePresentation", children: [{ type: "code", lang: "text", value: "one" }],
+  options: presentationOptions, opaqueMetaSuffix: " legacy",
+};
+const presentedTemplate: CodePresentation = {
+  type: "topikCodePresentation", children: [codeTemplate], options: {}, opaqueMetaSuffix: "",
+};
+const codeProps: TopikCodeBlockProps = { payload: "one", content: "one\\n", presentation: effectiveOptions };
+const themeCodeProps: ThemeCodeBlockProps = codeProps;
+const presentationRows: number = CODE_PRESENTATION_LIMITS.rows;
+void themeCodeProps; void presentationRows;
 const document: ContentDocument = {
   type: "root", children: [{
     type: "topikConditional", children: [{
@@ -548,7 +590,7 @@ const nestedBlock: TagContainerNode = {
     type: "tagContainer", name: "callout", children: [],
   }],
 };
-const ecosystemNodes: RootContent[] = [component, templateComponent, codeTemplate, nestedInline, nestedBlock];
+const ecosystemNodes: RootContent[] = [component, templateComponent, codeTemplate, presentation, presentedTemplate, nestedInline, nestedBlock];
 void document; void ecosystemNodes;
 `,
   );
@@ -651,6 +693,16 @@ function readPackedManifest(archive) {
   return JSON.parse(
     execFileSync("tar", ["-xOzf", archive, "package/package.json"], { encoding: "utf8" }),
   );
+}
+
+function installedReactTypesVersion() {
+  const { version } = readJson(
+    join(root, "packages/content-react/node_modules/@types/react/package.json"),
+  );
+  if (typeof version !== "string" || !/^\d+\.\d+\.\d+$/u.test(version)) {
+    throw new Error("The installed React declaration package has no exact version");
+  }
+  return version;
 }
 
 function lockedTypescriptVersion() {

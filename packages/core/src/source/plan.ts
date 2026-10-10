@@ -610,6 +610,13 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
     if (!/^[a-f0-9]{64}$/.test(input.packageCohort))
       block("package-cohort-required", "Plans require the verified package cohort integrity.");
     if (
+      serializeTopikJson(input.project.descriptor) !== serializeTopikJson(SOURCE_WRITER_DESCRIPTOR)
+    )
+      block(
+        "source-writer-incompatible",
+        "The saved source grammar or writer has changed. Reinspect the source project before retrying.",
+      );
+    if (
       digestSourceTree(input.project.tree) !== input.expectedTreeDigest ||
       input.project.treeDigest !== input.expectedTreeDigest
     )

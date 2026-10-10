@@ -21,6 +21,8 @@ import type {
   TopikLinkResolver,
 } from "../core/components";
 import { useTopikLinkHandler, useTopikLinkRenderer, useTopikLinkResolver } from "../core/context";
+import { CodeBlockView } from "./code-block";
+import type { CodePresentationEffectiveOptions } from "@topik/content";
 
 interface TopikRoleProps {
   __topikRole?: "choice" | "explanation";
@@ -213,16 +215,24 @@ export function TopikCard({
   return <div className="topik-card">{content}</div>;
 }
 
-export function TopikCodeBlock({ children, content, language }: TopikComponentProps) {
-  const code = stringAttribute(content) ?? stringChildren(children);
-  const languageName = stringAttribute(language);
+export function TopikCodeBlock({
+  children,
+  content,
+  payload,
+  language,
+  presentation,
+}: TopikComponentProps) {
+  const code =
+    stringAttribute(content) ??
+    (typeof payload === "string" ? `${payload}\n` : stringChildren(children));
+  const source = stringAttribute(payload) ?? (code.endsWith("\n") ? code.slice(0, -1) : code);
   return (
-    <div className="topik-code-block" data-language={languageName}>
-      {languageName ? <div className="topik-code-block__language">{languageName}</div> : null}
-      <pre>
-        <code>{code}</code>
-      </pre>
-    </div>
+    <CodeBlockView
+      payload={source}
+      content={code}
+      language={stringAttribute(language)}
+      presentation={presentation as CodePresentationEffectiveOptions | undefined}
+    />
   );
 }
 

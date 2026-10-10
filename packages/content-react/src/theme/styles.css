@@ -137,9 +137,10 @@
   }
 
   .topik-code-block {
-    background: #111827;
-    color: #e5e7eb;
+    background: var(--topik-color-panel, #f8fafc);
+    color: var(--topik-color-text, #1d2939);
     margin-block: 1rem;
+    min-width: 0;
     overflow: hidden;
   }
 
@@ -147,6 +148,179 @@
     margin: 0;
     overflow-x: auto;
     padding: 1rem;
+  }
+
+  .topik-code-block__header,
+  .topik-code-block__labels,
+  .topik-code-block__controls {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .topik-code-block__header {
+    border-bottom: 1px solid var(--topik-color-border, #d0d5dd);
+    justify-content: space-between;
+    padding: 0.5rem 0.75rem;
+  }
+
+  .topik-code-block__labels {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .topik-code-block__filename {
+    font-family: monospace;
+    font-size: 0.85rem;
+  }
+
+  .topik-code-block__controls button,
+  .topik-code-block__expand {
+    background: var(--topik-color-canvas, #ffffff);
+    border: 1px solid var(--topik-color-border, #d0d5dd);
+    border-radius: 0.35rem;
+    color: var(--topik-color-text, #1d2939);
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.8rem;
+    padding: 0.25rem 0.5rem;
+  }
+
+  .topik-code-block__controls button:disabled,
+  .topik-code-block__expand:disabled {
+    cursor: default;
+  }
+
+  .topik-code-block :where(button, pre):focus-visible {
+    outline: 2px solid var(--topik-color-accent, #0f766e);
+    outline-offset: -3px;
+  }
+
+  .topik-code-block__expand {
+    margin: 0.5rem 0.75rem;
+  }
+
+  .topik-code-block__legend {
+    display: flex;
+    flex-wrap: wrap;
+    font-size: 0.8rem;
+    gap: 1rem;
+    padding: 0.3rem 0.75rem;
+  }
+
+  .topik-code-block__row {
+    align-items: baseline;
+    display: flex;
+    min-height: 1lh;
+    position: relative;
+    width: max-content;
+    min-width: 100%;
+  }
+
+  .topik-code-block__row[hidden] {
+    display: none;
+  }
+
+  .topik-code-block__line-number,
+  .topik-code-block__diff-marker {
+    flex: none;
+    padding-inline-end: 0.75rem;
+    text-align: end;
+    user-select: none;
+  }
+
+  .topik-code-block__line-number {
+    box-sizing: content-box;
+    font-weight: 400;
+    width: max(4ch, var(--topik-code-line-number-width, 4ch));
+  }
+
+  .topik-code-block__diff-marker {
+    min-width: 1ch;
+    font-weight: 700;
+  }
+
+  .topik-code-block__text {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .topik-code-block__row[data-focused="false"] .topik-code-block__text {
+    filter: saturate(25%);
+  }
+
+  .topik-code-block__row[data-focused="true"] {
+    background: color-mix(in srgb, currentcolor 2%, transparent);
+    font-weight: 700;
+  }
+
+  .topik-code-block__row[data-focused="true"]::before,
+  .topik-code-block__row[data-diff]::before {
+    border-inline-start: 2px solid currentcolor;
+    content: "";
+    inset-block: 0;
+    inset-inline-start: 0;
+    pointer-events: none;
+    position: absolute;
+  }
+
+  .topik-code-block__row[data-highlighted] {
+    background: color-mix(in srgb, currentcolor 4%, transparent);
+    box-shadow: inset 3px 0 currentcolor;
+  }
+
+  .topik-code-block__row[data-diff="added"] {
+    background: rgb(24 128 56 / 10%);
+  }
+
+  .topik-code-block__row[data-diff="added"]::before {
+    border-color: #188038;
+  }
+
+  .topik-code-block__row[data-diff="removed"] {
+    background: rgb(197 34 31 / 10%);
+  }
+
+  .topik-code-block__row[data-diff="removed"]::before {
+    border-color: #c5221f;
+    border-inline-start-style: dashed;
+  }
+
+  /* Keep token contrast on the background selected by the syntax theme. */
+  .topik-code-block .shiki .topik-code-block__row {
+    background: transparent;
+  }
+
+  .topik-code-block[data-wrap="true"] pre {
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+
+  .topik-code-block[data-wrap="true"] .topik-code-block__row {
+    width: 100%;
+  }
+
+  .topik-code-block__sr-only {
+    clip-path: inset(50%);
+    height: 1px;
+    overflow: hidden;
+    position: absolute;
+    user-select: none;
+    white-space: nowrap;
+    width: 1px;
+  }
+
+  @media (forced-colors: active) {
+    .topik-code-block__row[data-diff]::before,
+    .topik-code-block__row[data-focused="true"]::before {
+      border-color: CanvasText;
+    }
+
+    .topik-code-block__row[data-highlighted] {
+      outline: 1px solid CanvasText;
+      outline-offset: -1px;
+    }
   }
 
   .topik-code-block code {
@@ -157,10 +331,8 @@
   }
 
   .topik-code-block__language {
-    border-bottom: 1px solid rgb(255 255 255 / 0.12);
-    color: #9ca3af;
+    color: inherit;
     font-size: 0.8rem;
-    padding: 0.45rem 0.75rem;
   }
 
   .topik-code-group {

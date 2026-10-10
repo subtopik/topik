@@ -12,6 +12,7 @@ import { validateTopikPathSet } from "../assets/path";
 import { serializeTopikJson } from "../assets/json";
 import {
   FORMAT_VERSION,
+  TOPIK_CONTENT_SCHEMA_VERSION,
   extractTopikAssetOccurrences,
   rewriteTopikNavigationReferences,
   type TopikNavigationReference,
@@ -48,6 +49,7 @@ export const SOURCE_WRITER_DESCRIPTOR = {
   manifest: 1,
   sourceVersions: [0, 1],
   formatter: FORMAT_VERSION,
+  contentSchema: TOPIK_CONTENT_SCHEMA_VERSION,
   resourceSchema: "v1",
   references: "source-links-v2",
   provenance: 4,

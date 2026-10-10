@@ -8,6 +8,7 @@ export const blockTypes = new Set([
   "list",
   "code",
   "topikCodeTemplate",
+  "topikCodePresentation",
   "table",
   "thematicBreak",
   "definition",
@@ -47,6 +48,7 @@ export const parentTypes = new Set([
   "topikComponent",
   "topikConditional",
   "topikBranch",
+  "topikCodePresentation",
 ]);
 export const nodeTypes = new Set([...parentTypes, ...blockTypes, ...inlineTypes, "yaml"]);
 

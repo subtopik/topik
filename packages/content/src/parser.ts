@@ -1,4 +1,5 @@
 import { tagOptions } from "./tag-options.js";
+import type { Node } from "mdast";
 import type { AuthoredAttributeValue, ContentDocument, Diagnostic, TreeNode } from "./model.js";
 import { fromMarkdown } from "mdast-util-from-markdown";
 import { frontmatter } from "micromark-extension-frontmatter";
@@ -25,6 +26,11 @@ import {
 } from "./limits.js";
 import { parserLimitSyntax } from "./parser-limits.js";
 import { normalizeLineEndings } from "./line-endings.js";
+import {
+  CodePresentationError,
+  codePresentationChildRows,
+  parseCodePresentationMetadata,
+} from "./code-presentation.js";
 
 function declarations(registry: Registry): TagDeclarations {
   return Object.fromEntries(
@@ -32,11 +38,16 @@ function declarations(registry: Registry): TagDeclarations {
   );
 }
 
-export function convertTags(root: TreeNode, registry: Registry): Diagnostic[] {
+export function convertTags(
+  root: TreeNode,
+  registry: Registry,
+  rawHeaders?: WeakMap<Node, string>,
+): Diagnostic[] {
   const errors: Diagnostic[] = [];
   function walk(node: TreeNode): void {
     if (!node.children) return;
-    node.children = node.children.map((child) => {
+    node.children = node.children.map((originalChild) => {
+      let child = originalChild;
       walk(child);
       if (child.type === "tagVariable")
         return {
@@ -57,13 +68,49 @@ export function convertTags(root: TreeNode, registry: Registry): Diagnostic[] {
       }
       if (child.type === "tagConditional") return { ...child, type: "topikConditional" };
       if (child.type === "tagCodeTemplate")
-        return {
+        child = {
           type: "topikCodeTemplate",
           lang: child.lang,
           meta: child.meta,
           template: child.template,
           position: child.position,
         };
+      if (child.type === "code" || child.type === "topikCodeTemplate") {
+        const rawHeader = rawHeaders?.get(originalChild);
+        if (rawHeader === undefined) return child;
+        const unlabelled =
+          /^(?:(?:lines|wrap)(?:[ \t=]|$)|(?:filename|title|startLine|highlight|focus|collapseAfter|added|removed)[ \t]*=)/.test(
+            rawHeader,
+          );
+        const rawMeta = unlabelled ? rawHeader : rawHeader.replace(/^[^ \t]+[ \t]*/, "");
+        try {
+          const presentation = parseCodePresentationMetadata(
+            rawMeta,
+            codePresentationChildRows(child),
+          );
+          if (!presentation) return child;
+          if (unlabelled) child.lang = null;
+          delete child.meta;
+          return {
+            type: "topikCodePresentation",
+            ...presentation,
+            children: [child],
+            position: child.position,
+          };
+        } catch (error) {
+          if (!(error instanceof CodePresentationError)) throw error;
+          throw new TagSyntaxError([
+            diagnostic(
+              {
+                id: error.id,
+                message: error.message,
+                ...(error.option ? { option: error.option } : {}),
+              },
+              child,
+            ),
+          ]);
+        }
+      }
       if (!["tagText", "tagLeaf", "tagContainer"].includes(child.type)) return child;
       const props: Record<string, AuthoredAttributeValue> = {};
       for (const [key, value] of Object.entries(child.attributes ?? {})) {
@@ -121,11 +168,13 @@ export function parseDocumentTree(
   try {
     assertSourceLimit(source);
     const normalized = normalizeLineEndings(source);
+    const rawHeaders = new WeakMap<Node, string>();
+    const syntaxOptions = { ...tagOptions(registry), fencedCodeHeaders: rawHeaders };
     tree = fromMarkdown(normalized.source, {
       extensions: [
         frontmatter(),
         ...gfmSyntax(),
-        tagSyntax(declarations(registry), tagOptions(registry)),
+        tagSyntax(declarations(registry), syntaxOptions),
         headingIdSyntax(),
         parserLimitSyntax(normalized.source),
       ],
@@ -140,7 +189,7 @@ export function parseDocumentTree(
         },
         ...gfmFromMarkdown(),
         frontmatterFromMarkdown(),
-        tagFromMarkdown(declarations(registry), tagOptions(registry)),
+        tagFromMarkdown(declarations(registry), syntaxOptions),
         {
           transforms: [
             (root) => {
@@ -167,7 +216,7 @@ export function parseDocumentTree(
     }) as ContentDocument;
     const nodeCount = assertTreeLimits(tree as TreeNode);
     normalized.restorePositions(tree as TreeNode);
-    const tagErrors = convertTags(tree as TreeNode, registry);
+    const tagErrors = convertTags(tree as TreeNode, registry, rawHeaders);
     normalizeTables(tree as TreeNode, CONTENT_LIMITS.treeNodes - nodeCount);
     const validated = validateDocumentWithIndex(tree, registry);
     const errors = tagErrors.concat(validated.diagnostics);

@@ -8,8 +8,14 @@ import {
   type DependencyList,
   type ReactNode,
 } from "react";
-import { TopikCodeBlock, TopikMath, TopikMathInline, TopikMermaid } from "../theme/components";
+import { TopikMath, TopikMathInline, TopikMermaid } from "../theme/components";
 import type { TopikComponentMap, TopikComponentProps } from "../core/components";
+import { CodeBlockView, type CodeHighlight } from "../theme/code-block";
+import {
+  CODE_PRESENTATION_LIMITS,
+  CONTENT_LIMITS,
+  type CodePresentationEffectiveOptions,
+} from "@topik/content";
 
 export type RichTopikTheme = "light" | "dark";
 
@@ -48,6 +54,28 @@ function useRichTopikTheme(): RichTopikTheme {
 
 function stringAttribute(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function escapedCodeLength(value: string): number {
+  let length = 0;
+  for (let index = 0; index < value.length; index++) {
+    switch (value.charCodeAt(index)) {
+      case 34:
+      case 39:
+        length += 6;
+        break;
+      case 38:
+        length += 5;
+        break;
+      case 60:
+      case 62:
+        length += 4;
+        break;
+      default:
+        length++;
+    }
+  }
+  return length;
 }
 
 async function withMinimumDelay<T>(load: () => Promise<T>, delayMs: number): Promise<T> {
@@ -92,41 +120,109 @@ function useRenderedHtml(load: () => Promise<string>, deps: DependencyList): Htm
 }
 
 export function RichTopikCodeBlock(props: TopikComponentProps) {
-  const code = stringAttribute(props.content) ?? "";
+  const code =
+    stringAttribute(props.content) ??
+    (typeof props.payload === "string" ? `${props.payload}\n` : "");
+  const payload =
+    stringAttribute(props.payload) ?? (code.endsWith("\n") ? code.slice(0, -1) : code);
   const language = stringAttribute(props.language) ?? "text";
   const theme = useRichTopikTheme();
-  const [copied, setCopied] = useState(false);
-  const rendered = useRenderedHtml(async () => {
-    const shiki = await import("shiki");
-    return shiki.codeToHtml(code, { lang: language, theme: shikiThemes[theme] });
-  }, [code, language, theme]);
+  const presented = Boolean(props.presentation);
+  const [rendered, setRendered] = useState<{
+    payload: string;
+    language: string;
+    theme: RichTopikTheme;
+    presented: boolean;
+    highlight: CodeHighlight;
+  }>();
 
-  async function copyCode() {
-    if (typeof navigator === "undefined" || !navigator.clipboard) return;
-    try {
-      await navigator.clipboard.writeText(code);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
-    } catch {
-      setCopied(false);
+  useEffect(() => {
+    let cancelled = false;
+    // Large ordinary fences stay efficient plain text; avoid allocating Shiki rows at all.
+    let rowCount = 1;
+    for (let index = 0; index < payload.length; index++) {
+      if (payload.charCodeAt(index) === 10 && ++rowCount > CODE_PRESENTATION_LIMITS.rows) return;
     }
-  }
+    void import("shiki")
+      .then(async (shiki) => {
+        const highlight = await shiki.codeToTokens(payload, {
+          lang: language,
+          theme: shikiThemes[theme],
+        });
+        const rows = payload.split("\n");
+        if (highlight.tokens.length !== rows.length) {
+          throw new Error("Syntax highlighting changed physical code rows");
+        }
+        // Keep token spans within the reserved decoration allowance before React allocates them.
+        let decorationLength = 0;
+        for (const [index, tokens] of highlight.tokens.entries()) {
+          let offset = 0;
+          for (const token of tokens) {
+            if (!rows[index].startsWith(token.content, offset)) {
+              throw new Error("Syntax highlighting changed code text");
+            }
+            offset += token.content.length;
+            if (token.color && !/^#[\da-f]{3,8}$/i.test(token.color)) {
+              throw new Error("Unsupported syntax token color");
+            }
+            if (
+              (token.color && token.color.toLowerCase() !== highlight.fg?.toLowerCase()) ||
+              token.fontStyle
+            ) {
+              decorationLength +=
+                32 +
+                (token.color?.length ?? 0) +
+                (token.fontStyle && token.fontStyle & 1 ? 18 : 0) +
+                (token.fontStyle && token.fontStyle & 2 ? 17 : 0) +
+                (token.fontStyle && token.fontStyle & 4 ? 27 : 0);
+            }
+          }
+          if (offset !== rows[index].length) {
+            throw new Error("Syntax highlighting changed code text");
+          }
+        }
+        // Reuse the unused worst-case text escaping allowance for syntax spans.
+        // Leave 512 units per row and 2048 per block for presentation markup.
+        const escapedLength = escapedCodeLength(payload);
+        const decorationBudget = Math.min(
+          2048 + rows.length * 256 + payload.length * 6 - escapedLength,
+          CONTENT_LIMITS.presentationOutputLength -
+            escapedLength -
+            2048 -
+            (presented ? rows.length * 512 : 0),
+        );
+        if (decorationLength > decorationBudget) {
+          throw new Error("Syntax highlighting exceeds the code decoration budget");
+        }
+        if (!cancelled) setRendered({ payload, language, theme, presented, highlight });
+      })
+      .catch(() => {
+        console.warn("Failed to highlight code; using plain code");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [payload, language, theme, presented]);
+
+  const highlight =
+    rendered?.payload === payload &&
+    rendered.language === language &&
+    rendered.theme === theme &&
+    rendered.presented === presented
+      ? rendered.highlight
+      : undefined;
 
   return (
     <div className="topik-rich-code-block">
       <div className="topik-rich-code-block__frame">
-        {rendered.html ? (
-          <div dangerouslySetInnerHTML={{ __html: rendered.html }} />
-        ) : (
-          <TopikCodeBlock {...props} />
-        )}
-        <button
-          className="topik-rich-code-block__copy"
-          onClick={() => void copyCode()}
-          type="button"
-        >
-          {copied ? "Copied" : "Copy"}
-        </button>
+        <CodeBlockView
+          payload={payload}
+          content={code}
+          language={stringAttribute(props.language)}
+          presentation={props.presentation as CodePresentationEffectiveOptions | undefined}
+          highlight={highlight}
+          rich
+        />
       </div>
     </div>
   );

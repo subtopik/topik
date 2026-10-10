@@ -115,6 +115,26 @@ test("normalizes authored refs and records unknown references for application re
   expect(result.references.map(({ status }) => status)).toEqual(["verified", "deferred"]);
 });
 
+test.each([1, 8192])(
+  "normalizes source links with %i repeated separators and trailing slashes",
+  async (count) => {
+    const slashes = "/".repeat(count);
+    const href = `.${slashes}install.md${slashes}?view=full#setup`;
+    const dir = await fixture({
+      "collection.yaml": guideConfig,
+      "intro.md": `---\nid: introduction\nslug: intro\ntitle: Introduction\n---\n# Introduction\n\n[Install](${href})\n`,
+      "install.md": "---\nid: installation\nslug: install\ntitle: Install\n---\n# Setup\n",
+    });
+    const result = await compileGuides({ dir });
+    const introduction = result.resources.find((resource) => resource.name === "introduction")!;
+    expect(introduction.spec).toMatchObject({
+      content: { value: expect.stringContaining("ref://guide/installation?view=full#setup") },
+    });
+    expect(result.references).toMatchObject([{ href, status: "verified" }]);
+    expect(result.diagnostics).toEqual([]);
+  },
+);
+
 test("validates authored local resource fragments and keeps warning status explicit", async () => {
   const dir = await fixture({
     "collection.yaml": guideConfig,

@@ -345,7 +345,8 @@ function resolveSourceReferencePath(
     const joined = path.startsWith("/")
       ? posix.join(directory, path.slice(1))
       : posix.join(posix.dirname(sourcePath), path || posix.basename(sourcePath));
-    const result = validateTopikPath(joined.replace(/\/+$/, ""));
+    // posix.join normalizes repeated separators to at most one trailing slash.
+    const result = validateTopikPath(joined.endsWith("/") ? joined.slice(0, -1) : joined);
     return result.ok ? result.value.path : undefined;
   } catch {
     return undefined;

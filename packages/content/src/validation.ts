@@ -84,7 +84,12 @@ export function validateTag(tag: Tag, registry: Registry): ValidationIssue | und
         "attribute-type-invalid",
         `Attribute ${key} on ${tag.name} must be a ${attr.type === "enum" ? "string" : attr.type}`,
       );
-    if (typeof value === "string" && hasControl(value))
+    if (
+      typeof value === "string" &&
+      hasControl(
+        attr.type === "string" && attr.escapedWhitespace ? value.replace(/[\t\n\r]/g, "") : value,
+      )
+    )
       return issue("attribute-value-invalid", `Control character in ${key} on ${tag.name}`);
     if (attr.type === "enum" && !attr.values.includes(value as string))
       return issue("attribute-value-invalid", `Invalid ${key} on ${tag.name}`);

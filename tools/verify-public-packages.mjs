@@ -9,6 +9,7 @@ import {
   rmSync,
   statSync,
   writeFileSync,
+  copyFileSync,
 } from "node:fs";
 import { join, sep } from "node:path";
 import { tmpdir } from "node:os";
@@ -86,6 +87,10 @@ try {
   }
 
   verifyConsumer(consumer);
+  const sourceFixture = join(consumer, "source-writeback.mjs");
+  copyFileSync(join(root, "tools/source-writeback-consumer.mjs"), sourceFixture);
+  for (const runtime of runtimeNodes)
+    execFileSync(runtime, [sourceFixture], { cwd: consumer, stdio: "inherit", timeout: 30_000 });
   const contentManifest = readJson(join(modules, "@topik/content/package.json"));
   if (contentManifest.dependencies?.["linkify-it"]) {
     throw new Error("Packed content must not depend on implicit autolinking");
@@ -94,7 +99,7 @@ try {
     throw new Error("Packed content must not bundle the former GFM autolinker");
   }
   verifyDeclarations(consumer);
-  verifyReadmeExamples(consumer);
+  verifyDocumentationExamples(consumer);
   verifyBins(modules);
   console.log(`Verified packed public package cohort ${cohortVersion}`);
 } finally {
@@ -204,9 +209,10 @@ function verifyConsumer(consumer) {
   writeFileSync(
     script,
     `import assert from "node:assert/strict";
-import { parseDocument, writeDocument, validateTopikContent, formatTopikContent, TOPIK_CONTENT_SCHEMA_VERSION } from "@topik/content";
+import { parseDocument, writeDocument, validateTopikContent, formatTopikContent, sameDocumentMeaning, TOPIK_CONTENT_SCHEMA_VERSION } from "@topik/content";
 import remarkTags, { remarkTags as namedRemarkTags } from "@topik/remark-tags";
 import { isGeneratedAssetName, validateResources } from "@topik/core";
+import { resolveWikiNavigation, resolveWikiContentHref, resolveWikiContentReference } from "@topik/core/wiki-navigation";
 import { renderTopikMarkdown } from "@topik/content-react";
 import * as rich from "@topik/content-react/rich";
 import * as theme from "@topik/content-react/theme";
@@ -216,11 +222,18 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 const modulePrefix = new URL("./node_modules/", import.meta.url).href;
 const topikPrefix = new URL("./node_modules/@topik/", import.meta.url).href;
-for (const specifier of ["@topik/remark-tags", "@topik/content", "@topik/core", "@topik/content-react", "@topik/content-react/rich", "@topik/content-react/theme", "@topik/schema/guide/v1.json"]) {
+for (const specifier of ["@topik/remark-tags", "@topik/content", "@topik/core", "@topik/core/wiki-navigation", "@topik/content-react", "@topik/content-react/rich", "@topik/content-react/theme", "@topik/schema/guide/v1.json"]) {
   assert.ok(import.meta.resolve(specifier).startsWith(topikPrefix), specifier + " resolved outside the packed cohort");
 }
 assert.ok(import.meta.resolve("react-dom/server").startsWith(modulePrefix), "react-dom resolved outside the clean consumer");
 assert.equal(guideSchema.properties.type.const, "Guide");
+const wikiLinks = resolveWikiNavigation([{type: "page", page: "home", slug: "", title: "Home", sourcePath: "index"}, {type: "page", page: "setup", slug: "install", title: "Setup", sourcePath: "setup"}], {sourceVersion: 1});
+assert.equal(resolveWikiContentHref("./setup.md?mode=full#start", "home", wikiLinks)?.page.page, "setup");
+assert.equal(resolveWikiContentReference("./missing.md", "home", wikiLinks).kind, "unresolved");
+const headingOne = parseDocument("# Heading {% #one %}");
+const headingTwo = parseDocument("# Heading {% #two %}");
+assert.ok(headingOne.ok && headingTwo.ok);
+assert.equal(sameDocumentMeaning(headingOne.document, headingTwo.document), false);
 assert.equal(validateTopikContent("# Packed").valid, true);
 assert.equal(validateTopikContent("{% unknown /%}").valid, false);
 // Verify declared text/link intent independently of round-trip stability.
@@ -472,14 +485,19 @@ void document; void ecosystemNodes;
   }
 }
 
-function verifyReadmeExamples(consumer) {
-  const readme = readFileSync(join(consumer, "node_modules/@topik/content/README.md"), "utf8");
-  const examples = [...readme.matchAll(/^```ts\n([\s\S]*?)^```/gm)].map((match) => match[1]);
-  if (examples.length === 0) throw new Error("The content README has no TypeScript examples");
-  const files = examples.map((source, index) => {
-    const name = `readme-${index}.mts`;
-    writeFileSync(join(consumer, name), source);
-    return name;
+function verifyDocumentationExamples(consumer) {
+  const files = [
+    ["content-readme", join(consumer, "node_modules/@topik/content/README.md")],
+    ["source-writing", join(root, "docs/resources/source-writing.md")],
+  ].flatMap(([prefix, path]) => {
+    const markdown = readFileSync(path, "utf8");
+    const examples = [...markdown.matchAll(/^```ts\n([\s\S]*?)^```/gm)].map((match) => match[1]);
+    if (!examples.length) throw new Error(`${path} has no TypeScript examples`);
+    return examples.map((source, index) => {
+      const name = `${prefix}-${index}.mts`;
+      writeFileSync(join(consumer, name), source);
+      return name;
+    });
   });
   const config = join(consumer, "readme-tsconfig.json");
   writeFileSync(

@@ -24,7 +24,12 @@ declare module "mdast-util-to-markdown" {
 
 type ComponentNode = TagTextNode | TagLeafNode | TagContainerNode;
 
-function tagStart(node: ComponentNode, declarations: TagDeclarations, state: State): string {
+function tagStart(
+  node: ComponentNode,
+  declarations: TagDeclarations,
+  state: State,
+  options: TagSyntaxOptions,
+): string {
   const kind = node.type === "tagText" ? "inline" : "block";
   if (
     !node.name ||
@@ -44,8 +49,12 @@ function tagStart(node: ComponentNode, declarations: TagDeclarations, state: Sta
     if (typeof value === "boolean") result += ` ${name}=${value}`;
     else if (typeof value === "number" && Number.isFinite(value))
       result += ` ${name}=${Object.is(value, -0) ? "-0" : String(value)}`;
-    else if (typeof value === "string" && !hasControlCharacter(value)) {
+    else if (
+      typeof value === "string" &&
+      !hasControlCharacter(value, options.escapedWhitespace?.[node.name]?.includes(name))
+    ) {
       let escaped = value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+      escaped = escaped.replaceAll("\n", "\\n").replaceAll("\r", "\\r").replaceAll("\t", "\\t");
       if (state.stack.includes("tableCell")) escaped = escaped.replaceAll("|", "\\|");
       // Directive labels scan brackets before the tag tokenizer sees its attributes.
       if (state.stack.includes("label"))
@@ -95,7 +104,7 @@ export function tagToMarkdown(
       return result + "{% /if %}";
     },
     tagText(node: TagTextNode, _parent, state, info): string {
-      const start = tagStart(node, declarations, state);
+      const start = tagStart(node, declarations, state, options);
       if (!node.children.length) return `${start} /%}`;
       const tracker = state.createTracker(info);
       const before = tracker.move(`${start} %}`);
@@ -120,11 +129,11 @@ export function tagToMarkdown(
       }
     },
     tagLeaf(node: TagLeafNode, _parent, state): string {
-      return `${tagStart(node, declarations, state)} /%}`;
+      return `${tagStart(node, declarations, state, options)} /%}`;
     },
     tagContainer(node: TagContainerNode, _parent, state, info): string {
       const tracker = state.createTracker(info);
-      const start = tracker.move(`${tagStart(node, declarations, state)} %}\n`);
+      const start = tracker.move(`${tagStart(node, declarations, state, options)} %}\n`);
       const body = state.containerFlow(node, tracker.current());
       return `${start}${body}${flowSuffix(node, body)}{% /${node.name} %}`;
     },

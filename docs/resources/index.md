@@ -43,9 +43,10 @@ listed in navigation, including nested paths. Guide collections read Markdown
 files directly in their compilation directory, without recursive discovery.
 
 The schema also describes `Person`, `Course`, `CourseModule`, and `CoursePage`.
-Those resource types can be supplied by applications, but the file compiler does
-not automatically create them from a course or person directory. Schema support
-and file-discovery support are separate capabilities.
+Versioned collections can declare Person records and Guide author references in
+their configuration. Course resource types can be supplied by applications; the
+file compiler does not discover a Course directory. See [Source writing](./source-writing.md)
+for versioned metadata and reviewed project edits.
 
 ## Compile a wiki
 

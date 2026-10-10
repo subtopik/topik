@@ -7,6 +7,8 @@ export const TAG_LIMITS = Object.freeze({ treeDepth: 128, treeNodes: 50_000 });
 export interface TagSyntaxOptions {
   /** Opt in to variable and conditional syntax; literal component tags remain unchanged. */
   expressions?: boolean;
+  /** Named attributes that can encode LF, CR and TAB with backslash escapes. */
+  escapedWhitespace?: Readonly<Record<string, readonly string[]>>;
 }
 export type TagNode =
   | TagTextNode

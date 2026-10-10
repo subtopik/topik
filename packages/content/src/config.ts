@@ -64,6 +64,7 @@ function validAttribute(attribute: unknown): attribute is AttributeDefinition {
       "integer",
       "asset",
       "assetReference",
+      "escapedWhitespace",
     ])
   )
     return false;
@@ -71,6 +72,11 @@ function validAttribute(attribute: unknown): attribute is AttributeDefinition {
   if (attribute.description !== undefined && typeof attribute.description !== "string")
     return false;
   if (attribute.asset !== undefined && typeof attribute.asset !== "boolean") return false;
+  if (
+    attribute.escapedWhitespace !== undefined &&
+    (attribute.type !== "string" || typeof attribute.escapedWhitespace !== "boolean")
+  )
+    return false;
   if (
     (attribute.asset || attribute.assetReference !== undefined) &&
     attribute.type !== "string" &&

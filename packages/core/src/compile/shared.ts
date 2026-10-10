@@ -3,6 +3,7 @@ import { parse as parseYaml } from "yaml";
 import type { TopikAssetSemanticRecordV1, TopikMaterializationRecordV1 } from "../assets/identity";
 import type { AssetPayload, CompiledResource } from "./assets";
 import { PublicCompileError } from "./public-errors";
+import { parseSafeConfigurationYaml } from "./config";
 
 export interface CompileResult {
   /** Present for manifest compilation, in declaration order. */
@@ -54,14 +55,16 @@ const DNS_LABEL_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export function parseMarkdownFrontmatter(
   raw: string,
   filePath: string,
+  sourceVersion?: 1,
 ): { frontmatter: Record<string, unknown>; content: string } {
-  const match = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)([\s\S]*)$/);
   if (!match) {
     return { frontmatter: {}, content: raw };
   }
 
   try {
-    const frontmatter = parseYaml(match[1]);
+    const frontmatter =
+      sourceVersion === 1 ? parseSafeConfigurationYaml(match[1]) : parseYaml(match[1]);
     if (frontmatter == null) {
       return { frontmatter: {}, content: match[2] };
     }

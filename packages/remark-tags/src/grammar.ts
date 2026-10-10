@@ -27,10 +27,11 @@ export type ParsedTag =
   | { kind: "if"; close: false; expression: string }
   | { kind: "else" };
 
-export function hasControlCharacter(value: string): boolean {
+export function hasControlCharacter(value: string, escapedWhitespace = false): boolean {
   for (let index = 0; index < value.length; index++) {
     const code = value.charCodeAt(index);
-    if (code < 32 || code === 127) return true;
+    if ((code < 32 || code === 127) && !(escapedWhitespace && [9, 10, 13].includes(code)))
+      return true;
   }
   return false;
 }
@@ -93,6 +94,7 @@ export function parseTag(raw: string, options: TagSyntaxOptions): ParsedTag | st
     const keyMatch = /^[a-z][A-Za-z0-9-]*/.exec(inner.slice(index));
     if (!keyMatch) return `Invalid attribute on ${name}`;
     const key = keyMatch[0];
+    const escapedWhitespace = options.escapedWhitespace?.[name]?.includes(key) === true;
     index += key.length;
     if (inner[index++] !== "=") return `Attribute ${key} requires a value`;
     let value: TagAttributeValue;
@@ -102,12 +104,17 @@ export function parseTag(raw: string, options: TagSyntaxOptions): ParsedTag | st
       let ended = false;
       while (index < inner.length) {
         const char = inner[index++];
+        if (hasControlCharacter(char)) return `Control character in ${key}`;
         if (char === '"') {
           ended = true;
           break;
         }
         if (char === "\\") {
           const escaped = inner[index++];
+          if (escapedWhitespace && (escaped === "n" || escaped === "r" || escaped === "t")) {
+            literal += escaped === "n" ? "\n" : escaped === "r" ? "\r" : "\t";
+            continue;
+          }
           if (
             escaped !== "\\" &&
             escaped !== '"' &&
@@ -120,7 +127,7 @@ export function parseTag(raw: string, options: TagSyntaxOptions): ParsedTag | st
         } else literal += char;
       }
       if (!ended) return `Unterminated attribute ${key}`;
-      if (hasControlCharacter(literal)) return `Control character in ${key}`;
+      if (hasControlCharacter(literal, escapedWhitespace)) return `Control character in ${key}`;
       value = literal;
     } else {
       const match = /^(?:true|false|[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)/.exec(

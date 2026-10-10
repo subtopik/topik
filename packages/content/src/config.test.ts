@@ -3,6 +3,34 @@ import { mergeTopikContentConfig, type TopikContentConfig } from "./config.js";
 import { parseDocument } from "./markdown.js";
 import { compileTopikContent } from "./compile.js";
 
+test("custom string attributes can explicitly admit escaped whitespace", () => {
+  const config: TopikContentConfig = {
+    components: {
+      formula: {
+        kind: "block",
+        render: "Formula",
+        children: "none",
+        selfClosing: true,
+        attributes: { content: { type: "string", required: true, escapedWhitespace: true } },
+      },
+    },
+  };
+  expect(compileTopikContent('{% formula content="a\\nb\\tc" /%}', { config }).ok).toBe(true);
+  for (const attribute of [
+    { type: "string", escapedWhitespace: "yes" },
+    { type: "enum", values: ["one"], escapedWhitespace: true },
+    { type: "number", escapedWhitespace: false },
+  ]) {
+    expect(() =>
+      mergeTopikContentConfig({
+        components: {
+          formula: { ...config.components!.formula!, attributes: { content: attribute } },
+        },
+      } as never),
+    ).toThrow("Content configuration is invalid");
+  }
+});
+
 test.each(["if", "else"])("rejects the reserved component name %s during configuration", (name) => {
   const config: TopikContentConfig = {
     components: {

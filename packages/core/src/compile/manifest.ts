@@ -10,7 +10,7 @@ import {
 import { compileAssetResources } from "./assets";
 import { createProjectAssetNameGenerator } from "./asset-names";
 import { readConfigurationText, parseSafeConfigurationYaml, readExactConfigFile } from "./config";
-import { discoverGuides, type CompileResourceDiscovery } from "./guide";
+import { discoverGuides, validateGuideAuthors, type CompileResourceDiscovery } from "./guide";
 import { discoverWiki } from "./wiki";
 import { PublicCompileError, type PublicCompileErrorId } from "./public-errors";
 import { throwOnCompileErrors, type CompileResult } from "./shared";
@@ -125,6 +125,7 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
   const sourceDirectoriesByResource: Record<string, string> = {};
   const protectedSourcePaths = [TOPIK_MANIFEST_FILENAME, ...sources.map((source) => source.config)];
   const authoredKeys = new Set<string>();
+  const versionedGuideNames = new Set<string>();
 
   for (const source of sources) {
     let discovered: CompileResourceDiscovery;
@@ -174,6 +175,9 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
       })),
     );
     resources.push(...discovered.resources);
+    if (discovered.sourceVersion === 1)
+      for (const resource of discovered.resources)
+        if (resource.type === "Guide") versionedGuideNames.add(resource.name);
     for (const [key, path] of Object.entries(discovered.sourcePathsByResource)) {
       sourcePathsByResource[key] = posix.join(source.directory, path);
       sourceDirectoriesByResource[key] = source.directory;
@@ -183,6 +187,7 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
     );
   }
   throwOnCompileErrors(diagnostics);
+  validateGuideAuthors(resources, sourcePathsByResource, versionedGuideNames);
   const compiled = await compileAssetResources({
     rootDir: root,
     resources,

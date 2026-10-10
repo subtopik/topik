@@ -30,13 +30,37 @@ export type ResolvedWikiNavigation = {
   pages: readonly ResolvedWikiPage[];
   pageByName: ReadonlyMap<string, ResolvedWikiPage>;
   pageByRoute: ReadonlyMap<string, ResolvedWikiPage>;
+  pageBySourcePath: ReadonlyMap<string, ResolvedWikiPage>;
+  sourceVersion?: 1;
 };
 
 export type ResolvedWikiContentLink = {
   page: ResolvedWikiPage;
   route: string;
   hash: string;
+  search: string;
 };
+
+export type ResolvedWikiContentReference =
+  | { kind: "page"; target: ResolvedWikiContentLink }
+  | { kind: "asset" }
+  | { kind: "external" }
+  | { kind: "unresolved" };
+
+/** Classify an already-admitted compiled href without treating missing page context as external.
+ * Local files/downloads must first be compiled to Asset references using their source inventory;
+ * this browser-safe helper never guesses whether an unresolved local path names a file.
+ */
+export function resolveWikiContentReference(
+  href: string,
+  currentPageName: string,
+  resolved: ResolvedWikiNavigation,
+): ResolvedWikiContentReference {
+  if (/^asset:/i.test(href)) return { kind: "asset" };
+  if (/^(?:https?|mailto|tel):/i.test(href)) return { kind: "external" };
+  const target = resolveWikiContentHref(href, currentPageName, resolved);
+  return target ? { kind: "page", target } : { kind: "unresolved" };
+}
 
 /** Returns true for tab, dropdown, and group nodes containing navigation children. */
 export function hasWikiNavChildren(node: WikiNavNode): node is WikiNavContainerNode {
@@ -62,10 +86,12 @@ export function isExternalWikiDropdown(node: WikiNavNode): node is WikiExternalD
 /** Resolves page routes, source paths, and navigation ancestry from a compiled Wiki tree. */
 export function resolveWikiNavigation(
   navigation: WikiNavigation | readonly WikiNavNode[],
+  options: { sourceVersion?: 1 } = {},
 ): ResolvedWikiNavigation {
   const pages: ResolvedWikiPage[] = [];
   const pageByName = new Map<string, ResolvedWikiPage>();
   const pageByRoute = new Map<string, ResolvedWikiPage>();
+  const pageBySourcePath = new Map<string, ResolvedWikiPage>();
 
   const visit = (
     nodes: readonly WikiNavNode[],
@@ -88,9 +114,12 @@ export function resolveWikiNavigation(
         if (pageByRoute.has(route)) {
           throw new Error(`Wiki navigation contains duplicate route /${route}`);
         }
+        if (pageBySourcePath.has(resolved.sourcePath))
+          throw new Error("Wiki navigation contains duplicate source paths");
         pages.push(resolved);
         pageByName.set(node.page, resolved);
         pageByRoute.set(route, resolved);
+        pageBySourcePath.set(resolved.sourcePath, resolved);
       } else if (hasWikiNavChildren(node)) {
         visit(node.children, joinWikiPath(prefix, node.slug), [...ancestors, node]);
       }
@@ -98,7 +127,13 @@ export function resolveWikiNavigation(
   };
 
   visit(navigation, "", []);
-  return { pages, pageByName, pageByRoute };
+  return {
+    pages,
+    pageByName,
+    pageByRoute,
+    pageBySourcePath,
+    ...(options.sourceVersion !== undefined ? { sourceVersion: options.sourceVersion } : {}),
+  };
 }
 
 /** Finds the first page node in navigation order, ignoring external destinations. */
@@ -134,7 +169,7 @@ export function resolveWikiContentHref(
   if (!currentPage) return null;
 
   if (href.startsWith("#")) {
-    return { page: currentPage, route: currentPage.route, hash: href.slice(1) };
+    return { page: currentPage, route: currentPage.route, hash: href.slice(1), search: "" };
   }
 
   let url: URL;
@@ -153,8 +188,14 @@ export function resolveWikiContentHref(
   }
   const normalizedPath = decodedPath.replace(/^\/+|\/+$/g, "").replace(/\.(?:mdx?|markdown)$/i, "");
   const route = normalizedPath === "index" ? "" : normalizedPath.replace(/\/index$/, "");
-  const page = resolved.pageByRoute.get(route);
-  return page ? { page, route, hash: url.hash.replace(/^#/, "") } : null;
+  const sourceLink = !href.startsWith("/") || /\.(?:mdx?|markdown)$/i.test(decodedPath);
+  const page =
+    resolved.sourceVersion === 1 && sourceLink
+      ? resolved.pageBySourcePath.get(normalizedPath)
+      : resolved.pageByRoute.get(route);
+  return page
+    ? { page, route: page.route, hash: url.hash.replace(/^#/, ""), search: url.search }
+    : null;
 }
 
 export function joinWikiPath(prefix: string, slug?: string): string {

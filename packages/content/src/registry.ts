@@ -38,7 +38,13 @@ type AttributeOptions<T extends Scalar> = {
 };
 
 export type AttributeDefinition =
-  | (AttributeOptions<string> & { type: "string"; values?: never; min?: never; max?: never })
+  | (AttributeOptions<string> & {
+      type: "string";
+      escapedWhitespace?: boolean;
+      values?: never;
+      min?: never;
+      max?: never;
+    })
   | (AttributeOptions<string> & {
       type: "enum";
       values: readonly string[];

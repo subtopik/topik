@@ -16,6 +16,7 @@ import type {
 import type { WikiPage } from "@topik/schema/wiki-page/v1";
 import type { SourceResource } from "../resource";
 import { parseWikiConfig, WIKI_PAGE_NAME_HASH_LENGTH, type WikiNavNode } from "../config/wiki";
+import { parsePageMetadata } from "../config/source-version";
 import { compileAssetResources, type AssetCompilationOptions } from "./assets";
 import type { CompileResourceDiscovery } from "./guide";
 import {
@@ -38,7 +39,7 @@ import {
   type CompileResult,
 } from "./shared";
 import { validateWikiLinks, type WikiPageLinkAnalysis } from "./links";
-import { joinWikiPath } from "../wiki-navigation";
+import { joinWikiPath, resolveWikiNavigation } from "../wiki-navigation";
 
 export interface CompileWikiOptions {
   dir: string;
@@ -88,40 +89,72 @@ export async function discoverWiki(
   } catch {
     throw new PublicCompileError("config-invalid", options.configFile ?? loadedConfig.path);
   }
-  const pagePaths = config.navigation ? [...new Set(collectPagePaths(config.navigation))] : [];
-  const resolvedFiles = await Promise.all(pagePaths.map((pagePath) => readPageFile(dir, pagePath)));
+  const pages = config.navigation ? collectPages(config.navigation) : [];
+  const pagePaths = [...new Set(pages.map((page) => page.sourcePath))];
+  if (config.sourceVersion === 1 && pagePaths.length !== pages.length)
+    throw new PublicCompileError("config-invalid", loadedConfig.path);
+  const resolvedFiles = await Promise.all(
+    pagePaths.map((pagePath) => readPageFile(dir, pagePath, config.sourceVersion === 1)),
+  );
 
   const resources: SourceResource[] = [];
   const diagnostics: CompileResult["diagnostics"] = [];
   const pageAnalyses: WikiPageLinkAnalysis[] = [];
   const sourcePathsByResource: Record<string, string> = {};
+  const pageNamesBySource = new Map<string, string>();
 
   for (let i = 0; i < pagePaths.length; i++) {
     const pagePath = pagePaths[i];
     const { filePath, raw } = resolvedFiles[i];
     const sourcePath = `${pagePath}${filePath.endsWith(".mdx") ? ".mdx" : ".md"}`;
-    const { frontmatter, content } = parseMarkdownFrontmatter(raw, pagePath);
+    const parsed = parseMarkdownFrontmatter(raw, pagePath, config.sourceVersion);
+    const { content } = parsed;
+    let frontmatter = parsed.frontmatter;
+    if (config.sourceVersion === 1) {
+      try {
+        frontmatter = parsePageMetadata(frontmatter);
+      } catch {
+        throw new PublicCompileError("frontmatter-invalid", sourcePath);
+      }
+    }
     const validation = validateTopikContent(content, { file: sourcePath });
     diagnostics.push(...validation.errors);
     if (!validation.valid) continue;
-    const name = pagePathToName(config.id, pagePath);
+    const name =
+      config.sourceVersion === 1 && typeof frontmatter.id === "string"
+        ? frontmatter.id
+        : pagePathToName(config.id, pagePath);
+    if (pageNamesBySource.has(pagePath) || Object.hasOwn(sourcePathsByResource, `WikiPage/${name}`))
+      throw new PublicCompileError("config-invalid", loadedConfig.path);
+    pageNamesBySource.set(pagePath, name);
     const title =
       typeof frontmatter.title === "string"
         ? frontmatter.title
         : extractMarkdownTitle(content, pagePathToTitleFallback(pagePath));
-    const description = normalizeWikiPageDescription(frontmatter.description);
+    const description =
+      config.sourceVersion === 1
+        ? (frontmatter.description as string | null | undefined)
+        : normalizeWikiPageDescription(frontmatter.description);
     const analysis = analyzeTopikContent(content, { file: sourcePath });
     diagnostics.push(...analysis.diagnostics);
-    pageAnalyses.push({ analysis, slug: pagePathToSlug(pagePath), sourcePath: pagePath });
+    pageAnalyses.push({
+      analysis,
+      name,
+      slug: pages.find((page) => page.sourcePath === pagePath)!.route,
+      sourcePath: pagePath,
+    });
 
     const pageResource: WikiPage = {
       apiVersion: "v1",
       type: "WikiPage",
       name,
+      ...(config.sourceVersion === 1 && frontmatter.labels !== undefined
+        ? { labels: frontmatter.labels as Record<string, string> }
+        : {}),
       spec: {
         wiki: config.id,
         title,
-        ...(description != null ? { description } : {}),
+        ...(description !== undefined ? { description } : {}),
         content: {
           format: "topik",
           value: content,
@@ -137,11 +170,24 @@ export async function discoverWiki(
     apiVersion: "v1",
     type: "Wiki",
     name: config.id,
+    ...(config.labels !== undefined ? { labels: config.labels } : {}),
     spec: {
+      ...(config.sourceVersion === 1 ? { sourceVersion: 1 } : {}),
       title: config.title,
-      ...(config.description != null ? { description: config.description } : {}),
+      ...(config.description !== undefined &&
+      (config.sourceVersion === 1 || config.description !== null)
+        ? { description: config.description }
+        : {}),
       ...(config.navigation
-        ? { navigation: resolveNavigation(config.navigation, config.id) as WikiNavigation }
+        ? {
+            navigation: resolveNavigation(
+              config.navigation,
+              config.id,
+              "",
+              pageNamesBySource,
+              config.sourceVersion,
+            ) as WikiNavigation,
+          }
         : {}),
       ...(config.theme ? { theme: config.theme } : {}),
     },
@@ -150,9 +196,16 @@ export async function discoverWiki(
   resources.push(wikiResource);
 
   if (!hasCompileErrors(diagnostics)) {
-    const nonPageLinks = await classifyWikiNonPageLinks(dir, pageAnalyses);
+    const nonPageLinks = await classifyWikiNonPageLinks(dir, pageAnalyses, config.sourceVersion);
     diagnostics.push(
-      ...validateWikiLinks(pageAnalyses, linkValidationPolicy(options.validation), nonPageLinks),
+      ...validateWikiLinks(
+        pageAnalyses,
+        linkValidationPolicy(options.validation),
+        nonPageLinks,
+        resolveWikiNavigation(wikiResource.spec.navigation ?? [], {
+          sourceVersion: config.sourceVersion,
+        }),
+      ),
     );
   }
 
@@ -162,18 +215,21 @@ export async function discoverWiki(
     sourcePathsByResource,
     consumedSourcePaths: [loadedConfig.path],
     assetDirectory: config.assets.directory,
+    sourceVersion: config.sourceVersion,
   };
 }
 
 async function classifyWikiNonPageLinks(
   root: string,
   pages: readonly WikiPageLinkAnalysis[],
+  sourceVersion?: 1,
 ): Promise<ReadonlySet<TopikContentLink>> {
   const nonPageLinks = new Set<TopikContentLink>();
   const existingByPath = new Map<string, boolean>();
   for (const page of pages) {
     for (const link of page.analysis.links) {
       if (link.kind !== "link") continue;
+      if (sourceVersion === 1 && /\.(?:mdx?|markdown)(?:[?#]|$)/i.test(link.href)) continue;
       const reference = validateTopikAssetReference(link.href);
       if (!reference.valid || reference.kind !== "local") continue;
       const path = validateTopikPath(
@@ -205,13 +261,17 @@ function normalizeWikiPageDescription(description: unknown): string | undefined 
   return typeof description === "string" ? description.slice(0, 1024) : undefined;
 }
 
-function collectPagePaths(nodes: WikiNavNode[], prefix = ""): string[] {
-  const paths: string[] = [];
+function collectPages(nodes: WikiNavNode[], prefix = ""): { sourcePath: string; route: string }[] {
+  const paths: { sourcePath: string; route: string }[] = [];
   for (const node of nodes) {
     if (typeof node === "string" || node.type === "page") {
-      paths.push(joinWikiPath(prefix, typeof node === "string" ? node : node.slug));
+      const routePath = joinWikiPath(prefix, typeof node === "string" ? node : node.slug);
+      paths.push({
+        sourcePath: typeof node !== "string" && node.source !== undefined ? node.source : routePath,
+        route: pagePathToSlug(routePath),
+      });
     } else if ("children" in node) {
-      paths.push(...collectPagePaths(node.children, joinWikiPath(prefix, node.slug)));
+      paths.push(...collectPages(node.children, joinWikiPath(prefix, node.slug)));
     }
   }
   return paths;
@@ -220,12 +280,16 @@ function collectPagePaths(nodes: WikiNavNode[], prefix = ""): string[] {
 async function readPageFile(
   dir: string,
   pagePath: string,
+  requireUnique = false,
 ): Promise<{ filePath: string; raw: string }> {
+  let found: { filePath: string; raw: string } | undefined;
   for (const ext of [".mdx", ".md"]) {
     const filePath = join(dir, pagePath + ext);
     try {
       const raw = await readRegularFileWithinRoot(filePath, dir, "utf-8");
-      return { filePath, raw };
+      if (!requireUnique) return { filePath, raw };
+      if (found) throw new PublicCompileError("wiki-page-ambiguous");
+      found = { filePath, raw };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         continue;
@@ -233,6 +297,7 @@ async function readPageFile(
       throw error;
     }
   }
+  if (found) return found;
   throw new PublicCompileError("wiki-page-not-found");
 }
 
@@ -254,32 +319,51 @@ function resolveNavigation(
   nodes: WikiNavNode[],
   wikiId: string,
   prefix = "",
+  pageNamesBySource = new Map<string, string>(),
+  sourceVersion?: 1,
 ): CompiledWikiNavNode[] {
   return nodes.map((node) => {
     if (typeof node === "string" || node.type === "page") {
       const localPath = typeof node === "string" ? node : node.slug;
-      const pagePath = joinWikiPath(prefix, localPath);
-      const pageName = pagePathToName(wikiId, pagePath);
+      const pagePath =
+        typeof node !== "string" && node.source !== undefined
+          ? node.source
+          : joinWikiPath(prefix, localPath);
+      const pageName = pageNamesBySource.get(pagePath) ?? pagePathToName(wikiId, pagePath);
       return {
         type: "page",
         page: pageName,
         slug: pagePathToSlug(localPath),
         sourcePath: pagePath,
         ...(typeof node !== "string" && node.icon ? { icon: node.icon } : {}),
-        ...(typeof node !== "string" && node.hidden ? { hidden: true } : {}),
+        ...(typeof node !== "string" &&
+        node.hidden !== undefined &&
+        (sourceVersion === 1 || node.hidden)
+          ? { hidden: node.hidden }
+          : {}),
       };
     }
 
     if ("children" in node) {
-      const children = resolveNavigation(node.children, wikiId, joinWikiPath(prefix, node.slug));
+      const children = resolveNavigation(
+        node.children,
+        wikiId,
+        joinWikiPath(prefix, node.slug),
+        pageNamesBySource,
+        sourceVersion,
+      );
       if (node.type === "group") {
         return {
           type: "group",
           title: node.title,
           ...(node.slug ? { slug: node.slug } : {}),
           ...(node.icon ? { icon: node.icon } : {}),
-          ...(node.hidden ? { hidden: true } : {}),
-          ...(node.expanded ? { expanded: true } : {}),
+          ...(node.hidden !== undefined && (sourceVersion === 1 || node.hidden)
+            ? { hidden: node.hidden }
+            : {}),
+          ...(node.expanded !== undefined && (sourceVersion === 1 || node.expanded)
+            ? { expanded: node.expanded }
+            : {}),
           children: children as WikiSidebarNavNode[],
         };
       }
@@ -289,7 +373,9 @@ function resolveNavigation(
           title: node.title,
           ...(node.slug ? { slug: node.slug } : {}),
           ...(node.icon ? { icon: node.icon } : {}),
-          ...(node.hidden ? { hidden: true } : {}),
+          ...(node.hidden !== undefined && (sourceVersion === 1 || node.hidden)
+            ? { hidden: node.hidden }
+            : {}),
           children: children as WikiDropdownNavNode[] | WikiSidebarNavNode[],
         };
       }
@@ -298,7 +384,9 @@ function resolveNavigation(
         title: node.title,
         ...(node.slug ? { slug: node.slug } : {}),
         ...(node.icon ? { icon: node.icon } : {}),
-        ...(node.hidden ? { hidden: true } : {}),
+        ...(node.hidden !== undefined && (sourceVersion === 1 || node.hidden)
+          ? { hidden: node.hidden }
+          : {}),
         children: children as WikiSidebarNavNode[],
       };
     }
@@ -309,7 +397,9 @@ function resolveNavigation(
         title: node.title,
         href: node.href,
         ...(node.icon ? { icon: node.icon } : {}),
-        ...(node.hidden ? { hidden: true } : {}),
+        ...(node.hidden !== undefined && (sourceVersion === 1 || node.hidden)
+          ? { hidden: node.hidden }
+          : {}),
       };
     }
     if (node.type === "dropdown") {
@@ -318,7 +408,9 @@ function resolveNavigation(
         title: node.title,
         href: node.href,
         ...(node.icon ? { icon: node.icon } : {}),
-        ...(node.hidden ? { hidden: true } : {}),
+        ...(node.hidden !== undefined && (sourceVersion === 1 || node.hidden)
+          ? { hidden: node.hidden }
+          : {}),
       };
     }
     return {
@@ -326,7 +418,9 @@ function resolveNavigation(
       title: node.title,
       href: node.href,
       ...(node.icon ? { icon: node.icon } : {}),
-      ...(node.hidden ? { hidden: true } : {}),
+      ...(node.hidden !== undefined && (sourceVersion === 1 || node.hidden)
+        ? { hidden: node.hidden }
+        : {}),
     };
   });
 }

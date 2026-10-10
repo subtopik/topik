@@ -1,5 +1,8 @@
 import { describe, expect, test, vi } from "vitest";
-import { parseDocument, formatDocument } from "./markdown.js";
+import { parseDocument, formatDocument, parseDocumentTree } from "./markdown.js";
+import { parseTopikContent } from "./content.js";
+import { compileTopikContent } from "./compile.js";
+import { formatTopikContent } from "./format.js";
 import { writeDocument } from "./writer.js";
 import { validateDocument } from "./validation.js";
 import { sameDocumentMeaning } from "./document-meaning.js";
@@ -243,6 +246,81 @@ describe("compact code presentation authoring", () => {
   ])("visibly refuses malformed or invalid recognized attributes %j", (metadata) => {
     expect(parseDocument(fence(metadata)).ok).toBe(false);
   });
+  test.each(["\n", "\r\n"])(
+    "reports every malformed presentation and surrounding authoring error with %j line endings",
+    (ending) => {
+      const source = [
+        "{% callout variant=1 %}",
+        "Before.",
+        "{% /callout %}",
+        "",
+        "{% if unknown($before) %}",
+        "First branch.",
+        "{% /if %}",
+        "",
+        ...fence('highlight="2"', "only")
+          .split("\n")
+          .map((line) => `> ${line}`),
+        "",
+        "{% template code %}",
+        fence('focus="0"', "only", "sh"),
+        "{% /template code %}",
+        "",
+        "{% if not() %}",
+        "Last branch.",
+        "{% /if %}",
+        "",
+        '{% callout variant="invalid" %}',
+        "After.",
+        "{% /callout %}",
+      ]
+        .join("\n")
+        .replaceAll("\n", ending);
+      const result = parseDocumentTree(source);
+      expect(result.source).toBe(source);
+      expect(result).not.toHaveProperty("document");
+      expect(result).not.toHaveProperty("index");
+      expect(result.diagnostics).toMatchObject([
+        { id: "attribute-type-invalid", line: 1, column: 1 },
+        {
+          message: expect.stringContaining("Unknown expression function unknown"),
+          line: 5,
+          column: 1,
+        },
+        {
+          id: "topik-code-presentation-line-bounds",
+          option: "highlight",
+          line: 9,
+          column: 3,
+        },
+        { id: "topik-code-presentation-lines", option: "focus", line: 13, column: 1 },
+        { message: expect.stringContaining("not requires 1 argument(s)"), line: 19, column: 1 },
+        { id: "attribute-value-invalid", line: 23, column: 1 },
+      ]);
+      expect(() => parseTopikContent(source)).toThrow("Content could not be parsed");
+      const formatted = formatDocument(source);
+      expect(formatted).toEqual({ ok: false, source, diagnostics: result.diagnostics });
+      const compiled = compileTopikContent(source);
+      expect(compiled).toMatchObject({
+        ok: false,
+        source,
+        diagnostics: result.diagnostics.map(({ id, line, column, option }) => ({
+          id: id ?? "parse-error",
+          lines: [line],
+          ...(id?.startsWith("topik-code-presentation-") ? { column } : {}),
+          ...(option ? { option } : {}),
+        })),
+      });
+      expect(compiled).not.toHaveProperty("tree");
+      expect(formatTopikContent(source)).toEqual(compiled);
+    },
+  );
+  test("stops at a hard limit after an invalid presentation", () => {
+    const source = fence('highlight="4"') + "\n\n" + fence("lines", "x\n".repeat(20_000));
+    const result = parseDocumentTree(source);
+    expect(result).not.toHaveProperty("document");
+    expect(result.diagnostics).toMatchObject([{ id: "topik-content-limit" }]);
+  });
   test("refuses presented Mermaid while ordinary Mermaid stays available", () => {
     expect(parseDocument(fence("lines", "graph TD", "mermaid")).ok).toBe(false);
     expect(parseDocument(fence("", "graph TD", "mermaid")).ok).toBe(true);
@@ -331,6 +409,7 @@ describe("compact code presentation authoring", () => {
     const manyRows = () => fence("lines", "x\n".repeat(6_000));
     for (const source of [
       notice(fence('highlight="4"')),
+      notice(fence('highlight="4"')) + "\n\n" + notice(fence('focus="0"')),
       notice(fence("lines", "x\n".repeat(12_000))),
       notice(manyRows()) + "\n\n" + notice(manyRows()),
     ]) {

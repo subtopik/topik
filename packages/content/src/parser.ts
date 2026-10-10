@@ -44,6 +44,7 @@ export function convertTags(
   rawHeaders?: WeakMap<Node, string>,
 ): Diagnostic[] {
   const errors: Diagnostic[] = [];
+  let presentationFailed = false;
   function walk(node: TreeNode): void {
     if (!node.children) return;
     node.children = node.children.map((originalChild) => {
@@ -99,7 +100,8 @@ export function convertTags(
           };
         } catch (error) {
           if (!(error instanceof CodePresentationError)) throw error;
-          throw new TagSyntaxError([
+          presentationFailed = true;
+          errors.push(
             diagnostic(
               {
                 id: error.id,
@@ -108,7 +110,8 @@ export function convertTags(
               },
               child,
             ),
-          ]);
+          );
+          return child;
         }
       }
       if (!["tagText", "tagLeaf", "tagContainer"].includes(child.type)) return child;
@@ -139,6 +142,8 @@ export function convertTags(
     });
   }
   walk(root);
+  // Collect sibling errors without exposing malformed fences as ordinary code.
+  if (presentationFailed) throw new TagSyntaxError(errors);
   return errors;
 }
 

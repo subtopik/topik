@@ -980,6 +980,13 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
             derivedRepairs,
             undefined,
             isNonPageReference,
+            (reference) =>
+              isSourceNonPageReference(
+                reference,
+                paths.get(key)!,
+                source.directory,
+                currentInventory,
+              ),
           )
         )
           derivedKeys.add(key);
@@ -1075,6 +1082,12 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
             const before = saved.target;
             const after = resolveWikiContentHref(reference.href, page.name, currentNavigation);
             if (
+              !isSourceNonPageReference(
+                reference,
+                paths.get(key)!,
+                source.directory,
+                currentInventory,
+              ) &&
               after?.page.page === before.page.page &&
               after.search === before.search &&
               after.hash === before.hash
@@ -1141,6 +1154,7 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
         originalPaths,
         base,
         desired,
+        currentInventory,
       );
       if (restored.repairs.length) {
         derivedRepairs.push(...restored.repairs);
@@ -1504,6 +1518,7 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
             originalPaths,
             base,
             desired,
+            currentInventory,
           ).content,
           referenceRepairKeys.has(op.resource),
         ),

@@ -138,6 +138,7 @@ export function transportCourseReferences(
   }>,
   resolveOtherReference?: (href: string) => string | undefined,
   isNonPageReference?: (reference: TopikNavigationReference) => boolean,
+  isCurrentNonPageReference?: (reference: TopikNavigationReference) => boolean,
 ): boolean {
   const key = `CoursePage/${page.name}`;
   const rewritten = rewriteTopikNavigationReferences(
@@ -160,6 +161,7 @@ export function transportCourseReferences(
       const before = savedReference.target;
       const after = resolveCourseContentHref(reference.href, page.name, current);
       if (
+        !isCurrentNonPageReference?.(reference) &&
         after?.page.page === before.page.page &&
         after.search === before.search &&
         after.hash === before.hash

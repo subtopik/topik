@@ -11,3 +11,7 @@ Keep existing non-Markdown file and directory links distinct from page aliases
 during inspection, source comparison and source repairs. Moving a same-stem page
 no longer retargets an unrelated directory link; cards continue to track their
 document targets.
+
+Repair retained page links when moving another page creates a directory that
+shadows their source alias. Saved Markdown and compiled resources preserve the
+same target, and incoming repairs require authority over the referring page.

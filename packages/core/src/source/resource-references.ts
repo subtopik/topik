@@ -200,6 +200,7 @@ export function restoreSourceResourceReferences(
   originalPaths: ReadonlyMap<string, string>,
   base: ReadonlyMap<string, Resource>,
   desired: ReadonlyMap<string, Resource>,
+  currentInventory: ReadonlySet<string>,
 ): { content: string; repairs: SourceReferenceRepair[] } {
   const key = `${resource.type}/${resource.name}`;
   const repairs: SourceReferenceRepair[] = [];
@@ -235,8 +236,15 @@ export function restoreSourceResourceReferences(
       const target = desired.get(targetKey);
       const suffix = `${identity.search}${identity.hash ? `#${identity.hash}` : ""}`;
       let href = saved.href;
+      // Candidate files and directories take precedence over navigation aliases at compile time.
+      const nonPage = isSourceNonPageReference(
+        saved,
+        path,
+        document?.directory ?? "",
+        currentInventory,
+      );
       let unchangedContext =
-        document?.path === path && destination === originalPaths.get(targetKey);
+        !nonPage && document?.path === path && destination === originalPaths.get(targetKey);
       // An unchanged source path can still acquire a different meaning after route edits.
       if (
         resource.type === "WikiPage" &&
@@ -250,6 +258,7 @@ export function restoreSourceResourceReferences(
           });
           const current = resolveWikiContentHref(saved.href, resource.name, navigation);
           unchangedContext =
+            !nonPage &&
             current?.page.page === identity.name &&
             current.search === identity.search &&
             current.hash === identity.hash;
@@ -276,6 +285,7 @@ export function restoreSourceResourceReferences(
           );
           const current = resolveCourseContentHref(saved.href, resource.name, navigation);
           unchangedContext =
+            !nonPage &&
             current?.page.page === identity.name &&
             current.search === identity.search &&
             current.hash === identity.hash;

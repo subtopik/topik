@@ -154,6 +154,9 @@ export function inspectSourceSyntax(raw: string, json = false) {
 
   const inspectMap = (map: YAMLMap, prefix = "") => {
     if (!map.range) throw new TypeError("Missing syntax ranges");
+    // An implicit pair in a flow sequence has no map delimiters of its own.
+    // Keep the parent value/record inspectable without inventing nested anchors.
+    if (map.flow && map.srcToken?.type !== "flow-collection") return;
     const delimiters = map.flow ? flowDelimiters(map) : undefined;
     const insertionChar = delimiters?.insertion ?? map.range[1];
     const flow: FlowSyntax | undefined = delimiters

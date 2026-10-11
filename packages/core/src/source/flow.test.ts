@@ -223,6 +223,23 @@ test("unidentified legacy flow records stay inspectable but cannot acquire guess
   );
 });
 
+test.each(["custom: [foo: bar]", "custom: [foo: bar, baz: qux,]", "persons: [id: ada,]"])(
+  "untouched implicit flow maps remain inspectable: %s",
+  (collection) => {
+    const raw = `${collection}\ntitle: Original\n`;
+    const original = inspectSourceSyntax(raw);
+    const result = patchSourceFields(raw, { title: "Edited" });
+    expect(decodeSource(result.bytes)).toBe(`${collection}\ntitle: "Edited"\n`);
+    expect(checkEdits(raw, result.edits, ["title"])).toEqual(result.bytes);
+    expect(inspectSourceSyntax(decodeSource(result.bytes)).value).toEqual({
+      ...original.value,
+      title: "Edited",
+    });
+    const nested = collection.startsWith("persons:") ? "persons/ada/name" : "custom/0/foo";
+    expect(() => patchSourceFields(raw, { [nested]: "Changed" })).toThrow();
+  },
+);
+
 test.each(["? ", "!!str ", "&key ", "? !!str &key "])(
   "flow map deletion owns the complete %j key prefix",
   (prefix) => {
@@ -319,6 +336,26 @@ test("deleting explicitly keyed Guide metadata cannot change an unknown field", 
   expect(written).toContain("{custom: keep ");
   expect(written).not.toContain("?");
   expect(inspectSourceSyntax(written.split("\n")[1]).value).toEqual({ custom: "keep" });
+});
+
+test("Guide metadata edits preserve unknown implicit flow maps", async () => {
+  const project = await projectFor("id: home\ncustom: [foo: bar,]");
+  const desired = structuredClone(project.compilation.resources);
+  const guide = desired.find((resource): resource is Guide => resource.type === "Guide")!;
+  guide.spec.title = "Edited";
+  const result = await planSourceUpdates({
+    project,
+    expectedTreeDigest: project.treeDigest,
+    packageCohort: cohort,
+    desiredResources: desired,
+    operations: [{ kind: "update", resource: "Guide/home" }],
+    authority: authority(project),
+  });
+  expect(result.ok, JSON.stringify(result)).toBe(true);
+  if (result.ok)
+    expect(decodeSource(result.plan.changes[0].candidate!.bytes)).toContain(
+      "custom: [foo: bar,]\n",
+    );
 });
 
 test.each(["{id: home,}", "{id: home, labels: {foo: bar,},}"])(

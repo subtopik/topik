@@ -77,6 +77,19 @@ describe("portable resource references", () => {
     );
   });
 
+  test.each(["?q=%E9", "?discount=25%", "?q=%zz", "?q=%FF&q=a+b&path=%2f"])(
+    "retains opaque query text %s for every resource kind",
+    (search) => {
+      for (const type of ["WikiPage", "Guide", "CoursePage"] as const) {
+        const reference = { type, name: "target", search, hash: "heading%20name" };
+        const href = serializeTopikResourceReference(reference);
+        expect(parseTopikResourceReference(href)).toEqual(reference);
+        expect(validateTopikHref(href)).toEqual([]);
+        expect(parseTopikResourceReference(href.replace("heading%20name", "%FF"))).toBeNull();
+      }
+    },
+  );
+
   test("enforces the schema resource-name limit after percent decoding", () => {
     const longestName = "a".repeat(63);
     const reference: TopikResourceReference = {
@@ -116,7 +129,6 @@ describe("portable resource references", () => {
     "ref://guide/%2E%2E",
     "ref://guide/%252F",
     "ref://guide/%FF",
-    "ref://guide/install?token=%zz",
     "ref://guide/install#%zz",
     "ref://guide/install#%FF",
     "ref://guide/install#raw space",

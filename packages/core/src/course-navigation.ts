@@ -148,8 +148,9 @@ export function resolveCourseContentHref(
   } catch {
     return null;
   }
-  const normalized = path.replace(/^\/+|\/+$/g, "").replace(/\.(?:mdx?|markdown)$/i, "");
-  const sourceLink = !href.startsWith("/") || /\.(?:mdx?|markdown)$/i.test(path);
+  const pathname = path.replace(/^\/+|\/+$/g, "");
+  const normalized = pathname.replace(/\.(?:mdx?|markdown)$/i, "");
+  const sourceLink = !href.startsWith("/") || /\.(?:mdx?|markdown)$/i.test(pathname);
   const page = sourceLink
     ? resolved.pageBySourcePath.get(normalized)
     : resolved.pageByRoute.get(normalized);

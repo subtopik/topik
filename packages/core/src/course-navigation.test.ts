@@ -21,6 +21,8 @@ test("resolves Course source paths and public routes independently while retaini
     "../moved/target.md?mode=full#details",
     "/basics/destination?mode=full#details",
     "/moved/target.mdx?mode=full#details",
+    "/moved/target.md///?mode=full#details",
+    "/moved/target.md%2F%2F?mode=full#details",
   ]) {
     expect(resolveCourseContentHref(href, "intro", resolved)).toMatchObject({
       page: { page: "target", sourcePath: "moved/target" },

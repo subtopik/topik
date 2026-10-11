@@ -52,18 +52,24 @@ export function prepareSourceResourceReferences(
         parseTopikResourceReference(reference.href) ||
         reference.href.startsWith("#") ||
         /^[a-z][a-z0-9+.-]*:/i.test(reference.href) ||
-        isSourceNonPageReference(reference, document?.path ?? path, directory, originalInventory) ||
+        isSourceNonPageReference(reference, document?.path ?? path, directory, originalInventory)
+      )
+        return undefined;
+      const originalTarget = resolveSourcePathReference(
+        reference.href,
+        document?.path ?? path,
+        directory,
+        originalPaths,
+        base,
+      );
+      // A new directory cannot replace an already established page destination.
+      if (
+        !originalTarget &&
         isSourceNonPageReference(reference, document?.path ?? path, directory, currentInventory)
       )
         return undefined;
       const target =
-        resolveSourcePathReference(
-          reference.href,
-          document?.path ?? path,
-          directory,
-          originalPaths,
-          base,
-        ) ??
+        originalTarget ??
         resolveSourcePathReference(
           reference.href,
           document?.path ?? path,

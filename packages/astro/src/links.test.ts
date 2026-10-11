@@ -54,6 +54,11 @@ describe("createTopikLinkResolver", () => {
     expect(resolveLink("ref://course-page/lesson-name?view=full#start")).toBe(
       "/courses/setup?view=full#start",
     );
+    for (const query of ["?q=%E9", "?discount=25%", "?q=%zz&q=a+b"]) {
+      expect(resolveLink(`ref://course-page/lesson-name${query}#start`)).toBe(
+        `/courses/setup${query}#start`,
+      );
+    }
   });
 
   it("refuses missing or throwing CoursePage callbacks without using a matching Guide", () => {

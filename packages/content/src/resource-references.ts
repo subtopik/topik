@@ -26,8 +26,8 @@ export function parseTopikResourceReference(href: string): TopikResourceReferenc
     const name = decodeURIComponent(match[2]);
     if (name.length > 63 || !RESOURCE_NAME.test(name)) return null;
     const url = new URL(href);
-    // Keep encoded query and fragment text intact; decoding only checks malformed escapes.
-    decodeURIComponent(url.search);
+    // Queries are opaque browser URL data and may contain non-UTF-8 octets or literal '%'.
+    // Fragments identify Unicode headings, so their escapes must still decode.
     decodeURIComponent(url.hash);
     return {
       type:

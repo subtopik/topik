@@ -177,6 +177,37 @@ test("Course links and cards resolve dotted logical source aliases with query an
   expect(result.payloads).toEqual([]);
 });
 
+test.each(["error", "warning", "off"] as const)(
+  "Course links retain opaque queries with %s validation",
+  async (links) => {
+    const queries = ["?q=%E9", "?discount=25%", "?q=%zz", "?q=%FF&q=a+b&path=%2f"];
+    const hrefs = queries.flatMap((query) => [
+      `./next.md${query}#next`,
+      `/basics/next${query}#next`,
+    ]);
+    const body = hrefs
+      .flatMap((href) => [`[Next](${href})`, `{% card title="Next" href="${href}" /%}`])
+      .join("\n\n");
+    const dir = await fixture({
+      "course.yaml":
+        "sourceVersion: 1\nid: lessons\ntitle: Lessons\nslug: lessons\nmodules: [{id: basics, title: Basics, slug: basics, order: 0, pages: [home, next]}]\n",
+      "home.md": `---\nid: home\ntitle: Home\nslug: home\norder: 0\n---\n# Home\n\n${body}\n`,
+      "next.md": "---\nid: target\ntitle: Next\nslug: next\norder: 1\n---\n# Next\n",
+    });
+    const result = await compileCourse({ dir, validation: { links } });
+    expect(result.diagnostics).toEqual([]);
+    expect(result.references.map(({ href }) => href)).toEqual(
+      hrefs.flatMap((href) => [href, href]),
+    );
+    expect(result.references.every(({ status }) => status === "verified")).toBe(true);
+    const home = result.resources.find((resource) => resource.name === "home");
+    if (home?.type !== "CoursePage") throw new Error("Expected the home Course page");
+    expect(analyzeTopikContent(home.spec.content.value).links.map(({ href }) => href)).toEqual(
+      queries.flatMap((query) => Array<string>(4).fill(`ref://course-page/target${query}#next`)),
+    );
+  },
+);
+
 test("Course dotted directory links stay literal while cards and explicit Markdown links target the page", async () => {
   const href = "./next.v1?view=full#next";
   const dir = await fixture({

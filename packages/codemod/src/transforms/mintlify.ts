@@ -1,4 +1,7 @@
 import { components, validateTopikContent } from "@topik/content";
+import { fromMarkdown } from "mdast-util-from-markdown";
+import { frontmatterFromMarkdown } from "mdast-util-frontmatter";
+import { frontmatter } from "micromark-extension-frontmatter";
 
 export interface TransformWarning {
   line: number;
@@ -50,13 +53,19 @@ const ATTR_RE =
 
 export function transformMintlify(source: string): TransformResult {
   const warnings: TransformWarning[] = [];
-  let out = "";
-  let cursor = 0;
+  const tree = fromMarkdown(source, {
+    extensions: [frontmatter()],
+    mdastExtensions: [frontmatterFromMarkdown()],
+  });
+  const header = tree.children[0];
+  const bodyStart = header?.type === "yaml" ? header.position!.end.offset! : 0;
+  let out = source.slice(0, bodyStart);
+  let cursor = bodyStart;
   let changed = false;
   let firstTag = 0;
 
   while (cursor < source.length) {
-    const next = findNextTag(source, cursor);
+    const next = findNextTag(source, cursor, bodyStart);
     if (next == null) {
       out += source.slice(cursor);
       break;
@@ -116,14 +125,14 @@ interface FoundTag {
   attrsStart: number;
 }
 
-function findNextTag(source: string, from: number): FoundTag | null {
+function findNextTag(source: string, from: number, bodyStart: number): FoundTag | null {
   let i = from;
   while (i < source.length) {
     if (source[i] !== "<") {
       i++;
       continue;
     }
-    if (isInsideCodeBlock(source, i)) {
+    if (isInsideCodeBlock(source.slice(bodyStart), i - bodyStart)) {
       i++;
       continue;
     }

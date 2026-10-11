@@ -97,6 +97,51 @@ describe("Mintlify to Topik content", () => {
     expect(output).toContain('title="x>y"');
   });
 
+  test.each(["\n", "\r\n"])("preserves frontmatter bytes with %j line endings", (eol) => {
+    const frontmatter = [
+      "--- \t",
+      '# Keep spacing and quotes: "<Note>example</Note>"',
+      'title: "<Note>Important</Note>"',
+      "description: |",
+      "  <Warning>Metadata, not JSX.</Warning>",
+      "sample: |",
+      "  ```mdx",
+      "  <Note>Unclosed example fence</Note>",
+      "---\t ",
+      "",
+      "",
+    ].join(eol);
+
+    const metadataOnly = `${frontmatter}# Hello${eol}`;
+    expect(transformMintlify(metadataOnly)).toEqual({
+      content: metadataOnly,
+      warnings: [],
+      changed: false,
+    });
+
+    const mixed = `${frontmatter}<Note>Body.</Note>${eol}`;
+    const output = converted(mixed);
+    expect(output.slice(0, frontmatter.length)).toBe(frontmatter);
+    expect(output.slice(frontmatter.length)).toContain('{% callout variant="info" %}\nBody.');
+    expect(output).toContain("{% /callout %}");
+  });
+
+  test.each(["---\n---\n", "---\r\n---\r\n", '---\ntitle: "<Note>Metadata</Note>"\n---'])(
+    "preserves empty headers and a header ending at EOF: %j",
+    (source) => {
+      expect(transformMintlify(source)).toEqual({ content: source, warnings: [], changed: false });
+    },
+  );
+
+  test("reports body warning locations relative to the complete source", () => {
+    const source = '---\ntitle: "<Note>Metadata</Note>"\n---\n\n<Card title={name} />\n';
+    const result = transformMintlify(source);
+    expect(result).toMatchObject({ content: source, changed: false });
+    expect(result.warnings).toEqual([
+      expect.objectContaining({ line: 5, column: 7, message: expect.stringContaining("Dynamic") }),
+    ]);
+  });
+
   test("leaves code fences, inline code and plain Markdown intact", () => {
     for (const source of [
       "```mdx\n<Note>example</Note>\n```\n",

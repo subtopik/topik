@@ -139,8 +139,12 @@ function createLinkClickHandler(target: string, handleNavigate?: TopikLinkHandle
 }
 
 function useRovingTabs(tabCount: number) {
-  const [selected, setSelected] = useState(0);
+  const [selectedIndex, setSelected] = useState(0);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const selected = Math.max(0, Math.min(selectedIndex, tabCount - 1));
+
+  // Persist the clamp so removed selections do not return when tabs are added.
+  if (selected !== selectedIndex) setSelected(selected);
 
   function selectTab(index: number, focus = false) {
     setSelected(index);

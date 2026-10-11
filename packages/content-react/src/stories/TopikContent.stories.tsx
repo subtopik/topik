@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { useState } from "react";
 import { expect, fn } from "storybook/test";
 import { TopikContent } from "../theme/TopikContent";
 import { diagramAssetName, heroAssetName, darkHeroAssetName, resolveStoryAsset } from "./fixtures";
@@ -127,6 +128,73 @@ export const CustomQuizExplanation: Story = {
     },
   },
 };
+
+function resizableTabsStory(group: "tabs" | "codeGroup", childTag: "tab" | "codeTab"): Story {
+  return {
+    render: function ResizableTabs(args) {
+      const [count, setCount] = useState(3);
+      const content = [
+        `{% ${group} %}`,
+        ...["First", "Second", "Third"]
+          .slice(0, count)
+          .flatMap((title) => [
+            `{% ${childTag} title="${title}" %}`,
+            "```text",
+            `${title} panel`,
+            "```",
+            `{% /${childTag} %}`,
+          ]),
+        `{% /${group} %}`,
+      ].join("\n");
+      return (
+        <>
+          <button type="button" onClick={() => setCount(2)}>
+            Show two tabs
+          </button>
+          <button type="button" onClick={() => setCount(3)}>
+            Show three tabs
+          </button>
+          <TopikContent {...args} content={content} />
+        </>
+      );
+    },
+    play: async ({ canvas, userEvent }) => {
+      await userEvent.click(canvas.getByRole("tab", { name: "Third" }));
+      await expect(canvas.getByRole("tabpanel")).toHaveTextContent("Third panel");
+      await userEvent.click(canvas.getByRole("button", { name: "Show two tabs" }));
+      await expect(canvas.getAllByRole("tab")).toHaveLength(2);
+      await expect(canvas.getByRole("tab", { name: "Second" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      await expect(canvas.getByRole("tab", { name: "Second" })).toHaveAttribute("tabindex", "0");
+      await expect(canvas.getByRole("tabpanel")).toHaveTextContent("Second panel");
+      await expect(canvas.getByRole("button", { name: "Show two tabs" })).toHaveFocus();
+      await userEvent.click(canvas.getByRole("button", { name: "Show three tabs" }));
+      await expect(canvas.getAllByRole("tab")).toHaveLength(3);
+      await expect(canvas.getByRole("tabpanel")).toHaveTextContent("Second panel");
+      await userEvent.click(canvas.getByRole("button", { name: "Show two tabs" }));
+      await userEvent.click(canvas.getByRole("tab", { name: "Second" }));
+      for (const [key, title] of [
+        ["{ArrowRight}", "First"],
+        ["{ArrowLeft}", "Second"],
+        ["{Home}", "First"],
+        ["{End}", "Second"],
+      ]) {
+        await userEvent.keyboard(key);
+        await expect(canvas.getByRole("tab", { name: title })).toHaveFocus();
+        await expect(canvas.getByRole("tab", { name: title })).toHaveAttribute(
+          "aria-selected",
+          "true",
+        );
+        await expect(canvas.getByRole("tabpanel")).toHaveTextContent(`${title} panel`);
+      }
+    },
+  };
+}
+
+export const ShrinkingTabs: Story = resizableTabsStory("tabs", "tab");
+export const ShrinkingCodeGroup: Story = resizableTabsStory("codeGroup", "codeTab");
 
 export const InvalidDiagnostics: Story = {
   args: {

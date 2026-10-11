@@ -242,6 +242,117 @@ describe("default Topik theme components", () => {
     expect(document.activeElement).toBe(tabs[0]);
   });
 
+  describe.each([
+    { name: "tabs", Group: TopikTabs, Tab: TopikTab, childTag: "tab" },
+    { name: "codeGroup", Group: TopikCodeGroup, Tab: TopikCodeTab, childTag: "codeTab" },
+  ])("$name content changes", ({ name, Group, Tab, childTag }) => {
+    function renderTabs(count: number, renderer = "direct") {
+      const titles = ["First", "Second", "Third"].slice(0, count);
+      if (renderer === "TopikContent") {
+        const content = [
+          `{% ${name} %}`,
+          ...titles.flatMap((title) => [
+            `{% ${childTag} title="${title}" %}`,
+            "```text",
+            `${title} panel`,
+            "```",
+            `{% /${childTag} %}`,
+          ]),
+          `{% /${name} %}`,
+        ].join("\n");
+        return <TopikContent content={content} />;
+      }
+      return (
+        <Group>
+          {titles.map((title) => (
+            <Tab key={title} title={title}>
+              <TopikCodeBlock content={`${title} panel`} />
+            </Tab>
+          ))}
+        </Group>
+      );
+    }
+
+    function expectSelection(dom: HTMLElement, selected: number) {
+      const tabs = [...dom.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+      const panels = [...dom.querySelectorAll<HTMLElement>('[role="tabpanel"]')];
+      expect(tabs.filter((tab) => tab.getAttribute("aria-selected") === "true")).toEqual([
+        tabs[selected],
+      ]);
+      expect(tabs.filter((tab) => tab.tabIndex === 0)).toEqual([tabs[selected]]);
+      expect(panels.filter((panel) => !panel.hidden)).toEqual([panels[selected]]);
+      for (const [index, tab] of tabs.entries()) {
+        expect(tab.tabIndex).toBe(index === selected ? 0 : -1);
+        expect(tab.getAttribute("aria-controls")).toBe(panels[index].id);
+        expect(panels[index].getAttribute("aria-labelledby")).toBe(tab.id);
+      }
+    }
+
+    it.each(["direct", "TopikContent"])(
+      "clamps removed selections and preserves valid choices through %s rerenders",
+      (renderer) => {
+        const dom = mount(renderTabs(3, renderer));
+        const tabs = () => dom.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+        act(() => tabs()[2].click());
+        expectSelection(dom, 2);
+
+        act(() => root?.render(renderTabs(2, renderer)));
+        expectSelection(dom, 1);
+        expect(dom.querySelectorAll('[role="tab"]')).toHaveLength(2);
+        // Growing the list must not restore the removed selection.
+        act(() => root?.render(renderTabs(3, renderer)));
+        expectSelection(dom, 1);
+        act(() => root?.render(renderTabs(2, renderer)));
+        expectSelection(dom, 1);
+
+        for (const [key, selected] of [
+          ["Home", 0],
+          ["End", 1],
+          ["ArrowRight", 0],
+          ["ArrowLeft", 1],
+        ] as const) {
+          const active = dom.querySelector('[role="tab"][aria-selected="true"]');
+          const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key });
+          act(() => {
+            active?.dispatchEvent(event);
+          });
+          expect(event.defaultPrevented).toBe(true);
+          expectSelection(dom, selected);
+          expect(document.activeElement).toBe(tabs()[selected]);
+        }
+        const tabEvent = new KeyboardEvent("keydown", {
+          bubbles: true,
+          cancelable: true,
+          key: "Tab",
+        });
+        act(() => {
+          tabs()[1].dispatchEvent(tabEvent);
+        });
+        expect(tabEvent.defaultPrevented).toBe(false);
+        expectSelection(dom, 1);
+
+        act(() => root?.render(renderTabs(1, renderer)));
+        expectSelection(dom, 0);
+        act(() => root?.render(renderTabs(1, renderer)));
+        expectSelection(dom, 0);
+      },
+    );
+
+    it("resets the selection after all children are removed and restored", () => {
+      const dom = mount(renderTabs(0));
+      expect(dom.querySelectorAll('[role="tab"]')).toHaveLength(0);
+      act(() => root?.render(renderTabs(3)));
+      expectSelection(dom, 0);
+      act(() => dom.querySelectorAll<HTMLButtonElement>('[role="tab"]')[2].click());
+      expectSelection(dom, 2);
+      act(() => root?.render(renderTabs(0)));
+      expect(dom.querySelectorAll('[role="tab"]')).toHaveLength(0);
+      expect(dom.querySelectorAll('[role="tabpanel"]')).toHaveLength(0);
+      act(() => root?.render(renderTabs(3)));
+      expectSelection(dom, 0);
+    });
+  });
+
   it("renders ordered steps with optional titles", () => {
     const html = renderToStaticMarkup(
       <TopikSteps>

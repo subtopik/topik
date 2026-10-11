@@ -61,6 +61,20 @@ describe("runMintlify", () => {
     expect(original).toBe("<Note>hi</Note>\n");
   });
 
+  test("renames metadata-only files without changing their bytes", async () => {
+    const source = Buffer.from(
+      '\uFEFF---\r\ntitle: "<Note>Metadata</Note>"\r\n---\r\n\r\n# Body\r\n',
+    );
+    await writeFile(join(dir, "metadata.mdx"), source);
+
+    const summary = await runMintlify({ dir, dryRun: false, keepExtension: false });
+
+    expect(summary).toMatchObject({ filesChanged: 1, warnings: 0 });
+    expect(summary.files[0]?.error).toBeUndefined();
+    expect(await readFile(join(dir, "metadata.md"))).toEqual(source);
+    expect(await readdir(dir)).not.toContain("metadata.mdx");
+  });
+
   test("keeps an unsupported MDX file and its extension unchanged", async () => {
     const source = '<Note>Helpful.</Note>\n<Icon icon="star" />\n';
     await writeFile(join(dir, "unsupported.mdx"), source);

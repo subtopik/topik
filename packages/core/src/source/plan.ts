@@ -62,6 +62,8 @@ import {
   decodeSource,
   encodeSource,
   inspectSourceSyntax,
+  inspectFrontmatterSyntax,
+  patchFrontmatterFields,
   patchSourceFields,
   patchSourceSequence,
   replaySourceByteEdits,
@@ -537,7 +539,7 @@ function writeMarkdown(
         : writtenBody,
     );
   if (sections?.frontmatter !== undefined && sections.frontmatterRange) {
-    const patched = patchSourceFields(sections.frontmatter, updates);
+    const patched = patchFrontmatterFields(sections.frontmatter, updates, eol);
     return new Uint8Array(
       Buffer.concat([
         base!.bytes.slice(0, sections.frontmatterRange.start),
@@ -797,7 +799,7 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
       )) {
         const frontmatter = sourceMarkdownSections(files.get(document.path)!.bytes).frontmatter;
         if (frontmatter) {
-          const values = inspectSourceSyntax(frontmatter).value;
+          const values = inspectFrontmatterSyntax(frontmatter).value;
           if (["id", "slug", "labels", "inheritTags"].some((field) => Object.hasOwn(values, field)))
             block(
               "source-version-collision",

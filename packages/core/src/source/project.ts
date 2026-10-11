@@ -29,11 +29,13 @@ import {
 } from "../course-navigation";
 import { sourceCourseContext } from "./course";
 import { parseMarkdownFrontmatter } from "../compile/shared";
+import { markdownFrontmatter } from "../compile/frontmatter";
 import corePackage from "../../package.json" with { type: "json" };
 import {
   decodeSource,
   encodeSource,
   inspectSourceSyntax,
+  inspectFrontmatterSyntax,
   sourceHash,
   type SourceByteRange,
   type SourceFieldEvidence,
@@ -202,16 +204,17 @@ export async function withSourceScratch<T>(
 
 export function sourceMarkdownSections(bytes: Uint8Array) {
   const raw = decodeSource(bytes);
-  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+  const match = markdownFrontmatter(raw);
   if (!match) return { raw, body: raw, bodyRange: { start: 0, end: bytes.length } };
-  const opening = raw.startsWith("---\r\n") ? 5 : 4;
-  const end = encodeSource(match[0]).length;
   return {
     raw,
-    body: raw.slice(match[0].length),
-    bodyRange: { start: end, end: bytes.length },
-    frontmatter: match[1],
-    frontmatterRange: { start: opening, end: opening + encodeSource(match[1]).length },
+    body: match.content,
+    bodyRange: { start: encodeSource(raw.slice(0, match.bodyStart)).length, end: bytes.length },
+    frontmatter: match.frontmatter,
+    frontmatterRange: {
+      start: encodeSource(raw.slice(0, match.start)).length,
+      end: encodeSource(raw.slice(0, match.end)).length,
+    },
   };
 }
 
@@ -360,9 +363,9 @@ export async function readSourceProject(input: {
       const markdown = sourceMarkdownSections(file.bytes);
       let fields: SourceFieldEvidence[] = [];
       let metadata: Record<string, unknown> = {};
-      if (markdown.frontmatter && markdown.frontmatterRange) {
+      if (markdown.frontmatter !== undefined && markdown.frontmatterRange) {
         try {
-          const syntax = inspectSourceSyntax(markdown.frontmatter);
+          const syntax = inspectFrontmatterSyntax(markdown.frontmatter);
           metadata = syntax.value;
           fields = [...syntax.fields.values()].map((field) => ({
             ...field,

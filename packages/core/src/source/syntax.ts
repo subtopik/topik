@@ -25,6 +25,56 @@ export const decodeSource = (bytes: Uint8Array): string =>
   // Keep the BOM so syntax ranges and replay refer to the exact original bytes.
   new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
 
+function emptyFrontmatter(raw: string): boolean {
+  // Only Markdown permits a missing mapping. Explicit nulls, directives and
+  // other YAML values still go through the strict mapping inspector.
+  return raw.split(/\r?\n/).every((line) => /^[ \t]*(?:#.*)?$/.test(line));
+}
+
+export function inspectFrontmatterSyntax(
+  raw: string,
+): Pick<ReturnType<typeof inspectSourceSyntax>, "fields" | "value"> {
+  if (!emptyFrontmatter(raw)) return inspectSourceSyntax(raw);
+  parseSafeConfigurationYaml(raw);
+  return {
+    fields: new Map([["+", { selector: "+", insertion: encodeSource(raw).length }]]),
+    value: {},
+  };
+}
+
+export function patchFrontmatterFields(
+  raw: string,
+  updates: Readonly<Record<string, unknown>>,
+  eol: string,
+): { bytes: Uint8Array; edits: SourceByteEdit[] } {
+  if (!emptyFrontmatter(raw)) return patchSourceFields(raw, updates);
+  const syntax = inspectFrontmatterSyntax(raw);
+  const base = encodeSource(raw);
+  const entries = Object.entries(updates).filter(([, value]) => value !== undefined);
+  if (!entries.length) return { bytes: base, edits: [] };
+  if (entries.some(([selector]) => selector.includes("/")))
+    throw new TypeError("Nested insertion needs an existing map");
+  const insertion = syntax.fields.get("+")!.insertion;
+  const text = `${raw && !raw.endsWith("\n") ? eol : ""}${entries
+    .map(
+      ([selector, value]) =>
+        `${JSON.stringify(decodeURIComponent(selector))}: ${JSON.stringify(value)}${eol}`,
+    )
+    .join("")}`;
+  const edits = [
+    {
+      start: insertion,
+      end: insertion,
+      selector: entries.map(([selector]) => selector).join(","),
+      oldSha256: sourceHash(new Uint8Array()),
+      replacement: encodeSource(text),
+    },
+  ];
+  const bytes = replaySourceByteEdits(base, edits);
+  inspectSourceSyntax(decodeSource(bytes));
+  return { bytes, edits };
+}
+
 /** All offsets exposed outside the parser are UTF-8 byte offsets in the immutable base. */
 export function inspectSourceSyntax(raw: string, json = false) {
   // Configuration loading accepts a leading BOM; JSON validation excludes only

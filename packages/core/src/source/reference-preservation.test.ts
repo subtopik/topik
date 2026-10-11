@@ -2,9 +2,10 @@ import { expect, test } from "vite-plus/test";
 import type { CoursePage } from "@topik/schema/course-page/v1";
 import type { Guide } from "@topik/schema/guide/v1";
 import type { WikiPage } from "@topik/schema/wiki-page/v1";
+import { generateAutomaticAssetName, parseAssetBlobUri } from "../assets/asset";
 import { readSourceProject, type SourceProject } from "./project";
 import { planSourceUpdates, type SourceResourceOperation, type SourceWriteAuthority } from "./plan";
-import { decodeSource, encodeSource } from "./syntax";
+import { decodeSource, encodeSource, sourceHash } from "./syntax";
 
 const cohort = "a".repeat(64);
 const file = (path: string, text: string) => ({
@@ -32,6 +33,7 @@ async function projectFor(
   kind: "course" | "wiki" | "guide-course",
   body: string,
   includeOther = false,
+  assetDirectory?: string,
 ) {
   return readSourceProject({
     tree: [
@@ -41,9 +43,10 @@ async function projectFor(
       ),
       file(
         "lessons/config.yaml",
-        kind === "wiki"
+        (kind === "wiki"
           ? `id: lessons\ntitle: Lessons\nsourceVersion: 1\nnavigation: [home, next${includeOther ? ", other" : ""}]\n`
-          : `id: lessons\ntitle: Lessons\nslug: lessons\nsourceVersion: 1\nmodules: [{id: basics, title: Basics, slug: basics, order: 0, pages: [${kind === "guide-course" ? "" : "home, "}next${includeOther ? ", other" : ""}]}]\n`,
+          : `id: lessons\ntitle: Lessons\nslug: lessons\nsourceVersion: 1\nmodules: [{id: basics, title: Basics, slug: basics, order: 0, pages: [${kind === "guide-course" ? "" : "home, "}next${includeOther ? ", other" : ""}]}]\n`) +
+          (assetDirectory ? `assets: {directory: ${assetDirectory}}\n` : ""),
       ),
       ...(kind === "guide-course"
         ? [file("guides/collection.yaml", "id: guides\ntitle: Guides\nsourceVersion: 1\n")]
@@ -57,20 +60,51 @@ async function projectFor(
 
 test.each(
   (["course", "wiki", "guide-course"] as const).flatMap((kind) =>
-    ["authored", "compiled"].map((representation) => ({ kind, representation })),
+    ["authored", "compiled"].flatMap((representation) =>
+      ["move", "upload", "nested upload"].map((change) => ({ kind, representation, change })),
+    ),
   ),
 )(
-  "$kind preserves $representation links when an unrelated move creates a directory alias",
-  async ({ kind, representation }) => {
+  "$kind preserves $representation links when an unrelated $change creates a directory alias",
+  async ({ kind, representation, change }) => {
     const href = kind === "guide-course" ? "../lessons/next" : "./next";
     const body = `# Home\n\n[Target](${href})\n\n[Again](${href})\n`;
-    const project = await projectFor(kind, body, true);
+    const assetDirectory =
+      change === "move" ? undefined : change === "upload" ? "next" : "next/uploads/nested";
+    const project = await projectFor(kind, body, true, assetDirectory);
     const desired = structuredClone(project.compilation.resources);
     if (representation === "authored") home(desired).spec.content.value = body;
     const key = `${home(desired).type}/home`;
     const targetType = kind === "wiki" ? "WikiPage" : "CoursePage";
     const homePath = `${kind === "guide-course" ? "guides" : "lessons"}/home.md`;
-    const targetPath = "lessons/next/new.md";
+    const bytes = encodeSource("Uploaded through another page.\n");
+    const digest = sourceHash(bytes);
+    const generated = generateAutomaticAssetName({
+      projectNamespace: "incoming",
+      manifestRelativePath: "upload.bin",
+    });
+    if (!generated.ok) throw new Error("Invalid fixture asset");
+    const name = generated.value;
+    const uploadPath = `lessons/${assetDirectory}/upload-${sourceHash(encodeSource(name)).slice(0, 8)}.bin`;
+    const targetPath = assetDirectory ? uploadPath : "lessons/next/new.md";
+    if (assetDirectory) {
+      const other = desired.find(
+        (resource): resource is CoursePage | WikiPage =>
+          resource.type === targetType && resource.name === "other",
+      )!;
+      other.spec.content.value += `\n[Download](asset:${name})\n`;
+      desired.push({
+        apiVersion: "v1",
+        type: "Asset",
+        name,
+        spec: {
+          uri: parseAssetBlobUri(`blobs/${digest}`),
+          integrity: `sha256:${digest}`,
+          size: bytes.length,
+          mediaType: "application/octet-stream",
+        },
+      });
+    }
     const request = {
       project,
       expectedTreeDigest: project.treeDigest,
@@ -80,9 +114,24 @@ test.each(
         ...(kind === "guide-course" && representation === "authored"
           ? [{ kind: "update" as const, resource: key }]
           : []),
-        { kind: "move" as const, resource: `${targetType}/other`, path: targetPath },
+        assetDirectory
+          ? { kind: "update" as const, resource: `${targetType}/other` }
+          : { kind: "move" as const, resource: `${targetType}/other`, path: targetPath },
       ],
       authority: { ...authority(project), create: [targetPath] },
+      ...(assetDirectory
+        ? {
+            media: [
+              {
+                config: "lessons/config.yaml",
+                name,
+                filename: "upload.bin",
+                sha256: digest,
+                bytes,
+              },
+            ],
+          }
+        : {}),
       ...(kind === "course"
         ? { courseReferenceContexts: { [key]: project.courseContexts["Course/lessons"] } }
         : kind === "wiki"
@@ -107,6 +156,21 @@ test.each(
     expect(result.plan.candidate.tree.find((entry) => entry.path === "lessons/next.md")).toEqual(
       project.tree.find((entry) => entry.path === "lessons/next.md"),
     );
+    if (assetDirectory) {
+      expect(result.plan.assetMappings).toMatchObject([{ from: name, path: uploadPath }]);
+      expect(result.plan.candidate.tree.find((entry) => entry.path === uploadPath)?.bytes).toEqual(
+        bytes,
+      );
+      expect(
+        result.plan.candidate.compilation.resources.find(
+          (resource) => resource.type === targetType && resource.name === "other",
+        ),
+      ).toMatchObject({
+        spec: {
+          content: { value: expect.stringContaining(`asset:${result.plan.assetMappings[0].to}`) },
+        },
+      });
+    }
     const denied = await planSourceUpdates({
       ...request,
       authority: {
@@ -129,6 +193,16 @@ test.each(
       ok: false,
       diagnostics: [{ code: "exclusive-authority-required", path: homePath }],
     });
+    if (assetDirectory) {
+      const deniedUpload = await planSourceUpdates({
+        ...request,
+        authority: { ...request.authority, create: [] },
+      });
+      expect(deniedUpload).toMatchObject({
+        ok: false,
+        diagnostics: [{ code: "create-authority-required", path: uploadPath }],
+      });
+    }
     const repeated = await planSourceUpdates({
       project: result.plan.candidate,
       expectedTreeDigest: result.plan.candidateTreeDigest,

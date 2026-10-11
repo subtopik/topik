@@ -845,6 +845,53 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
       }
       configUpdates.set(config, { sourceVersion: 1 });
     }
+    // Plan every media destination before reference repair so its parent directories
+    // participate in the same candidate inventory as document creates and moves.
+    const mediaNames = new Set<string>();
+    const plannedMedia = (input.media ?? []).map((selection) => {
+      const asset = desired.get(`Asset/${selection.name}`);
+      const source = project.compilation.provenance.find(
+        (source) => source.config === selection.config,
+      );
+      if (
+        asset?.type !== "Asset" ||
+        !source ||
+        mediaNames.has(selection.name) ||
+        sourceHash(selection.bytes) !== selection.sha256 ||
+        asset.spec.integrity !== `sha256:${selection.sha256}` ||
+        asset.spec.size !== selection.bytes.length
+      )
+        block(
+          "asset-bytes-mismatch",
+          "Every new medium requires an exact desired Asset, declared destination and supplied bytes.",
+        );
+      if (
+        posix.basename(selection.filename) !== selection.filename ||
+        !validateTopikPathSet([selection.filename]).ok
+      )
+        block("asset-path-invalid", "Media filenames must be portable leaf names.");
+      const extension = posix.extname(selection.filename);
+      const stem = selection.filename.slice(0, selection.filename.length - extension.length);
+      const path = posix.join(
+        source.assetDirectory,
+        `${stem}-${sourceHash(encodeSource(selection.name)).slice(0, 8)}${extension}`,
+      );
+      if (reserved.has(path) || !validateTopikPathSet([...reserved, path]).ok)
+        block(
+          "source-path-collision",
+          "New media cannot overwrite any occupied path.",
+          undefined,
+          path,
+        );
+      const identity = generateAutomaticAssetName({
+        projectNamespace: project.manifest.namespace,
+        manifestRelativePath: path,
+      });
+      if (!identity.ok) block("asset-path-invalid", "The new media destination is invalid.");
+      mediaNames.add(selection.name);
+      reserved.add(path);
+      return { selection, asset, path, name: identity.value };
+    });
     const derivedKeys = new Set<string>();
     const originalPaths = new Map(
       project.documents.map((document) => [document.resource, document.path]),
@@ -853,6 +900,7 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
     const currentInventory = sourcePathInventory([
       ...project.tree.map((file) => file.path).filter((path) => !originalDocuments.has(path)),
       ...[...paths].filter(([key]) => desired.has(key)).map(([, path]) => path),
+      ...plannedMedia.map(({ path }) => path),
     ]);
     const nonPageReference = (
       resource: WritableDocument,
@@ -1186,50 +1234,10 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
     const modified = new Map<string, Uint8Array>();
     const deleted = new Set<string>();
     const assetMappings: SourceUpdatePlan["assetMappings"][number][] = [];
-    for (const selection of input.media ?? []) {
-      const asset = desired.get(`Asset/${selection.name}`);
-      const source = project.compilation.provenance.find(
-        (source) => source.config === selection.config,
-      );
-      if (
-        asset?.type !== "Asset" ||
-        !source ||
-        assetMappings.some((mapping) => mapping.from === selection.name) ||
-        sourceHash(selection.bytes) !== selection.sha256 ||
-        asset.spec.integrity !== `sha256:${selection.sha256}` ||
-        asset.spec.size !== selection.bytes.length
-      )
-        block(
-          "asset-bytes-mismatch",
-          "Every new medium requires an exact desired Asset, declared destination and supplied bytes.",
-        );
-      if (
-        posix.basename(selection.filename) !== selection.filename ||
-        !validateTopikPathSet([selection.filename]).ok
-      )
-        block("asset-path-invalid", "Media filenames must be portable leaf names.");
-      const extension = posix.extname(selection.filename);
-      const stem = selection.filename.slice(0, selection.filename.length - extension.length);
-      const path = posix.join(
-        source.assetDirectory,
-        `${stem}-${sourceHash(encodeSource(selection.name)).slice(0, 8)}${extension}`,
-      );
-      if (reserved.has(path) || !validateTopikPathSet([...reserved, path]).ok)
-        block(
-          "source-path-collision",
-          "New media cannot overwrite any occupied path.",
-          undefined,
-          path,
-        );
-      const identity = generateAutomaticAssetName({
-        projectNamespace: project.manifest.namespace,
-        manifestRelativePath: path,
-      });
-      if (!identity.ok) block("asset-path-invalid", "The new media destination is invalid.");
-      assetMappings.push({ from: selection.name, to: identity.value, path });
-      asset.name = identity.value;
-      assets.set(identity.value, path);
-      reserved.add(path);
+    for (const { selection, asset, path, name } of plannedMedia) {
+      assetMappings.push({ from: selection.name, to: name, path });
+      asset.name = name;
+      assets.set(name, path);
       modified.set(path, new Uint8Array(selection.bytes));
     }
     if (assetMappings.length) {

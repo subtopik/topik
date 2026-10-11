@@ -15,3 +15,6 @@ document targets.
 Repair retained page links when moving another page creates a directory that
 shadows their source alias. Saved Markdown and compiled resources preserve the
 same target, and incoming repairs require authority over the referring page.
+
+Include planned media uploads and their parent directories in reference repair,
+so uploads through another page also preserve existing page-link targets.

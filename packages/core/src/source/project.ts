@@ -205,7 +205,12 @@ export async function withSourceScratch<T>(
 export function sourceMarkdownSections(bytes: Uint8Array) {
   const raw = decodeSource(bytes);
   const match = markdownFrontmatter(raw);
-  if (!match) return { raw, body: raw, bodyRange: { start: 0, end: bytes.length } };
+  if (!match)
+    return {
+      raw,
+      body: raw.replace(/^\uFEFF/u, ""),
+      bodyRange: { start: raw.startsWith("\uFEFF") ? 3 : 0, end: bytes.length },
+    };
   return {
     raw,
     body: match.content,

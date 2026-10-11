@@ -553,7 +553,10 @@ function writeMarkdown(
     .filter(([, value]) => value !== undefined)
     .map(([key, value]) => `${key}: ${JSON.stringify(value)}${eol}`)
     .join("");
-  return encodeSource(metadata ? `---${eol}${metadata}---${eol}${writtenBody}` : writtenBody);
+  const prefix = sections ? sections.raw.slice(0, sections.raw.length - sections.body.length) : "";
+  return encodeSource(
+    prefix + (metadata ? `---${eol}${metadata}---${eol}${writtenBody}` : writtenBody),
+  );
 }
 
 export function sourceNavigation(

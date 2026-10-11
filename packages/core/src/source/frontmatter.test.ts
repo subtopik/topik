@@ -2,6 +2,7 @@ import { expect, test } from "vite-plus/test";
 import type { Guide } from "@topik/schema/guide/v1";
 import { readSourceProject, sourceMarkdownSections, type SourceProject } from "./project";
 import { planSourceUpdates, type SourceWriteAuthority } from "./plan";
+import { parseMarkdownFrontmatter } from "../compile/shared";
 import {
   decodeSource,
   encodeSource,
@@ -123,3 +124,140 @@ test.each(["\n", "\r\n"])("empty metadata insertion replays exact UTF-8 ranges w
   expect(() => patchFrontmatterFields("null", { title: "Edited" }, eol)).toThrow();
   expect(() => patchFrontmatterFields(raw, { "labels/new": "value" }, eol)).toThrow();
 });
+
+test.each(
+  ["\n", "\r\n"].flatMap((eol) =>
+    ["metadata", "body", "both", "noop"].map((change) => ({ eol, change })),
+  ),
+)(
+  "BOM frontmatter preserves identity, byte ranges and $change edits with $eol",
+  async ({ eol, change }) => {
+    const header =
+      "\uFEFF---\nid: stable-post\ntitle: Original # Café\ncustom: untouched\n---\n".replaceAll(
+        "\n",
+        eol,
+      );
+    const body = "# Heading\n\nExact **body**.\n".replaceAll("\n", eol);
+    const raw = header + body;
+    const project = await projectFor(raw);
+    const guide = project.compilation.resources.find(
+      (resource): resource is Guide => resource.type === "Guide",
+    )!;
+    expect(guide.name).toBe("stable-post");
+    expect(guide.spec.title).toBe("Original");
+    const sections = sourceMarkdownSections(encodeSource(raw));
+    expect(sections.frontmatterRange!.start).toBe(3 + 3 + eol.length);
+    expect(sections.bodyRange.start).toBe(encodeSource(header).length);
+    expect(sections.body).toBe(body);
+    const title = project.documents[0].fields.find((field) => field.selector === "title")!;
+    expect(decodeSource(encodeSource(raw).slice(title.value!.start, title.value!.end))).toBe(
+      "Original",
+    );
+    const desired = structuredClone(project.compilation.resources);
+    const updated = desired.find((resource): resource is Guide => resource.type === "Guide")!;
+    if (change === "metadata" || change === "both") updated.spec.title = "Edited";
+    if (change === "body" || change === "both") updated.spec.content.value += `${eol}Added.${eol}`;
+    const result = await planSourceUpdates({
+      project,
+      expectedTreeDigest: project.treeDigest,
+      packageCohort: cohort,
+      desiredResources: desired,
+      operations: change === "noop" ? [] : [{ kind: "update", resource: "Guide/stable-post" }],
+      authority: authority(project),
+    });
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    if (!result.ok) return;
+    const written = result.plan.candidate.tree.find((entry) => entry.path === "post.md")!.bytes;
+    expect(written.slice(0, 3)).toEqual(encodeSource("\uFEFF"));
+    expect(decodeSource(written).match(/---/g)).toHaveLength(2);
+    expect(decodeSource(written)).toContain(`# Café${eol}custom: untouched${eol}`);
+    if (change === "noop") {
+      expect(written).toEqual(encodeSource(raw));
+      expect(result.plan.changes).toEqual([]);
+    } else if (change === "metadata") {
+      expect(sourceMarkdownSections(written).body).toBe(body);
+      const patched = patchFrontmatterFields(sections.frontmatter!, { title: "Edited" }, eol);
+      const edits = patched.edits.map((edit) => ({
+        ...edit,
+        start: edit.start + sections.frontmatterRange!.start,
+        end: edit.end + sections.frontmatterRange!.start,
+      }));
+      expect(replaySourceByteEdits(encodeSource(raw), edits)).toEqual(written);
+    } else {
+      expect(sourceMarkdownSections(written).body).toContain(`Added.${eol}`);
+      expect(
+        decodeSource(written).startsWith(
+          change === "body" ? header : header.replace("title: Original", 'title: "Edited"'),
+        ),
+      ).toBe(true);
+    }
+    expect(result.plan.candidate.compilation.resources).toEqual(desired);
+  },
+);
+
+test.each(["\n", "\r\n"])(
+  "first metadata insertion keeps a headerless BOM at byte zero with %j",
+  async (eol) => {
+    const body = "# Original\n\nExact **body**.\n".replaceAll("\n", eol);
+    const project = await projectFor(`\uFEFF${body}`);
+    const desired = structuredClone(project.compilation.resources);
+    const guide = desired.find((resource): resource is Guide => resource.type === "Guide")!;
+    guide.spec.title = "Edited";
+    const result = await planSourceUpdates({
+      project,
+      expectedTreeDigest: project.treeDigest,
+      packageCohort: cohort,
+      desiredResources: desired,
+      operations: [{ kind: "update", resource: `Guide/${guide.name}` }],
+      authority: authority(project),
+    });
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    if (!result.ok) return;
+    const written = result.plan.candidate.tree.find((entry) => entry.path === "post.md")!.bytes;
+    expect(written.slice(0, 3)).toEqual(encodeSource("\uFEFF"));
+    expect(sourceMarkdownSections(written).body).toBe(body);
+    expect(decodeSource(written).match(/\uFEFF/g)).toHaveLength(1);
+  },
+);
+
+test.each(["title: 42", "- invalid", "title: A\ntitle: B", "title: &a A\ncustom: *a"])(
+  "BOM cannot hide invalid versioned metadata: %s",
+  async (metadata) => {
+    for (const eol of ["\n", "\r\n"]) {
+      const raw = `\uFEFF---\n${metadata}\n---\n# Body\n`.replaceAll("\n", eol);
+      expect(() => parseMarkdownFrontmatter(raw, "post.md", 1)).toThrow(
+        "Document frontmatter is invalid.",
+      );
+      await expect(projectFor(raw)).rejects.toThrow("Document frontmatter is invalid.");
+    }
+  },
+);
+
+test.each([undefined, 1] as const)(
+  "BOM header parsing is consistent for source version %j",
+  (version) => {
+    for (const eol of ["\n", "\r\n"]) {
+      for (const metadata of ["", "# Café", "title: Original"]) {
+        const raw = `\uFEFF---${eol}${metadata}${metadata ? eol : ""}---${eol}Body${eol}`;
+        const parsed = parseMarkdownFrontmatter(raw, "post.md", version);
+        expect(parsed).toEqual({
+          frontmatter: metadata.startsWith("title:") ? { title: "Original" } : {},
+          content: `Body${eol}`,
+        });
+        const sections = sourceMarkdownSections(encodeSource(raw));
+        expect(sections.body).toBe(parsed.content);
+        expect(
+          decodeSource(
+            encodeSource(raw).slice(
+              sections.frontmatterRange!.start,
+              sections.frontmatterRange!.end,
+            ),
+          ),
+        ).toBe(metadata);
+      }
+      expect(() =>
+        parseMarkdownFrontmatter(`\uFEFF---${eol}title: 42${eol}---`, "post.md", version),
+      ).toThrow();
+    }
+  },
+);

@@ -62,7 +62,7 @@ export function parseMarkdownFrontmatter(
 ): { frontmatter: Record<string, unknown>; content: string } {
   const match = markdownFrontmatter(raw);
   if (!match) {
-    return { frontmatter: {}, content: raw };
+    return { frontmatter: {}, content: raw.replace(/^\uFEFF/u, "") };
   }
 
   try {

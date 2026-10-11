@@ -15,7 +15,7 @@ import {
 import { posix } from "node:path";
 import { classifyPortableNavigationPath, readPortableAssetFile } from "../assets/files";
 import { resolveSourceReferencePath } from "../reference-paths";
-import { folderLandingCandidates, isFolderHref } from "../folder-links";
+import { folderLandingCandidates, isFolderHref, resolveDeclaredPublicRoute } from "../folder-links";
 import {
   resolveCourseContentHref,
   resolveCourseNavigation,
@@ -227,6 +227,10 @@ export async function compileResourceLinks(input: CompileResourceLinksInput): Pr
       const markdown = /\.(?:mdx?|markdown)$/i.test(path ?? link.href.split(/[?#]/, 1)[0]);
       const extensionless = path !== undefined && posix.extname(path) === "";
       const folderSpelling = isFolderHref(link.href);
+      if (folderSpelling && path === undefined) {
+        appendLinkDiagnostic("link-page-not-found", link, policy, diagnostics);
+        continue;
+      }
       // Extensionless absolute links retain their public-route contract. An explicit
       // trailing slash instead selects a configuration-relative source folder.
       const routeNavigation =
@@ -236,9 +240,11 @@ export async function compileResourceLinks(input: CompileResourceLinksInput): Pr
             ? navigation.get(resource.spec.wiki)
             : undefined;
       const routeTarget =
-        path !== undefined && !folderSpelling && link.href.startsWith("/") && !markdown
-          ? routeNavigation?.pageByRoute.get(
-              decodeURIComponent(new URL(link.href, LINK_BASE).pathname).replace(/^\/+|\/+$/g, ""),
+        path !== undefined && routeNavigation
+          ? resolveDeclaredPublicRoute<unknown>(
+              link.href,
+              routeNavigation.pageByRoute,
+              resource.type === "WikiPage",
             )
           : undefined;
       const folder =

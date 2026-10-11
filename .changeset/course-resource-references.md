@@ -18,6 +18,10 @@ Resolve folder links to a unique declared index or README landing page and emit
 its ordinary portable reference. Report missing or ambiguous landings through the
 link validation policy; never generate directory listings or undeclared pages.
 Preserve saved landing identities and require authority for incoming repairs.
+Apply the same source-path normalization and Wiki index-route aliases across
+compilation, navigation, and source writing. Repair saved cross-source folder
+links when newly declared public routes shadow them, and validate out-of-root
+folder cards through the usual link policy.
 
 `discoverCourseResources` exposes authoring metadata and paths for consumers that
 combine declared resource inventories before link and Asset compilation.

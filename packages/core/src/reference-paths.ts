@@ -1,27 +1,18 @@
 import { posix } from "node:path";
 import { validateTopikAssetReference, type TopikNavigationReference } from "@topik/content";
 import { validateTopikPath } from "./assets/path";
-import { isFolderHref } from "./folder-links";
+import { isFolderHref, resolveNavigationPath } from "./folder-links";
 
-/** Normalize source destinations identically during compilation and source transport. */
+/** Physical source paths also satisfy the portable filesystem contract. */
 export function resolveSourceReferencePath(
   href: string,
   sourcePath: string,
   directory: string,
 ): string | undefined {
-  if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("//")) return undefined;
-  try {
-    const path = decodeURIComponent(href.split(/[?#]/, 1)[0]);
-    const joined = path.startsWith("/")
-      ? posix.join(directory, path.slice(1))
-      : posix.join(posix.dirname(sourcePath), path || posix.basename(sourcePath));
-    if (joined === "." && (isFolderHref(href) || path === "/") && !path.split("/").includes(".."))
-      return "";
-    const result = validateTopikPath(joined.endsWith("/") ? joined.slice(0, -1) : joined);
-    return result.ok ? result.value.path : undefined;
-  } catch {
-    return undefined;
-  }
+  const path = resolveNavigationPath(href, sourcePath, directory);
+  if (path === undefined || path === "") return path;
+  const result = validateTopikPath(path);
+  return result.ok ? result.value.path : undefined;
 }
 
 /** A complete regular-file tree also proves every directory containing those files. */

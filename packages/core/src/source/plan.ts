@@ -1039,6 +1039,7 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
                 currentNavigation,
               );
               return isSourceReferenceShadowed(
+                page,
                 reference,
                 paths.get(key)!,
                 source.directory,
@@ -1046,7 +1047,6 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
                 desired,
                 currentInventory,
                 `CoursePage/${current?.page.page}`,
-                current?.page.route,
               );
             },
           )
@@ -1145,6 +1145,7 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
             const after = resolveWikiContentHref(reference.href, page.name, currentNavigation);
             if (
               !isSourceReferenceShadowed(
+                page,
                 reference,
                 paths.get(key)!,
                 source.directory,
@@ -1152,7 +1153,6 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
                 desired,
                 currentInventory,
                 `WikiPage/${after?.page.page}`,
-                after?.page.route,
               ) &&
               after?.page.page === before.page.page &&
               after.search === before.search &&

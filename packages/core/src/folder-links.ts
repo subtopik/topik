@@ -1,3 +1,29 @@
+/** Resolve decoded source paths consistently without URL root-clamping or Node-only APIs. */
+export function resolveNavigationPath(
+  href: string,
+  sourcePath: string,
+  directory = "",
+): string | undefined {
+  if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("//")) return undefined;
+  try {
+    const path = decodeURIComponent(href.split(/[?#]/, 1)[0]);
+    const base = path.startsWith("/") ? directory : sourcePath.split("/").slice(0, -1).join("/");
+    const relative = path.startsWith("/") ? path.slice(1) : path || sourcePath.split("/").at(-1)!;
+    const parts: string[] = [];
+    for (const part of `${base}/${relative}`.split("/")) {
+      if (!part || part === ".") continue;
+      if (part === "..") {
+        if (!parts.length) return undefined;
+        parts.pop();
+      } else parts.push(part);
+    }
+    if (!parts.length && (isFolderHref(href) || path === "/")) return "";
+    return parts.length ? parts.join("/") : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Folder shorthand selects declared content, never an arbitrary directory listing. */
 export function folderLandingCandidates<T>(directory: string, pages: ReadonlyMap<string, T>): T[] {
   const prefix = directory ? `${directory}/` : "";
@@ -37,17 +63,15 @@ export function resolveDeclaredSourcePage<T>(
   return candidates.length === 1 ? candidates[0] : undefined;
 }
 
-export function isPublicRouteHref(href: string, route: string | undefined): boolean {
-  if (route === undefined || !href.startsWith("/") || href.startsWith("//") || isFolderHref(href))
-    return false;
-  try {
-    return (
-      decodeURIComponent(new URL(href, "https://topik.invalid").pathname).replace(
-        /^\/+|\/+$/g,
-        "",
-      ) === route
-    );
-  } catch {
-    return false;
-  }
+/** Wiki's index aliases are public routes in every consumer, including compilation. */
+export function resolveDeclaredPublicRoute<T>(
+  href: string,
+  pages: ReadonlyMap<string, T>,
+  wiki = false,
+): T | undefined {
+  if (!href.startsWith("/") || isFolderHref(href)) return undefined;
+  const path = resolveNavigationPath(href, "");
+  if (path === undefined || /\.(?:mdx?|markdown)$/i.test(path)) return undefined;
+  const route = wiki ? (path === "index" ? "" : path.replace(/\/index$/, "")) : path;
+  return pages.get(route);
 }

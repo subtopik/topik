@@ -11,7 +11,13 @@ import type {
   WikiTabNavNode,
 } from "@topik/schema/wiki/v1";
 import { parseTopikResourceReference } from "@topik/content";
-import { hasDeclaredFolder, isFolderHref, resolveDeclaredSourcePage } from "./folder-links";
+import {
+  hasDeclaredFolder,
+  isFolderHref,
+  resolveDeclaredSourcePage,
+  resolveDeclaredPublicRoute,
+  resolveNavigationPath,
+} from "./folder-links";
 
 const INTERNAL_WIKI_ORIGIN = "https://topik.invalid";
 
@@ -184,19 +190,15 @@ export function resolveWikiContentHref(
 
   let url: URL;
   try {
-    url = new URL(href, `${INTERNAL_WIKI_ORIGIN}/${currentPage.sourcePath}`);
+    const sourcePath = currentPage.sourcePath.split("/").map(encodeURIComponent).join("/");
+    url = new URL(href, `${INTERNAL_WIKI_ORIGIN}/${sourcePath}`);
   } catch {
     return null;
   }
   if (url.origin !== INTERNAL_WIKI_ORIGIN) return null;
 
-  let decodedPath: string;
-  try {
-    decodedPath = decodeURIComponent(url.pathname);
-  } catch {
-    return null;
-  }
-  const pathname = decodedPath.replace(/^\/+|\/+$/g, "");
+  const pathname = resolveNavigationPath(href, currentPage.sourcePath);
+  if (pathname === undefined) return null;
   const markdown =
     /\.(?:mdx?|markdown)$/i.test(pathname) &&
     !hasDeclaredFolder(pathname, resolved.pageBySourcePath);
@@ -212,7 +214,9 @@ export function resolveWikiContentHref(
       ? markdown
         ? resolved.pageBySourcePath.get(normalizedPath)
         : resolveDeclaredSourcePage(normalizedPath, resolved.pageBySourcePath, folder)
-      : (resolved.pageByRoute.get(route) ??
+      : ((!sourceLink && href.startsWith("/")
+          ? resolveDeclaredPublicRoute(href, resolved.pageByRoute, true)
+          : resolved.pageByRoute.get(route)) ??
         resolveDeclaredSourcePage(normalizedPath, resolved.pageBySourcePath, true));
   return page
     ? { page, route: page.route, hash: url.hash.replace(/^#/, ""), search: url.search }

@@ -151,8 +151,12 @@ the same folder rule.
 
 An extensionless root URL without a trailing slash still prefers an existing
 Wiki/Course public route. Use `/files/` to explicitly select a config-relative
-folder. The canonical root URL `/` also retains its declared public route; `./`
-selects the referring file's source folder. External URLs remain external. Guide application URLs such as
+folder. The canonical root URL `/` and Wiki's `/index` and `/section/index` route
+aliases retain their declared public routes; `./` selects the referring file's
+source folder. Repeated separators and contained `..` segments are normalized
+consistently, including `../` selecting a declared project-root landing from a
+nested page. Paths escaping the project remain invalid for links and cards.
+External URLs remain external. Guide application URLs such as
 `/account/settings/` remain browser URLs when they do not name a local folder;
 explicit relative folder links such as `./missing/` require a landing.
 

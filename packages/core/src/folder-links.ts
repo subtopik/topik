@@ -41,15 +41,18 @@ export function hasDeclaredFolder<T>(directory: string, pages: ReadonlyMap<strin
 
 /** Explicit Markdown filenames retain their historical trailing-separator spelling. */
 export function isFolderHref(href: string): boolean {
+  const pathname = href.split(/[?#]/, 1)[0];
   try {
-    const path = decodeURIComponent(href.split(/[?#]/, 1)[0]);
+    const path = decodeURIComponent(pathname);
     if (path === "/") return false;
     return (
       !/\.(?:mdx?|markdown)\/*$/i.test(path) &&
       (path.endsWith("/") || /(?:^|\/)\.{1,2}$/.test(path))
     );
   } catch {
-    return false;
+    // Invalid pathname escapes must not hide explicit folder intent. This only
+    // classifies syntax; source resolution still rejects the malformed pathname.
+    return /(?:\/|%2f)$|(?:^|\/|%2f)(?:\.|%2e){1,2}$/i.test(pathname);
   }
 }
 

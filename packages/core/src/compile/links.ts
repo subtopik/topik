@@ -239,14 +239,13 @@ export async function compileResourceLinks(input: CompileResourceLinksInput): Pr
           : resource.type === "WikiPage"
             ? navigation.get(resource.spec.wiki)
             : undefined;
-      const routeTarget =
-        path !== undefined && routeNavigation
-          ? resolveDeclaredPublicRoute<unknown>(
-              link.href,
-              routeNavigation.pageByRoute,
-              resource.type === "WikiPage",
-            )
-          : undefined;
+      const routeTarget = routeNavigation
+        ? resolveDeclaredPublicRoute<{ page: string }>(
+            link.href,
+            routeNavigation.pageByRoute,
+            resource.type === "WikiPage",
+          )
+        : undefined;
       const folder =
         path !== undefined &&
         !routeTarget &&
@@ -279,7 +278,14 @@ export async function compileResourceLinks(input: CompileResourceLinksInput): Pr
             : extensionless
               ? targetsByExtensionlessPath.get(path)
               : undefined;
-      let target = folder ? landingPages[0] : candidates?.length === 1 ? candidates[0] : undefined;
+      // A declared virtual route does not need to be a valid physical filename.
+      let target = routeTarget
+        ? localTargets.get(`${resource.type}/${routeTarget.page}`)
+        : folder
+          ? landingPages[0]
+          : candidates?.length === 1
+            ? candidates[0]
+            : undefined;
       // The root route has no portable file path; admit only the literal route, not
       // paths that normalize outside the source root and happen to resolve to it as URLs.
       const rootRoute = link.href.split(/[?#]/, 1)[0] === "/";

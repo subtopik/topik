@@ -22,6 +22,8 @@ Apply the same source-path normalization and Wiki index-route aliases across
 compilation, navigation, and source writing. Repair saved cross-source folder
 links when newly declared public routes shadow them, and validate out-of-root
 folder cards through the usual link policy.
+Keep valid public route slugs independent of filesystem-name restrictions and
+diagnose malformed folder pathnames without decoding opaque query strings.
 
 `discoverCourseResources` exposes authoring metadata and paths for consumers that
 combine declared resource inventories before link and Asset compilation.

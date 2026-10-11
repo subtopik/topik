@@ -332,3 +332,143 @@ test.each(
     );
   },
 );
+
+test.each(
+  [
+    ...(["wiki", "course"] as const).flatMap((kind) =>
+      ["con", "aux", "normal"].map((slug) => ({ kind, slug, moduleSlug: "basics" })),
+    ),
+    ...["con", "aux"].map((moduleSlug) => ({
+      kind: "course" as const,
+      slug: "normal",
+      moduleSlug,
+    })),
+  ].flatMap((entry) => ["", "docs"].map((directory) => ({ ...entry, directory }))),
+)(
+  "$kind public route $moduleSlug/$slug is independent of filenames ($directory)",
+  async ({ kind, slug, moduleSlug, directory }) => {
+    const route = kind === "course" ? `/${moduleSlug}/${slug}` : `/${slug}`;
+    const href = `${route}?q=%E9&discount=25%#landing`;
+    const body = `# Home\n\n[Lesson](${href})\n\n{% card title="Lesson" href="${href}" /%}\n`;
+    const files = tree(kind, [
+      { path: "home.md", name: "home", body },
+      { path: "lesson.md", name: "lesson", slug },
+    ]);
+    if (kind === "course") {
+      const config = files.find(({ path }) => path === "config.yaml")!;
+      const value = JSON.parse(decodeSource(config.bytes));
+      value.modules[0].slug = moduleSlug;
+      config.bytes = encodeSource(JSON.stringify(value));
+    }
+    for (const entry of files) {
+      if (entry.path === ".topik.yaml") {
+        const manifest = JSON.parse(decodeSource(entry.bytes));
+        for (const source of manifest.sources) source.config = posix.join(directory, source.config);
+        entry.bytes = encodeSource(JSON.stringify(manifest));
+      } else entry.path = posix.join(directory, entry.path);
+    }
+    const project = await readSourceProject({ tree: files });
+    expect(project.compilation.references).toHaveLength(2);
+    expect(
+      project.compilation.references.every(
+        ({ reference }) =>
+          reference.name === "lesson" &&
+          reference.search === "?q=%E9&discount=25%" &&
+          reference.hash === "landing",
+      ),
+    ).toBe(true);
+    expect(resolve(project, kind, href)?.page.page).toBe("lesson");
+    await noop(project, kind);
+    await noop(project, kind, body);
+    const desired = structuredClone(project.compilation.resources);
+    const home = getPage(desired);
+    home.spec.content.value = `${body}\nEdited paragraph.\n`;
+    const result = await planSourceUpdates({
+      project,
+      expectedTreeDigest: project.treeDigest,
+      packageCohort: cohort,
+      desiredResources: desired,
+      operations: [{ kind: "update", resource: `${home.type}/home` }],
+      authority: authority(project),
+      ...contexts(project, kind, `${home.type}/home`),
+    });
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    if (result.ok) {
+      const written = decodeSource(
+        result.plan.candidate.tree.find(({ path }) => path === posix.join(directory, "home.md"))!
+          .bytes,
+      );
+      expect(written).toContain(href);
+      expect(written).toContain("Edited paragraph.");
+      await noop(result.plan.candidate, kind);
+    }
+    // The same spelling with a slash requests a physical folder, not the public route.
+    const invalid = files.map((entry) =>
+      entry.path === posix.join(directory, "home.md")
+        ? { ...entry, bytes: encodeSource(decodeSource(entry.bytes).replaceAll(href, `${route}/`)) }
+        : entry,
+    );
+    await withSourceScratch(invalid, async (dir) => {
+      await expect(compileManifest({ dir })).rejects.toMatchObject({
+        diagnostics: [
+          expect.objectContaining({ id: "link-page-not-found" }),
+          expect.objectContaining({ id: "link-page-not-found" }),
+        ],
+      });
+    });
+  },
+);
+
+test.each(
+  (["wiki", "course", "collection"] as const).flatMap((kind) =>
+    ["./missing%/", "./missing%E9/", "./missing%E9%2F", "./missing%.md/"].flatMap((href) =>
+      (["error", "warning", "off"] as const).flatMap((links) =>
+        [false, true].map((card) => ({ kind, href, links, card })),
+      ),
+    ),
+  ),
+)(
+  "$kind malformed folder $href follows links=$links (card=$card)",
+  async ({ kind, href, links, card }) => {
+    const body = card ? `{% card title="Folder" href="${href}" /%}\n` : `[Folder](${href})\n`;
+    await withSourceScratch(tree(kind, [{ path: "home.md", name: "home", body }]), async (dir) => {
+      const result = compileManifest({ dir, validation: { links } });
+      if (links === "error")
+        await expect(result).rejects.toMatchObject({
+          diagnostics: [expect.objectContaining({ id: "link-page-not-found" })],
+        });
+      else {
+        const compiled = await result;
+        expect(compiled.references).toEqual([]);
+        expect(compiled.diagnostics).toEqual(
+          links === "off"
+            ? []
+            : [expect.objectContaining({ id: "link-page-not-found", level: "warning" })],
+        );
+      }
+    });
+  },
+);
+
+test.each(
+  (["wiki", "course", "collection"] as const).flatMap((kind) =>
+    ["?q=%E9", "?discount=25%"].map((query) => ({ kind, query })),
+  ),
+)("$kind folder queries remain opaque: $query", async ({ kind, query }) => {
+  const href = `./files/${query}#landing`;
+  const body = `[Folder](${href})\n\n{% card title="Folder" href="${href}" /%}\n`;
+  const project = await readSourceProject({
+    tree: tree(kind, [
+      { path: "home.md", name: "home", body },
+      { path: "files/index.md", name: "landing" },
+    ]),
+  });
+  expect(project.compilation.references).toHaveLength(2);
+  expect(
+    project.compilation.references.every(
+      ({ reference }) =>
+        reference.name === "landing" && reference.search === query && reference.hash === "landing",
+    ),
+  ).toBe(true);
+  await noop(project, kind);
+});

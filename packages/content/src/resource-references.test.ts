@@ -85,7 +85,9 @@ describe("portable resource references", () => {
         const href = serializeTopikResourceReference(reference);
         expect(parseTopikResourceReference(href)).toEqual(reference);
         expect(validateTopikHref(href)).toEqual([]);
-        expect(parseTopikResourceReference(href.replace("heading%20name", "%FF"))).toBeNull();
+        const invalidFragment = new URL(href);
+        invalidFragment.hash = "%FF";
+        expect(parseTopikResourceReference(invalidFragment.href)).toBeNull();
       }
     },
   );

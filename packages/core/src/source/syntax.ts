@@ -79,7 +79,7 @@ export const decodeSource = (bytes: Uint8Array): string =>
 function emptyFrontmatter(raw: string): boolean {
   // Only Markdown permits a missing mapping. Explicit nulls, directives and
   // other YAML values still go through the strict mapping inspector.
-  return raw.split(/\r?\n/).every((line) => /^[ \t]*(?:#.*)?$/.test(line));
+  return raw.split(/\r\n|\r|\n/).every((line) => /^[ \t]*(?:#[^\r\n]*)?$/.test(line));
 }
 
 export function inspectFrontmatterSyntax(

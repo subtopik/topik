@@ -40,6 +40,9 @@ const emptyHeaders = [
   "---\n\n---\n",
   "---\n# keep Café\n---\n",
   "---\n  # keep Café\n\n# tail\n---\n",
+  "---\n# keep\u2028comment\n---\n",
+  "---\n# keep\u2029comment\n---\n",
+  "---\n# first\r# second\n---\n",
 ];
 test.each(emptyHeaders.flatMap((header) => ["\n", "\r\n"].map((eol) => ({ header, eol }))))(
   "empty frontmatter supports title insertion and exact no-op: $header with $eol",
@@ -123,6 +126,9 @@ test.each(["\n", "\r\n"])("empty metadata insertion replays exact UTF-8 ranges w
   });
   expect(() => patchFrontmatterFields("null", { title: "Edited" }, eol)).toThrow();
   expect(() => patchFrontmatterFields(raw, { "labels/new": "value" }, eol)).toThrow();
+  expect(() =>
+    patchFrontmatterFields("# comment\rtitle: Existing", { title: "Edited" }, eol),
+  ).toThrow();
 });
 
 test.each(

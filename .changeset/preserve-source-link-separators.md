@@ -7,10 +7,9 @@ trailing path separators when their source files move. Source planning now uses
 the same path normalization as compilation while retaining unchanged authored
 link spelling.
 
-Keep existing non-Markdown file and directory links distinct from page aliases
-during inspection, source comparison and source repairs. Moving a same-stem page
-no longer retargets an unrelated directory link; cards continue to track their
-document targets.
+Keep existing file downloads and declared folder landings distinct from page
+aliases during inspection, source comparison and source repairs. Moving a
+same-stem page does not retarget a folder's declared landing.
 
 Repair retained page links when moving another page creates a directory that
 shadows their source alias. Saved Markdown and compiled resources preserve the

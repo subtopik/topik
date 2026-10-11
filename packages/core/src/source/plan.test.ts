@@ -454,7 +454,7 @@ test.each(["./install.md///?view=full#setup", "/install.md///?view=full#setup"])
 );
 
 test.each(["guide-course", "wiki", "course", "course-dotted"] as const)(
-  "%s directory links remain literal when a same-stem page moves",
+  "%s folder landing links retain identity when a same-stem page moves",
   async (kind) => {
     const directory = kind === "wiki" ? "docs" : "lessons";
     const stem = kind === "course-dotted" ? "next.v1" : "next";
@@ -475,27 +475,32 @@ test.each(["guide-course", "wiki", "course", "course-dotted"] as const)(
       file(
         config,
         kind === "wiki"
-          ? "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation: [home, next]\n"
-          : `id: lessons\ntitle: Lessons\nslug: lessons\nsourceVersion: 1\nmodules: [{id: basics, title: Basics, slug: basics, order: 0, pages: [${kind === "guide-course" ? "" : "home, "}${stem}]}]\n`,
+          ? "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation: [home, {type: page, slug: next-file, source: next}, {type: page, slug: landing, source: next/index}]\n"
+          : `id: lessons\ntitle: Lessons\nslug: lessons\nsourceVersion: 1\nmodules: [{id: basics, title: Basics, slug: basics, order: 0, pages: [${kind === "guide-course" ? "" : "home, "}${stem}, ${stem}/index]}]\n`,
       ),
       ...(kind === "guide-course"
         ? [file("guides/collection.yaml", "id: guides\ntitle: Guides\nsourceVersion: 1\n")]
         : []),
       file(homePath, home),
       file(`${directory}/${stem}.md`, target),
-      file(`${directory}/${stem}/readme.txt`, "Directory contents stay intact.\n"),
+      file(
+        `${directory}/${stem}/index.md`,
+        "---\nid: landing\ntitle: Landing\nslug: landing\norder: 2\n---\n# Next\n",
+      ),
     ];
     const project = await readSourceProject({ tree });
     const compiledHome = project.compilation.resources.find(
       (resource) => resource.type === homeType && resource.name === "home",
     )!;
     expect(compiledHome.spec).toMatchObject({
-      content: { value: `# Home\n\n[Directory](${href})\n` },
+      content: {
+        value: `# Home\n\n[Directory](ref://${kind === "wiki" ? "wiki-page" : "course-page"}/landing${suffix})\n`,
+      },
     });
     expect(
       project.documents.find((document) => document.resource === `${homeType}/home`)?.references[0]
         .target,
-    ).toBeUndefined();
+    ).toBe(`${targetType}/landing`);
     const destination = `${directory}/moved.md`;
     const moved = await planSourceUpdates({
       project,
@@ -528,8 +533,8 @@ test.each(["guide-course", "wiki", "course", "course-dotted"] as const)(
     expect(
       withCard.documents.find((document) => document.resource === `${homeType}/home`)?.references,
     ).toMatchObject([
-      { kind: "link", href },
-      { kind: "card", href, target: `${targetType}/target` },
+      { kind: "link", href, target: `${targetType}/landing` },
+      { kind: "card", href, target: `${targetType}/landing` },
     ]);
     const cardMove = await planSourceUpdates({
       project: withCard,
@@ -545,9 +550,7 @@ test.each(["guide-course", "wiki", "course", "course-dotted"] as const)(
         cardMove.plan.candidate.tree.find((entry) => entry.path === homePath)!.bytes,
       );
       expect(written).toContain(`[Directory](${href})`);
-      expect(written).toContain(
-        `href="${kind === "guide-course" ? "../lessons/moved.md" : kind === "wiki" ? "/next" : "/basics/next"}${suffix}"`,
-      );
+      expect(written).toContain(`href="${href}"`);
     }
   },
 );

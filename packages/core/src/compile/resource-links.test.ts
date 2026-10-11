@@ -208,14 +208,14 @@ test.each(["error", "warning", "off"] as const)(
   },
 );
 
-test("Course dotted directory links stay literal while cards and explicit Markdown links target the page", async () => {
+test("Course dotted folders select their landing while explicit Markdown selects the same-stem page", async () => {
   const href = "./next.v1?view=full#next";
   const dir = await fixture({
     "course.yaml":
-      "sourceVersion: 1\nid: lessons\ntitle: Lessons\nslug: lessons\nmodules: [{id: basics, title: Basics, slug: basics, order: 0, pages: [home, next.v1]}]\n",
+      "sourceVersion: 1\nid: lessons\ntitle: Lessons\nslug: lessons\nmodules: [{id: basics, title: Basics, slug: basics, order: 0, pages: [home, next.v1, next.v1/index]}]\n",
     "home.md": `---\nid: home\ntitle: Home\nslug: home\norder: 0\n---\n# Home\n\n[Directory](${href})\n\n{% card title="Next" href="${href}" /%}\n\n[Page](./next.v1.md#next)\n`,
     "next.v1.md": "---\nid: next-page\ntitle: Next\nslug: next\norder: 1\n---\n# Next\n",
-    "next.v1/readme.txt": "Directory contents stay intact.\n",
+    "next.v1/index.md": "---\nid: landing\ntitle: Landing\nslug: landing\norder: 2\n---\n# Next\n",
   });
   const result = await compileCourse({ dir });
   const home = result.resources.find((resource) => resource.name === "home");
@@ -223,12 +223,13 @@ test("Course dotted directory links stay literal while cards and explicit Markdo
   expect(
     analyzeTopikContent(home.spec.content.value).links.map(({ kind, href }) => ({ kind, href })),
   ).toEqual([
-    { kind: "link", href },
-    { kind: "card", href: "ref://course-page/next-page?view=full#next" },
+    { kind: "link", href: "ref://course-page/landing?view=full#next" },
+    { kind: "card", href: "ref://course-page/landing?view=full#next" },
     { kind: "link", href: "ref://course-page/next-page#next" },
   ]);
   expect(result.references).toMatchObject([
-    { kind: "card", href, reference: { name: "next-page" }, status: "verified" },
+    { kind: "link", href, reference: { name: "landing" }, status: "verified" },
+    { kind: "card", href, reference: { name: "landing" }, status: "verified" },
     {
       kind: "link",
       href: "./next.v1.md#next",

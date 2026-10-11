@@ -11,6 +11,7 @@ import type {
   WikiTabNavNode,
 } from "@topik/schema/wiki/v1";
 import { parseTopikResourceReference } from "@topik/content";
+import { hasDeclaredFolder, isFolderHref, resolveDeclaredSourcePage } from "./folder-links";
 
 const INTERNAL_WIKI_ORIGIN = "https://topik.invalid";
 
@@ -195,13 +196,24 @@ export function resolveWikiContentHref(
   } catch {
     return null;
   }
-  const normalizedPath = decodedPath.replace(/^\/+|\/+$/g, "").replace(/\.(?:mdx?|markdown)$/i, "");
+  const pathname = decodedPath.replace(/^\/+|\/+$/g, "");
+  const markdown =
+    /\.(?:mdx?|markdown)$/i.test(pathname) &&
+    !hasDeclaredFolder(pathname, resolved.pageBySourcePath);
+  const normalizedPath = markdown ? pathname.replace(/\.(?:mdx?|markdown)$/i, "") : pathname;
   const route = normalizedPath === "index" ? "" : normalizedPath.replace(/\/index$/, "");
-  const sourceLink = !href.startsWith("/") || /\.(?:mdx?|markdown)$/i.test(decodedPath);
+  const folder = isFolderHref(href);
+  const sourceLink = !href.startsWith("/") || markdown || folder;
   const page =
-    resolved.sourceVersion === 1 && sourceLink
-      ? resolved.pageBySourcePath.get(normalizedPath)
-      : resolved.pageByRoute.get(route);
+    sourceLink &&
+    (resolved.sourceVersion === 1 ||
+      folder ||
+      hasDeclaredFolder(normalizedPath, resolved.pageBySourcePath))
+      ? markdown
+        ? resolved.pageBySourcePath.get(normalizedPath)
+        : resolveDeclaredSourcePage(normalizedPath, resolved.pageBySourcePath, folder)
+      : (resolved.pageByRoute.get(route) ??
+        resolveDeclaredSourcePage(normalizedPath, resolved.pageBySourcePath, true));
   return page
     ? { page, route: page.route, hash: url.hash.replace(/^#/, ""), search: url.search }
     : null;

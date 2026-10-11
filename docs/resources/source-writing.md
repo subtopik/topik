@@ -31,7 +31,8 @@ Versioned Wiki page navigation can specify `source`, a config-relative Markdown
 path without its extension, separately from the public `slug`. Relative content
 links resolve from the current page's source directory. Root-relative links with
 a Markdown extension address source paths; extensionless root links address
-public routes. Hidden pages remain valid targets. Readers must pass the Wiki's
+public routes, with an explicit trailing slash selecting a source folder landing.
+Hidden pages remain valid targets. Readers must pass the Wiki's
 source version to `resolveWikiNavigation`.
 
 `sourceVersion` versions the interpretation of authored files, not a Wiki's
@@ -240,9 +241,19 @@ page, external URL, Asset, or unresolved reference. Readers can refuse unresolve
 references without hiding failures behind the nullable `resolveWikiContentHref` API.
 Local media/download paths need source-inventory classification and compilation to
 Asset references first; a filename extension alone cannot prove a download exists.
-Existing non-Markdown directories, including dotted paths, retain their authored navigation meaning
-when a same-stem page moves. Cards remain document navigation and may target a
-declared page through that same extensionless alias.
+Folder links select one declared `index`/`README` landing page, including in dotted
+directories. They compile to ordinary page references; missing or ambiguous
+landings are unresolved content links, never directory listings. See
+[folder landing rules](./navigation.md#folder-landing-pages) for path, route and
+declaration precedence. File downloads retain their Asset semantics.
+
+Saved folder spellings are retained while they still identify the same page.
+Moving a landing, adding a competing landing, or creating a directory through a
+page move or media upload can require an incoming link repair. Such repairs need
+both the referring resource's authority and exact file authority, independently
+of authority over the moved page or new upload. Repeated saves of the repaired
+candidate produce no further changes. Regenerate saved projects and plans for
+reference descriptor `source-links-v5` and provenance version `7` before writing.
 
 New media requires exact bytes, digest, desired Asset and declared configuration
 in `media`. It is written into that configuration's `assets.directory`; existing

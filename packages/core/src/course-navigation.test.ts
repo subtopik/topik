@@ -15,6 +15,31 @@ const context: CourseReferenceContext = {
   ],
 };
 
+test("Course folder landings, explicit filenames and public routes retain distinct identities", () => {
+  const pages = [
+    { name: "home", module: "module", slug: "home", sourcePath: "home" },
+    { name: "sibling", module: "module", slug: "sibling", sourcePath: "files" },
+    { name: "landing", module: "module", slug: "landing", sourcePath: "files/index" },
+  ];
+  const resolved = resolveCourseNavigation({ ...context, pages });
+  for (const href of ["./files", "./files/", "/files/", "./files?view=%FF#heading"])
+    expect(resolveCourseContentHref(href, "home", resolved)?.page.page).toBe("landing");
+  for (const href of ["./files.md", "/files.md/", "/basics/sibling"])
+    expect(resolveCourseContentHref(href, "home", resolved)?.page.page).toBe("sibling");
+  expect(resolveCourseContentHref("/basics/sibling/", "home", resolved)).toBeNull();
+  const ambiguous = resolveCourseNavigation({
+    ...context,
+    pages: [
+      ...pages,
+      { name: "readme", module: "module", slug: "readme", sourcePath: "files/README" },
+    ],
+  });
+  expect(resolveCourseContentHref("./files/", "home", ambiguous)).toBeNull();
+  expect(resolveCourseContentHref("./files/index.md", "home", ambiguous)?.page.page).toBe(
+    "landing",
+  );
+});
+
 test("resolves Course source paths and public routes independently while retaining query and fragment", () => {
   const resolved = resolveCourseNavigation(context);
   for (const href of [

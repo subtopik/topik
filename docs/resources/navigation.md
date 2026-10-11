@@ -121,11 +121,40 @@ heading fragments as errors. The CLI's `--links warning` or `--links off` change
 these diagnostics; malformed or unsafe URL admission still applies. Links to
 supported local downloads retain the existing [Asset](./assets.md) behavior.
 
-Links to existing directories that do not resolve to declared pages retain their
-authored URLs, including query strings and fragments. They are not converted to
-`ref://` references or downloadable Assets. Topik does not publish directory
-listings; the application hosting the rendered URL determines its destination.
-Source updates preserve these links on existing and newly created pages.
+### Folder landing pages
+
+A source folder link such as `./files`, `./files/`, or `/files/` selects a declared
+`index` or `README` page directly inside that folder. Landing basenames are matched
+case-insensitively, so `readme.md` also works. The source readers support `.md` and
+`.mdx`; a landing must already be declared by Wiki navigation, Course module pages,
+or a declared Guide collection. A nested Guide folder needs its own declared
+collection. Files on disk do not automatically become pages.
+
+Exactly one declared landing is required. Multiple candidates (including both
+`index` and `README`) report `link-reference-ambiguous`; there is no implicit
+priority. A folder without a declared landing reports `link-page-not-found` under
+the usual error/warning/off link policy. Use an explicit filename to disambiguate.
+Topik never generates pages or directory listings.
+
+Relative folder links use the referring file's directory; root folder links use
+its configuration directory. A real directory takes precedence over a same-stem
+page alias: `./files` selects `files/index.md`, while `./files.md` selects the
+separate file. A trailing slash on a non-Markdown path explicitly requests a
+folder, even if that folder is missing or the path names a download. Explicit
+Markdown filenames retain their existing trailing-separator compatibility
+(`page.md/` still names the file).
+
+Queries and fragments do not alter folder selection. They are copied to the
+landing page's normal `ref://wiki-page/...`, `ref://course-page/...`, or
+`ref://guide/...` reference; known headings are validated on that page. Cards use
+the same folder rule.
+
+An extensionless root URL without a trailing slash still prefers an existing
+Wiki/Course public route. Use `/files/` to explicitly select a config-relative
+folder. The canonical root URL `/` also retains its declared public route; `./`
+selects the referring file's source folder. External URLs remain external. Guide application URLs such as
+`/account/settings/` remain browser URLs when they do not name a local folder;
+explicit relative folder links such as `./missing/` require a landing.
 
 An explicit reference can point to a resource outside the current compilation.
 Topik does not fetch another repository or assume an application namespace. Supply
@@ -226,7 +255,7 @@ content.
 Source inspection retains the original authored destinations and source context
 separately from compiled reference URIs. Reviewed writes preserve relative links
 and direct authored references where their target meaning remains unchanged.
-`SOURCE_WRITER_DESCRIPTOR.references` advances to `source-links-v4`, and its
-`provenance` version advances to `6`. Regenerate saved source projects and update
+`SOURCE_WRITER_DESCRIPTOR.references` advances to `source-links-v5`, and its
+`provenance` version advances to `7`. Regenerate saved source projects and update
 plans from authored source before using them with this writer; do not reuse older
 occurrence or provenance snapshots against the new compiled representation.

@@ -12,10 +12,12 @@ Course navigation resolves portable identities independently of publishing slugs
 while retaining support for existing source paths and routes. Source updates keep
 authored link spelling when its meaning is unchanged and repair incoming links
 when a target moves. Refresh saved source projects before planning writes: the
-writer now uses reference descriptor `source-links-v4` and provenance version `6`.
+writer now uses reference descriptor `source-links-v5` and provenance version `7`.
 
-Preserve unresolved directory URLs through source updates, including query strings
-and configuration-relative URLs on newly created Wiki and Course pages.
+Resolve folder links to a unique declared index or README landing page and emit
+its ordinary portable reference. Report missing or ambiguous landings through the
+link validation policy; never generate directory listings or undeclared pages.
+Preserve saved landing identities and require authority for incoming repairs.
 
 `discoverCourseResources` exposes authoring metadata and paths for consumers that
 combine declared resource inventories before link and Asset compilation.

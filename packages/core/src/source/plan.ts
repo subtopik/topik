@@ -31,6 +31,7 @@ import {
   normalizeSourceResourceReferences,
   prepareSourceResourceReferences,
   restoreSourceResourceReferences,
+  isSourceReferenceShadowed,
 } from "./resource-references";
 import {
   sourcePlanDiagnostics,
@@ -43,11 +44,7 @@ import {
   type SourceAssetReferenceContexts,
 } from "./asset-context";
 import { validateResources } from "../validate";
-import {
-  isSourceNonPageReference,
-  sourceNonMarkdownLinkPath,
-  sourcePathInventory,
-} from "../reference-paths";
+import { isSourceNonPageReference, sourcePathInventory } from "../reference-paths";
 import { serializeTopikJson } from "../assets/json";
 import { generateAutomaticAssetName } from "../assets/asset";
 import { validateTopikPathSet } from "../assets/path";
@@ -930,14 +927,7 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
       const directory = sourceDirectory(key);
       if (isSourceNonPageReference(reference, path, directory, originalInventory)) return true;
       if (hasSavedTarget) return false;
-      // Like compilation, preserve an existing non-Markdown path after page lookup
-      // fails. Directory URLs may have queries or start at the configuration root,
-      // even though neither spelling is an admissible file download.
-      const targetPath = sourceNonMarkdownLinkPath(reference, path, directory);
-      return (
-        targetPath !== undefined &&
-        (originalInventory.has(targetPath) || currentInventory.has(targetPath))
-      );
+      return isSourceNonPageReference(reference, path, directory, currentInventory);
     };
     const referenceDocuments = new Map(
       project.documents.map((document) => [document.resource, document]),
@@ -1042,13 +1032,23 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
             derivedRepairs,
             undefined,
             isNonPageReference,
-            (reference) =>
-              isSourceNonPageReference(
+            (reference) => {
+              const current = resolveCourseContentHref(
+                reference.href,
+                page.name,
+                currentNavigation,
+              );
+              return isSourceReferenceShadowed(
                 reference,
                 paths.get(key)!,
                 source.directory,
+                paths,
+                desired,
                 currentInventory,
-              ),
+                `CoursePage/${current?.page.page}`,
+                current?.page.route,
+              );
+            },
           )
         )
           derivedKeys.add(key);
@@ -1144,11 +1144,15 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
             const before = saved.target;
             const after = resolveWikiContentHref(reference.href, page.name, currentNavigation);
             if (
-              !isSourceNonPageReference(
+              !isSourceReferenceShadowed(
                 reference,
                 paths.get(key)!,
                 source.directory,
+                paths,
+                desired,
                 currentInventory,
+                `WikiPage/${after?.page.page}`,
+                after?.page.route,
               ) &&
               after?.page.page === before.page.page &&
               after.search === before.search &&

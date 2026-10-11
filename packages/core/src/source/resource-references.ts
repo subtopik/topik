@@ -3,13 +3,20 @@ import {
   parseTopikResourceReference,
   rewriteTopikNavigationReferences,
   serializeTopikResourceReference,
+  type TopikNavigationReference,
 } from "@topik/content";
 import type { Resource } from "../resource";
 import { resolveWikiContentHref, resolveWikiNavigation } from "../wiki-navigation";
 import { SourcePlanningError } from "./diagnostics";
 import { withSourceScratch, type SourceDocumentProvenance, type SourceProject } from "./project";
 import { compileResourceLinks } from "../compile/links";
-import { isSourceNonPageReference, resolveSourceReferencePath } from "../reference-paths";
+import {
+  isSourceNonPageReference,
+  isSourceFolderReference,
+  resolveSourceReferencePath,
+  sourcePathInventory,
+} from "../reference-paths";
+import { folderLandingCandidates, isPublicRouteHref } from "../folder-links";
 import { resolveCourseContentHref, resolveCourseNavigation } from "../course-navigation";
 import { sourceCourseContext } from "./course";
 
@@ -21,6 +28,32 @@ function courseName(
   if (resource.type !== "CoursePage") return undefined;
   const module = resources.get(`CourseModule/${resource.spec.module}`);
   return module?.type === "CourseModule" ? module.spec.course : undefined;
+}
+
+function isDeclaredPublicRoute(
+  resource: ContentResource,
+  href: string,
+  paths: ReadonlyMap<string, string>,
+  resources: ReadonlyMap<string, Resource>,
+): boolean {
+  if (!href.startsWith("/")) return false;
+  if (resource.type === "WikiPage") {
+    const wiki = resources.get(`Wiki/${resource.spec.wiki}`);
+    if (wiki?.type !== "Wiki") return false;
+    const navigation = resolveWikiNavigation(wiki.spec.navigation ?? [], {
+      sourceVersion: wiki.spec.sourceVersion,
+    });
+    return [...navigation.pageByRoute.keys()].some((route) => isPublicRouteHref(href, route));
+  }
+  if (resource.type !== "CoursePage") return false;
+  const course = resources.get(`Course/${courseName(resource, resources)}`);
+  const config = course && paths.get(`Course/${course.name}`);
+  if (course?.type !== "Course" || !config) return false;
+  const directory = posix.dirname(config);
+  const navigation = resolveCourseNavigation(
+    sourceCourseContext([...resources.values()], course, paths, directory === "." ? "" : directory),
+  );
+  return [...navigation.pageByRoute.keys()].some((route) => isPublicRouteHref(href, route));
 }
 export interface SourceReferenceRepair {
   resource: string;
@@ -55,12 +88,20 @@ export function prepareSourceResourceReferences(
         isSourceNonPageReference(reference, document?.path ?? path, directory, originalInventory)
       )
         return undefined;
+      // Preserve public-route interpretation for scope-local transport, including
+      // when a different declared source has a folder at the same filesystem path.
+      if (
+        isDeclaredPublicRoute(resource, reference.href, originalPaths, base) ||
+        isDeclaredPublicRoute(resource, reference.href, currentPaths, desired)
+      )
+        return undefined;
       const originalTarget = resolveSourcePathReference(
         reference.href,
         document?.path ?? path,
         directory,
         originalPaths,
         base,
+        originalInventory,
       );
       // A new directory cannot replace an already established page destination.
       if (
@@ -76,6 +117,7 @@ export function prepareSourceResourceReferences(
           directory,
           currentPaths,
           desired,
+          currentInventory,
         );
       if (
         !target ||
@@ -133,12 +175,57 @@ export function resolveSourcePathReference(
   directory: string,
   paths: ReadonlyMap<string, string>,
   resources: ReadonlyMap<string, Resource>,
+  inventory: ReadonlySet<string> = sourcePathInventory(paths.values()),
 ): ContentResource | undefined {
   if (href.startsWith("#") || /^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("//"))
     return undefined;
   const path = resolveSourceReferencePath(href, sourcePath, directory);
-  if (!path || (href.startsWith("/") && !/\.(?:mdx?|markdown)$/i.test(path))) return undefined;
+  if (path === undefined) return undefined;
+  if (isSourceFolderReference(href, sourcePath, directory, inventory)) {
+    const pages = new Map<string, ContentResource[]>();
+    for (const [key, source] of paths) {
+      const resource = resources.get(key);
+      if (
+        !resource ||
+        (resource.type !== "WikiPage" &&
+          resource.type !== "Guide" &&
+          resource.type !== "CoursePage") ||
+        !/\.(?:mdx?|markdown)$/i.test(source)
+      )
+        continue;
+      const stem = source.replace(/\.(?:mdx?|markdown)$/i, "");
+      pages.set(stem, [...(pages.get(stem) ?? []), resource]);
+    }
+    const candidates = folderLandingCandidates(path, pages).flat();
+    return candidates.length === 1 ? candidates[0] : undefined;
+  }
+  if (href.startsWith("/") && !/\.(?:mdx?|markdown)$/i.test(path)) return undefined;
   return findSourceReferenceTarget(path, paths, resources);
+}
+
+/** Candidate filesystem precedence must still agree with the selected page identity. */
+export function isSourceReferenceShadowed(
+  reference: Pick<TopikNavigationReference, "href" | "kind">,
+  path: string,
+  directory: string,
+  paths: ReadonlyMap<string, string>,
+  resources: ReadonlyMap<string, Resource>,
+  inventory: ReadonlySet<string>,
+  target: string,
+  route?: string,
+): boolean {
+  if (isPublicRouteHref(reference.href, route)) return false;
+  if (isSourceNonPageReference(reference, path, directory, inventory)) return true;
+  if (!isSourceFolderReference(reference.href, path, directory, inventory)) return false;
+  const page = resolveSourcePathReference(
+    reference.href,
+    path,
+    directory,
+    paths,
+    resources,
+    inventory,
+  );
+  return !page || `${page.type}/${page.name}` !== target;
 }
 
 function findSourceReferenceTarget(
@@ -237,14 +324,19 @@ export function restoreSourceResourceReferences(
       const suffix = `${identity.search}${identity.hash ? `#${identity.hash}` : ""}`;
       let href = saved.href;
       // Candidate files and directories take precedence over navigation aliases at compile time.
-      const nonPage = isSourceNonPageReference(
-        saved,
-        path,
-        document?.directory ?? "",
-        currentInventory,
-      );
+      const shadowed = (route?: string) =>
+        isSourceReferenceShadowed(
+          saved,
+          path,
+          document?.directory ?? "",
+          paths,
+          desired,
+          currentInventory,
+          targetKey,
+          route,
+        );
       let unchangedContext =
-        !nonPage && document?.path === path && destination === originalPaths.get(targetKey);
+        !shadowed() && document?.path === path && destination === originalPaths.get(targetKey);
       // An unchanged source path can still acquire a different meaning after route edits.
       if (
         resource.type === "WikiPage" &&
@@ -258,7 +350,7 @@ export function restoreSourceResourceReferences(
           });
           const current = resolveWikiContentHref(saved.href, resource.name, navigation);
           unchangedContext =
-            !nonPage &&
+            !shadowed(current?.page.route) &&
             current?.page.page === identity.name &&
             current.search === identity.search &&
             current.hash === identity.hash;
@@ -285,7 +377,7 @@ export function restoreSourceResourceReferences(
           );
           const current = resolveCourseContentHref(saved.href, resource.name, navigation);
           unchangedContext =
-            !nonPage &&
+            !shadowed(current?.page.route) &&
             current?.page.page === identity.name &&
             current.search === identity.search &&
             current.hash === identity.hash;

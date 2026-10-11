@@ -1,5 +1,6 @@
 import { validateTopikPath, validateTopikPathSet } from "./assets/path";
 import { parseTopikResourceReference } from "@topik/content";
+import { hasDeclaredFolder, isFolderHref, resolveDeclaredSourcePage } from "./folder-links";
 
 const INTERNAL_COURSE_ORIGIN = "https://topik.invalid";
 const RESOURCE_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -149,11 +150,18 @@ export function resolveCourseContentHref(
     return null;
   }
   const pathname = path.replace(/^\/+|\/+$/g, "");
-  const normalized = pathname.replace(/\.(?:mdx?|markdown)$/i, "");
-  const sourceLink = !href.startsWith("/") || /\.(?:mdx?|markdown)$/i.test(pathname);
+  const markdown =
+    /\.(?:mdx?|markdown)$/i.test(pathname) &&
+    !hasDeclaredFolder(pathname, resolved.pageBySourcePath);
+  const normalized = markdown ? pathname.replace(/\.(?:mdx?|markdown)$/i, "") : pathname;
+  const folder = isFolderHref(href);
+  const sourceLink = !href.startsWith("/") || markdown || folder;
   const page = sourceLink
-    ? resolved.pageBySourcePath.get(normalized)
-    : resolved.pageByRoute.get(normalized);
+    ? markdown
+      ? resolved.pageBySourcePath.get(normalized)
+      : resolveDeclaredSourcePage(normalized, resolved.pageBySourcePath, folder)
+    : (resolved.pageByRoute.get(normalized) ??
+      resolveDeclaredSourcePage(normalized, resolved.pageBySourcePath, true));
   return page
     ? { page, route: page.route, hash: url.hash.replace(/^#/, ""), search: url.search }
     : null;

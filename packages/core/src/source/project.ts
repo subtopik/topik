@@ -53,8 +53,8 @@ export const SOURCE_WRITER_DESCRIPTOR = {
   formatter: FORMAT_VERSION,
   contentSchema: TOPIK_CONTENT_SCHEMA_VERSION,
   resourceSchema: "v1",
-  references: "source-links-v4",
-  provenance: 6,
+  references: "source-links-v5",
+  provenance: 7,
   graph: "authored-resource-bytes-v1",
   packageVersion: corePackage.version,
 } as const;

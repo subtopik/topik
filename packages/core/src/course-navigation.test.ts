@@ -53,6 +53,27 @@ test("unknown Course context remains unresolved and compiled Assets and external
   });
 });
 
+test("portable CoursePage identities resolve independently of the current page and publishing slug", () => {
+  const resolved = resolveCourseNavigation(context);
+  expect(
+    resolveCourseContentHref("ref://course-page/target?mode=full#details", "missing", resolved),
+  ).toMatchObject({
+    page: { page: "target" },
+    route: "basics/destination",
+    search: "?mode=full",
+    hash: "details",
+  });
+  for (const href of [
+    "ref://course-page/destination",
+    "ref://course-page/missing",
+    "ref://guide/target",
+    "ref://wiki-page/target",
+  ])
+    expect(resolveCourseContentReference(href, "intro", resolved)).toEqual({
+      kind: "unresolved",
+    });
+});
+
 test("literal hash characters in Course source paths remain path data when resolving relative links", () => {
   const resolved = resolveCourseNavigation({
     ...context,

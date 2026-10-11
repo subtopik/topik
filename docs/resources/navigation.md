@@ -95,11 +95,13 @@ Compilation replaces resolved document destinations with portable resource URIs:
 ```markdown
 [Next](ref://wiki-page/next-page)
 [Install](ref://guide/install-guide?view=full#setup)
+[Lesson](ref://course-page/setup-lesson#exercise)
 ```
 
-The authority is the resource kind, `wiki-page` or `guide`; the single path segment
-is the exact destination `resource.name`. A Guide's `spec.slug` and a WikiPage's
-navigation route are separate publishing metadata. Reference names do not depend
+The authority is the resource kind, `wiki-page`, `guide`, or `course-page`; the
+single path segment is the exact destination `resource.name`. A Guide's `spec.slug`,
+a WikiPage's navigation route, and a CoursePage's module/page slugs are separate
+publishing metadata. Reference names do not depend
 on the application's URL prefix. The canonical form uses lowercase kinds and
 resource names; query parameters and fragments are retained. `@topik/content`
 exports `parseTopikResourceReference`, `serializeTopikResourceReference`, and
@@ -108,7 +110,7 @@ exports `parseTopikResourceReference`, `serializeTopikResourceReference`, and
 Authors may write either relative Markdown destinations or `ref://` destinations
 directly, including card `href` properties and reference-style Markdown links.
 The compiler resolves relative document links against declared source resources,
-including Guide targets and links between source kinds in a manifest. Explicit
+including CoursePage and Guide targets and links between source kinds in a manifest. Explicit
 references identify a resource without depending on its file location. Changing
 a resource name requires updating its incoming references; changing only its
 public route does not. Use persistent names in versioned source metadata when
@@ -121,15 +123,18 @@ supported local downloads retain the existing [Asset](./assets.md) behavior.
 
 An explicit reference can point to a resource outside the current compilation.
 Topik does not fetch another repository or assume an application namespace. Supply
-the optional `referenceTargets` inventory to `compile`, `compileWiki`, or
-`compileGuides` when other published targets are known:
+the optional `referenceTargets` inventory to `compile`, `compileWiki`,
+`compileGuides`, or `compileCourse` when other published targets are known:
 
 ```ts
 import { compileWiki } from "@topik/core";
 
 const result = await compileWiki({
   dir: "./handbook",
-  referenceTargets: [{ type: "Guide", name: "install-guide", headings: ["setup"] }],
+  referenceTargets: [
+    { type: "Guide", name: "install-guide", headings: ["setup"] },
+    { type: "CoursePage", name: "setup-lesson", headings: ["exercise"] },
+  ],
 });
 ```
 
@@ -168,7 +173,10 @@ The resolver exposes page lookup maps, logical source paths, canonical routes,
 and tab/dropdown/group ancestry. The application supplies its URL prefix and
 navigation UI. `resolveWikiContentHref` accepts compiled `ref://wiki-page/<name>`
 destinations and retains support for older relative source links. It resolves only
-WikiPage references; the application supplies its Guide catalogue and routes.
+WikiPage references; the application supplies its Guide and CoursePage catalogues
+and routes. `resolveCourseNavigation` and `resolveCourseContentHref`, also available
+from `@topik/core/course-navigation`, resolve CoursePage references against one
+Course's module/page routes while retaining older source-path and route links.
 See [Rendering](../content/rendering.md#integrate-with-application-urls) for the
 React link hooks and the browser-URL requirement.
 
@@ -194,23 +202,25 @@ Unknown targets, missing route callbacks, and invalid browser URLs return
 reference diagnostic. Queries and fragments are applied to the selected route.
 
 For applications combining Markdown with their own resource inputs,
-`discoverWikiResources` and `discoverGuideResources` read authoring metadata and
-source paths without compiling Assets or resolving destinations. Merge the
+`discoverWikiResources`, `discoverGuideResources`, and `discoverCourseResources`
+read authoring metadata and source paths without compiling Assets or resolving
+destinations. Merge the
 declared inventory, run `compileResourceLinks`, check its diagnostics, then pass
 its rewritten resources to `compileAssetResources`. This keeps document targets
 from being mistaken for downloads.
 
 ## Migrate compiled resources and source snapshots
 
-Compiled WikiPage and Guide link destinations now use `ref://` rather than source
-file paths. Deploy a renderer that resolves these references before publishing
-newly compiled content. Existing relative-link resources remain supported by the
-wiki resolver while applications recompile their content.
+Compiled WikiPage, Guide, and CoursePage link destinations now use `ref://` rather
+than source file paths. Deploy a renderer that resolves these references before
+publishing newly compiled content. Existing relative-link resources remain
+supported by the Wiki and Course resolvers while applications recompile their
+content.
 
 Source inspection retains the original authored destinations and source context
 separately from compiled reference URIs. Reviewed writes preserve relative links
 and direct authored references where their target meaning remains unchanged.
-`SOURCE_WRITER_DESCRIPTOR.references` advances to `source-links-v3`, and its
-`provenance` version advances to `5`. Regenerate saved source projects and update
+`SOURCE_WRITER_DESCRIPTOR.references` advances to `source-links-v4`, and its
+`provenance` version advances to `6`. Regenerate saved source projects and update
 plans from authored source before using them with this writer; do not reuse older
 occurrence or provenance snapshots against the new compiled representation.

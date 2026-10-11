@@ -27,6 +27,12 @@ describe("portable resource references", () => {
       search: "",
       hash: "",
     });
+    expect(parseTopikResourceReference("REF://Course-Page/%69ntro?view=full#setup")).toEqual({
+      type: "CoursePage",
+      name: "intro",
+      search: "?view=full",
+      hash: "setup",
+    });
   });
 
   test("canonicalizes scheme, kind, and percent-encoded resource names", () => {
@@ -48,8 +54,8 @@ describe("portable resource references", () => {
     });
   });
 
-  test("roundtrips both kinds without treating query paths or fragments as resource names", () => {
-    for (const type of ["WikiPage", "Guide"] as const) {
+  test("roundtrips every kind without treating query paths or fragments as resource names", () => {
+    for (const type of ["WikiPage", "Guide", "CoursePage"] as const) {
       const reference: TopikResourceReference = {
         type,
         name: "stable-name-12",
@@ -95,7 +101,7 @@ describe("portable resource references", () => {
     "ref:guide/install",
     "ref:://guide/install",
     "ref:///guide/install",
-    "ref://course-page/install",
+    "ref://course/install",
     "ref://article/guide/install",
     "ref://user:secret@guide/install",
     "ref://guide:123/install",
@@ -142,7 +148,11 @@ describe("portable resource references", () => {
 
 describe("resource reference admission", () => {
   test("admits authored navigation but requires resolution at a browser boundary", () => {
-    for (const href of ["ref://wiki-page/intro#setup", "REF://Guide/install?view=full"]) {
+    for (const href of [
+      "ref://wiki-page/intro#setup",
+      "REF://Guide/install?view=full",
+      "ref://course-page/intro#setup",
+    ]) {
       expect(validateTopikHref(href)).toEqual([]);
       expect(validateTopikBrowserHref(href)).toEqual([
         {

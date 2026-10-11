@@ -9,9 +9,19 @@ import { resolveWikiContentHref, resolveWikiNavigation } from "../wiki-navigatio
 import { SourcePlanningError } from "./diagnostics";
 import { withSourceScratch, type SourceDocumentProvenance, type SourceProject } from "./project";
 import { compileResourceLinks } from "../compile/links";
-import { validateTopikPath } from "../assets/path";
+import { isSourceNonPageReference, resolveSourceReferencePath } from "../reference-paths";
+import { resolveCourseContentHref, resolveCourseNavigation } from "../course-navigation";
+import { sourceCourseContext } from "./course";
 
 type ContentResource = Extract<Resource, { type: "WikiPage" | "Guide" | "CoursePage" }>;
+function courseName(
+  resource: ContentResource,
+  resources: ReadonlyMap<string, Resource>,
+): string | undefined {
+  if (resource.type !== "CoursePage") return undefined;
+  const module = resources.get(`CourseModule/${resource.spec.module}`);
+  return module?.type === "CourseModule" ? module.spec.course : undefined;
+}
 export interface SourceReferenceRepair {
   resource: string;
   kind: "reference";
@@ -31,6 +41,8 @@ export function prepareSourceResourceReferences(
   currentPaths: ReadonlyMap<string, string>,
   base: ReadonlyMap<string, Resource>,
   desired: ReadonlyMap<string, Resource>,
+  originalInventory: ReadonlySet<string>,
+  currentInventory: ReadonlySet<string>,
 ): SourceDocumentProvenance | undefined {
   const supplied: SourceDocumentProvenance["references"][number][] = [];
   const rewritten = rewriteTopikNavigationReferences(
@@ -39,7 +51,9 @@ export function prepareSourceResourceReferences(
       if (
         parseTopikResourceReference(reference.href) ||
         reference.href.startsWith("#") ||
-        /^[a-z][a-z0-9+.-]*:/i.test(reference.href)
+        /^[a-z][a-z0-9+.-]*:/i.test(reference.href) ||
+        isSourceNonPageReference(reference, document?.path ?? path, directory, originalInventory) ||
+        isSourceNonPageReference(reference, document?.path ?? path, directory, currentInventory)
       )
         return undefined;
       const target =
@@ -61,7 +75,10 @@ export function prepareSourceResourceReferences(
         !target ||
         (resource.type === "WikiPage" &&
           target.type === "WikiPage" &&
-          resource.spec.wiki === target.spec.wiki)
+          resource.spec.wiki === target.spec.wiki) ||
+        (resource.type === "CoursePage" &&
+          target.type === "CoursePage" &&
+          courseName(resource, desired) === courseName(target, desired))
       )
         return undefined;
       const url = new URL(reference.href, "https://topik.invalid");
@@ -110,30 +127,19 @@ export function resolveSourcePathReference(
   directory: string,
   paths: ReadonlyMap<string, string>,
   resources: ReadonlyMap<string, Resource>,
-): Extract<Resource, { type: "WikiPage" | "Guide" }> | undefined {
+): ContentResource | undefined {
   if (href.startsWith("#") || /^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("//"))
     return undefined;
-  try {
-    const pathname = decodeURIComponent(href.split(/[?#]/, 1)[0]);
-    if (pathname.startsWith("/") && !/\.(?:mdx?|markdown)$/i.test(pathname)) return undefined;
-    const resolved = validateTopikPath(
-      pathname.startsWith("/")
-        ? posix.join(directory, pathname.slice(1))
-        : posix.join(posix.dirname(sourcePath), pathname || posix.basename(sourcePath)),
-    );
-    return resolved.ok
-      ? findSourceReferenceTarget(resolved.value.path, paths, resources)
-      : undefined;
-  } catch {
-    return undefined;
-  }
+  const path = resolveSourceReferencePath(href, sourcePath, directory);
+  if (!path || (href.startsWith("/") && !/\.(?:mdx?|markdown)$/i.test(path))) return undefined;
+  return findSourceReferenceTarget(path, paths, resources);
 }
 
 function findSourceReferenceTarget(
   path: string,
   paths: ReadonlyMap<string, string>,
   resources: ReadonlyMap<string, Resource>,
-): Extract<Resource, { type: "WikiPage" | "Guide" }> | undefined {
+): ContentResource | undefined {
   const exact = [...paths].filter(([, sourcePath]) => sourcePath === path);
   // An explicit extension names a file, rather than a logical stem shared by .md and .mdx.
   const candidates =
@@ -145,8 +151,10 @@ function findSourceReferenceTarget(
   const targets = candidates
     .map(([key]) => resources.get(key))
     .filter(
-      (resource): resource is Extract<Resource, { type: "WikiPage" | "Guide" }> =>
-        resource?.type === "WikiPage" || resource?.type === "Guide",
+      (resource): resource is ContentResource =>
+        resource?.type === "WikiPage" ||
+        resource?.type === "Guide" ||
+        resource?.type === "CoursePage",
     );
   return targets.length === 1 ? targets[0] : undefined;
 }
@@ -235,6 +243,32 @@ export function restoreSourceResourceReferences(
             sourceVersion: wiki.spec.sourceVersion,
           });
           const current = resolveWikiContentHref(saved.href, resource.name, navigation);
+          unchangedContext =
+            current?.page.page === identity.name &&
+            current.search === identity.search &&
+            current.hash === identity.hash;
+          const page = navigation.pageByName.get(identity.name);
+          if (page && !unchangedContext)
+            href = `/${page.route.split("/").map(encodeURIComponent).join("/")}${suffix}`;
+        }
+      } else if (
+        resource.type === "CoursePage" &&
+        target?.type === "CoursePage" &&
+        courseName(resource, desired) === courseName(target, desired)
+      ) {
+        const course = desired.get(`Course/${courseName(resource, desired)}`);
+        const configPath = course && paths.get(`Course/${course.name}`);
+        if (course?.type === "Course" && configPath) {
+          const directory = posix.dirname(configPath);
+          const navigation = resolveCourseNavigation(
+            sourceCourseContext(
+              [...desired.values()],
+              course,
+              paths,
+              directory === "." ? "" : directory,
+            ),
+          );
+          const current = resolveCourseContentHref(saved.href, resource.name, navigation);
           unchangedContext =
             current?.page.page === identity.name &&
             current.search === identity.search &&

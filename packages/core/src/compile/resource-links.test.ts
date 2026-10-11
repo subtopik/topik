@@ -6,6 +6,7 @@ import { analyzeTopikContent } from "@topik/content";
 import { compileManifest } from "./manifest";
 import { compileGuides } from "./guide";
 import { compileWiki } from "./wiki";
+import { compileCourse } from "./course";
 import type { CompileResourceReferenceTarget } from "./links";
 import { createProjectAssetNameGenerator } from "./asset-names";
 
@@ -104,6 +105,110 @@ test("standalone Guide compilation rewrites inline and reference links while pre
   expect(result.references).toMatchObject([{ href: "./install.mdx#setup", status: "verified" }]);
 });
 
+test("declared Course pages participate in cross-kind links, cards and portable target validation", async () => {
+  const projectManifest = JSON.parse(manifest) as { sources: unknown[] };
+  projectManifest.sources.push({ kind: "course", config: "lessons/course.yaml" });
+  const dir = await fixture({
+    ".topik.yaml": JSON.stringify(projectManifest),
+    "docs/wiki.yaml": wikiConfig,
+    "docs/pages/start.md":
+      "---\nid: overview-page\n---\n# Overview\n\n[Lesson](../../lessons/next.md?view=full#setup)\n",
+    "guides/collection.yaml": guideConfig,
+    "guides/install.md":
+      '---\nid: installation-guide\nslug: install\n---\n# Install\n\n{% card title="Lesson" href="../lessons/next.md#setup" /%}\n',
+    "lessons/course.yaml":
+      "sourceVersion: 1\nid: lessons\ntitle: Lessons\nslug: learn\nmodules: [{id: basics, title: Basics, slug: basics, order: 0, pages: [intro, next]}]\n",
+    "lessons/intro.md":
+      "---\nid: introduction\ntitle: Intro\nslug: intro\norder: 0\n---\n# Intro\n\n[Next](./next.md#setup)\n\n[Route](/basics/next#setup)\n\n[Guide](../guides/install.md#install)\n",
+    "lessons/next.md":
+      "---\nid: lesson-page\ntitle: Next\nslug: next\norder: 1\n---\n# Setup\n\n[Overview](../docs/pages/start.md#overview)\n",
+  });
+  const result = await compileManifest({ dir });
+  expect(result.references).toHaveLength(6);
+  expect(result.references.every(({ status }) => status === "verified")).toBe(true);
+  expect(
+    result.references.filter(({ reference }) => reference.type === "CoursePage"),
+  ).toMatchObject([
+    { href: "./next.md#setup", reference: { name: "lesson-page", hash: "setup" } },
+    { href: "/basics/next#setup", reference: { name: "lesson-page", hash: "setup" } },
+    { kind: "card", reference: { name: "lesson-page", hash: "setup" } },
+    { reference: { name: "lesson-page", search: "?view=full", hash: "setup" } },
+  ]);
+  const intro = result.resources.find(
+    (resource) => resource.type === "CoursePage" && resource.name === "introduction",
+  );
+  if (intro?.type !== "CoursePage") throw new Error("Expected the introduction Course page");
+  expect(analyzeTopikContent(intro.spec.content.value).links.map(({ href }) => href)).toEqual([
+    "ref://course-page/lesson-page#setup",
+    "ref://course-page/lesson-page#setup",
+    "ref://guide/installation-guide#install",
+  ]);
+  expect(await readFile(join(dir, "lessons/intro.md"), "utf8")).toContain("./next.md#setup");
+  expect(result.payloads).toEqual([]);
+});
+
+test("Course links and cards resolve dotted logical source aliases with query and fragment", async () => {
+  const href = "./next.v1?view=full#next";
+  const dir = await fixture({
+    "course.yaml":
+      "sourceVersion: 1\nid: lessons\ntitle: Lessons\nslug: lessons\nmodules: [{id: basics, title: Basics, slug: basics, order: 0, pages: [home, next.v1]}]\n",
+    "home.md": `---\nid: home\ntitle: Home\nslug: home\norder: 0\n---\n# Home\n\n[Next](${href})\n\n{% card title="Next" href="${href}" /%}\n`,
+    "next.v1.md": "---\nid: next-page\ntitle: Next\nslug: next\norder: 1\n---\n# Next\n",
+  });
+  const result = await compileCourse({ dir });
+  const home = result.resources.find((resource) => resource.name === "home");
+  if (home?.type !== "CoursePage") throw new Error("Expected the home Course page");
+  expect(
+    analyzeTopikContent(home.spec.content.value).links.map(({ kind, href }) => ({ kind, href })),
+  ).toEqual([
+    { kind: "link", href: "ref://course-page/next-page?view=full#next" },
+    { kind: "card", href: "ref://course-page/next-page?view=full#next" },
+  ]);
+  expect(result.references).toMatchObject([
+    {
+      kind: "link",
+      href,
+      reference: { type: "CoursePage", name: "next-page", search: "?view=full", hash: "next" },
+      status: "verified",
+    },
+    { kind: "card", href, reference: { name: "next-page" }, status: "verified" },
+  ]);
+  expect(result.diagnostics).toEqual([]);
+  expect(result.payloads).toEqual([]);
+});
+
+test("Course dotted directory links stay literal while cards and explicit Markdown links target the page", async () => {
+  const href = "./next.v1?view=full#next";
+  const dir = await fixture({
+    "course.yaml":
+      "sourceVersion: 1\nid: lessons\ntitle: Lessons\nslug: lessons\nmodules: [{id: basics, title: Basics, slug: basics, order: 0, pages: [home, next.v1]}]\n",
+    "home.md": `---\nid: home\ntitle: Home\nslug: home\norder: 0\n---\n# Home\n\n[Directory](${href})\n\n{% card title="Next" href="${href}" /%}\n\n[Page](./next.v1.md#next)\n`,
+    "next.v1.md": "---\nid: next-page\ntitle: Next\nslug: next\norder: 1\n---\n# Next\n",
+    "next.v1/readme.txt": "Directory contents stay intact.\n",
+  });
+  const result = await compileCourse({ dir });
+  const home = result.resources.find((resource) => resource.name === "home");
+  if (home?.type !== "CoursePage") throw new Error("Expected the home Course page");
+  expect(
+    analyzeTopikContent(home.spec.content.value).links.map(({ kind, href }) => ({ kind, href })),
+  ).toEqual([
+    { kind: "link", href },
+    { kind: "card", href: "ref://course-page/next-page?view=full#next" },
+    { kind: "link", href: "ref://course-page/next-page#next" },
+  ]);
+  expect(result.references).toMatchObject([
+    { kind: "card", href, reference: { name: "next-page" }, status: "verified" },
+    {
+      kind: "link",
+      href: "./next.v1.md#next",
+      reference: { name: "next-page" },
+      status: "verified",
+    },
+  ]);
+  expect(result.diagnostics).toEqual([]);
+  expect(result.payloads).toEqual([]);
+});
+
 test("normalizes authored refs and records unknown references for application resolution", async () => {
   const dir = await fixture({
     "collection.yaml": guideConfig,
@@ -154,18 +259,20 @@ test("supplied target catalogues validate explicit external references without i
   const dir = await fixture({
     "collection.yaml": guideConfig,
     "intro.md":
-      "---\nid: introduction\nslug: intro\ntitle: Introduction\n---\n# Introduction\n\n[External](ref://wiki-page/external#details)\n[No metadata](ref://guide/other#setup)\n[No fragment](ref://guide/other)\n",
+      "---\nid: introduction\nslug: intro\ntitle: Introduction\n---\n# Introduction\n\n[External](ref://wiki-page/external#details)\n[No metadata](ref://guide/other#setup)\n[No fragment](ref://guide/other)\n[Lesson](ref://course-page/external#setup)\n",
   });
   const result = await compileGuides({
     dir,
     referenceTargets: [
       { type: "WikiPage", name: "external", headings: ["details"] },
       { type: "Guide", name: "other" },
+      { type: "CoursePage", name: "external", headings: ["setup"] },
     ],
   });
   expect(result.references.map(({ status }) => status)).toEqual([
     "verified",
     "deferred",
+    "verified",
     "verified",
   ]);
   expect(result.resources).toHaveLength(1);

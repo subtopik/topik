@@ -167,8 +167,8 @@ to map each generated name to a delivered URL; see [Assets](../resources/assets.
 Missing or malformed generated references emit an asset diagnostic and omit the
 unresolved browser-facing URL.
 
-Compiled document links identify resources through `ref://wiki-page/<name>` or
-`ref://guide/<name>`. The name is the destination's exact `resource.name`, not its
+Compiled document links identify resources through `ref://wiki-page/<name>`,
+`ref://guide/<name>` or `ref://course-page/<name>`. The name is the destination's exact `resource.name`, not its
 route slug. Queries and heading fragments remain on the reference. Authors can
 also use this syntax directly; see [Links between pages](../resources/navigation.md#links-between-pages).
 
@@ -183,6 +183,7 @@ import { TopikContent } from "@topik/content-react/theme";
 const routes = new Map([
   ["WikiPage/installation", "/docs/install"],
   ["Guide/getting-started", "/learn/start"],
+  ["CoursePage/first-lesson", "/courses/basics/start"],
 ]);
 
 function resolveLink(href: string): string | undefined {
@@ -228,7 +229,21 @@ For wiki route metadata, use the shared
 [Navigation helpers](../resources/navigation.md#resolve-navigation-in-an-application).
 Astro's `createTopikLinkResolver` builds the same hook from collection entries and
 application-supplied route callbacks; Astro loaders retain the compiled references
-in each entry's body.
+in each entry's body. Supply the `wikiPages`, `guides` and `coursePages` catalogues
+with their corresponding `resolveWikiPage`, `resolveGuide` and `resolveCoursePage`
+callbacks. Course entries can come from an application's existing collections:
+
+```ts
+import { createTopikLinkResolver } from "@topik/astro";
+
+const resolveLink = createTopikLinkResolver({
+  coursePages: [{ id: "first-lesson", data: { slug: "start", course: "basics" } }],
+  resolveCoursePage: (entry) => `/courses/${entry.data.course}/${entry.data.slug}`,
+});
+
+resolveLink("ref://course-page/first-lesson#exercise");
+// /courses/basics/start#exercise
+```
 
 `components` overrides change React presentation. Content semantics and permitted
 properties remain governed by `config.components`; changing a renderer does not

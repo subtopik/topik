@@ -106,8 +106,10 @@ stable independently of file names, public slugs and ordering.
 
 Relative links resolve against a page's source path. Extensionless root links
 address public module/page routes such as `/foundations/introduction`; root links
-with a Markdown extension address source paths. Compilation preserves query
-strings and fragments and validates targets and headings. Images and downloads
+with a Markdown extension address source paths. Compilation rewrites declared
+document links to portable `ref://course-page/<name>`, `ref://wiki-page/<name>`, or
+`ref://guide/<name>` identities, preserves query strings and fragments, and
+validates known targets and headings. Images and downloads
 use the shared project Asset pipeline and the Course's local `assets.directory`.
 
 Course source context is separate from the Course resource. Inspection returns
@@ -117,6 +119,13 @@ source positions. Retain that immutable context with saved content and pass it a
 This preserves a saved link's target when modules, routes or files move; missing
 or incomplete required context blocks planning. Applications can import the
 browser-safe resolver from `@topik/core/course-navigation`.
+
+Portable CoursePage references use the exact page resource name rather than its
+module/page route. They can target pages in another declared Course as well as
+the current Course. Retained contexts remain necessary for edited source-relative
+or route links when their routing context changes; portable identities already
+carry their target. Source writes restore the original authored links where their
+meaning is unchanged and repair their destinations when files or routes move.
 
 ## Inspect and plan
 
@@ -231,6 +240,9 @@ page, external URL, Asset, or unresolved reference. Readers can refuse unresolve
 references without hiding failures behind the nullable `resolveWikiContentHref` API.
 Local media/download paths need source-inventory classification and compilation to
 Asset references first; a filename extension alone cannot prove a download exists.
+Existing non-Markdown directories, including dotted paths, retain their authored navigation meaning
+when a same-stem page moves. Cards remain document navigation and may target a
+declared page through that same extensionless alias.
 
 New media requires exact bytes, digest, desired Asset and declared configuration
 in `media`. It is written into that configuration's `assets.directory`; existing

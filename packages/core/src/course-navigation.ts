@@ -1,4 +1,5 @@
 import { validateTopikPath, validateTopikPathSet } from "./assets/path";
+import { parseTopikResourceReference } from "@topik/content";
 
 const INTERNAL_COURSE_ORIGIN = "https://topik.invalid";
 const RESOURCE_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -121,6 +122,14 @@ export function resolveCourseContentHref(
   currentPageName: string,
   resolved: ResolvedCourseNavigation,
 ): ResolvedCourseContentLink | null {
+  const reference = parseTopikResourceReference(href);
+  if (reference) {
+    if (reference.type !== "CoursePage") return null;
+    const page = resolved.pageByName.get(reference.name);
+    return page
+      ? { page, route: page.route, search: reference.search, hash: reference.hash }
+      : null;
+  }
   const current = resolved.pageByName.get(currentPageName);
   if (!current || /^asset:/i.test(href)) return null;
   if (href.startsWith("#"))

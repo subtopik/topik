@@ -4,6 +4,7 @@ import {
   rewriteTopikAssetOccurrences,
   rewriteTopikNavigationReferences,
   parseTopikResourceReference,
+  type TopikNavigationReference,
 } from "@topik/content";
 import type { Wiki, WikiNavNode } from "@topik/schema/wiki/v1";
 import type { Guide } from "@topik/schema/guide/v1";
@@ -38,6 +39,7 @@ import {
   type SourceAssetReferenceContexts,
 } from "./asset-context";
 import { validateResources } from "../validate";
+import { isSourceNonPageReference, sourcePathInventory } from "../reference-paths";
 import { serializeTopikJson } from "../assets/json";
 import { generateAutomaticAssetName } from "../assets/asset";
 import { validateTopikPathSet } from "../assets/path";
@@ -183,11 +185,16 @@ export function canonicalResource(resource: Resource): string {
 const sameResource = (a: Resource, b: Resource): boolean =>
   canonicalResource(a) === canonicalResource(b);
 
-function hasSourceContextReferences(page: WritableDocument): boolean {
+function hasSourceContextReferences(
+  page: WritableDocument,
+  isNonPageReference?: (reference: TopikNavigationReference) => boolean,
+): boolean {
   let found = false;
   const inspected = rewriteTopikNavigationReferences(
     page.spec.content.value,
-    ({ href }) => {
+    (reference) => {
+      if (isNonPageReference?.(reference)) return undefined;
+      const { href } = reference;
       if (
         !parseTopikResourceReference(href) &&
         !/^(?:asset|https?|mailto|tel):/i.test(href) &&
@@ -208,6 +215,7 @@ function sameAuthoredResource(
   contexts?: Readonly<Record<string, Wiki>>,
   courseContexts?: Readonly<Record<string, CourseReferenceContext>>,
   baseCourseContexts?: Readonly<Record<string, CourseReferenceContext>>,
+  isNonPageReference?: (resource: WritableDocument, reference: TopikNavigationReference) => boolean,
 ): boolean {
   if (
     sameResource(a, b) &&
@@ -233,8 +241,16 @@ function sameAuthoredResource(
       b.name,
     );
     return sameResource(
-      portableCoursePage(a, priorNavigation),
-      portableCoursePage(b, savedNavigation),
+      portableCoursePage(
+        a,
+        priorNavigation,
+        (reference) => isNonPageReference?.(a, reference) ?? false,
+      ),
+      portableCoursePage(
+        b,
+        savedNavigation,
+        (reference) => isNonPageReference?.(b, reference) ?? false,
+      ),
     );
   }
   if (a.type === "Wiki" && b.type === "Wiki") {
@@ -260,7 +276,9 @@ function sameAuthoredResource(
       });
       const rewritten = rewriteTopikNavigationReferences(
         page.spec.content.value,
-        ({ href }) => {
+        (reference) => {
+          if (isNonPageReference?.(page, reference)) return undefined;
+          const { href } = reference;
           const target = resolveWikiContentHref(href, page.name, navigation);
           const prefix = "https://topik.invalid/reference/";
           return target
@@ -660,6 +678,19 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
     )
       block("source-base-changed", "Source bytes no longer match the pinned tree.");
     const project = await readSourceProject({ tree: input.project.tree });
+    const originalInventory = sourcePathInventory(project.tree.map((file) => file.path));
+    const originalDocumentsByKey = new Map(
+      project.documents.map((document) => [document.resource, document]),
+    );
+    const originalNonPageReference = (
+      resource: WritableDocument,
+      reference: TopikNavigationReference,
+    ) => {
+      const document = originalDocumentsByKey.get(resourceKey(resource));
+      return document
+        ? isSourceNonPageReference(reference, document.path, document.directory, originalInventory)
+        : false;
+    };
     const base = resourceMap(project.compilation.resources);
     let desired = resourceMap(structuredClone(input.desiredResources));
     const savedGraphDigest = digestSourceResourceGraph([...desired.values()]);
@@ -705,6 +736,7 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
             input.referenceContexts,
             input.courseReferenceContexts,
             project.courseContexts,
+            originalNonPageReference,
           ))
       )
         block(
@@ -813,6 +845,21 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
     const originalPaths = new Map(
       project.documents.map((document) => [document.resource, document.path]),
     );
+    const originalDocuments = new Set(originalPaths.values());
+    const currentInventory = sourcePathInventory([
+      ...project.tree.map((file) => file.path).filter((path) => !originalDocuments.has(path)),
+      ...[...paths].filter(([key]) => desired.has(key)).map(([, path]) => path),
+    ]);
+    const nonPageReference = (resource: WritableDocument, reference: TopikNavigationReference) => {
+      const document = originalDocumentsByKey.get(resourceKey(resource));
+      const path = document?.path ?? paths.get(resourceKey(resource));
+      if (!path) return false;
+      const directory = document?.directory ?? "";
+      return (
+        isSourceNonPageReference(reference, path, directory, originalInventory) ||
+        isSourceNonPageReference(reference, path, directory, currentInventory)
+      );
+    };
     const referenceDocuments = new Map(
       project.documents.map((document) => [document.resource, document]),
     );
@@ -844,6 +891,8 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
         paths,
         base,
         desired,
+        originalInventory,
+        currentInventory,
       );
       if (prepared) referenceDocuments.set(key, prepared);
     }
@@ -894,7 +943,7 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
         const prior = base.get(key);
         if (
           !input.courseReferenceContexts?.[key] &&
-          hasSourceContextReferences(page) &&
+          hasSourceContextReferences(page, (reference) => nonPageReference(page, reference)) &&
           prior?.type === "CoursePage" &&
           canonicalResource(prior) !==
             canonicalResource({ ...prior, spec: { ...prior.spec, content: page.spec.content } }) &&
@@ -909,7 +958,16 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
           input.courseReferenceContexts?.[key] ??
           (prior?.type === "CoursePage" ? previousContext : currentContext);
         const saved = resolveSourceCourseContext(context, course.name, page.name);
-        if (transportCourseReferences(page, saved, currentNavigation, derivedRepairs))
+        if (
+          transportCourseReferences(
+            page,
+            saved,
+            currentNavigation,
+            derivedRepairs,
+            undefined,
+            (reference) => nonPageReference(page, reference),
+          )
+        )
           derivedKeys.add(key);
       }
     }
@@ -952,7 +1010,7 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
         const priorPage = base.get(key);
         if (
           !input.referenceContexts?.[key] &&
-          hasSourceContextReferences(page) &&
+          hasSourceContextReferences(page, (reference) => nonPageReference(page, reference)) &&
           priorPage?.type === "WikiPage" &&
           canonicalResource(priorPage) !==
             canonicalResource({
@@ -984,7 +1042,8 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
           page.spec.content.value,
           (reference) => {
             // Compiled resource references have project-wide identity semantics.
-            if (parseTopikResourceReference(reference.href)) return undefined;
+            if (parseTopikResourceReference(reference.href) || nonPageReference(page, reference))
+              return undefined;
             const saved = resolveWikiContentReference(reference.href, page.name, savedNavigation);
             if (saved.kind === "unresolved")
               block(

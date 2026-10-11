@@ -6,6 +6,7 @@ import {
   writeDocument,
   extractTopikAssetOccurrences,
   TOPIK_CONTENT_SCHEMA_VERSION,
+  parseTopikResourceReference,
 } from "@topik/content";
 import {
   readSourceProject,
@@ -15,6 +16,8 @@ import {
   digestSourceTree,
   SOURCE_WRITER_DESCRIPTOR,
   validateTopikMaterializationRecord,
+  resolveCourseNavigation,
+  resolveCourseContentHref,
 } from "@topik/core";
 
 const encode = (value) => new TextEncoder().encode(value);
@@ -219,11 +222,23 @@ export async function verifyCourseSourceConsumer(packageCohort = "c".repeat(64))
   });
   const context = project.courseContexts["Course/training"];
   assert.ok(context);
+  const portableNext = "ref://course-page/next?mode=read#topic";
+  assert.deepEqual(parseTopikResourceReference(portableNext), {
+    type: "CoursePage",
+    name: "next",
+    search: "?mode=read",
+    hash: "topic",
+  });
+  assert.equal(
+    resolveCourseContentHref(portableNext, "missing", resolveCourseNavigation(context))?.route,
+    "foundations/next",
+  );
   const desired = structuredClone(project.compilation.resources);
   const page = desired.find(
     (resource) => resource.type === "CoursePage" && resource.name === "intro",
   );
   assert.ok(page);
+  assert.ok(page.spec.content.value.includes(portableNext));
   page.spec.title = "Edited lesson";
   const updated = await planSourceUpdates({
     project,
@@ -260,6 +275,11 @@ export async function verifyCourseSourceConsumer(packageCohort = "c".repeat(64))
     authority: { ...authority(project), create: ["course/moved/next.md"] },
   });
   assert.equal(moved.ok, true, JSON.stringify(moved));
+  assert.ok(
+    moved.plan.candidate.compilation.resources
+      .find((resource) => resource.type === "CoursePage" && resource.name === "intro")
+      .spec.content.value.includes(portableNext),
+  );
   assert.deepEqual(
     moved.plan.candidate.tree.find((entry) => entry.path === "README.md"),
     project.tree.find((entry) => entry.path === "README.md"),

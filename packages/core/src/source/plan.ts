@@ -43,7 +43,11 @@ import {
   type SourceAssetReferenceContexts,
 } from "./asset-context";
 import { validateResources } from "../validate";
-import { isSourceNonPageReference, sourcePathInventory } from "../reference-paths";
+import {
+  isSourceNonPageReference,
+  sourceNonMarkdownLinkPath,
+  sourcePathInventory,
+} from "../reference-paths";
 import { serializeTopikJson } from "../assets/json";
 import { generateAutomaticAssetName } from "../assets/asset";
 import { validateTopikPathSet } from "../assets/path";
@@ -902,18 +906,37 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
       ...[...paths].filter(([key]) => desired.has(key)).map(([, path]) => path),
       ...plannedMedia.map(({ path }) => path),
     ]);
+    const sourceDirectory = (key: string) => {
+      const document = originalDocumentsByKey.get(key);
+      if (document) return document.directory;
+      const creation = input.operations.find(
+        (operation): operation is Extract<SourceResourceOperation, { kind: "create" }> =>
+          operation.resource === key && operation.kind === "create",
+      );
+      return (
+        project.compilation.provenance.find((source) => source.config === creation?.config)
+          ?.directory ?? ""
+      );
+    };
     const nonPageReference = (
       resource: WritableDocument,
       reference: TopikNavigationReference,
       hasSavedTarget: boolean,
     ) => {
-      const document = originalDocumentsByKey.get(resourceKey(resource));
-      const path = document?.path ?? paths.get(resourceKey(resource));
+      const key = resourceKey(resource);
+      const document = originalDocumentsByKey.get(key);
+      const path = document?.path ?? paths.get(key);
       if (!path) return false;
-      const directory = document?.directory ?? "";
+      const directory = sourceDirectory(key);
+      if (isSourceNonPageReference(reference, path, directory, originalInventory)) return true;
+      if (hasSavedTarget) return false;
+      // Like compilation, preserve an existing non-Markdown path after page lookup
+      // fails. Directory URLs may have queries or start at the configuration root,
+      // even though neither spelling is an admissible file download.
+      const targetPath = sourceNonMarkdownLinkPath(reference, path, directory);
       return (
-        isSourceNonPageReference(reference, path, directory, originalInventory) ||
-        (!hasSavedTarget && isSourceNonPageReference(reference, path, directory, currentInventory))
+        targetPath !== undefined &&
+        (originalInventory.has(targetPath) || currentInventory.has(targetPath))
       );
     };
     const referenceDocuments = new Map(
@@ -929,20 +952,11 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
       const path = paths.get(key);
       if (!path) continue;
       const document = referenceDocuments.get(key);
-      const creation = input.operations.find(
-        (operation): operation is Extract<SourceResourceOperation, { kind: "create" }> =>
-          operation.resource === key && operation.kind === "create",
-      );
-      const config = document?.config ?? creation?.config;
-      const directory =
-        document?.directory ??
-        project.compilation.provenance.find((source) => source.config === config)?.directory ??
-        "";
       const prepared = prepareSourceResourceReferences(
         resource,
         document,
         path,
-        directory,
+        sourceDirectory(key),
         originalPaths,
         paths,
         base,

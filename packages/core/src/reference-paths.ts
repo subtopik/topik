@@ -41,11 +41,21 @@ export function isSourceNonPageReference(
   directory: string,
   paths: ReadonlySet<string>,
 ): boolean {
-  if (reference.kind !== "link") return false;
-  const path = resolveSourceReferencePath(reference.href, sourcePath, directory);
-  if (path === undefined || /\.(?:mdx?|markdown)$/i.test(path) || !paths.has(path)) return false;
+  const path = sourceNonMarkdownLinkPath(reference, sourcePath, directory);
+  if (path === undefined || !paths.has(path)) return false;
   // The compiler also preserves dotted non-Markdown paths with query/fragment suffixes.
   if (posix.extname(path) !== "") return true;
   const asset = validateTopikAssetReference(reference.href);
   return asset.valid && asset.kind === "local";
+}
+
+/** A remaining local navigation URL can name a directory without being a download. */
+export function sourceNonMarkdownLinkPath(
+  reference: Pick<TopikNavigationReference, "href" | "kind">,
+  sourcePath: string,
+  directory: string,
+): string | undefined {
+  if (reference.kind !== "link") return undefined;
+  const path = resolveSourceReferencePath(reference.href, sourcePath, directory);
+  return path !== undefined && !/\.(?:mdx?|markdown)$/i.test(path) ? path : undefined;
 }

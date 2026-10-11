@@ -121,6 +121,12 @@ heading fragments as errors. The CLI's `--links warning` or `--links off` change
 these diagnostics; malformed or unsafe URL admission still applies. Links to
 supported local downloads retain the existing [Asset](./assets.md) behavior.
 
+Links to existing directories that do not resolve to declared pages retain their
+authored URLs, including query strings and fragments. They are not converted to
+`ref://` references or downloadable Assets. Topik does not publish directory
+listings; the application hosting the rendered URL determines its destination.
+Source updates preserve these links on existing and newly created pages.
+
 An explicit reference can point to a resource outside the current compilation.
 Topik does not fetch another repository or assume an application namespace. Supply
 the optional `referenceTargets` inventory to `compile`, `compileWiki`,

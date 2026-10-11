@@ -17,12 +17,18 @@ function delay(ms: number) {
 }
 
 describe("watch exclusions", () => {
+  let temporary: string;
   let dir: string;
   let watcher: Watcher | undefined;
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    dir = await mkdtemp(join(tmpdir(), "topik-watch-ignore-"));
+    temporary = await mkdtemp(join(tmpdir(), "topik-watch-ignore-"));
+    dir = temporary;
+    await writeProject();
+  });
+
+  async function writeProject() {
     await writeFile(
       join(dir, ".topik.yaml"),
       JSON.stringify({
@@ -33,13 +39,13 @@ describe("watch exclusions", () => {
     );
     await writeFile(join(dir, "collection.yaml"), "id: guides\ntitle: Guides\n");
     await writeFile(join(dir, "intro.md"), "# Intro\n");
-  });
+  }
 
   afterEach(async () => {
     await watcher?.close();
     await Promise.allSettled(vi.mocked(compile).mock.results.map(({ value }) => value));
     watcher = undefined;
-    await rm(dir, { recursive: true, force: true });
+    await rm(temporary, { recursive: true, force: true });
   });
 
   async function startWatching() {
@@ -47,7 +53,50 @@ describe("watch exclusions", () => {
     const fsWatcher = vi.mocked(chokidarWatch).mock.results[0].value;
     await new Promise<void>((resolve) => fsWatcher.once("ready", resolve));
     expect(compile).toHaveBeenCalledTimes(1);
+    return watcher;
   }
+
+  test.each(["node_modules", join("node_modules", "project")])(
+    "watches a project rooted at %s while excluding its descendant dependencies",
+    async (placement) => {
+      dir = join(temporary, placement);
+      await mkdir(dir, { recursive: true });
+      await writeProject();
+      const dependencyDirs = [
+        join(dir, "node_modules", "example"),
+        join(dir, "packages", "nested", "node_modules", "example"),
+      ];
+      for (const dependencyDir of dependencyDirs) {
+        await mkdir(dependencyDir, { recursive: true });
+        await writeFile(join(dependencyDir, "index.js"), "initial");
+      }
+      const activeWatcher = await startWatching();
+      const updates = vi.fn();
+      activeWatcher.on("update", updates);
+
+      await writeFile(join(dir, "intro.md"), "# Updated\n");
+      await vi.waitFor(
+        () =>
+          expect(updates).toHaveBeenCalledWith(
+            "Guide/guides-intro",
+            expect.objectContaining({
+              spec: expect.objectContaining({ title: "Updated" }),
+            }),
+          ),
+        { timeout: 2_000 },
+      );
+      expect(compile).toHaveBeenCalledTimes(2);
+
+      for (const dependencyDir of dependencyDirs) {
+        await writeFile(join(dependencyDir, "index.js"), "changed");
+        await writeFile(join(dependencyDir, "added.js"), "added");
+        await rm(join(dependencyDir, "index.js"));
+      }
+      await delay(350);
+      expect(compile).toHaveBeenCalledTimes(2);
+      expect(updates).toHaveBeenCalledTimes(1);
+    },
+  );
 
   test.each(["node_modules", "packages/nested/node_modules"])(
     "does not recompile for changes, additions, or removals inside %s",
@@ -86,14 +135,23 @@ describe("watch exclusions", () => {
     },
   );
 
-  test("matches complete ignored path segments with either platform's separators", async () => {
+  test("matches ignored descendant path segments with either separator", async () => {
     await startWatching();
     const ignored = vi.mocked(chokidarWatch).mock.calls[0][1]?.ignored;
     if (!Array.isArray(ignored)) throw new Error("Expected watcher ignore rules");
-    // Chokidar 5 matches string rules literally; only regex rules match descendants.
     const isIgnored = (path: string) =>
-      ignored.some((rule) => (rule instanceof RegExp ? rule.test(path) : rule === path));
+      ignored.some((rule) =>
+        typeof rule === "function"
+          ? rule(path)
+          : rule instanceof RegExp
+            ? rule.test(path)
+            : rule === path,
+      );
+    // Chokidar normalizes absolute paths to forward slashes before matching.
+    const root = dir.replaceAll("\\", "/");
+    expect(isIgnored(root)).toBe(false);
 
+    // Exercise separator matching directly; the filesystem tests use native paths.
     for (const separator of ["/", "\\"]) {
       for (const directory of [
         "node_modules",
@@ -102,9 +160,9 @@ describe("watch exclusions", () => {
         ".topik-compilation-generation-123",
         ".topik-compilation-prior-123",
       ]) {
-        for (const prefix of ["", `root${separator}`, `root${separator}nested${separator}`]) {
-          expect(isIgnored(`${prefix}${directory}`)).toBe(true);
-          expect(isIgnored(`${prefix}${directory}${separator}file.js`)).toBe(true);
+        for (const prefix of ["", `nested${separator}`, `nested${separator}child${separator}`]) {
+          expect(isIgnored(`${root}/${prefix}${directory}`)).toBe(true);
+          expect(isIgnored(`${root}/${prefix}${directory}${separator}file.js`)).toBe(true);
         }
       }
       for (const directory of [
@@ -115,7 +173,7 @@ describe("watch exclusions", () => {
         ".github",
         ".topik-content",
       ]) {
-        expect(isIgnored(`root${separator}${directory}${separator}file.js`)).toBe(false);
+        expect(isIgnored(`${root}/${directory}${separator}file.js`)).toBe(false);
       }
     }
   });

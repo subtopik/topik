@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { resolve } from "node:path";
+import { relative, resolve } from "node:path";
 import { watch as chokidarWatch } from "chokidar";
 import { compile } from "./compile";
 import type { AssetPayload } from "./compile/assets";
@@ -89,7 +89,7 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
     ignoreInitial: true,
     ignored: [
       /(^|[/\\])(?:\.git|\.topik(?:-compilation-(?:generation|prior)-[^/\\]+)?)(?:[/\\]|$)/,
-      /(^|[/\\])node_modules(?:[/\\]|$)/,
+      (path) => /(^|[/\\])node_modules(?:[/\\]|$)/.test(relative(dir, path)),
     ],
   });
 

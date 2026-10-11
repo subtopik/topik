@@ -44,12 +44,20 @@ function flowDelimiters(collection: YAMLMap | YAMLSeq) {
   const commas = token.items.flatMap((item) =>
     item.start.filter((part) => part.type === "comma").map((part) => part.offset),
   );
+  // Node ranges omit explicit-key indicators and anchor/tag properties. These
+  // tokens are part of the selected entry, not trivia belonging to its neighbor.
+  const starts = token.items.map(
+    (item) =>
+      item.start.find((part) => !["comma", "space", "newline", "comment"].includes(part.type))
+        ?.offset,
+  );
   const count = collection.items.length;
   if (!closing || commas.length < Math.max(0, count - 1) || commas.length > count)
     throw new TypeError("Ambiguous flow delimiters");
   return {
     insertion: closing.offset,
     indent: token.indent,
+    starts,
     commas,
     trailing: count > 0 && commas.length === count,
   };
@@ -176,6 +184,7 @@ export function inspectSourceSyntax(raw: string, json = false) {
       let entryEnd = valueRange[2];
       values.set(selector, value.toJSON());
       if (delimiters && flow) {
+        entryStart = delimiters.starts[index] ?? entryStart;
         entryEnd = valueRange[1];
         flow.entries.push({ selector, content: range(entryStart, entryEnd) });
         const next = map.items[index + 1]?.key;
@@ -248,6 +257,7 @@ export function inspectSourceSyntax(raw: string, json = false) {
       let start = child.range[0];
       let end = child.range[2];
       if (delimiters && flow) {
+        start = delimiters.starts[index] ?? start;
         end = child.range[1];
         flow.entries.push({ selector: itemSelector, content: range(start, end) });
         const comma = delimiters.commas[index];

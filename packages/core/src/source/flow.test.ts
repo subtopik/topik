@@ -223,6 +223,61 @@ test("unidentified legacy flow records stay inspectable but cannot acquire guess
   );
 });
 
+test.each(["? ", "!!str ", "&key ", "? !!str &key "])(
+  "flow map deletion owns the complete %j key prefix",
+  (prefix) => {
+    for (const { eol, trailing, add, remove } of cases) {
+      const keys = ["a", "b", "c"];
+      const items = keys.map((key) => `${prefix.replace("&key", `&key-${key}`)}${key}: ${key}`);
+      const raw = `{${items.join(`, # keep ,${eol} `)}${trailing ? "," : ""}}`;
+      const selected = keys.filter((_, index) => remove & (1 << index));
+      const updates = Object.fromEntries(selected.map((key) => [key, undefined]));
+      const result = patchSourceFields(raw, { ...updates, ...(add ? { d: "new" } : {}) });
+      const written = decodeSource(result.bytes);
+      expect(inspectSourceSyntax(written).value).toEqual({
+        ...Object.fromEntries(
+          keys.filter((key) => !selected.includes(key)).map((key) => [key, key]),
+        ),
+        ...(add ? { d: "new" } : {}),
+      });
+      expect(checkEdits(raw, result.edits, [...selected, ...(add ? ["+"] : [])])).toEqual(
+        result.bytes,
+      );
+      expect(written.match(/# keep ,/g)).toHaveLength(2);
+      for (const [index, key] of keys.entries())
+        if (!selected.includes(key)) expect(written).toContain(items[index]);
+    }
+  },
+);
+
+test.each(["&record ", "!!map ", "!!map &record "])(
+  "flow sequence deletion owns the complete %j item prefix",
+  (prefix) => {
+    for (const { eol, trailing, add, remove } of cases) {
+      const ids = ["a", "b", "c"];
+      const items = ids.map(
+        (id) => `${prefix.replace("&record", `&record-${id}`)}{id: ${id}, spec: {name: ${id}}}`,
+      );
+      const raw = `persons: [${items.join(`, # keep ,${eol} `)}${trailing ? "," : ""}]${eol}`;
+      const selected = ids.filter((_, index) => remove & (1 << index)).map((id) => `persons/${id}`);
+      const additions = add ? [{ id: "d", spec: { name: "new" } }] : [];
+      const edits = patchSourceSequence(raw, "persons", additions, selected);
+      const written = decodeSource(
+        checkEdits(raw, edits, [...selected, ...(add ? ["persons/+"] : [])]),
+      );
+      expect(inspectSourceSyntax(written).value.persons).toEqual([
+        ...ids
+          .filter((id) => !selected.includes(`persons/${id}`))
+          .map((id) => ({ id, spec: { name: id } })),
+        ...additions,
+      ]);
+      expect(written.match(/# keep ,/g)).toHaveLength(2);
+      for (const [index, id] of ids.entries())
+        if (!selected.includes(`persons/${id}`)) expect(written).toContain(items[index]);
+    }
+  },
+);
+
 function authority(project: SourceProject): SourceWriteAuthority {
   return {
     resources: project.compilation.resources.map((resource) => `${resource.type}/${resource.name}`),
@@ -244,6 +299,27 @@ const projectFor = (metadata: string, config = "") =>
       file("docs/home.md", `---\n${metadata}\n---\n# Home\n\nExact body.\n`),
     ],
   });
+
+test("deleting explicitly keyed Guide metadata cannot change an unknown field", async () => {
+  const project = await projectFor("{custom: keep, ? description: remove}");
+  const desired = structuredClone(project.compilation.resources);
+  const guide = desired.find((resource): resource is Guide => resource.type === "Guide")!;
+  delete guide.spec.description;
+  const result = await planSourceUpdates({
+    project,
+    expectedTreeDigest: project.treeDigest,
+    packageCohort: cohort,
+    desiredResources: desired,
+    operations: [{ kind: "update", resource: `Guide/${guide.name}` }],
+    authority: authority(project),
+  });
+  expect(result.ok, JSON.stringify(result)).toBe(true);
+  if (!result.ok) return;
+  const written = decodeSource(result.plan.changes[0].candidate!.bytes);
+  expect(written).toContain("{custom: keep ");
+  expect(written).not.toContain("?");
+  expect(inspectSourceSyntax(written.split("\n")[1]).value).toEqual({ custom: "keep" });
+});
 
 test.each(["{id: home,}", "{id: home, labels: {foo: bar,},}"])(
   "flow frontmatter accepts metadata edits: %s",

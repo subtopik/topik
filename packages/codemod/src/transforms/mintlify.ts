@@ -1,7 +1,5 @@
 import { components, validateTopikContent } from "@topik/content";
-import { fromMarkdown } from "mdast-util-from-markdown";
-import { frontmatterFromMarkdown } from "mdast-util-frontmatter";
-import { frontmatter } from "micromark-extension-frontmatter";
+import { frontmatterEnd } from "./frontmatter";
 
 export interface TransformWarning {
   line: number;
@@ -53,12 +51,7 @@ const ATTR_RE =
 
 export function transformMintlify(source: string): TransformResult {
   const warnings: TransformWarning[] = [];
-  const tree = fromMarkdown(source, {
-    extensions: [frontmatter()],
-    mdastExtensions: [frontmatterFromMarkdown()],
-  });
-  const header = tree.children[0];
-  const bodyStart = header?.type === "yaml" ? header.position!.end.offset! : 0;
+  const bodyStart = frontmatterEnd(source);
   let out = source.slice(0, bodyStart);
   let cursor = bodyStart;
   let changed = false;

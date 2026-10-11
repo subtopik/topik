@@ -31,10 +31,7 @@
   },
   "dependencies": {
     "@drizzle-team/brocli": "catalog:",
-    "@topik/content": "workspace:*",
-    "mdast-util-from-markdown": "catalog:",
-    "mdast-util-frontmatter": "catalog:",
-    "micromark-extension-frontmatter": "catalog:"
+    "@topik/content": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

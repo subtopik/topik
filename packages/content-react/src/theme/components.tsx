@@ -596,14 +596,22 @@ export function TopikTableHeader({
 
 function isChoiceElement(child: ReactNode): child is ReactElement<TopikComponentProps> {
   if (!isValidElement<TopikComponentProps & TopikRoleProps>(child)) return false;
-  return (
-    child.type === TopikChoice || child.props.__topikRole === "choice" || "correct" in child.props
-  );
+  return child.type === TopikChoice || hasTopikRole(child, "choice") || "correct" in child.props;
 }
 
 function isExplanationElement(child: ReactNode): child is ReactElement<TopikComponentProps> {
   if (!isValidElement<TopikComponentProps & TopikRoleProps>(child)) return false;
-  return child.type === TopikExplanation || child.props.__topikRole === "explanation";
+  return child.type === TopikExplanation || hasTopikRole(child, "explanation");
+}
+
+function hasTopikRole(child: ReactElement<TopikRoleProps>, role: "choice" | "explanation") {
+  // Questions inspect their children before the slot components render.
+  return (
+    child.props.__topikRole === role ||
+    (typeof child.type === "function" &&
+      "__topikRole" in child.type &&
+      child.type.__topikRole === role)
+  );
 }
 
 export const defaultTopikComponents = {
@@ -665,12 +673,18 @@ export function getDefaultTopikComponents(
         />
       );
     },
-    TopikChoice: function TopikChoiceSlot(props: TopikComponentProps) {
-      return <TopikChoiceComponent {...props} __topikRole="choice" />;
-    },
-    TopikExplanation: function TopikExplanationSlot(props: TopikComponentProps) {
-      return <TopikExplanationComponent {...props} __topikRole="explanation" />;
-    },
+    TopikChoice: Object.assign(
+      function TopikChoiceSlot(props: TopikComponentProps) {
+        return <TopikChoiceComponent {...props} __topikRole="choice" />;
+      },
+      { __topikRole: "choice" },
+    ),
+    TopikExplanation: Object.assign(
+      function TopikExplanationSlot(props: TopikComponentProps) {
+        return <TopikExplanationComponent {...props} __topikRole="explanation" />;
+      },
+      { __topikRole: "explanation" },
+    ),
     TopikFigure: function TopikFigureSlot(props: TopikComponentProps) {
       return <TopikFigureComponent {...props} colorScheme={options.colorScheme} />;
     },

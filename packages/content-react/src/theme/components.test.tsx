@@ -572,6 +572,70 @@ describe("default Topik theme components", () => {
     expect(status?.textContent).toBe("Correct");
   });
 
+  describe.each(["single-choice", "multiple-choice"])("TopikContent %s quiz", (type) => {
+    it.each(["default", "props", "provider"])(
+      "shows explanations after answering with %s components",
+      (overrideSource) => {
+        const overrides = {
+          TopikChoice: ({ children }: React.PropsWithChildren) => (
+            <span className="custom-choice">{children}</span>
+          ),
+          TopikExplanation: ({ children }: React.PropsWithChildren) => (
+            <div className="custom-explanation">{children}</div>
+          ),
+        };
+        const content = [
+          "{% quiz %}",
+          `{% question type="${type}" %}`,
+          "{% choice correct=true %}",
+          "Yes",
+          "{% /choice %}",
+          "{% choice %}",
+          "No",
+          "{% /choice %}",
+          "{% explanation %}",
+          "Because yes.",
+          "{% /explanation %}",
+          "{% /question %}",
+          "{% /quiz %}",
+        ].join("\n");
+        const dom = mount(
+          <TopikContentProvider components={overrideSource === "provider" ? overrides : undefined}>
+            <TopikContent
+              content={content}
+              components={overrideSource === "props" ? overrides : undefined}
+            />
+          </TopikContentProvider>,
+        );
+        const inputs = dom.querySelectorAll<HTMLInputElement>("input");
+        const status = dom.querySelector('[role="status"]');
+        const explanationSelector =
+          overrideSource === "default" ? ".topik-explanation" : ".custom-explanation";
+        expect(inputs).toHaveLength(2);
+        expect(dom.textContent).toBe("YesNo");
+        expect(status?.textContent).toBe("");
+        expect(dom.querySelector(explanationSelector)).toBeNull();
+        if (overrideSource !== "default") {
+          expect(dom.querySelectorAll(".custom-choice")).toHaveLength(2);
+        }
+
+        act(() => inputs[0].click());
+        expect(status?.textContent).toBe("Correct");
+        expect(dom.querySelector(explanationSelector)?.textContent).toBe("Because yes.");
+
+        if (type === "multiple-choice") {
+          act(() => inputs[0].click());
+          expect(status?.textContent).toBe("");
+          expect(dom.querySelector(explanationSelector)).toBeNull();
+        }
+        act(() => inputs[1].click());
+        expect(status?.textContent).toBe("Try again");
+        expect(dom.querySelector(explanationSelector)?.textContent).toBe("Because yes.");
+        expect(dom.querySelector('[role="status"]')).toBe(status);
+      },
+    );
+  });
+
   it("handles multiple-choice quiz answers", () => {
     const dom = mount(
       <TopikQuestion type="multiple-choice">

@@ -90,6 +90,44 @@ type Story = StoryObj<typeof meta>;
 
 export const LearningPage: Story = {};
 
+export const QuizExplanation: Story = {
+  args: {
+    content: `{% quiz %}
+{% question %}
+{% choice correct=true %}
+Yes
+{% /choice %}
+{% choice %}
+No
+{% /choice %}
+{% explanation %}
+Because yes.
+{% /explanation %}
+{% /question %}
+{% /quiz %}`,
+  },
+  play: async ({ canvas, userEvent }) => {
+    await expect(canvas.queryByText("Because yes.")).not.toBeInTheDocument();
+    await userEvent.click(canvas.getByRole("radio", { name: "No" }));
+    await expect(canvas.getByRole("status")).toHaveTextContent("Try again");
+    await expect(canvas.getByText("Because yes.")).toBeVisible();
+    await userEvent.click(canvas.getByRole("radio", { name: "Yes" }));
+    await expect(canvas.getByRole("status")).toHaveTextContent("Correct");
+    await expect(canvas.getByText("Because yes.")).toBeVisible();
+  },
+};
+
+export const CustomQuizExplanation: Story = {
+  ...QuizExplanation,
+  args: {
+    ...QuizExplanation.args,
+    components: {
+      TopikChoice: ({ children }) => <strong>{children}</strong>,
+      TopikExplanation: ({ children }) => <aside aria-label="Explanation">{children}</aside>,
+    },
+  },
+};
+
 export const InvalidDiagnostics: Story = {
   args: {
     content: "{% card /%}",

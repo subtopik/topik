@@ -261,3 +261,31 @@ test.each([undefined, 1] as const)(
     }
   },
 );
+
+test.each(
+  ["", "\uFEFF"].flatMap((prefix) => ["insert", "delete"].map((change) => ({ prefix, change }))),
+)(
+  "single-line CRLF metadata $change retains document line endings with prefix $prefix",
+  async ({ prefix, change }) => {
+    const raw = `${prefix}---\r\n${change === "insert" ? "id: home" : "description: Summary"}\r\n---\r\n# Home\r\n`;
+    const project = await projectFor(raw);
+    const desired = structuredClone(project.compilation.resources);
+    const guide = desired.find((resource): resource is Guide => resource.type === "Guide")!;
+    if (change === "insert") guide.spec.title = "Edited";
+    else delete guide.spec.description;
+    const result = await planSourceUpdates({
+      project,
+      expectedTreeDigest: project.treeDigest,
+      packageCohort: cohort,
+      desiredResources: desired,
+      operations: [{ kind: "update", resource: `Guide/${guide.name}` }],
+      authority: authority(project),
+    });
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    if (!result.ok) return;
+    const written = decodeSource(result.plan.changes[0].candidate!.bytes);
+    expect(written).toBe(
+      `${prefix}---\r\n${change === "insert" ? 'id: home\r\ntitle: "Edited"' : "{}"}\r\n\r\n---\r\n# Home\r\n`,
+    );
+  },
+);

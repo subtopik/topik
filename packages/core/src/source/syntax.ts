@@ -90,7 +90,7 @@ export function patchFrontmatterFields(
   updates: Readonly<Record<string, unknown>>,
   eol: string,
 ): { bytes: Uint8Array; edits: SourceByteEdit[] } {
-  if (!emptyFrontmatter(raw)) return patchSourceFields(raw, updates);
+  if (!emptyFrontmatter(raw)) return patchSourceFields(raw, updates, false, eol);
   const syntax = inspectFrontmatterSyntax(raw);
   const base = encodeSource(raw);
   const entries = Object.entries(updates).filter(([, value]) => value !== undefined);
@@ -423,13 +423,13 @@ export function patchSourceFields(
   raw: string,
   updates: Readonly<Record<string, unknown>>,
   json = false,
+  eol = raw.includes("\r\n") ? "\r\n" : "\n",
 ): { bytes: Uint8Array; edits: SourceByteEdit[] } {
   const syntax = inspectSourceSyntax(raw, json);
   const base = encodeSource(raw);
   const edits: SourceByteEdit[] = [];
   const additions = new Map<string, Array<[string, unknown]>>();
   const removals = new Set<string>();
-  const eol = raw.includes("\r\n") ? "\r\n" : "\n";
   for (const [selector, value] of Object.entries(updates)) {
     const field = syntax.fields.get(selector);
     if (field) {

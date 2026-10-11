@@ -164,10 +164,12 @@ export async function discoverGuides(
       config.sourceVersion === 1 && typeof frontmatter.id === "string"
         ? frontmatter.id
         : `${config.id}-${fileToSlug(file)}`;
+    const analysis = analyzeTopikContent(content, { file });
+    diagnostics.push(...analysis.diagnostics);
     const title =
       typeof frontmatter.title === "string"
         ? frontmatter.title
-        : extractMarkdownTitle(content, slug);
+        : extractMarkdownTitle(content, slug, analysis.headings);
 
     const tags =
       config.sourceVersion === 1 && frontmatter.inheritTags === false
@@ -182,9 +184,6 @@ export async function discoverGuides(
       (config.sourceVersion === 1 && frontmatter.description === null)
         ? frontmatter.description
         : undefined;
-    const analysis = analyzeTopikContent(content, { file });
-    diagnostics.push(...analysis.diagnostics);
-
     const guide: Guide = {
       apiVersion: "v1",
       type: "Guide",

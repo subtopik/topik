@@ -1,4 +1,9 @@
-import { sanitizeTopikContentDiagnostic, type TopikContentDiagnostic } from "@topik/content";
+import {
+  analyzeTopikContent,
+  sanitizeTopikContentDiagnostic,
+  type TopikContentDiagnostic,
+  type TopikHeading,
+} from "@topik/content";
 import { parse as parseYaml } from "yaml";
 import type { TopikAssetSemanticRecordV1, TopikMaterializationRecordV1 } from "../assets/identity";
 import type { AssetPayload, CompiledResource } from "./assets";
@@ -86,10 +91,14 @@ export function parseMarkdownFrontmatter(
   }
 }
 
-export function extractMarkdownTitle(content: string, fallback: string): string {
-  const match = content.match(/^#\s+(.+)$/m);
-  if (match) {
-    return match[1].trim();
+export function extractMarkdownTitle(
+  content: string,
+  fallback: string,
+  headings: readonly TopikHeading[] = analyzeTopikContent(content).headings,
+): string {
+  const heading = headings.find((entry) => entry.level === 1 && entry.title.length > 0);
+  if (heading) {
+    return heading.title;
   }
   return fallback
     .split("-")

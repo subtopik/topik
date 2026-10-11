@@ -130,17 +130,16 @@ export async function discoverWiki(
     if (pageNamesBySource.has(pagePath) || Object.hasOwn(sourcePathsByResource, `WikiPage/${name}`))
       throw new PublicCompileError("config-invalid", loadedConfig.path);
     pageNamesBySource.set(pagePath, name);
+    const analysis = analyzeTopikContent(content, { file: sourcePath });
+    diagnostics.push(...analysis.diagnostics);
     const title =
       typeof frontmatter.title === "string"
         ? frontmatter.title
-        : extractMarkdownTitle(content, pagePathToTitleFallback(pagePath));
+        : extractMarkdownTitle(content, pagePathToTitleFallback(pagePath), analysis.headings);
     const description =
       config.sourceVersion === 1
         ? (frontmatter.description as string | null | undefined)
         : normalizeWikiPageDescription(frontmatter.description);
-    const analysis = analyzeTopikContent(content, { file: sourcePath });
-    diagnostics.push(...analysis.diagnostics);
-
     const pageResource: WikiPage = {
       apiVersion: "v1",
       type: "WikiPage",

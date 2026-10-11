@@ -4,6 +4,7 @@ import type { TopikAssetSemanticRecordV1, TopikMaterializationRecordV1 } from ".
 import type { AssetPayload, CompiledResource } from "./assets";
 import { PublicCompileError } from "./public-errors";
 import { parseSafeConfigurationYaml } from "./config";
+import { markdownFrontmatter } from "./frontmatter";
 
 export interface CompileResult {
   /** Present for manifest compilation, in declaration order. */
@@ -59,16 +60,18 @@ export function parseMarkdownFrontmatter(
   filePath: string,
   sourceVersion?: 1,
 ): { frontmatter: Record<string, unknown>; content: string } {
-  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)([\s\S]*)$/);
+  const match = markdownFrontmatter(raw);
   if (!match) {
-    return { frontmatter: {}, content: raw };
+    return { frontmatter: {}, content: raw.replace(/^\uFEFF/u, "") };
   }
 
   try {
     const frontmatter =
-      sourceVersion === 1 ? parseSafeConfigurationYaml(match[1]) : parseYaml(match[1]);
+      sourceVersion === 1
+        ? parseSafeConfigurationYaml(match.frontmatter)
+        : parseYaml(match.frontmatter);
     if (frontmatter == null) {
-      return { frontmatter: {}, content: match[2] };
+      return { frontmatter: {}, content: match.content };
     }
     if (typeof frontmatter !== "object" || Array.isArray(frontmatter)) {
       throw new Error("Frontmatter must parse to an object");
@@ -80,7 +83,7 @@ export function parseMarkdownFrontmatter(
     ) {
       throw new Error("Frontmatter title must be a string");
     }
-    return { frontmatter, content: match[2] };
+    return { frontmatter, content: match.content };
   } catch {
     throw new PublicCompileError("frontmatter-invalid", filePath);
   }

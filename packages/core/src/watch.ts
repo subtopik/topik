@@ -89,7 +89,7 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
     ignoreInitial: true,
     ignored: [
       /(^|[/\\])(?:\.git|\.topik(?:-compilation-(?:generation|prior)-[^/\\]+)?)(?:[/\\]|$)/,
-      "**/node_modules/**",
+      /(^|[/\\])node_modules(?:[/\\]|$)/,
     ],
   });
 

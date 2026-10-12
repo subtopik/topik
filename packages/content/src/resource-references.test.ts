@@ -27,6 +27,12 @@ describe("portable resource references", () => {
       search: "",
       hash: "",
     });
+    expect(parseTopikResourceReference("REF://Course-Page/%69ntro?view=full#setup")).toEqual({
+      type: "CoursePage",
+      name: "intro",
+      search: "?view=full",
+      hash: "setup",
+    });
   });
 
   test("canonicalizes scheme, kind, and percent-encoded resource names", () => {
@@ -48,8 +54,8 @@ describe("portable resource references", () => {
     });
   });
 
-  test("roundtrips both kinds without treating query paths or fragments as resource names", () => {
-    for (const type of ["WikiPage", "Guide"] as const) {
+  test("roundtrips every kind without treating query paths or fragments as resource names", () => {
+    for (const type of ["WikiPage", "Guide", "CoursePage"] as const) {
       const reference: TopikResourceReference = {
         type,
         name: "stable-name-12",
@@ -70,6 +76,21 @@ describe("portable resource references", () => {
       "ref://guide/install#%E5%AE%89%E8%A3%85",
     );
   });
+
+  test.each(["?q=%E9", "?discount=25%", "?q=%zz", "?q=%FF&q=a+b&path=%2f"])(
+    "retains opaque query text %s for every resource kind",
+    (search) => {
+      for (const type of ["WikiPage", "Guide", "CoursePage"] as const) {
+        const reference = { type, name: "target", search, hash: "heading%20name" };
+        const href = serializeTopikResourceReference(reference);
+        expect(parseTopikResourceReference(href)).toEqual(reference);
+        expect(validateTopikHref(href)).toEqual([]);
+        const invalidFragment = new URL(href);
+        invalidFragment.hash = "%FF";
+        expect(parseTopikResourceReference(invalidFragment.href)).toBeNull();
+      }
+    },
+  );
 
   test("enforces the schema resource-name limit after percent decoding", () => {
     const longestName = "a".repeat(63);
@@ -95,7 +116,7 @@ describe("portable resource references", () => {
     "ref:guide/install",
     "ref:://guide/install",
     "ref:///guide/install",
-    "ref://course-page/install",
+    "ref://course/install",
     "ref://article/guide/install",
     "ref://user:secret@guide/install",
     "ref://guide:123/install",
@@ -110,7 +131,6 @@ describe("portable resource references", () => {
     "ref://guide/%2E%2E",
     "ref://guide/%252F",
     "ref://guide/%FF",
-    "ref://guide/install?token=%zz",
     "ref://guide/install#%zz",
     "ref://guide/install#%FF",
     "ref://guide/install#raw space",
@@ -142,7 +162,11 @@ describe("portable resource references", () => {
 
 describe("resource reference admission", () => {
   test("admits authored navigation but requires resolution at a browser boundary", () => {
-    for (const href of ["ref://wiki-page/intro#setup", "REF://Guide/install?view=full"]) {
+    for (const href of [
+      "ref://wiki-page/intro#setup",
+      "REF://Guide/install?view=full",
+      "ref://course-page/intro#setup",
+    ]) {
       expect(validateTopikHref(href)).toEqual([]);
       expect(validateTopikBrowserHref(href)).toEqual([
         {

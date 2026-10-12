@@ -10,6 +10,7 @@ export {
 export {
   discoverGuideResources,
   discoverWikiResources,
+  discoverCourseResources,
   type DiscoverResourceOptions,
   type SourceResourceDiscovery,
 } from "./discovery";

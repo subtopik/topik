@@ -4,12 +4,17 @@ import {
   rewriteTopikAssetOccurrences,
   rewriteTopikNavigationReferences,
   parseTopikResourceReference,
+  type TopikNavigationReference,
 } from "@topik/content";
 import type { Wiki, WikiNavNode } from "@topik/schema/wiki/v1";
 import type { Guide } from "@topik/schema/guide/v1";
 import type { WikiPage } from "@topik/schema/wiki-page/v1";
 import type { CoursePage } from "@topik/schema/course-page/v1";
-import { resolveCourseNavigation, type CourseReferenceContext } from "../course-navigation";
+import {
+  resolveCourseContentHref,
+  resolveCourseNavigation,
+  type CourseReferenceContext,
+} from "../course-navigation";
 import {
   portableCoursePage,
   resolveSourceCourseContext,
@@ -26,6 +31,7 @@ import {
   normalizeSourceResourceReferences,
   prepareSourceResourceReferences,
   restoreSourceResourceReferences,
+  isSourceReferenceShadowed,
 } from "./resource-references";
 import {
   sourcePlanDiagnostics,
@@ -38,6 +44,7 @@ import {
   type SourceAssetReferenceContexts,
 } from "./asset-context";
 import { validateResources } from "../validate";
+import { isSourceNonPageReference, sourcePathInventory } from "../reference-paths";
 import { serializeTopikJson } from "../assets/json";
 import { generateAutomaticAssetName } from "../assets/asset";
 import { validateTopikPathSet } from "../assets/path";
@@ -185,11 +192,16 @@ export function canonicalResource(resource: Resource): string {
 const sameResource = (a: Resource, b: Resource): boolean =>
   canonicalResource(a) === canonicalResource(b);
 
-function hasSourceContextReferences(page: WritableDocument): boolean {
+function hasSourceContextReferences(
+  page: WritableDocument,
+  isNonPageReference?: (reference: TopikNavigationReference) => boolean,
+): boolean {
   let found = false;
   const inspected = rewriteTopikNavigationReferences(
     page.spec.content.value,
-    ({ href }) => {
+    (reference) => {
+      if (isNonPageReference?.(reference)) return undefined;
+      const { href } = reference;
       if (
         !parseTopikResourceReference(href) &&
         !/^(?:asset|https?|mailto|tel):/i.test(href) &&
@@ -210,6 +222,7 @@ function sameAuthoredResource(
   contexts?: Readonly<Record<string, Wiki>>,
   courseContexts?: Readonly<Record<string, CourseReferenceContext>>,
   baseCourseContexts?: Readonly<Record<string, CourseReferenceContext>>,
+  isNonPageReference?: (resource: WritableDocument, reference: TopikNavigationReference) => boolean,
 ): boolean {
   if (
     sameResource(a, b) &&
@@ -235,8 +248,16 @@ function sameAuthoredResource(
       b.name,
     );
     return sameResource(
-      portableCoursePage(a, priorNavigation),
-      portableCoursePage(b, savedNavigation),
+      portableCoursePage(
+        a,
+        priorNavigation,
+        (reference) => isNonPageReference?.(a, reference) ?? false,
+      ),
+      portableCoursePage(
+        b,
+        savedNavigation,
+        (reference) => isNonPageReference?.(b, reference) ?? false,
+      ),
     );
   }
   if (a.type === "Wiki" && b.type === "Wiki") {
@@ -262,7 +283,9 @@ function sameAuthoredResource(
       });
       const rewritten = rewriteTopikNavigationReferences(
         page.spec.content.value,
-        ({ href }) => {
+        (reference) => {
+          if (isNonPageReference?.(page, reference)) return undefined;
+          const { href } = reference;
           const target = resolveWikiContentHref(href, page.name, navigation);
           const prefix = "https://topik.invalid/reference/";
           return target
@@ -665,6 +688,19 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
     )
       block("source-base-changed", "Source bytes no longer match the pinned tree.");
     const project = await readSourceProject({ tree: input.project.tree });
+    const originalInventory = sourcePathInventory(project.tree.map((file) => file.path));
+    const originalDocumentsByKey = new Map(
+      project.documents.map((document) => [document.resource, document]),
+    );
+    const originalNonPageReference = (
+      resource: WritableDocument,
+      reference: TopikNavigationReference,
+    ) => {
+      const document = originalDocumentsByKey.get(resourceKey(resource));
+      return document
+        ? isSourceNonPageReference(reference, document.path, document.directory, originalInventory)
+        : false;
+    };
     const base = resourceMap(project.compilation.resources);
     let desired = resourceMap(structuredClone(input.desiredResources));
     const savedGraphDigest = digestSourceResourceGraph([...desired.values()]);
@@ -710,6 +746,7 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
             input.referenceContexts,
             input.courseReferenceContexts,
             project.courseContexts,
+            originalNonPageReference,
           ))
       )
         block(
@@ -814,10 +851,89 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
       }
       configUpdates.set(config, { sourceVersion: 1 });
     }
+    // Plan every media destination before reference repair so its parent directories
+    // participate in the same candidate inventory as document creates and moves.
+    const mediaNames = new Set<string>();
+    const plannedMedia = (input.media ?? []).map((selection) => {
+      const asset = desired.get(`Asset/${selection.name}`);
+      const source = project.compilation.provenance.find(
+        (source) => source.config === selection.config,
+      );
+      if (
+        asset?.type !== "Asset" ||
+        !source ||
+        mediaNames.has(selection.name) ||
+        sourceHash(selection.bytes) !== selection.sha256 ||
+        asset.spec.integrity !== `sha256:${selection.sha256}` ||
+        asset.spec.size !== selection.bytes.length
+      )
+        block(
+          "asset-bytes-mismatch",
+          "Every new medium requires an exact desired Asset, declared destination and supplied bytes.",
+        );
+      if (
+        posix.basename(selection.filename) !== selection.filename ||
+        !validateTopikPathSet([selection.filename]).ok
+      )
+        block("asset-path-invalid", "Media filenames must be portable leaf names.");
+      const extension = posix.extname(selection.filename);
+      const stem = selection.filename.slice(0, selection.filename.length - extension.length);
+      const path = posix.join(
+        source.assetDirectory,
+        `${stem}-${sourceHash(encodeSource(selection.name)).slice(0, 8)}${extension}`,
+      );
+      if (reserved.has(path) || !validateTopikPathSet([...reserved, path]).ok)
+        block(
+          "source-path-collision",
+          "New media cannot overwrite any occupied path.",
+          undefined,
+          path,
+        );
+      const identity = generateAutomaticAssetName({
+        projectNamespace: project.manifest.namespace,
+        manifestRelativePath: path,
+      });
+      if (!identity.ok) block("asset-path-invalid", "The new media destination is invalid.");
+      mediaNames.add(selection.name);
+      reserved.add(path);
+      return { selection, asset, path, name: identity.value };
+    });
     const derivedKeys = new Set<string>();
     const originalPaths = new Map(
       project.documents.map((document) => [document.resource, document.path]),
     );
+    const originalDocuments = new Set(originalPaths.values());
+    const currentInventory = sourcePathInventory([
+      ...project.tree.map((file) => file.path).filter((path) => !originalDocuments.has(path)),
+      ...[...paths].filter(([key]) => desired.has(key)).map(([, path]) => path),
+      ...plannedMedia.map(({ path }) => path),
+    ]);
+    const sourceDirectory = (key: string) => {
+      const document = originalDocumentsByKey.get(key);
+      if (document) return document.directory;
+      const creation = input.operations.find(
+        (operation): operation is Extract<SourceResourceOperation, { kind: "create" }> =>
+          operation.resource === key && operation.kind === "create",
+      );
+      return (
+        project.compilation.provenance.find((source) => source.config === creation?.config)
+          ?.directory ?? ""
+      );
+    };
+    const nonPageReference = (
+      resource: WritableDocument,
+      reference: TopikNavigationReference,
+      hasSavedTarget: boolean,
+    ) => {
+      const key = resourceKey(resource);
+      const document = originalDocumentsByKey.get(key);
+      const path = document?.path ?? paths.get(key);
+      if (!path) return false;
+      const directory = sourceDirectory(key);
+      if (isSourceNonPageReference(reference, path, directory, originalInventory)) return true;
+      if (hasSavedTarget) return false;
+      return isSourceNonPageReference(reference, path, directory, currentInventory);
+    };
     const referenceDocuments = new Map(
       project.documents.map((document) => [document.resource, document]),
     );
@@ -831,24 +947,17 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
       const path = paths.get(key);
       if (!path) continue;
       const document = referenceDocuments.get(key);
-      const creation = input.operations.find(
-        (operation): operation is Extract<SourceResourceOperation, { kind: "create" }> =>
-          operation.resource === key && operation.kind === "create",
-      );
-      const config = document?.config ?? creation?.config;
-      const directory =
-        document?.directory ??
-        project.compilation.provenance.find((source) => source.config === config)?.directory ??
-        "";
       const prepared = prepareSourceResourceReferences(
         resource,
         document,
         path,
-        directory,
+        sourceDirectory(key),
         originalPaths,
         paths,
         base,
         desired,
+        originalInventory,
+        currentInventory,
       );
       if (prepared) referenceDocuments.set(key, prepared);
     }
@@ -897,9 +1006,19 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
         if (page.type !== "CoursePage" || !currentNavigation.pageByName.has(page.name)) continue;
         const key = resourceKey(page);
         const prior = base.get(key);
+        const context =
+          input.courseReferenceContexts?.[key] ??
+          (prior?.type === "CoursePage" ? previousContext : currentContext);
+        const saved = resolveSourceCourseContext(context, course.name, page.name);
+        const isNonPageReference = (reference: TopikNavigationReference) =>
+          nonPageReference(
+            page,
+            reference,
+            resolveCourseContentHref(reference.href, page.name, saved) !== null,
+          );
         if (
           !input.courseReferenceContexts?.[key] &&
-          hasSourceContextReferences(page) &&
+          hasSourceContextReferences(page, isNonPageReference) &&
           prior?.type === "CoursePage" &&
           canonicalResource(prior) !==
             canonicalResource({ ...prior, spec: { ...prior.spec, content: page.spec.content } }) &&
@@ -910,11 +1029,33 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
             "Changed Course authoring content needs its retained context when routes or source paths change.",
             key,
           );
-        const context =
-          input.courseReferenceContexts?.[key] ??
-          (prior?.type === "CoursePage" ? previousContext : currentContext);
-        const saved = resolveSourceCourseContext(context, course.name, page.name);
-        if (transportCourseReferences(page, saved, currentNavigation, derivedRepairs))
+        if (
+          transportCourseReferences(
+            page,
+            saved,
+            currentNavigation,
+            derivedRepairs,
+            undefined,
+            isNonPageReference,
+            (reference) => {
+              const current = resolveCourseContentHref(
+                reference.href,
+                page.name,
+                currentNavigation,
+              );
+              return isSourceReferenceShadowed(
+                page,
+                reference,
+                paths.get(key)!,
+                source.directory,
+                paths,
+                desired,
+                currentInventory,
+                `CoursePage/${current?.page.page}`,
+              );
+            },
+          )
+        )
           derivedKeys.add(key);
       }
     }
@@ -955,9 +1096,22 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
         if (page.type !== "WikiPage" || page.spec.wiki !== resource.name) continue;
         const key = resourceKey(page);
         const priorPage = base.get(key);
+        const context = resolveSourceReferenceContext(
+          input.referenceContexts?.[key] ?? previous,
+          resource.name,
+          page.name,
+        );
+        if (!context.ok) block("reference-context-invalid", context.message, key);
+        const savedNavigation = context.navigation;
+        const isNonPageReference = (reference: TopikNavigationReference) =>
+          nonPageReference(
+            page,
+            reference,
+            resolveWikiContentHref(reference.href, page.name, savedNavigation) !== null,
+          );
         if (
           !input.referenceContexts?.[key] &&
-          hasSourceContextReferences(page) &&
+          hasSourceContextReferences(page, isNonPageReference) &&
           priorPage?.type === "WikiPage" &&
           canonicalResource(priorPage) !==
             canonicalResource({
@@ -978,18 +1132,12 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
             "Changed authoring content needs its retained context when Wiki routes or source grammar change.",
             key,
           );
-        const context = resolveSourceReferenceContext(
-          input.referenceContexts?.[key] ?? previous,
-          resource.name,
-          page.name,
-        );
-        if (!context.ok) block("reference-context-invalid", context.message, key);
-        const savedNavigation = context.navigation;
         const rewritten = rewriteTopikNavigationReferences(
           page.spec.content.value,
           (reference) => {
             // Compiled resource references have project-wide identity semantics.
-            if (parseTopikResourceReference(reference.href)) return undefined;
+            if (parseTopikResourceReference(reference.href) || isNonPageReference(reference))
+              return undefined;
             const saved = resolveWikiContentReference(reference.href, page.name, savedNavigation);
             if (saved.kind === "unresolved")
               block(
@@ -1001,6 +1149,16 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
             const before = saved.target;
             const after = resolveWikiContentHref(reference.href, page.name, currentNavigation);
             if (
+              !isSourceReferenceShadowed(
+                page,
+                reference,
+                paths.get(key)!,
+                source.directory,
+                paths,
+                desired,
+                currentInventory,
+                `WikiPage/${after?.page.page}`,
+              ) &&
               after?.page.page === before.page.page &&
               after.search === before.search &&
               after.hash === before.hash
@@ -1067,6 +1225,7 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
         originalPaths,
         base,
         desired,
+        currentInventory,
       );
       if (restored.repairs.length) {
         derivedRepairs.push(...restored.repairs);
@@ -1098,50 +1257,10 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
     const modified = new Map<string, Uint8Array>();
     const deleted = new Set<string>();
     const assetMappings: SourceUpdatePlan["assetMappings"][number][] = [];
-    for (const selection of input.media ?? []) {
-      const asset = desired.get(`Asset/${selection.name}`);
-      const source = project.compilation.provenance.find(
-        (source) => source.config === selection.config,
-      );
-      if (
-        asset?.type !== "Asset" ||
-        !source ||
-        assetMappings.some((mapping) => mapping.from === selection.name) ||
-        sourceHash(selection.bytes) !== selection.sha256 ||
-        asset.spec.integrity !== `sha256:${selection.sha256}` ||
-        asset.spec.size !== selection.bytes.length
-      )
-        block(
-          "asset-bytes-mismatch",
-          "Every new medium requires an exact desired Asset, declared destination and supplied bytes.",
-        );
-      if (
-        posix.basename(selection.filename) !== selection.filename ||
-        !validateTopikPathSet([selection.filename]).ok
-      )
-        block("asset-path-invalid", "Media filenames must be portable leaf names.");
-      const extension = posix.extname(selection.filename);
-      const stem = selection.filename.slice(0, selection.filename.length - extension.length);
-      const path = posix.join(
-        source.assetDirectory,
-        `${stem}-${sourceHash(encodeSource(selection.name)).slice(0, 8)}${extension}`,
-      );
-      if (reserved.has(path) || !validateTopikPathSet([...reserved, path]).ok)
-        block(
-          "source-path-collision",
-          "New media cannot overwrite any occupied path.",
-          undefined,
-          path,
-        );
-      const identity = generateAutomaticAssetName({
-        projectNamespace: project.manifest.namespace,
-        manifestRelativePath: path,
-      });
-      if (!identity.ok) block("asset-path-invalid", "The new media destination is invalid.");
-      assetMappings.push({ from: selection.name, to: identity.value, path });
-      asset.name = identity.value;
-      assets.set(identity.value, path);
-      reserved.add(path);
+    for (const { selection, asset, path, name } of plannedMedia) {
+      assetMappings.push({ from: selection.name, to: name, path });
+      asset.name = name;
+      assets.set(name, path);
       modified.set(path, new Uint8Array(selection.bytes));
     }
     if (assetMappings.length) {
@@ -1430,6 +1549,7 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
             originalPaths,
             base,
             desired,
+            currentInventory,
           ).content,
           referenceRepairKeys.has(op.resource),
         ),

@@ -1,5 +1,13 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { describe, expect, test } from "vite-plus/test";
@@ -140,6 +148,48 @@ describe("alpha publication retries", () => {
       expect(readFileSync(join(cwd, ".changeset", "pre", "applied.md"), "utf8")).toContain(
         "Exercise release versioning.",
       );
+      const calls = [];
+      publishAlpha({
+        cwd,
+        temporaryDirectory: temporary,
+        run(command, args) {
+          calls.push(command);
+          if (args[2] === "publish-plan") {
+            writeFileSync(option(args, "--output"), JSON.stringify(createPlan([])));
+          } else if (args[2] === "pack") {
+            writePackedPlan(option(args, "--out-dir"), createPlan([]));
+          }
+        },
+      });
+      expect(calls).toEqual(["vp", "vp"]);
+    } finally {
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  });
+
+  test("repository release notes can be versioned before alpha publication", () => {
+    const temporary = mkdtempSync(join(tmpdir(), "topik-release-notes-"));
+    try {
+      const cwd = createPublishWorkspace(temporary);
+      for (const name of readdirSync(join(root, ".changeset"))) {
+        if (name.endsWith(".md") && name !== "README.md") {
+          writeFileSync(
+            join(cwd, ".changeset", name),
+            readFileSync(join(root, ".changeset", name)),
+          );
+        }
+      }
+      execFileSync(
+        process.execPath,
+        [join(root, "node_modules", "@changesets", "cli", "bin.js"), "version"],
+        { cwd, stdio: "pipe" },
+      );
+      expect(
+        readdirSync(join(cwd, ".changeset")).filter(
+          (name) => name.endsWith(".md") && name !== "README.md",
+        ),
+      ).toEqual([]);
+
       const calls = [];
       publishAlpha({
         cwd,

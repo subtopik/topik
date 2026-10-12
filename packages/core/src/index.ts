@@ -36,6 +36,7 @@ export {
   compileResourceLinks,
   discoverGuideResources,
   discoverWikiResources,
+  discoverCourseResources,
   type DiscoverResourceOptions,
   type SourceResourceDiscovery,
   type CompileResourceLinksInput,

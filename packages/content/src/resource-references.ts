@@ -3,7 +3,7 @@ export const TOPIK_RESOURCE_REFERENCE_VERSION = 1 as const;
 
 export interface TopikResourceReference {
   /** Schema resource type; no repository or application namespace is implied. */
-  type: "WikiPage" | "Guide";
+  type: "WikiPage" | "Guide" | "CoursePage";
   /** Schema resource name (at most 63 characters), independent of its public route. */
   name: string;
   /** URI query, including its leading '?' when present. */
@@ -13,7 +13,8 @@ export interface TopikResourceReference {
 }
 
 const RESOURCE_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
-const RESOURCE_REFERENCE = /^ref:\/\/(wiki-page|guide)\/([^/?#]+)(?:\?[^#]*)?(?:#.*)?$/iu;
+const RESOURCE_REFERENCE =
+  /^ref:\/\/(wiki-page|guide|course-page)\/([^/?#]+)(?:\?[^#]*)?(?:#.*)?$/iu;
 
 /** Parse an explicit resource identity without consulting routes or fetching a catalogue. */
 export function parseTopikResourceReference(href: string): TopikResourceReference | null {
@@ -25,11 +26,16 @@ export function parseTopikResourceReference(href: string): TopikResourceReferenc
     const name = decodeURIComponent(match[2]);
     if (name.length > 63 || !RESOURCE_NAME.test(name)) return null;
     const url = new URL(href);
-    // Keep encoded query and fragment text intact; decoding only checks malformed escapes.
-    decodeURIComponent(url.search);
+    // Queries are opaque browser URL data and may contain non-UTF-8 octets or literal '%'.
+    // Fragments identify Unicode headings, so their escapes must still decode.
     decodeURIComponent(url.hash);
     return {
-      type: match[1].toLowerCase() === "wiki-page" ? "WikiPage" : "Guide",
+      type:
+        match[1].toLowerCase() === "wiki-page"
+          ? "WikiPage"
+          : match[1].toLowerCase() === "guide"
+            ? "Guide"
+            : "CoursePage",
       name,
       search: url.search,
       hash: url.hash.slice(1),
@@ -42,7 +48,9 @@ export function parseTopikResourceReference(href: string): TopikResourceReferenc
 /** Serialize an identity as a canonical ref:// URI; this is not a browser-facing URL. */
 export function serializeTopikResourceReference(reference: TopikResourceReference): string {
   if (
-    (reference.type !== "WikiPage" && reference.type !== "Guide") ||
+    (reference.type !== "WikiPage" &&
+      reference.type !== "Guide" &&
+      reference.type !== "CoursePage") ||
     typeof reference.name !== "string" ||
     reference.name.length > 63 ||
     !RESOURCE_NAME.test(reference.name) ||
@@ -53,7 +61,12 @@ export function serializeTopikResourceReference(reference: TopikResourceReferenc
   ) {
     throw new TypeError("Resource reference is not valid");
   }
-  const kind = reference.type === "WikiPage" ? "wiki-page" : "guide";
+  const kind =
+    reference.type === "WikiPage"
+      ? "wiki-page"
+      : reference.type === "Guide"
+        ? "guide"
+        : "course-page";
   const href = `ref://${kind}/${reference.name}${reference.search}${reference.hash ? `#${reference.hash}` : ""}`;
   const parsed = parseTopikResourceReference(href);
   if (!parsed) throw new TypeError("Resource reference is not valid");

@@ -14,7 +14,8 @@ import {
 } from "@topik/content";
 import { posix } from "node:path";
 import { classifyPortableNavigationPath, readPortableAssetFile } from "../assets/files";
-import { validateTopikPath } from "../assets/path";
+import { resolveSourceReferencePath } from "../reference-paths";
+import { folderLandingCandidates, isFolderHref, resolveDeclaredPublicRoute } from "../folder-links";
 import {
   resolveCourseContentHref,
   resolveCourseNavigation,
@@ -64,7 +65,7 @@ export interface CompileResourceLinksInput {
 }
 
 type DocumentResource = Extract<SourceResource, { type: "WikiPage" | "Guide" | "CoursePage" }>;
-type ReferenceResource = Extract<SourceResource, { type: "WikiPage" | "Guide" }>;
+type ReferenceResource = DocumentResource;
 
 /** Resolve document identity after all declared sources have been discovered, before Assets. */
 export async function compileResourceLinks(input: CompileResourceLinksInput): Promise<{
@@ -102,7 +103,6 @@ export async function compileResourceLinks(input: CompileResourceLinksInput): Pr
     const sourcePath = input.sourcePathsByResource[key];
     if (sourcePath === undefined || resource.spec.content.format !== "topik") continue;
     analyses.set(key, analyzeTopikContent(resource.spec.content.value, { file: sourcePath }));
-    if (resource.type === "CoursePage") continue;
     localTargets.set(key, resource);
     const targets = targetsByPath.get(sourcePath) ?? [];
     targets.push(resource);
@@ -147,16 +147,23 @@ export async function compileResourceLinks(input: CompileResourceLinksInput): Pr
   }
 
   const existingPaths = new Map<string, boolean>();
-  const hasNonPagePath = async (path: string): Promise<boolean> => {
+  const directories = new Map<string, boolean>();
+  const isDirectory = async (path: string): Promise<boolean> => {
+    let result = directories.get(path);
+    if (result === undefined) {
+      result =
+        path === "" ||
+        (await classifyPortableNavigationPath({ root: input.rootDir, path })) === "directory";
+      directories.set(path, result);
+    }
+    return result;
+  };
+  const hasNonPageFile = async (path: string): Promise<boolean> => {
     let exists = existingPaths.get(path);
     if (exists === undefined) {
-      const kind = await classifyPortableNavigationPath({ root: input.rootDir, path });
-      const proof =
-        kind === "directory"
-          ? undefined
-          : await readPortableAssetFile({ root: input.rootDir, path });
+      if (await isDirectory(path)) return false;
+      const proof = await readPortableAssetFile({ root: input.rootDir, path });
       exists =
-        kind === "directory" ||
         proof?.ok === true ||
         proof?.diagnostics.some((diagnostic) => diagnostic.id !== "TOPIK_ASSET_FILE_MISSING") ===
           true;
@@ -204,7 +211,7 @@ export async function compileResourceLinks(input: CompileResourceLinksInput): Pr
         replacements.set(navigationReferenceKey(link), { reference: explicit, status });
         continue;
       }
-      if (NON_PAGE_SCHEME.test(link.href)) continue;
+      if (NON_PAGE_SCHEME.test(link.href) || link.href.startsWith("//")) continue;
       if (link.href.startsWith("#")) {
         if (link.href !== "#" && (resource.type !== "CoursePage" || link.kind === "link"))
           validateFragment(
@@ -219,11 +226,49 @@ export async function compileResourceLinks(input: CompileResourceLinksInput): Pr
       const path = resolveSourceReferencePath(link.href, sourcePath, directory);
       const markdown = /\.(?:mdx?|markdown)$/i.test(path ?? link.href.split(/[?#]/, 1)[0]);
       const extensionless = path !== undefined && posix.extname(path) === "";
-      if (path !== undefined && extensionless && link.kind === "link") {
+      const folderSpelling = isFolderHref(link.href);
+      if (folderSpelling && path === undefined) {
+        appendLinkDiagnostic("link-page-not-found", link, policy, diagnostics);
+        continue;
+      }
+      // Extensionless absolute links retain their public-route contract. An explicit
+      // trailing slash instead selects a configuration-relative source folder.
+      const routeNavigation =
+        resource.type === "CoursePage"
+          ? courseNavigationByPage.get(resource.name)
+          : resource.type === "WikiPage"
+            ? navigation.get(resource.spec.wiki)
+            : undefined;
+      const routeTarget = routeNavigation
+        ? resolveDeclaredPublicRoute<{ page: string }>(
+            link.href,
+            routeNavigation.pageByRoute,
+            resource.type === "WikiPage",
+          )
+        : undefined;
+      const folder =
+        path !== undefined &&
+        !routeTarget &&
+        ((folderSpelling && (resource.type !== "Guide" || !link.href.startsWith("/"))) ||
+          (await isDirectory(path)));
+      const landingPages =
+        folder && path !== undefined
+          ? folderLandingCandidates(path, targetsByExtensionlessPath).flat()
+          : [];
+      if (folder && landingPages.length !== 1) {
+        appendLinkDiagnostic(
+          landingPages.length ? "link-reference-ambiguous" : "link-page-not-found",
+          link,
+          policy,
+          diagnostics,
+        );
+        continue;
+      }
+      if (!folder && path !== undefined && extensionless && link.kind === "link") {
         const asset = validateTopikAssetReference(link.href);
         // A real download keeps its Asset semantics even when a document shares its stem.
         // Leave unsupported files to the Asset pipeline so its safety checks still apply.
-        if (asset.valid && asset.kind === "local" && (await hasNonPagePath(path))) continue;
+        if (asset.valid && asset.kind === "local" && (await hasNonPageFile(path))) continue;
       }
       const candidates =
         path === undefined || (link.href.startsWith("/") && !markdown)
@@ -233,7 +278,14 @@ export async function compileResourceLinks(input: CompileResourceLinksInput): Pr
             : extensionless
               ? targetsByExtensionlessPath.get(path)
               : undefined;
-      let target = candidates?.length === 1 ? candidates[0] : undefined;
+      // A declared virtual route does not need to be a valid physical filename.
+      let target = routeTarget
+        ? localTargets.get(`${resource.type}/${routeTarget.page}`)
+        : folder
+          ? landingPages[0]
+          : candidates?.length === 1
+            ? candidates[0]
+            : undefined;
       // The root route has no portable file path; admit only the literal route, not
       // paths that normalize outside the source root and happen to resolve to it as URLs.
       const rootRoute = link.href.split(/[?#]/, 1)[0] === "/";
@@ -241,6 +293,18 @@ export async function compileResourceLinks(input: CompileResourceLinksInput): Pr
         const resolved = navigation.get(resource.spec.wiki);
         const wikiTarget = resolved && resolveWikiContentHref(link.href, resource.name, resolved);
         if (wikiTarget) target = localTargets.get(`WikiPage/${wikiTarget.page.page}`);
+      }
+      if (!target && path !== undefined && !markdown && resource.type === "CoursePage") {
+        const resolved = courseNavigationByPage.get(resource.name);
+        const courseTarget =
+          resolved && resolveCourseContentHref(link.href, resource.name, resolved);
+        // Logical Course sources may contain dots. Actual non-Markdown files
+        // retain download precedence for links, while cards identify pages.
+        if (
+          courseTarget &&
+          (extensionless || link.kind === "card" || !(await hasNonPageFile(path)))
+        )
+          target = localTargets.get(`CoursePage/${courseTarget.page.page}`);
       }
       if (target) {
         const url = new URL(link.href, LINK_BASE);
@@ -261,28 +325,17 @@ export async function compileResourceLinks(input: CompileResourceLinksInput): Pr
         continue;
       }
       // Guides retain application URL links, while Markdown source links must be declared.
-      // Course-to-course references remain under the existing Course resolver.
       if (resource.type === "CoursePage") {
         if (link.kind !== "link") continue;
-        const resolved = courseNavigationByPage.get(resource.name);
-        const courseTarget =
-          resolved && resolveCourseContentHref(link.href, resource.name, resolved);
-        if (courseTarget) {
-          validateFragment(
-            courseTarget.hash,
-            analyses
-              .get(`CoursePage/${courseTarget.page.page}`)
-              ?.headings.map((heading) => heading.id) ?? [],
-            link,
-            policy,
-            diagnostics,
-          );
-          continue;
-        }
       }
-      if (resource.type === "Guide" && !markdown) continue;
+      if (
+        resource.type === "Guide" &&
+        !markdown &&
+        (!folderSpelling || (link.href.startsWith("/") && path !== undefined))
+      )
+        continue;
       if (!markdown && path !== undefined && link.kind === "link") {
-        if (await hasNonPagePath(path)) continue;
+        if (await hasNonPageFile(path)) continue;
       }
       appendLinkDiagnostic("link-page-not-found", link, policy, diagnostics);
     }
@@ -346,25 +399,6 @@ function appendLinkDiagnostic(
     diagnostics.push(linkDiagnostic(id, policy === "error" ? "error" : "warning", link));
 }
 
-function resolveSourceReferencePath(
-  href: string,
-  sourcePath: string,
-  directory: string,
-): string | undefined {
-  if (/^[a-z][a-z0-9+.-]*:/i.test(href)) return undefined;
-  try {
-    const path = decodeURIComponent(href.split(/[?#]/, 1)[0]);
-    const joined = path.startsWith("/")
-      ? posix.join(directory, path.slice(1))
-      : posix.join(posix.dirname(sourcePath), path || posix.basename(sourcePath));
-    // posix.join normalizes repeated separators to at most one trailing slash.
-    const result = validateTopikPath(joined.endsWith("/") ? joined.slice(0, -1) : joined);
-    return result.ok ? result.value.path : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 function admitReferenceTargets(value: unknown): readonly CompileResourceReferenceTarget[] {
   if (value === undefined) return [];
   if (!Array.isArray(value)) throw new PublicCompileError("reference-targets-invalid");
@@ -373,7 +407,7 @@ function admitReferenceTargets(value: unknown): readonly CompileResourceReferenc
       target === null ||
       typeof target !== "object" ||
       Array.isArray(target) ||
-      (target.type !== "WikiPage" && target.type !== "Guide") ||
+      (target.type !== "WikiPage" && target.type !== "Guide" && target.type !== "CoursePage") ||
       typeof target.name !== "string" ||
       target.name.length > 63 ||
       !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(target.name) ||

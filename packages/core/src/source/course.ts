@@ -1,5 +1,9 @@
 import { posix } from "node:path";
-import { parseTopikResourceReference, rewriteTopikNavigationReferences } from "@topik/content";
+import {
+  parseTopikResourceReference,
+  rewriteTopikNavigationReferences,
+  type TopikNavigationReference,
+} from "@topik/content";
 import type { Course } from "@topik/schema/course/v1";
 import type { CourseModule } from "@topik/schema/course-module/v1";
 import type { CoursePage } from "@topik/schema/course-page/v1";
@@ -91,10 +95,13 @@ export function resolveSourceCourseContext(
 export function portableCoursePage(
   page: CoursePage,
   navigation: ResolvedCourseNavigation,
+  isNonPageReference?: (reference: TopikNavigationReference) => boolean,
 ): CoursePage {
   const rewritten = rewriteTopikNavigationReferences(
     page.spec.content.value,
-    ({ href }) => {
+    (reference) => {
+      if (isNonPageReference?.(reference)) return undefined;
+      const { href } = reference;
       const target = resolveCourseContentHref(href, page.name, navigation);
       const prefix = "https://topik.invalid/reference/";
       return target
@@ -130,12 +137,15 @@ export function transportCourseReferences(
     target?: string;
   }>,
   resolveOtherReference?: (href: string) => string | undefined,
+  isNonPageReference?: (reference: TopikNavigationReference) => boolean,
+  isCurrentNonPageReference?: (reference: TopikNavigationReference) => boolean,
 ): boolean {
   const key = `CoursePage/${page.name}`;
   const rewritten = rewriteTopikNavigationReferences(
     page.spec.content.value,
     (reference) => {
-      if (parseTopikResourceReference(reference.href)) return undefined;
+      if (parseTopikResourceReference(reference.href) || isNonPageReference?.(reference))
+        return undefined;
       const savedReference = resolveCourseContentReference(reference.href, page.name, saved);
       if (savedReference.kind === "unresolved") {
         const other = resolveOtherReference?.(reference.href);
@@ -151,6 +161,7 @@ export function transportCourseReferences(
       const before = savedReference.target;
       const after = resolveCourseContentHref(reference.href, page.name, current);
       if (
+        !isCurrentNonPageReference?.(reference) &&
         after?.page.page === before.page.page &&
         after.search === before.search &&
         after.hash === before.hash

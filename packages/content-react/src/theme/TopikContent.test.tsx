@@ -210,29 +210,36 @@ describe("TopikContent", () => {
     expect(html).toContain('href="/preview/card"');
   });
 
-  it("resolves resource links and cards once before SSR and framework adapters", () => {
-    const resolveLink = vi.fn((href: string) =>
-      href === "ref://guide/getting-started?view=full#setup"
-        ? "/learn/start?view=full#setup"
-        : undefined,
-    );
-    const html = renderToStaticMarkup(
-      <TopikContent
-        content={
-          '[Install](ref://guide/getting-started?view=full#setup)\n\n{% card title="Start" href="ref://guide/getting-started?view=full#setup" /%}'
-        }
-        resolveLink={resolveLink}
-        renderLink={(props) => <a {...props} data-framework-link />}
-      />,
-    );
+  it.each(["guide", "course-page"])(
+    "resolves %s links and cards once before SSR and framework adapters",
+    (kind) => {
+      const resolveLink = vi.fn((href: string) =>
+        href === `ref://${kind}/getting-started?view=full#setup`
+          ? "/learn/start?view=full#setup"
+          : undefined,
+      );
+      const html = renderToStaticMarkup(
+        <TopikContent
+          content={`[Install](ref://${kind}/getting-started?view=full#setup)\n\n{% card title="Start" href="ref://${kind}/getting-started?view=full#setup" /%}`}
+          resolveLink={resolveLink}
+          renderLink={(props) => <a {...props} data-framework-link />}
+        />,
+      );
 
-    expect(html.match(/href="\/learn\/start\?view=full#setup"/gu)).toHaveLength(2);
-    expect(html.match(/data-framework-link/gu)).toHaveLength(2);
-    expect(html).not.toContain("ref://");
-    expect(resolveLink).toHaveBeenCalledTimes(2);
-    expect(resolveLink).toHaveBeenNthCalledWith(1, "ref://guide/getting-started?view=full#setup");
-    expect(resolveLink).toHaveBeenNthCalledWith(2, "ref://guide/getting-started?view=full#setup");
-  });
+      expect(html.match(/href="\/learn\/start\?view=full#setup"/gu)).toHaveLength(2);
+      expect(html.match(/data-framework-link/gu)).toHaveLength(2);
+      expect(html).not.toContain("ref://");
+      expect(resolveLink).toHaveBeenCalledTimes(2);
+      expect(resolveLink).toHaveBeenNthCalledWith(
+        1,
+        `ref://${kind}/getting-started?view=full#setup`,
+      );
+      expect(resolveLink).toHaveBeenNthCalledWith(
+        2,
+        `ref://${kind}/getting-started?view=full#setup`,
+      );
+    },
+  );
 
   it("resolves refs for custom components using provider routes", () => {
     const html = renderToStaticMarkup(

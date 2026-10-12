@@ -14,13 +14,17 @@ export interface TopikLinkDiagnostic {
 export interface TopikLinkResolverOptions<
   WikiEntry extends TopikLinkEntry = TopikLinkEntry,
   GuideEntry extends TopikLinkEntry = TopikLinkEntry,
+  CourseEntry extends TopikLinkEntry = TopikLinkEntry,
 > {
   wikiPages?: readonly WikiEntry[];
   guides?: readonly GuideEntry[];
+  coursePages?: readonly CourseEntry[];
   /** Assign a browser URL using the application's wiki prefix and entry metadata. */
   resolveWikiPage?: (entry: WikiEntry) => string | undefined;
   /** Assign a browser URL using the application's guide prefix and entry metadata. */
   resolveGuide?: (entry: GuideEntry) => string | undefined;
+  /** Assign a browser URL using the application's course and lesson route metadata. */
+  resolveCoursePage?: (entry: CourseEntry) => string | undefined;
   onDiagnostic?: (diagnostic: TopikLinkDiagnostic) => void;
 }
 
@@ -31,9 +35,13 @@ export interface TopikLinkResolverOptions<
 export function createTopikLinkResolver<
   WikiEntry extends TopikLinkEntry = TopikLinkEntry,
   GuideEntry extends TopikLinkEntry = TopikLinkEntry,
->(options: TopikLinkResolverOptions<WikiEntry, GuideEntry>): (href: string) => string | undefined {
+  CourseEntry extends TopikLinkEntry = TopikLinkEntry,
+>(
+  options: TopikLinkResolverOptions<WikiEntry, GuideEntry, CourseEntry>,
+): (href: string) => string | undefined {
   const wikiPages = indexEntries(options.wikiPages ?? []);
   const guides = indexEntries(options.guides ?? []);
+  const coursePages = indexEntries(options.coursePages ?? []);
 
   return (href) => {
     const reference = parseTopikResourceReference(href);
@@ -45,9 +53,12 @@ export function createTopikLinkResolver<
       if (reference.type === "WikiPage") {
         const entry = wikiPages.get(reference.name);
         if (entry !== undefined) route = options.resolveWikiPage?.(entry);
-      } else {
+      } else if (reference.type === "Guide") {
         const entry = guides.get(reference.name);
         if (entry !== undefined) route = options.resolveGuide?.(entry);
+      } else if (reference.type === "CoursePage") {
+        const entry = coursePages.get(reference.name);
+        if (entry !== undefined) route = options.resolveCoursePage?.(entry);
       }
     } catch {
       route = undefined;

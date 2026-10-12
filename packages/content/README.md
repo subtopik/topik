@@ -54,6 +54,13 @@ definitions, tables, and leading YAML frontmatter. Frontmatter is retained but
 not rendered. Raw HTML and footnotes are refused. URLs and email addresses remain
 text unless expressed as explicit Markdown links or angle-bracket autolinks.
 
+Portable document destinations use `ref://wiki-page/<name>`, `ref://guide/<name>`,
+or `ref://course-page/<name>`, where the name is the target resource identity.
+`parseTopikResourceReference` and `serializeTopikResourceReference` retain its
+query and fragment separately from publishing routes. Renderers must resolve
+these identities to browser URLs; see the
+[resource-link reference](https://github.com/subtopik/topik/blob/main/docs/resources/navigation.md#links-between-pages).
+
 Block tags occupy their own lines; inline tags appear inside prose. Properties
 are literal strings, numbers, and booleans; selected built-in text properties also
 accept explicit templates. Unsupported syntax is diagnosed instead of silently

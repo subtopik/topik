@@ -1,5 +1,6 @@
 import { discoverGuides, type CompileResourceDiscovery } from "./guide";
 import { discoverWiki } from "./wiki";
+import { discoverCourse } from "./course";
 
 export interface DiscoverResourceOptions {
   dir: string;
@@ -20,4 +21,11 @@ export async function discoverWikiResources(
   options: DiscoverResourceOptions,
 ): Promise<SourceResourceDiscovery> {
   return discoverWiki(options);
+}
+
+/** Read Course membership, metadata and paths without compiling links or Assets. */
+export async function discoverCourseResources(
+  options: DiscoverResourceOptions,
+): Promise<SourceResourceDiscovery> {
+  return discoverCourse(options);
 }

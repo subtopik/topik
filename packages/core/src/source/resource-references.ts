@@ -3,15 +3,62 @@ import {
   parseTopikResourceReference,
   rewriteTopikNavigationReferences,
   serializeTopikResourceReference,
+  type TopikNavigationReference,
 } from "@topik/content";
 import type { Resource } from "../resource";
 import { resolveWikiContentHref, resolveWikiNavigation } from "../wiki-navigation";
 import { SourcePlanningError } from "./diagnostics";
 import { withSourceScratch, type SourceDocumentProvenance, type SourceProject } from "./project";
 import { compileResourceLinks } from "../compile/links";
-import { validateTopikPath } from "../assets/path";
+import {
+  isSourceNonPageReference,
+  isSourceFolderReference,
+  resolveSourceReferencePath,
+  sourcePathInventory,
+} from "../reference-paths";
+import { folderLandingCandidates, resolveDeclaredPublicRoute } from "../folder-links";
+import { resolveCourseContentHref, resolveCourseNavigation } from "../course-navigation";
+import { sourceCourseContext } from "./course";
 
 type ContentResource = Extract<Resource, { type: "WikiPage" | "Guide" | "CoursePage" }>;
+function courseName(
+  resource: ContentResource,
+  resources: ReadonlyMap<string, Resource>,
+): string | undefined {
+  if (resource.type !== "CoursePage") return undefined;
+  const module = resources.get(`CourseModule/${resource.spec.module}`);
+  return module?.type === "CourseModule" ? module.spec.course : undefined;
+}
+
+function sourcePublicRouteTarget(
+  resource: ContentResource,
+  href: string,
+  paths: ReadonlyMap<string, string>,
+  resources: ReadonlyMap<string, Resource>,
+): ContentResource | undefined {
+  if (!href.startsWith("/")) return undefined;
+  if (resource.type === "WikiPage") {
+    const wiki = resources.get(`Wiki/${resource.spec.wiki}`);
+    if (wiki?.type !== "Wiki") return undefined;
+    const navigation = resolveWikiNavigation(wiki.spec.navigation ?? [], {
+      sourceVersion: wiki.spec.sourceVersion,
+    });
+    const page = resolveDeclaredPublicRoute(href, navigation.pageByRoute, true);
+    const target = page && resources.get(`WikiPage/${page.page}`);
+    return target?.type === "WikiPage" ? target : undefined;
+  }
+  if (resource.type !== "CoursePage") return undefined;
+  const course = resources.get(`Course/${courseName(resource, resources)}`);
+  const config = course && paths.get(`Course/${course.name}`);
+  if (course?.type !== "Course" || !config) return undefined;
+  const directory = posix.dirname(config);
+  const navigation = resolveCourseNavigation(
+    sourceCourseContext([...resources.values()], course, paths, directory === "." ? "" : directory),
+  );
+  const page = resolveDeclaredPublicRoute(href, navigation.pageByRoute);
+  const target = page && resources.get(`CoursePage/${page.page}`);
+  return target?.type === "CoursePage" ? target : undefined;
+}
 export interface SourceReferenceRepair {
   resource: string;
   kind: "reference";
@@ -31,6 +78,8 @@ export function prepareSourceResourceReferences(
   currentPaths: ReadonlyMap<string, string>,
   base: ReadonlyMap<string, Resource>,
   desired: ReadonlyMap<string, Resource>,
+  originalInventory: ReadonlySet<string>,
+  currentInventory: ReadonlySet<string>,
 ): SourceDocumentProvenance | undefined {
   const supplied: SourceDocumentProvenance["references"][number][] = [];
   const rewritten = rewriteTopikNavigationReferences(
@@ -39,29 +88,47 @@ export function prepareSourceResourceReferences(
       if (
         parseTopikResourceReference(reference.href) ||
         reference.href.startsWith("#") ||
-        /^[a-z][a-z0-9+.-]*:/i.test(reference.href)
+        /^[a-z][a-z0-9+.-]*:/i.test(reference.href) ||
+        isSourceNonPageReference(reference, document?.path ?? path, directory, originalInventory)
+      )
+        return undefined;
+      // Preserve public-route interpretation for scope-local transport, including
+      // when a different declared source has a folder at the same filesystem path.
+      if (sourcePublicRouteTarget(resource, reference.href, originalPaths, base)) return undefined;
+      const originalTarget = resolveSourcePathReference(
+        reference.href,
+        document?.path ?? path,
+        directory,
+        originalPaths,
+        base,
+        originalInventory,
+      );
+      // A new directory cannot replace an already established page destination.
+      if (
+        !originalTarget &&
+        isSourceNonPageReference(reference, document?.path ?? path, directory, currentInventory)
       )
         return undefined;
       const target =
-        resolveSourcePathReference(
-          reference.href,
-          document?.path ?? path,
-          directory,
-          originalPaths,
-          base,
-        ) ??
-        resolveSourcePathReference(
-          reference.href,
-          document?.path ?? path,
-          directory,
-          currentPaths,
-          desired,
-        );
+        originalTarget ??
+        (sourcePublicRouteTarget(resource, reference.href, currentPaths, desired)
+          ? undefined
+          : resolveSourcePathReference(
+              reference.href,
+              document?.path ?? path,
+              directory,
+              currentPaths,
+              desired,
+              currentInventory,
+            ));
       if (
         !target ||
         (resource.type === "WikiPage" &&
           target.type === "WikiPage" &&
-          resource.spec.wiki === target.spec.wiki)
+          resource.spec.wiki === target.spec.wiki) ||
+        (resource.type === "CoursePage" &&
+          target.type === "CoursePage" &&
+          courseName(resource, desired) === courseName(target, desired))
       )
         return undefined;
       const url = new URL(reference.href, "https://topik.invalid");
@@ -110,30 +177,65 @@ export function resolveSourcePathReference(
   directory: string,
   paths: ReadonlyMap<string, string>,
   resources: ReadonlyMap<string, Resource>,
-): Extract<Resource, { type: "WikiPage" | "Guide" }> | undefined {
+  inventory: ReadonlySet<string> = sourcePathInventory(paths.values()),
+): ContentResource | undefined {
   if (href.startsWith("#") || /^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("//"))
     return undefined;
-  try {
-    const pathname = decodeURIComponent(href.split(/[?#]/, 1)[0]);
-    if (pathname.startsWith("/") && !/\.(?:mdx?|markdown)$/i.test(pathname)) return undefined;
-    const resolved = validateTopikPath(
-      pathname.startsWith("/")
-        ? posix.join(directory, pathname.slice(1))
-        : posix.join(posix.dirname(sourcePath), pathname || posix.basename(sourcePath)),
-    );
-    return resolved.ok
-      ? findSourceReferenceTarget(resolved.value.path, paths, resources)
-      : undefined;
-  } catch {
-    return undefined;
+  const path = resolveSourceReferencePath(href, sourcePath, directory);
+  if (path === undefined) return undefined;
+  if (isSourceFolderReference(href, sourcePath, directory, inventory)) {
+    const pages = new Map<string, ContentResource[]>();
+    for (const [key, source] of paths) {
+      const resource = resources.get(key);
+      if (
+        !resource ||
+        (resource.type !== "WikiPage" &&
+          resource.type !== "Guide" &&
+          resource.type !== "CoursePage") ||
+        !/\.(?:mdx?|markdown)$/i.test(source)
+      )
+        continue;
+      const stem = source.replace(/\.(?:mdx?|markdown)$/i, "");
+      pages.set(stem, [...(pages.get(stem) ?? []), resource]);
+    }
+    const candidates = folderLandingCandidates(path, pages).flat();
+    return candidates.length === 1 ? candidates[0] : undefined;
   }
+  if (href.startsWith("/") && !/\.(?:mdx?|markdown)$/i.test(path)) return undefined;
+  return findSourceReferenceTarget(path, paths, resources);
+}
+
+/** Candidate filesystem precedence must still agree with the selected page identity. */
+export function isSourceReferenceShadowed(
+  resource: ContentResource,
+  reference: Pick<TopikNavigationReference, "href" | "kind">,
+  path: string,
+  directory: string,
+  paths: ReadonlyMap<string, string>,
+  resources: ReadonlyMap<string, Resource>,
+  inventory: ReadonlySet<string>,
+  target: string,
+): boolean {
+  const publicTarget = sourcePublicRouteTarget(resource, reference.href, paths, resources);
+  if (publicTarget) return `${publicTarget.type}/${publicTarget.name}` !== target;
+  if (isSourceNonPageReference(reference, path, directory, inventory)) return true;
+  if (!isSourceFolderReference(reference.href, path, directory, inventory)) return false;
+  const page = resolveSourcePathReference(
+    reference.href,
+    path,
+    directory,
+    paths,
+    resources,
+    inventory,
+  );
+  return !page || `${page.type}/${page.name}` !== target;
 }
 
 function findSourceReferenceTarget(
   path: string,
   paths: ReadonlyMap<string, string>,
   resources: ReadonlyMap<string, Resource>,
-): Extract<Resource, { type: "WikiPage" | "Guide" }> | undefined {
+): ContentResource | undefined {
   const exact = [...paths].filter(([, sourcePath]) => sourcePath === path);
   // An explicit extension names a file, rather than a logical stem shared by .md and .mdx.
   const candidates =
@@ -145,8 +247,10 @@ function findSourceReferenceTarget(
   const targets = candidates
     .map(([key]) => resources.get(key))
     .filter(
-      (resource): resource is Extract<Resource, { type: "WikiPage" | "Guide" }> =>
-        resource?.type === "WikiPage" || resource?.type === "Guide",
+      (resource): resource is ContentResource =>
+        resource?.type === "WikiPage" ||
+        resource?.type === "Guide" ||
+        resource?.type === "CoursePage",
     );
   return targets.length === 1 ? targets[0] : undefined;
 }
@@ -186,6 +290,7 @@ export function restoreSourceResourceReferences(
   originalPaths: ReadonlyMap<string, string>,
   base: ReadonlyMap<string, Resource>,
   desired: ReadonlyMap<string, Resource>,
+  currentInventory: ReadonlySet<string>,
 ): { content: string; repairs: SourceReferenceRepair[] } {
   const key = `${resource.type}/${resource.name}`;
   const repairs: SourceReferenceRepair[] = [];
@@ -221,8 +326,20 @@ export function restoreSourceResourceReferences(
       const target = desired.get(targetKey);
       const suffix = `${identity.search}${identity.hash ? `#${identity.hash}` : ""}`;
       let href = saved.href;
+      // Candidate routes and filesystem paths must still identify the saved target.
+      const shadowed = () =>
+        isSourceReferenceShadowed(
+          resource,
+          saved,
+          path,
+          document?.directory ?? "",
+          paths,
+          desired,
+          currentInventory,
+          targetKey,
+        );
       let unchangedContext =
-        document?.path === path && destination === originalPaths.get(targetKey);
+        !shadowed() && document?.path === path && destination === originalPaths.get(targetKey);
       // An unchanged source path can still acquire a different meaning after route edits.
       if (
         resource.type === "WikiPage" &&
@@ -236,6 +353,34 @@ export function restoreSourceResourceReferences(
           });
           const current = resolveWikiContentHref(saved.href, resource.name, navigation);
           unchangedContext =
+            !shadowed() &&
+            current?.page.page === identity.name &&
+            current.search === identity.search &&
+            current.hash === identity.hash;
+          const page = navigation.pageByName.get(identity.name);
+          if (page && !unchangedContext)
+            href = `/${page.route.split("/").map(encodeURIComponent).join("/")}${suffix}`;
+        }
+      } else if (
+        resource.type === "CoursePage" &&
+        target?.type === "CoursePage" &&
+        courseName(resource, desired) === courseName(target, desired)
+      ) {
+        const course = desired.get(`Course/${courseName(resource, desired)}`);
+        const configPath = course && paths.get(`Course/${course.name}`);
+        if (course?.type === "Course" && configPath) {
+          const directory = posix.dirname(configPath);
+          const navigation = resolveCourseNavigation(
+            sourceCourseContext(
+              [...desired.values()],
+              course,
+              paths,
+              directory === "." ? "" : directory,
+            ),
+          );
+          const current = resolveCourseContentHref(saved.href, resource.name, navigation);
+          unchangedContext =
+            !shadowed() &&
             current?.page.page === identity.name &&
             current.search === identity.search &&
             current.hash === identity.hash;

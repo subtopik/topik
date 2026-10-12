@@ -5,6 +5,7 @@ import { afterEach, expect, test } from "vite-plus/test";
 import { compileCourse } from "./course";
 import { compileManifest } from "./manifest";
 import { validateResources } from "../validate";
+import { analyzeTopikContent } from "@topik/content";
 
 const roots: string[] = [];
 async function fixture(files: Record<string, string | Buffer>) {
@@ -99,9 +100,18 @@ test("compiles the complete Course graph with exact identities, ordering, nullab
       module: "basics",
       order: 12,
       authors: ["alice"],
-      content: { value: welcome.split("---\n")[2] },
+      content: { value: expect.stringContaining("ref://course-page/next?mode=full#details") },
     },
   });
+  const page = result.resources.find(
+    (resource) => resource.type === "CoursePage" && resource.name === "welcome",
+  )!;
+  if (page.type !== "CoursePage") throw new Error("Expected a Course page");
+  expect(analyzeTopikContent(page.spec.content.value).links.map(({ href }) => href)).toEqual([
+    "ref://course-page/next?mode=full#details",
+    "ref://course-page/next#details",
+    "#welcome",
+  ]);
   expect(
     result.resources.find((resource) => resource.type === "CoursePage" && resource.name === "next"),
   ).toMatchObject({ spec: { authors: [] } });
@@ -164,7 +174,9 @@ test("Course source files with literal hash characters compile relative links wi
       (resource) => resource.type === "CoursePage" && resource.name === "welcome",
     ),
   ).toMatchObject({
-    spec: { content: { value: expect.stringContaining("./next.md?mode=full#details") } },
+    spec: {
+      content: { value: expect.stringContaining("ref://course-page/next?mode=full#details") },
+    },
   });
 });
 

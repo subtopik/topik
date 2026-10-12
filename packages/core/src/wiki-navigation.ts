@@ -11,6 +11,13 @@ import type {
   WikiTabNavNode,
 } from "@topik/schema/wiki/v1";
 import { parseTopikResourceReference } from "@topik/content";
+import {
+  hasDeclaredFolder,
+  isFolderHref,
+  resolveDeclaredSourcePage,
+  resolveDeclaredPublicRoute,
+  resolveNavigationPath,
+} from "./folder-links";
 
 const INTERNAL_WIKI_ORIGIN = "https://topik.invalid";
 
@@ -183,25 +190,34 @@ export function resolveWikiContentHref(
 
   let url: URL;
   try {
-    url = new URL(href, `${INTERNAL_WIKI_ORIGIN}/${currentPage.sourcePath}`);
+    const sourcePath = currentPage.sourcePath.split("/").map(encodeURIComponent).join("/");
+    url = new URL(href, `${INTERNAL_WIKI_ORIGIN}/${sourcePath}`);
   } catch {
     return null;
   }
   if (url.origin !== INTERNAL_WIKI_ORIGIN) return null;
 
-  let decodedPath: string;
-  try {
-    decodedPath = decodeURIComponent(url.pathname);
-  } catch {
-    return null;
-  }
-  const normalizedPath = decodedPath.replace(/^\/+|\/+$/g, "").replace(/\.(?:mdx?|markdown)$/i, "");
+  const pathname = resolveNavigationPath(href, currentPage.sourcePath);
+  if (pathname === undefined) return null;
+  const markdown =
+    /\.(?:mdx?|markdown)$/i.test(pathname) &&
+    !hasDeclaredFolder(pathname, resolved.pageBySourcePath);
+  const normalizedPath = markdown ? pathname.replace(/\.(?:mdx?|markdown)$/i, "") : pathname;
   const route = normalizedPath === "index" ? "" : normalizedPath.replace(/\/index$/, "");
-  const sourceLink = !href.startsWith("/") || /\.(?:mdx?|markdown)$/i.test(decodedPath);
+  const folder = isFolderHref(href);
+  const sourceLink = !href.startsWith("/") || markdown || folder;
   const page =
-    resolved.sourceVersion === 1 && sourceLink
-      ? resolved.pageBySourcePath.get(normalizedPath)
-      : resolved.pageByRoute.get(route);
+    sourceLink &&
+    (resolved.sourceVersion === 1 ||
+      folder ||
+      hasDeclaredFolder(normalizedPath, resolved.pageBySourcePath))
+      ? markdown
+        ? resolved.pageBySourcePath.get(normalizedPath)
+        : resolveDeclaredSourcePage(normalizedPath, resolved.pageBySourcePath, folder)
+      : ((!sourceLink && href.startsWith("/")
+          ? resolveDeclaredPublicRoute(href, resolved.pageByRoute, true)
+          : resolved.pageByRoute.get(route)) ??
+        resolveDeclaredSourcePage(normalizedPath, resolved.pageBySourcePath, true));
   return page
     ? { page, route: page.route, hash: url.hash.replace(/^#/, ""), search: url.search }
     : null;

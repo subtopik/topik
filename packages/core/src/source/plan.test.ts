@@ -257,10 +257,12 @@ test("fresh relative links across resource kinds preserve authored spelling and 
   const desired = structuredClone(project.compilation.resources);
   desired.find(
     (resource): resource is WikiPage => resource.type === "WikiPage",
-  )!.spec.content.value = "# Home\n\n[Install](../guides/install.md#setup)\n";
+  )!.spec.content.value =
+    "# Home\n\n[Install](../guides/install.md#setup)\n\n[Lesson](../lessons/intro.md#intro)\n";
   desired.find(
     (resource): resource is Guide => resource.type === "Guide" && resource.name === "install-md",
-  )!.spec.content.value = "# Setup\n\n[Home](../docs/home.md?view=full#home)\n";
+  )!.spec.content.value =
+    "# Setup\n\n[Home](../docs/home.md?view=full#home)\n\n[Lesson](../lessons/intro.md#intro)\n";
   desired.find(
     (resource): resource is CoursePage => resource.type === "CoursePage",
   )!.spec.content.value = "# Intro\n\n[Install](../guides/install.md#setup)\n";
@@ -285,6 +287,11 @@ test("fresh relative links across resource kinds preserve authored spelling and 
       )!.spec.content.value,
     ).toContain("ref://guide/install-md#setup");
     expect(
+      saved.plan.candidate.compilation.resources.find(
+        (resource): resource is WikiPage => resource.type === "WikiPage",
+      )!.spec.content.value,
+    ).toContain("ref://course-page/tutorial#intro");
+    expect(
       decodeSource(saved.plan.candidate.tree.find((entry) => entry.path === "docs/home.md")!.bytes),
     ).toContain("[Install](../guides/install.md#setup)");
     expect(
@@ -303,15 +310,46 @@ test("fresh relative links across resource kinds preserve authored spelling and 
     operations: [
       { kind: "update", resource: "WikiPage/home" },
       { kind: "move", resource: "Guide/install-md", path: "guides/renamed.md" },
-      { kind: "update", resource: "CoursePage/tutorial" },
+      { kind: "move", resource: "CoursePage/tutorial", path: "lessons/renamed.md" },
     ],
-    authority: { ...request.authority, create: ["guides/renamed.md"] },
+    authority: {
+      ...request.authority,
+      create: ["guides/renamed.md", "lessons/renamed.md"],
+    },
   });
   expect(moved.ok, JSON.stringify(moved)).toBe(true);
-  if (moved.ok)
+  if (moved.ok) {
     expect(
       decodeSource(moved.plan.candidate.tree.find((entry) => entry.path === "docs/home.md")!.bytes),
     ).toContain("[Install](../guides/renamed.md#setup)");
+    expect(
+      decodeSource(moved.plan.candidate.tree.find((entry) => entry.path === "docs/home.md")!.bytes),
+    ).toContain("[Lesson](../lessons/renamed.md#intro)");
+    expect(
+      decodeSource(
+        moved.plan.candidate.tree.find((entry) => entry.path === "guides/renamed.md")!.bytes,
+      ),
+    ).toContain("[Lesson](../lessons/renamed.md#intro)");
+    expect(
+      decodeSource(
+        moved.plan.candidate.tree.find((entry) => entry.path === "lessons/renamed.md")!.bytes,
+      ),
+    ).toContain("[Install](../guides/renamed.md#setup)");
+  }
+  expect(
+    await planSourceUpdates({
+      ...request,
+      desiredResources: desired.filter((resource) => resource.type !== "CoursePage"),
+      operations: [
+        { kind: "update", resource: "WikiPage/home" },
+        { kind: "update", resource: "Guide/install-md" },
+        { kind: "delete", resource: "CoursePage/tutorial" },
+      ],
+    }),
+  ).toMatchObject({
+    ok: false,
+    diagnostics: [{ code: "reference-target-removed", resource: "Guide/install-md" }],
+  });
 });
 test("fresh non-Markdown application links remain distinct from dotted Guide source stems", async () => {
   const project = await readSourceProject({
@@ -351,6 +389,171 @@ test("fresh non-Markdown application links remain distinct from dotted Guide sou
     ),
   ).toContain("[Guide](./api.json.md?view=full#api)");
 });
+
+test.each(["./install.md///?view=full#setup", "/install.md///?view=full#setup"])(
+  "fresh Markdown reference %s retains its target across source moves",
+  async (href) => {
+    const project = await readSourceProject({
+      tree: [
+        file(
+          ".topik.yaml",
+          "version: 1\nnamespace: refs\nsources: [{kind: collection, config: collection.yaml}]\n",
+        ),
+        file("collection.yaml", "id: docs\ntitle: Docs\nsourceVersion: 1\n"),
+        file("home.md", "---\nid: home\n---\n# Home\n"),
+        file("install.md", "---\nid: installation\n---\n# Setup\n"),
+      ],
+    });
+    const desired = structuredClone(project.compilation.resources);
+    const home = desired.find(
+      (resource): resource is Guide => resource.type === "Guide" && resource.name === "home",
+    )!;
+    home.spec.content.value = `# Home\n\n[Install](${href})\n`;
+    const request = {
+      project,
+      expectedTreeDigest: project.treeDigest,
+      packageCohort: cohort,
+      desiredResources: desired,
+      operations: [{ kind: "update" as const, resource: "Guide/home" }],
+      authority: authority(project),
+    };
+    const saved = await planSourceUpdates(request);
+    expect(saved.ok, JSON.stringify(saved)).toBe(true);
+    if (saved.ok)
+      expect(
+        decodeSource(saved.plan.candidate.tree.find((entry) => entry.path === "home.md")!.bytes),
+      ).toContain(`[Install](${href})`);
+    const moved = await planSourceUpdates({
+      ...request,
+      operations: [
+        ...request.operations,
+        { kind: "move", resource: "Guide/installation", path: "renamed.md" },
+      ],
+      authority: { ...request.authority, create: ["renamed.md"] },
+    });
+    expect(moved.ok, JSON.stringify(moved)).toBe(true);
+    if (!moved.ok) return;
+    expect(
+      decodeSource(moved.plan.candidate.tree.find((entry) => entry.path === "home.md")!.bytes),
+    ).toContain("[Install](renamed.md?view=full#setup)");
+    expect(
+      moved.plan.candidate.compilation.resources.find(
+        (resource): resource is Guide => resource.type === "Guide" && resource.name === "home",
+      )!.spec.content.value,
+    ).toContain("ref://guide/installation?view=full#setup");
+    expect(moved.plan.derivedRepairs).toContainEqual(
+      expect.objectContaining({
+        resource: "Guide/home",
+        kind: "reference",
+        before: href,
+        after: "renamed.md?view=full#setup",
+        target: "installation",
+      }),
+    );
+  },
+);
+
+test.each(["guide-course", "wiki", "course", "course-dotted"] as const)(
+  "%s folder landing links retain identity when a same-stem page moves",
+  async (kind) => {
+    const directory = kind === "wiki" ? "docs" : "lessons";
+    const stem = kind === "course-dotted" ? "next.v1" : "next";
+    const suffix = kind === "course-dotted" ? "?view=full#next" : "";
+    const config = `${directory}/${kind === "wiki" ? "wiki" : "course"}.yaml`;
+    const homePath = kind === "guide-course" ? "guides/home.md" : `${directory}/home.md`;
+    const href = (kind === "guide-course" ? `../lessons/${stem}` : `./${stem}`) + suffix;
+    const homeType =
+      kind === "guide-course" ? "Guide" : kind === "wiki" ? "WikiPage" : "CoursePage";
+    const targetType = kind === "wiki" ? "WikiPage" : "CoursePage";
+    const home = `---\nid: home\ntitle: Home\nslug: home\norder: 0\n---\n# Home\n\n[Directory](${href})\n`;
+    const target = "---\nid: target\ntitle: Next\nslug: next\norder: 1\n---\n# Next\n";
+    const tree = [
+      file(
+        ".topik.yaml",
+        `version: 1\nnamespace: refs\nsources: [${kind === "guide-course" ? "{kind: collection, config: guides/collection.yaml}, " : ""}{kind: ${kind === "wiki" ? "wiki" : "course"}, config: ${config}}]\n`,
+      ),
+      file(
+        config,
+        kind === "wiki"
+          ? "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation: [home, {type: page, slug: next-file, source: next}, {type: page, slug: landing, source: next/index}]\n"
+          : `id: lessons\ntitle: Lessons\nslug: lessons\nsourceVersion: 1\nmodules: [{id: basics, title: Basics, slug: basics, order: 0, pages: [${kind === "guide-course" ? "" : "home, "}${stem}, ${stem}/index]}]\n`,
+      ),
+      ...(kind === "guide-course"
+        ? [file("guides/collection.yaml", "id: guides\ntitle: Guides\nsourceVersion: 1\n")]
+        : []),
+      file(homePath, home),
+      file(`${directory}/${stem}.md`, target),
+      file(
+        `${directory}/${stem}/index.md`,
+        "---\nid: landing\ntitle: Landing\nslug: landing\norder: 2\n---\n# Next\n",
+      ),
+    ];
+    const project = await readSourceProject({ tree });
+    const compiledHome = project.compilation.resources.find(
+      (resource) => resource.type === homeType && resource.name === "home",
+    )!;
+    expect(compiledHome.spec).toMatchObject({
+      content: {
+        value: `# Home\n\n[Directory](ref://${kind === "wiki" ? "wiki-page" : "course-page"}/landing${suffix})\n`,
+      },
+    });
+    expect(
+      project.documents.find((document) => document.resource === `${homeType}/home`)?.references[0]
+        .target,
+    ).toBe(`${targetType}/landing`);
+    const destination = `${directory}/moved.md`;
+    const moved = await planSourceUpdates({
+      project,
+      expectedTreeDigest: project.treeDigest,
+      packageCohort: cohort,
+      desiredResources: project.compilation.resources,
+      operations: [{ kind: "move", resource: `${targetType}/target`, path: destination }],
+      authority: { ...authority(project), create: [destination] },
+    });
+    expect(moved.ok, JSON.stringify(moved)).toBe(true);
+    if (!moved.ok) return;
+    expect(moved.plan.candidate.tree.find((entry) => entry.path === homePath)).toEqual(
+      project.tree.find((entry) => entry.path === homePath),
+    );
+    expect(moved.plan.derivedRepairs.some((repair) => repair.resource === `${homeType}/home`)).toBe(
+      false,
+    );
+    expect(
+      moved.plan.candidate.documents.find(
+        (document) => document.resource === `${targetType}/target`,
+      )?.path,
+    ).toBe(destination);
+    const withCard = await readSourceProject({
+      tree: tree.map((entry) =>
+        entry.path === homePath
+          ? file(homePath, `${home}\n{% card href="${href}" title="Page" /%}\n`)
+          : entry,
+      ),
+    });
+    expect(
+      withCard.documents.find((document) => document.resource === `${homeType}/home`)?.references,
+    ).toMatchObject([
+      { kind: "link", href, target: `${targetType}/landing` },
+      { kind: "card", href, target: `${targetType}/landing` },
+    ]);
+    const cardMove = await planSourceUpdates({
+      project: withCard,
+      expectedTreeDigest: withCard.treeDigest,
+      packageCohort: cohort,
+      desiredResources: withCard.compilation.resources,
+      operations: [{ kind: "move", resource: `${targetType}/target`, path: destination }],
+      authority: { ...authority(withCard), create: [destination] },
+    });
+    expect(cardMove.ok, JSON.stringify(cardMove)).toBe(true);
+    if (cardMove.ok) {
+      const written = decodeSource(
+        cardMove.plan.candidate.tree.find((entry) => entry.path === homePath)!.bytes,
+      );
+      expect(written).toContain(`[Directory](${href})`);
+      expect(written).toContain(`href="${href}"`);
+    }
+  },
+);
 
 test.each(["yaml", "json"])(
   "BOM-prefixed %s config edits retain original byte coordinates",

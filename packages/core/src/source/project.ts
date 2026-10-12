@@ -28,6 +28,7 @@ import {
   type CourseReferenceContext,
 } from "../course-navigation";
 import { sourceCourseContext } from "./course";
+import { isSourceNonPageReference, sourcePathInventory } from "../reference-paths";
 import { parseMarkdownFrontmatter } from "../compile/shared";
 import { markdownFrontmatter } from "../compile/frontmatter";
 import corePackage from "../../package.json" with { type: "json" };
@@ -54,8 +55,8 @@ export const SOURCE_WRITER_DESCRIPTOR = {
   formatter: FORMAT_VERSION,
   contentSchema: TOPIK_CONTENT_SCHEMA_VERSION,
   resourceSchema: "v1",
-  references: "source-links-v3",
-  provenance: 5,
+  references: "source-links-v5",
+  provenance: 7,
   graph: "authored-resource-bytes-v1",
   packageVersion: corePackage.version,
 } as const;
@@ -228,6 +229,7 @@ export async function readSourceProject(input: {
   tree: readonly SourceTreeFile[];
 }): Promise<SourceProject> {
   const tree = snapshotSourceTree(input.tree);
+  const pathInventory = sourcePathInventory(tree.map((file) => file.path));
   const byPath = new Map(tree.map((file) => [file.path, file]));
   const { manifest, compilation } = await withSourceScratch(tree, async (dir) => ({
     manifest: await loadTopikManifest(dir),
@@ -431,6 +433,7 @@ export async function readSourceProject(input: {
               .filter((occurrence) => occurrence.slot === "link.href")
               .map((occurrence) => occurrence.treePath.join("/")),
           ),
+          { path, directory: source.directory, paths: pathInventory },
           wiki,
           course ? courseContexts[`Course/${course.name}`] : undefined,
         ),
@@ -604,6 +607,7 @@ function sourceReferences(
   resource: string,
   compilation: ManifestCompileResult,
   assetPositions: ReadonlySet<string>,
+  sourceContext: { path: string; directory: string; paths: ReadonlySet<string> },
   wiki?: Wiki,
   course?: CourseReferenceContext,
 ): SourceDocumentProvenance["references"] {
@@ -622,7 +626,15 @@ function sourceReferences(
   const inspected = rewriteTopikNavigationReferences(source, (reference) => {
     // Preserve the compiler's per-occurrence download identity. A legacy route lookup
     // must not turn its authored file path into provenance for a different page link.
-    if (reference.kind === "link" && assetPositions.has(reference.position)) {
+    if (
+      (reference.kind === "link" && assetPositions.has(reference.position)) ||
+      isSourceNonPageReference(
+        reference,
+        sourceContext.path,
+        sourceContext.directory,
+        sourceContext.paths,
+      )
+    ) {
       references.push(reference);
       return undefined;
     }

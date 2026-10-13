@@ -32,8 +32,10 @@ const resetPayload = [
   'const description = "A long line that must wrap within the code block.";',
 ].join("\n");
 const resetSource = ["", "lines startLine=9998"]
-  .map((numbers) =>
-    [`\`\`\`ts ${numbers} wrap=true added="2" removed="3"`, resetPayload, "```"].join("\n"),
+  .flatMap((numbers) =>
+    ["", 'added="2" removed="3"'].map((diff) =>
+      [`\`\`\`ts ${numbers} ${diff} wrap=true`, resetPayload, "```"].join("\n"),
+    ),
   )
   .join("\n\n");
 const longTokenPayload = [
@@ -468,7 +470,11 @@ export const GlobalBoxSizingReset: Story = {
       <div className="code-gutter-reset" style={{ maxWidth: "100%", width: 320 }}>
         <style>{`
           /* Model an unlayered host reset without affecting other stories. */
-          .code-gutter-reset, .code-gutter-reset * { box-sizing: border-box; }
+          .code-gutter-reset, .code-gutter-reset * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+          }
           .code-gutter-reset pre, .code-gutter-reset code {
             font-family: "DejaVu Sans", system-ui, sans-serif;
             font-size: var(--gutter-test-font-size, 32px);
@@ -481,7 +487,7 @@ export const GlobalBoxSizingReset: Story = {
   play: async ({ canvasElement }) => {
     const fixture = canvasElement.querySelector<HTMLElement>(".code-gutter-reset")!;
     const blocks = fixture.querySelectorAll<HTMLElement>(".topik-code-block");
-    await expect(blocks).toHaveLength(2);
+    await expect(blocks).toHaveLength(4);
     try {
       for (const size of [16, 24, 32]) {
         fixture.style.setProperty("--gutter-test-font-size", `${size}px`);
@@ -492,14 +498,35 @@ export const GlobalBoxSizingReset: Story = {
             .querySelector(".topik-code-block__text")!
             .getBoundingClientRect().left;
           for (const row of rows) {
-            const marker = row.querySelector<HTMLElement>(".topik-code-block__diff-marker")!;
+            const number = row.querySelector<HTMLElement>(".topik-code-block__line-number");
+            const marker = row.querySelector<HTMLElement>(".topik-code-block__diff-marker");
             const text = row.querySelector<HTMLElement>(".topik-code-block__text")!;
-            await expect(getComputedStyle(marker).boxSizing).toBe("border-box");
             await expect(text.getBoundingClientRect().left).toBeCloseTo(textLeft, 2);
-            // Measure the glyph, including fallback-font overflow, rather than its CSS box.
-            const glyph = document.createRange();
-            glyph.selectNodeContents(marker);
-            await expect(textLeft - glyph.getBoundingClientRect().right).toBeGreaterThan(4);
+            const columns = [number, marker, text].filter(
+              (column): column is HTMLElement => column !== null,
+            );
+            await expect(columns[0].getBoundingClientRect().left).toBeCloseTo(
+              row.getBoundingClientRect().left,
+              2,
+            );
+            await expect(text.getBoundingClientRect().right).toBeCloseTo(
+              row.getBoundingClientRect().right,
+              2,
+            );
+            for (const [index, column] of columns.entries()) {
+              await expect(getComputedStyle(column).boxSizing).toBe("border-box");
+              await expect(getComputedStyle(column).marginInlineEnd).toBe("0px");
+              if (index === columns.length - 1) continue;
+              // Measure the glyph, including fallback-font overflow, rather than its CSS box.
+              const glyph = document.createRange();
+              glyph.selectNodeContents(column);
+              await expect(
+                columns[index + 1].getBoundingClientRect().left -
+                  glyph.getBoundingClientRect().right,
+              ).toBeGreaterThan(4);
+            }
+            const label = row.querySelector<HTMLElement>(".topik-code-block__sr-only");
+            if (label) await expect(getComputedStyle(label).position).toBe("absolute");
           }
           const pre = block.querySelector("pre")!;
           await expect(pre.scrollWidth).toBeLessThanOrEqual(pre.clientWidth + 1);
@@ -522,7 +549,7 @@ export const RichGlobalBoxSizingReset: Story = {
   ],
   play: async (context) => {
     await waitFor(
-      () => expect(context.canvasElement.querySelectorAll("pre.shiki")).toHaveLength(2),
+      () => expect(context.canvasElement.querySelectorAll("pre.shiki")).toHaveLength(4),
       { timeout: 10000 },
     );
     await GlobalBoxSizingReset.play?.(context);

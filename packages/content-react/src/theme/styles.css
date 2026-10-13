@@ -227,6 +227,8 @@
 
   .topik-code-block__row {
     align-items: baseline;
+    /* Keep gutter spacing independent of host box-sizing, margin and padding resets. */
+    column-gap: 0.75rem;
     display: flex;
     min-height: 1lh;
     position: relative;
@@ -241,8 +243,6 @@
   .topik-code-block__line-number,
   .topik-code-block__diff-marker {
     flex: none;
-    /* Host box-sizing resets must not consume the space between columns. */
-    margin-inline-end: 0.75rem;
     text-align: end;
     user-select: none;
   }

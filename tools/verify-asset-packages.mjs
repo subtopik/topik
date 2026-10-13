@@ -115,7 +115,7 @@ const expected = new Map([
       "dist/wiki-navigation.d.mts",
       "dist/wiki-navigation.mjs",
       ...readdirSync(join(coreRoot, "dist"))
-        .filter((file) => /^course-navigation-[A-Za-z0-9_-]+\.mjs$/u.test(file))
+        .filter((file) => /^(?:course-navigation|folder-links)-[A-Za-z0-9_-]+\.mjs$/u.test(file))
         .map((file) => `dist/${file}`),
       "package.json",
     ].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0)),

@@ -253,7 +253,8 @@
   }
 
   .topik-code-block__diff-marker {
-    min-width: 1ch;
+    box-sizing: content-box;
+    width: 1ch;
     font-weight: 700;
   }
 

@@ -251,3 +251,54 @@ test("Course configurations reject unsafe aliases, repeated memberships, travers
     location: "pages/welcome.md",
   });
 });
+
+test("transports authored module/page indices independently from sorted resources", async () => {
+  const config = {
+    sourceVersion: 1,
+    id: "learning",
+    title: "Learning",
+    slug: "learning",
+    modules: [
+      { id: "z-module", title: "Z", slug: "z", order: 0, pages: ["z", "a"] },
+      { id: "a-module", title: "A", slug: "a", order: 0, pages: [] },
+    ],
+  };
+  const dir = await fixture({
+    "course.yaml": JSON.stringify(config),
+    ".topik.yaml": JSON.stringify({
+      version: 1,
+      namespace: "ordering",
+      sources: [{ kind: "course", config: "course.yaml" }],
+    }),
+    "z.md": "---\nid: z-page\ntitle: Z\nslug: z\norder: 0\n---\n# Z\n",
+    "a.md": "---\nid: a-page\ntitle: A\nslug: a\norder: 0\n---\n# A\n",
+  });
+  const before = await compileManifest({ dir });
+  const standalone = await compileCourse({ dir });
+  const { discoverCourseResources } = await import("./discovery");
+  expect((await discoverCourseResources({ dir })).courseNavigation).toEqual(
+    before.courseNavigation,
+  );
+  expect(standalone.courseNavigation).toEqual(before.courseNavigation);
+  expect(before.courseNavigation.learning.modules).toEqual([
+    {
+      name: "z-module",
+      declarationIndex: 0,
+      pages: [
+        { name: "z-page", declarationIndex: 0 },
+        { name: "a-page", declarationIndex: 1 },
+      ],
+    },
+    { name: "a-module", declarationIndex: 1, pages: [] },
+  ]);
+  config.modules[0].pages.reverse();
+  config.modules.reverse();
+  await writeFile(join(dir, "course.yaml"), JSON.stringify(config));
+  const after = await compileManifest({ dir });
+  expect(after.resources).toEqual(before.resources);
+  expect(after.courseNavigation).not.toEqual(before.courseNavigation);
+  expect(after.courseNavigation.learning.modules[1].pages[0]).toEqual({
+    name: "a-page",
+    declarationIndex: 0,
+  });
+});

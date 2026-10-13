@@ -50,8 +50,7 @@ describe("watch exclusions", () => {
 
   async function startWatching() {
     watcher = await watch({ dir });
-    const fsWatcher = vi.mocked(chokidarWatch).mock.results[0].value;
-    await new Promise<void>((resolve) => fsWatcher.once("ready", resolve));
+    // watch() now waits for filesystem readiness before the initial compile.
     expect(compile).toHaveBeenCalledTimes(1);
     return watcher;
   }

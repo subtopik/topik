@@ -17,6 +17,12 @@ import {
 } from "@topik/content";
 import * as React from "react";
 import {
+  previewAssetToken,
+  getPreviewAssetToken,
+  type PreviewAssetAdapter,
+} from "./preview-assets";
+import { PreviewMedia } from "./preview-media";
+import {
   getTopikComponents,
   type TopikAssetResolver,
   type TopikComponentOverrides,
@@ -34,6 +40,7 @@ export {
 export interface RenderTrustedTopikTreeOptions {
   components?: TopikComponentOverrides;
   resolveAsset?: TopikAssetResolver;
+  previewAssets?: PreviewAssetAdapter;
   resolveLink?: TopikLinkResolver;
   onAssetDiagnostic?: (diagnostic: TopikAssetResolutionDiagnostic) => void;
   onLinkDiagnostic?: (diagnostic: TopikLinkResolutionDiagnostic) => void;
@@ -99,6 +106,7 @@ export function renderTrustedTopikTree(
 ): React.ReactNode {
   const resolved = resolveTopikAssetReferences(tree, options.resolveAsset, {
     onDiagnostic: options.onAssetDiagnostic,
+    previewAssets: options.previewAssets,
     resolveLink: options.resolveLink,
     onLinkDiagnostic: options.onLinkDiagnostic,
     onNavigationDiagnostic: options.onNavigationDiagnostic,
@@ -110,6 +118,17 @@ export function renderTrustedTopikTree(
     const component = Object.hasOwn(components, node.name)
       ? components[node.name as keyof typeof components]
       : node.name;
+    if (Object.values(node.attributes).some((value) => getPreviewAssetToken(value))) {
+      return (
+        <PreviewMedia
+          key={key}
+          component={component as import("./components").TopikComponent}
+          attributes={node.attributes}
+        >
+          {node.children.map(render)}
+        </PreviewMedia>
+      );
+    }
     return React.createElement(
       component,
       { ...node.attributes, key },
@@ -128,6 +147,7 @@ function renderInvalidTopikContent(Placeholder: React.ComponentType | undefined)
 }
 
 interface ResolveTopikAssetReferencesOptions {
+  previewAssets?: PreviewAssetAdapter;
   onDiagnostic?: (diagnostic: TopikAssetResolutionDiagnostic) => void;
   resolveLink?: TopikLinkResolver;
   onLinkDiagnostic?: (diagnostic: TopikLinkResolutionDiagnostic) => void;
@@ -231,6 +251,11 @@ export function resolveTopikAssetReferences<T>(
       continue;
     }
     const generatedName = validation.name;
+    const token = previewAssetToken(options.previewAssets, generatedName, slot);
+    if (token) {
+      attributes[attribute] = token;
+      continue;
+    }
     let resolved: string | undefined;
     try {
       resolved = resolveAsset?.(generatedName);

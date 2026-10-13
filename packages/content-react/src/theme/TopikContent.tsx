@@ -70,6 +70,7 @@ export function TopikContent({
       }),
     // Keep every RenderTopikMarkdownOptions field read above in this manually maintained list.
     [
+      compileOptions.previewAssets,
       compileOptions.config,
       compileOptions.file,
       compileOptions.invalidContent,

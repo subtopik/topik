@@ -40,3 +40,9 @@ export {
   type TopikLinkRenderProps,
   type TopikLinkResolver,
 } from "./core/components";
+
+export {
+  createPreviewAssetAdapter,
+  type PreviewAssetAdapter,
+  type PreviewAssetInventory,
+} from "./core/preview-assets";

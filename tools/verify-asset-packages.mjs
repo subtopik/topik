@@ -112,10 +112,16 @@ const expected = new Map([
       "dist/index.mjs",
       "dist/course-navigation.d.mts",
       "dist/course-navigation.mjs",
+      "dist/preview.d.mts",
+      "dist/preview.mjs",
       "dist/wiki-navigation.d.mts",
       "dist/wiki-navigation.mjs",
       ...readdirSync(join(coreRoot, "dist"))
-        .filter((file) => /^(?:course-navigation|folder-links)-[A-Za-z0-9_-]+\.mjs$/u.test(file))
+        .filter(
+          (file) =>
+            /^(?:course-navigation|folder-links)-[A-Za-z0-9_-]+\.mjs$/u.test(file) ||
+            /^preview-[A-Za-z0-9_-]+\.d\.mts$/u.test(file),
+        )
         .map((file) => `dist/${file}`),
       "package.json",
     ].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0)),
@@ -325,7 +331,12 @@ function verifyBlobDeclarations() {
     throw new Error("Packaged schema declarations contain compiler-specific Asset APIs");
   }
 
-  const coreDeclarations = readFileSync(join(coreRoot, "dist", "index.d.mts"), "utf8");
+  // Multiple public entry points can move shared opaque types into declaration chunks.
+  // The consumer type fixtures below still verify admission through public exports.
+  const coreDeclarations = readdirSync(join(coreRoot, "dist"))
+    .filter((file) => file.endsWith(".d.mts"))
+    .map((file) => readFileSync(join(coreRoot, "dist", file), "utf8"))
+    .join("\n");
   if (
     !coreDeclarations.includes("AssetBlobUri") ||
     !coreDeclarations.includes("resolveWikiNavigation") ||

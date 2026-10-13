@@ -206,3 +206,111 @@ describe("watch", () => {
     expect(err).toBeInstanceOf(Error);
   }, 10_000);
 });
+
+describe("authoritative preview state", () => {
+  let dir: string;
+  let watcher: Watcher;
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "preview-state-"));
+    await writeFile(
+      join(dir, ".topik.yaml"),
+      JSON.stringify({
+        version: 1,
+        namespace: "preview",
+        sources: [{ kind: "course", config: "course.yaml" }],
+      }),
+    );
+  });
+  afterEach(async () => {
+    await watcher?.close();
+    await rm(dir, { recursive: true, force: true });
+  });
+  const configuration = (pages = ["z", "a"]) =>
+    JSON.stringify({
+      sourceVersion: 1,
+      id: "course",
+      title: "Course",
+      slug: "course",
+      modules: [{ id: "module", title: "Module", slug: "module", order: 0, pages }],
+    });
+  async function sources() {
+    await writeFile(join(dir, "course.yaml"), configuration());
+    for (const name of ["z", "a"])
+      await writeFile(
+        join(dir, `${name}.md`),
+        `---\nid: ${name}\ntitle: ${name}\nslug: ${name}\norder: 0\n---\n# ${name}\n`,
+      );
+  }
+  function next(status: "ready" | "error") {
+    return new Promise<import("./preview").PreviewState>((resolve) => {
+      const listener = (state: import("./preview").PreviewState) => {
+        if (state.status === status) {
+          watcher.off("preview-state", listener);
+          resolve(state);
+        }
+      };
+      watcher.on("preview-state", listener);
+    });
+  }
+  test("publishes order-only edits, deletion, failure retention and identical recovery", async () => {
+    await sources();
+    watcher = await watch({ dir });
+    const initial = watcher.state;
+    const states: import("./preview").PreviewState[] = [];
+    watcher.on("preview-state", (state) => states.push(state));
+    let done = next("ready");
+    await writeFile(join(dir, "course.yaml"), configuration(["a", "z"]));
+    const reordered = await done;
+    expect(reordered.resources).toEqual(initial.resources);
+    expect(reordered.courseNavigation).not.toEqual(initial.courseNavigation);
+    expect(reordered.generation).toBe(initial.generation! + 1);
+    done = next("error");
+    await writeFile(join(dir, "course.yaml"), "title: [PRIVATE_VALUE");
+    const failed = await done;
+    expect(failed.generation).toBe(reordered.generation);
+    expect(failed.resources).toBe(reordered.resources);
+    expect(failed.courseNavigation).toBe(reordered.courseNavigation);
+    expect(JSON.stringify(failed)).not.toMatch(/PRIVATE_VALUE|\/tmp\//u);
+    done = next("ready");
+    await writeFile(join(dir, "course.yaml"), configuration(["a", "z"]));
+    const recovered = await done;
+    expect(recovered.resources).toEqual(reordered.resources);
+    expect(recovered.diagnostics).toEqual([]);
+    done = next("ready");
+    await writeFile(join(dir, "course.yaml"), configuration([]));
+    const deleted = await done;
+    expect(deleted.resources.filter((r) => r.type === "CoursePage")).toEqual([]);
+    expect(deleted.courseNavigation.course.modules[0].pages).toEqual([]);
+    expect([...watcher.resources.values()]).toEqual(deleted.resources);
+    expect(states.map((s) => s.status)).toEqual([
+      "compiling",
+      "ready",
+      "compiling",
+      "error",
+      "compiling",
+      "ready",
+      "compiling",
+      "ready",
+    ]);
+    expect(states.every((s, i) => s.sequence === initial.sequence + i + 1)).toBe(true);
+    expect(initial.courseNavigation.course.modules[0].pages[0].name).toBe("z");
+  });
+  test("recovers from an initial failure and changes session identity on restart", async () => {
+    watcher = await watch({ dir });
+    expect(watcher.state).toMatchObject({
+      status: "error",
+      generation: null,
+      resources: [],
+      courseNavigation: {},
+    });
+    const session = watcher.state.sessionId;
+    const ready = next("ready");
+    await sources();
+    await ready;
+    expect(watcher.state.generation).toBe(1);
+    await watcher.close();
+    watcher = await watch({ dir });
+    expect(watcher.state.sessionId).not.toBe(session);
+    expect(watcher.state.sequence).toBe(2);
+  });
+});

@@ -25,6 +25,17 @@ const alignmentSource = [
   alignmentPayload,
   "```",
 ].join("\n");
+const resetPayload = [
+  "const value = 1;",
+  "+value",
+  "-value",
+  'const description = "A long line that must wrap within the code block.";',
+].join("\n");
+const resetSource = ["", "lines startLine=9998"]
+  .map((numbers) =>
+    [`\`\`\`ts ${numbers} wrap=true added="2" removed="3"`, resetPayload, "```"].join("\n"),
+  )
+  .join("\n\n");
 const longTokenPayload = [
   `const url = "https://example.com/${"abcdefghij".repeat(20)}";`,
   `const token = "${"0123456789".repeat(20)}";`,
@@ -447,6 +458,74 @@ export const RichAlignedRows: Story = {
       timeout: 10000,
     });
     await AlignedRows.play?.(context);
+  },
+};
+
+export const GlobalBoxSizingReset: Story = {
+  args: { content: resetSource },
+  decorators: [
+    (Story) => (
+      <div className="code-gutter-reset" style={{ maxWidth: "100%", width: 320 }}>
+        <style>{`
+          /* Model an unlayered host reset without affecting other stories. */
+          .code-gutter-reset, .code-gutter-reset * { box-sizing: border-box; }
+          .code-gutter-reset pre, .code-gutter-reset code {
+            font-family: "DejaVu Sans", system-ui, sans-serif;
+            font-size: var(--gutter-test-font-size, 32px);
+          }
+        `}</style>
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const fixture = canvasElement.querySelector<HTMLElement>(".code-gutter-reset")!;
+    const blocks = fixture.querySelectorAll<HTMLElement>(".topik-code-block");
+    await expect(blocks).toHaveLength(2);
+    try {
+      for (const size of [16, 24, 32]) {
+        fixture.style.setProperty("--gutter-test-font-size", `${size}px`);
+        for (const block of blocks) {
+          const rows = block.querySelectorAll<HTMLElement>("[data-line]");
+          await expect(rows).toHaveLength(4);
+          const textLeft = rows[0]
+            .querySelector(".topik-code-block__text")!
+            .getBoundingClientRect().left;
+          for (const row of rows) {
+            const marker = row.querySelector<HTMLElement>(".topik-code-block__diff-marker")!;
+            const text = row.querySelector<HTMLElement>(".topik-code-block__text")!;
+            await expect(getComputedStyle(marker).boxSizing).toBe("border-box");
+            await expect(text.getBoundingClientRect().left).toBeCloseTo(textLeft, 2);
+            // Measure the glyph, including fallback-font overflow, rather than its CSS box.
+            const glyph = document.createRange();
+            glyph.selectNodeContents(marker);
+            await expect(textLeft - glyph.getBoundingClientRect().right).toBeGreaterThan(4);
+          }
+          const pre = block.querySelector("pre")!;
+          await expect(pre.scrollWidth).toBeLessThanOrEqual(pre.clientWidth + 1);
+          await expect(selectedCode(block)).toBe(resetPayload);
+        }
+      }
+    } finally {
+      fixture.style.removeProperty("--gutter-test-font-size");
+    }
+  },
+};
+
+export const RichGlobalBoxSizingReset: Story = {
+  ...GlobalBoxSizingReset,
+  decorators: [
+    ...(Array.isArray(Rich.decorators) ? Rich.decorators : [Rich.decorators!]),
+    ...(Array.isArray(GlobalBoxSizingReset.decorators)
+      ? GlobalBoxSizingReset.decorators
+      : [GlobalBoxSizingReset.decorators!]),
+  ],
+  play: async (context) => {
+    await waitFor(
+      () => expect(context.canvasElement.querySelectorAll("pre.shiki")).toHaveLength(2),
+      { timeout: 10000 },
+    );
+    await GlobalBoxSizingReset.play?.(context);
   },
 };
 

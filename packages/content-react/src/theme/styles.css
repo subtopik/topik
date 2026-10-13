@@ -241,7 +241,8 @@
   .topik-code-block__line-number,
   .topik-code-block__diff-marker {
     flex: none;
-    padding-inline-end: 0.75rem;
+    /* Host box-sizing resets must not consume the space between columns. */
+    margin-inline-end: 0.75rem;
     text-align: end;
     user-select: none;
   }

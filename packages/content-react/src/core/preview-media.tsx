@@ -16,7 +16,7 @@ export function PreviewMedia({
     attributes: TopikComponentProps;
     values: TopikComponentProps;
   }>();
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState<TopikComponentProps>();
   const mounted = useRef(true);
   const currentAttributes = useRef(attributes);
   currentAttributes.current = attributes;
@@ -27,9 +27,18 @@ export function PreviewMedia({
     };
   }, []);
   const download = getPreviewAssetToken(attributes.href);
+  function isCurrent() {
+    return (
+      mounted.current &&
+      currentAttributes.current === attributes &&
+      Object.values(attributes).every(
+        (value) => getPreviewAssetToken(value)?.state.active() !== false,
+      )
+    );
+  }
   useEffect(() => {
     let active = true;
-    setFailed(false);
+    setFailed(undefined);
     if (!download) {
       void Promise.all(
         Object.entries(attributes).map(async ([key, value]) => {
@@ -38,10 +47,10 @@ export function PreviewMedia({
         }),
       ).then(
         (entries) => {
-          if (active) setLoaded({ attributes, values: Object.fromEntries(entries) });
+          if (active && isCurrent()) setLoaded({ attributes, values: Object.fromEntries(entries) });
         },
         () => {
-          if (active) setFailed(true);
+          if (active && isCurrent()) setFailed(attributes);
         },
       );
     }
@@ -49,7 +58,7 @@ export function PreviewMedia({
       active = false;
     };
   }, [attributes, download]);
-  if (failed)
+  if (failed === attributes)
     return <span role="alert">{download ? children : null} Preview media unavailable.</span>;
   if (download)
     return (
@@ -75,7 +84,7 @@ export function PreviewMedia({
                 currentAttributes.current === attributes &&
                 download.state.active()
               )
-                setFailed(true);
+                setFailed(attributes);
             },
           );
         }}
@@ -84,5 +93,17 @@ export function PreviewMedia({
       </button>
     );
   if (loaded?.attributes !== attributes) return <span role="status">Loading preview media…</span>;
-  return createElement(component, { ...loaded.values }, children);
+  const figure = [attributes.src, attributes.darkSrc].some((value) =>
+    getPreviewAssetToken(value)?.slot.startsWith("figure."),
+  );
+  return createElement(
+    figure ? "div" : "span",
+    {
+      style: { display: "contents" },
+      onErrorCapture: (event: import("react").SyntheticEvent<HTMLElement>) => {
+        if (isCurrent() && event.target instanceof HTMLImageElement) setFailed(attributes);
+      },
+    },
+    createElement(component, { ...loaded.values }, children),
+  );
 }

@@ -153,9 +153,11 @@ export function createPreviewAssetAdapter(options: {
             response.redirected ||
             response.url !== url.href ||
             response.headers.get("content-type") !== entry.mediaType
-          )
+          ) {
+            void response.body?.cancel().catch(() => {});
             throw new Error("Preview media response was invalid");
-          const bytes = await response.arrayBuffer();
+          }
+          const bytes = await readPreviewBytes(response, entry.size, controller.signal);
           const digest = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
             .map((byte) => byte.toString(16).padStart(2, "0"))
             .join("");
@@ -170,7 +172,11 @@ export function createPreviewAssetAdapter(options: {
           );
           urls.add(objectUrl);
           return objectUrl;
-        })();
+        })().catch((error: unknown) => {
+          // A later attempt must never be removed by an older rejected request.
+          if (pending.get(key) === promise) pending.delete(key);
+          throw error;
+        });
         pending.set(key, promise);
       }
       return promise;
@@ -205,4 +211,48 @@ export function previewAssetToken(
 /** @internal */
 export function getPreviewAssetToken(value: unknown) {
   return value && typeof value === "object" ? tokens.get(value) : undefined;
+}
+
+/** Bound decoded response bytes, independent of absent, compressed or misleading headers. */
+async function readPreviewBytes(response: Response, expectedSize: number, signal: AbortSignal) {
+  if (!response.body) throw new Error("Preview media response has no byte stream");
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  let complete = false;
+  let cancelled = false;
+  const cancel = () => {
+    if (cancelled) return;
+    cancelled = true;
+    // Cancellation must not delay rejection if a stream's cancellation itself stalls.
+    void reader.cancel().catch(() => {});
+  };
+  signal.addEventListener("abort", cancel, { once: true });
+  try {
+    signal.throwIfAborted();
+    while (true) {
+      const { done, value } = await reader.read();
+      signal.throwIfAborted();
+      if (done) break;
+      if (value.byteLength > expectedSize - size)
+        throw new Error("Preview media response exceeds its advertised size");
+      if (value.byteLength > 0) {
+        chunks.push(value.slice());
+        size += value.byteLength;
+      }
+    }
+    if (size !== expectedSize) throw new Error("Preview media response size was invalid");
+    const bytes = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    complete = true;
+    return bytes;
+  } finally {
+    signal.removeEventListener("abort", cancel);
+    if (!complete) cancel();
+    reader.releaseLock();
+  }
 }

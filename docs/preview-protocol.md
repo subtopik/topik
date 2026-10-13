@@ -141,7 +141,11 @@ bind `?sessionId=<id>&generation=<n>`; the CLI returns 409 for obsolete identiti
 Legacy unbound blob requests remain supported. Removed payloads return 404.
 
 The adapter verifies response URL, media type, byte size and SHA-256 before
-creating an object URL. It caches by digest and use within that adapter lifetime.
+creating an object URL. It bounds retained decoded bytes to the advertised size,
+cancels as soon as a received chunk would exceed that size or on disposal, and
+rejects missing/truncated streams. Content-Length never overrides this byte limit. It caches successful and
+in-flight loads by digest and use within that adapter lifetime; rejected loads
+are evicted so a later remount or revisit can retry without replacing the adapter.
 Images and light/dark figures use verified image blobs (PNG, JPEG, GIF, WebP, AVIF).
 SVG and other active media are never admitted inline. Asset links become buttons
 that fetch verified bytes and initiate a controlled download; they expose no
@@ -150,7 +154,8 @@ active-content navigation, while the server response retains and the adapter
 verifies the advertised type. The generated Asset name is the download filename;
 original source filenames are not part of this feed.
 
-Pending loads show a status, load failures show an alert, and resolution errors
+Pending loads show a status, fetch and browser image decode failures show an alert
+without automatic retry loops, and resolution errors
 continue through `onAssetDiagnostic` so the host can explain missing media. Other
 content stays usable. Disposal aborts requests and revokes object URLs; late
 results cannot create media. Browser CSP must permit `blob:` images and connection

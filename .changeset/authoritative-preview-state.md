@@ -14,3 +14,7 @@ Add an explicit inventory-bounded preview media adapter for images, light/dark
 figures and controlled downloads. It verifies payload identity and bytes, uses
 allowed-origin fetches, and revokes media when disposed. Existing authored URL
 validation, legacy feed events and dependency constraints remain unchanged.
+
+Retry failed preview media loads on revisit, bound decoded response reads to the
+advertised payload size, and explain image decode failures without stale events
+or automatic retry loops.

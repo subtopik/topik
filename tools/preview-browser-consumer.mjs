@@ -184,6 +184,29 @@ window.stream.addEventListener("preview-state", event => window.accept(JSON.pars
     (generation) => window.latest.status === "ready" && window.latest.generation > generation,
     failed.generation,
   );
+  // Signature-only PNGs pass media sniffing but must surface browser decode failure.
+  const beforeDecodeFailure = await page.evaluate(() => window.latest.generation);
+  await writeFile(join(dir, "hero.png"), png.subarray(0, 8));
+  await writeFile(join(dir, "dark.png"), png.subarray(0, 8));
+  await page.waitForFunction(
+    (generation) => window.latest.status === "ready" && window.latest.generation > generation,
+    beforeDecodeFailure,
+  );
+  await page.waitForFunction(() => document.querySelectorAll('[role="alert"]').length === 2);
+  assert.equal(await page.getByRole("heading", { name: "Z", exact: true }).count(), 1);
+  assert.equal(await page.locator("img").count(), 0);
+  const beforeDecodeRecovery = await page.evaluate(() => window.latest.generation);
+  await writeFile(join(dir, "hero.png"), png);
+  await writeFile(join(dir, "dark.png"), png);
+  await page.waitForFunction(
+    (generation) =>
+      window.latest.status === "ready" &&
+      window.latest.generation > generation &&
+      document.querySelectorAll("img").length === 2 &&
+      [...document.querySelectorAll("img")].every((img) => img.naturalWidth === 1),
+    beforeDecodeRecovery,
+  );
+  assert.equal(await page.getByRole("alert").count(), 0);
   await writeFile(join(dir, "course.yaml"), configuration([]));
   await page.getByText("No pages", { exact: true }).waitFor();
   assert.equal(

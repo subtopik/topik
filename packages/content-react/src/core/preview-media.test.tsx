@@ -103,9 +103,77 @@ test("a delayed download cannot activate after the rendered content changes", as
       redirected: false,
       url: requested.href,
       headers: { get: () => "image/png" },
-      arrayBuffer: async () => bytes.buffer,
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(bytes);
+          controller.close();
+        },
+      }),
     });
     await new Promise((resolve) => setTimeout(resolve, 20));
   });
   expect(click).not.toHaveBeenCalled();
+});
+
+function mediaResponse(url: URL) {
+  const result = new Response(bytes, { headers: { "content-type": "image/png" } });
+  Object.defineProperty(result, "url", { value: url.href });
+  return result;
+}
+async function showMedia(content: string) {
+  await act(async () => root.render(<TopikContent content={content} previewAssets={adapter} />));
+  await vi.waitFor(async () => {
+    await act(async () => {});
+    expect(container.querySelector("img")).not.toBeNull();
+  });
+}
+
+test("revisiting failed media retries with the same generation adapter", async () => {
+  setup();
+  const fetcher = vi
+    .fn<(url: URL) => Promise<Response>>()
+    .mockRejectedValueOnce(new Error("Temporary failure"))
+    .mockImplementation(async (url) => mediaResponse(url));
+  vi.stubGlobal("fetch", fetcher);
+  const content = `![Hero](asset:${name})`;
+  await act(async () => root.render(<TopikContent content={content} previewAssets={adapter} />));
+  expect(container.querySelector('[role="alert"]')).not.toBeNull();
+  await act(async () => root.render(null));
+  await showMedia(content);
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  await act(async () => root.render(null));
+  await showMedia(content);
+  expect(fetcher).toHaveBeenCalledTimes(2);
+});
+
+test.each([
+  `Text survives.\n\n![Hero](asset:${name})`,
+  `Text survives.\n\n{% figure src="asset:${name}" darkSrc="asset:${name}" alt="Figure" /%}`,
+])("browser image errors explain failed media without retry loops: %s", async (content) => {
+  setup();
+  const fetcher = vi.fn(async (url: URL) => mediaResponse(url));
+  vi.stubGlobal("fetch", fetcher);
+  await showMedia(content);
+  await act(async () => container.querySelector("img")!.dispatchEvent(new Event("error")));
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Preview media unavailable.",
+  );
+  expect(container.textContent).toContain("Text survives.");
+  expect(container.querySelector("img")).toBeNull();
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
+
+test("late image errors from retired content and disposed generations are ignored", async () => {
+  setup();
+  vi.stubGlobal("fetch", async (url: URL) => mediaResponse(url));
+  await showMedia(`![Old](asset:${name})`);
+  const retired = container.querySelector("img")!;
+  await showMedia(`![Current](asset:${name})`);
+  expect(container.querySelector("img")).not.toBe(retired);
+  await act(async () => retired.dispatchEvent(new Event("error")));
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  adapter.dispose();
+  await act(async () => container.querySelector("img")!.dispatchEvent(new Event("error")));
+  expect(container.querySelector('[role="alert"]')).toBeNull();
 });

@@ -57,7 +57,7 @@ export function topikGuidesLoader(options: TopikGuidesOptions): TopikAssetLoader
               data: {
                 title: guide.spec.title,
                 slug: guide.spec.slug,
-                description: guide.spec.description,
+                description: guide.spec.description ?? undefined,
                 authors: guide.spec.authors ?? [],
                 tags: guide.spec.tags ?? [],
               },

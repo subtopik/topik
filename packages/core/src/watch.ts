@@ -145,8 +145,10 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
     ],
   });
   fsWatcher.on("add", scheduleRecompile);
+  fsWatcher.on("addDir", scheduleRecompile);
   fsWatcher.on("change", scheduleRecompile);
   fsWatcher.on("unlink", scheduleRecompile);
+  fsWatcher.on("unlinkDir", scheduleRecompile);
   const close = async () => {
     closed = true;
     if (debounceTimer) clearTimeout(debounceTimer);

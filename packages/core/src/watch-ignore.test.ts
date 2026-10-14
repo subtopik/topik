@@ -134,6 +134,30 @@ describe("watch exclusions", () => {
     },
   );
 
+  test.each([
+    "node_modules",
+    "packages/nested/node_modules",
+    ".git",
+    ".topik",
+    ".topik-compilation-generation-test",
+    ".topik-compilation-prior-test",
+  ])("ignores directory creation/removal and generated writes in %s", async (ignoredDir) => {
+    // Existing parents are source directories; only the ignored subtree is created
+    // while watching, as would happen during dependency install or publication.
+    await mkdir(join(dir, "packages/nested"), { recursive: true });
+    await startWatching();
+    const target = join(dir, ignoredDir);
+    await mkdir(target);
+    await mkdir(join(target, "nested"));
+    await writeFile(join(target, "nested/output.json"), "{}");
+    await delay(350);
+    expect(compile).toHaveBeenCalledTimes(1);
+    await rm(target, { recursive: true });
+    await delay(350);
+    expect(compile).toHaveBeenCalledTimes(1);
+    expect(watcher?.state.generation).toBe(1);
+  });
+
   test("matches ignored descendant path segments with either separator", async () => {
     await startWatching();
     const ignored = vi.mocked(chokidarWatch).mock.calls[0][1]?.ignored;

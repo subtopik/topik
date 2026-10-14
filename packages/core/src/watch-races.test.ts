@@ -46,8 +46,9 @@ test("serializes work and discards candidates invalidated during compilation", a
   control.compile.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
   const starting = watch({ dir });
   await vi.waitFor(() => expect(control.compile).toHaveBeenCalledTimes(1));
-  (control.fs as EventEmitter).emit("change");
-  (control.fs as EventEmitter).emit("change");
+  (control.fs as EventEmitter).emit("addDir", "files");
+  (control.fs as EventEmitter).emit("change", "intro.md");
+  (control.fs as EventEmitter).emit("unlinkDir", "files");
   expect(control.compile).toHaveBeenCalledTimes(1);
   first.resolve({ ...result, courseNavigation: { stale: { modules: [] } } });
   await vi.waitFor(() => expect(control.compile).toHaveBeenCalledTimes(2));

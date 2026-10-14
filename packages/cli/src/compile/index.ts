@@ -166,6 +166,32 @@ export async function replaceCompilationTree(
   } catch (error) {
     operationError = error;
   }
+  if (!published && existing !== undefined && existing.name !== target) {
+    try {
+      const priorPath = procFdChild(parent.fd, existing.name);
+      const priorStat = lstatSync(priorPath, { bigint: true });
+      const heldStat = fstatSync(existing.handle.fd, { bigint: true });
+      if (
+        !priorStat.isDirectory() ||
+        priorStat.dev !== heldStat.dev ||
+        priorStat.ino !== heldStat.ino
+      ) {
+        throw new CliError("Previous compilation output identity changed before recovery");
+      }
+      // Do not replace a newly created output target during recovery. A failed restore
+      // must leave the previous generation available in its prior-generation directory.
+      const targetPath = procFdChild(parent.fd, target);
+      assertOutputPathAbsent(targetPath);
+      renameSync(priorPath, targetPath);
+      existing.name = target;
+      existing.path = targetPath;
+    } catch (recoveryError) {
+      operationError = new CliError(
+        "Compilation publication failed and previous output could not be restored; prior generation retained for recovery",
+        { cause: new AggregateError([operationError, recoveryError]) },
+      );
+    }
+  }
   if (generation !== undefined && !published) {
     try {
       generation.tree = bindCompleteCompilationTreeSync(generation.handle);
@@ -174,7 +200,7 @@ export async function replaceCompilationTree(
       operationError ??= error;
     }
   }
-  if (existing !== undefined && !existingRemoved && existing.name !== target) {
+  if (published && existing !== undefined && !existingRemoved && existing.name !== target) {
     try {
       cleanupCompilationDirectory(parent, existing);
     } catch (error) {

@@ -109,6 +109,21 @@ try {
         timeout: 30_000,
       },
     );
+  const previewFixture = join(consumer, "preview-browser-consumer.mjs");
+  copyFileSync(join(root, "tools/preview-browser-consumer.mjs"), previewFixture);
+  execFileSync(
+    process.execPath,
+    [
+      previewFixture,
+      rendererTestRequire.resolve("vite"),
+      rendererTestRequire.resolve("playwright"),
+    ],
+    {
+      cwd: consumer,
+      stdio: "inherit",
+      timeout: 60_000,
+    },
+  );
   const contentManifest = readJson(join(modules, "@topik/content/package.json"));
   if (contentManifest.dependencies?.["linkify-it"]) {
     throw new Error("Packed content must not depend on implicit autolinking");

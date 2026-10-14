@@ -55,6 +55,7 @@ export async function inspectCourse(options: CompileCourseOptions): Promise<Comp
   return {
     diagnostics: [...discovered.diagnostics, ...linked.diagnostics],
     references: linked.references,
+    courseNavigation: discovered.courseNavigation!,
     ...compiled,
   };
 }
@@ -88,7 +89,14 @@ export async function discoverCourse(
   const diagnostics: CompileResult["diagnostics"] = [];
   const sourcePathsByResource: Record<string, string> = {};
   const pages: CourseReferenceContext["pages"][number][] = [];
-  for (const module of config.modules) {
+  const modules: import("../preview").CourseNavigationModule[] = [];
+  for (const [declarationIndex, module] of config.modules.entries()) {
+    const navigation = {
+      name: module.id,
+      declarationIndex,
+      pages: [] as { name: string; declarationIndex: number }[],
+    };
+    modules.push(navigation);
     const resource: CourseModule = {
       apiVersion: "v1",
       type: "CourseModule",
@@ -103,7 +111,7 @@ export async function discoverCourse(
       },
     };
     resources.push(resource);
-    for (const sourcePath of module.pages) {
+    for (const [pageIndex, sourcePath] of module.pages.entries()) {
       const file = await readCoursePage(dir, sourcePath);
       const parsed = parseMarkdownFrontmatter(file.raw, file.path, 1);
       let metadata;
@@ -133,6 +141,7 @@ export async function discoverCourse(
         },
       };
       resources.push(page);
+      navigation.pages.push({ name: page.name, declarationIndex: pageIndex });
       sourcePathsByResource[key] = file.path;
       pages.push({ name: page.name, module: module.id, slug: metadata.slug, sourcePath });
       const analysis = analyzeTopikContent(parsed.content, { file: file.path });
@@ -154,6 +163,7 @@ export async function discoverCourse(
     diagnostics,
     sourcePathsByResource,
     consumedSourcePaths: [loaded.path],
+    courseNavigation: { [course.name]: { modules } },
     assetDirectory: config.assets.directory,
     sourceVersion: 1,
   };

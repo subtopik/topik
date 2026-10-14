@@ -67,6 +67,7 @@ export async function inspectWiki(options: CompileWikiOptions): Promise<CompileR
   return {
     diagnostics: [...discovered.diagnostics, ...linked.diagnostics],
     references: linked.references,
+    courseNavigation: {},
     ...compiled,
   };
 }

@@ -5,7 +5,6 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
-import { formatPublicCliError } from "../errors";
 import { startDevServer, type StartedDevServer } from "./index";
 
 const WRITE_ORIGIN = "https://write.subtopik.com";
@@ -200,25 +199,18 @@ describe("dev command", () => {
       logs.push(values.map(String).join(" "));
     });
 
-    let failure: unknown;
-    try {
-      await startDevServer({ dir, port: 0 });
-    } catch (error) {
-      failure = error;
-    }
-    const output = [formatPublicCliError(failure), ...logs].join("\n");
-    const surfaces = [
-      output,
-      String(failure),
-      failure instanceof Error ? failure.message : "",
-      JSON.stringify(failure),
-      typeof failure === "object" && failure !== null ? JSON.stringify(Object.values(failure)) : "",
-      failure instanceof Error && failure.cause instanceof Error ? String(failure.cause) : "",
-    ].join("\n");
-    expect(formatPublicCliError(failure)).toBe(
-      ".topik.yaml sources[0] (wiki) wiki.yaml: Configuration file could not be parsed.",
-    );
-    expect(output).toContain("Watching content for changes...");
+    const port = await start();
+    const response = await fetch(`http://127.0.0.1:${port}/resources`);
+    const state = await response.json();
+    expect(state).toMatchObject({
+      status: "error",
+      generation: null,
+      resources: [],
+      diagnostics: [
+        { id: "config-parse-failed", message: "Configuration file could not be parsed." },
+      ],
+    });
+    const surfaces = JSON.stringify([state, logs]);
     expect(surfaces).not.toContain(sentinel);
     expect(surfaces).not.toContain(dir);
     expect(surfaces).not.toContain(tmpdir());
@@ -520,4 +512,59 @@ describe("dev command", () => {
     const health = await fetch(`http://127.0.0.1:${port}/health`);
     expect(health.status).toBe(200);
   });
+});
+
+test("HTTP and SSE share complete state; reconnect receives existing failure; health binds session", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "preview-wire-"));
+  await writeFile(
+    join(dir, ".topik.yaml"),
+    JSON.stringify({ version: 1, namespace: "wire", sources: [] }),
+  );
+  const running = await startDevServer({ dir, port: 0 });
+  const origin = `http://127.0.0.1:${running.port}`;
+  const controllers: AbortController[] = [];
+  async function firstState() {
+    const controller = new AbortController();
+    controllers.push(controller);
+    const response = await fetch(`${origin}/events`, { signal: controller.signal });
+    const reader = response.body!.getReader();
+    let data = "";
+    while (!data.includes("\n\n")) data += new TextDecoder().decode((await reader.read()).value);
+    controller.abort();
+    const frame = data.split("\n\n")[0];
+    expect(frame).toMatch(/^event: preview-state\ndata: /u);
+    return JSON.parse(frame.slice(frame.indexOf("data: ") + 6));
+  }
+  try {
+    const health = (await (await fetch(`${origin}/health`)).json()) as { sessionId: string };
+    expect(health).toMatchObject({
+      capabilities: ["topik-preview/1"],
+      sessionId: running.watcher.state.sessionId,
+      version: expect.any(String),
+    });
+    const snapshot = await (await fetch(`${origin}/resources`)).json();
+    expect(await firstState()).toEqual(snapshot);
+    const failed = new Promise<void>((resolve) =>
+      running.watcher.on("preview-state", (state) => {
+        if (state.status === "error") resolve();
+      }),
+    );
+    await writeFile(join(dir, ".topik.yaml"), "private: [invalid");
+    await failed;
+    expect(await firstState()).toEqual(await (await fetch(`${origin}/resources`)).json());
+    expect(await firstState()).toMatchObject({ status: "error", generation: 1, resources: [] });
+    const digest = "a".repeat(64);
+    for (const query of [
+      "sessionId=other&generation=1",
+      `sessionId=${health.sessionId}`,
+      `sessionId=${health.sessionId}&generation=0`,
+      `sessionId=${health.sessionId}&sessionId=${health.sessionId}&generation=1`,
+    ]) {
+      expect((await fetch(`${origin}/blobs/${digest}?${query}`)).status).toBe(409);
+    }
+  } finally {
+    controllers.forEach((controller) => controller.abort());
+    await running.close();
+    await rm(dir, { recursive: true, force: true });
+  }
 });

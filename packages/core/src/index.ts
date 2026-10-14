@@ -145,3 +145,5 @@ export {
   type SourceInitializationIntent,
   type SourceMediaSelection,
 } from "./source/initialize";
+
+export * from "./preview";

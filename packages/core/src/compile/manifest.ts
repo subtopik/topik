@@ -126,6 +126,7 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
   const provenance: ManifestSourceProvenance[] = [];
   const diagnostics: CompileResult["diagnostics"] = [];
   const resources: SourceResource[] = [];
+  const courseNavigation: CompileResult["courseNavigation"] = {};
   const sourcePathsByResource: Record<string, string> = {};
   const sourceDirectoriesByResource: Record<string, string> = {};
   const protectedSourcePaths = [TOPIK_MANIFEST_FILENAME, ...sources.map((source) => source.config)];
@@ -182,6 +183,7 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
       })),
     );
     resources.push(...discovered.resources);
+    Object.assign(courseNavigation, discovered.courseNavigation);
     if (discovered.sourceVersion === 1)
       for (const resource of discovered.resources)
         if (resource.type === "Guide") versionedGuideNames.add(resource.name);
@@ -220,5 +222,5 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
       projectNamespace: manifest.namespace,
     }),
   });
-  return { diagnostics, references: linked.references, provenance, ...compiled };
+  return { diagnostics, references: linked.references, provenance, courseNavigation, ...compiled };
 }

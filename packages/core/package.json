@@ -15,6 +15,7 @@
   "exports": {
     ".": "./dist/index.mjs",
     "./course-navigation": "./dist/course-navigation.mjs",
+    "./preview": "./dist/preview.mjs",
     "./wiki-navigation": "./dist/wiki-navigation.mjs",
     "./package.json": "./package.json"
   },

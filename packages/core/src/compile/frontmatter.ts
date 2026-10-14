@@ -1,6 +1,8 @@
 /** Find the same Markdown header boundary for compilation and source byte inspection. */
 export function markdownFrontmatter(raw: string) {
-  const match = raw.match(/^\uFEFF?---\r?\n(?:---(?:\r?\n|$)|([\s\S]*?)\r?\n---(?:\r?\n|$))/);
+  const match = raw.match(
+    /^\uFEFF?---[ \t]*\r?\n(?:---[ \t]*(?:\r?\n|$)|([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$))/,
+  );
   if (!match) return undefined;
   const frontmatter = match[1] ?? "";
   const start = raw.indexOf("\n") + 1;

@@ -12,6 +12,7 @@ const PUBLIC_COMPILE_ERROR_MESSAGES = {
   "config-not-found": "Required configuration file was not found.",
   "config-parse-failed": "Configuration file could not be parsed.",
   "config-read-failed": "Configuration file could not be read safely.",
+  "file-safe-read-unsupported": "This platform cannot safely open compilation inputs.",
   "file-not-regular": "Compilation input must be a regular file.",
   "file-outside-compilation-root": "Compilation input resolves outside the source root.",
   "frontmatter-invalid": "Document frontmatter is invalid.",

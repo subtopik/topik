@@ -1,7 +1,11 @@
 import { constants } from "node:fs";
 import { lstat, open, realpath, type FileHandle } from "node:fs/promises";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { isAbsolute, parse, relative, resolve, sep } from "node:path";
 import { PublicCompileError } from "./public-errors";
+
+// Linux O_PATH (asm-generic/fcntl.h); Node does not expose this flag. Directory
+// descriptors need search permission only, including ancestors above the source root.
+const LINUX_O_PATH = 0o10000000;
 
 const SAFE_READ_FLAGS =
   constants.O_RDONLY |
@@ -50,10 +54,17 @@ export async function assertRegularFileWithinRoot(
 }
 
 async function openRegularFileWithinRoot(filePath: string, rootDir: string): Promise<FileHandle> {
+  if (
+    process.platform !== "linux" ||
+    typeof constants.O_NOFOLLOW !== "number" ||
+    typeof constants.O_DIRECTORY !== "number"
+  ) {
+    throw new PublicCompileError("file-safe-read-unsupported", safeRelativePath(filePath, rootDir));
+  }
   const authoredRoot = resolve(rootDir);
   const authoredFile = resolve(filePath);
   const [canonicalRoot, canonicalFile] = await Promise.all([realpath(rootDir), realpath(filePath)]);
-  if (!isWithinRoot(canonicalRoot, canonicalFile)) {
+  if (!isWithinRoot(authoredRoot, authoredFile) || !isWithinRoot(canonicalRoot, canonicalFile)) {
     throw new FileOutsideCompilationRootError(filePath, rootDir);
   }
   if (authoredRoot !== canonicalRoot || authoredFile !== canonicalFile) {
@@ -67,18 +78,52 @@ async function openRegularFileWithinRoot(filePath: string, rootDir: string): Pro
     throw new FileNotRegularError(filePath, rootDir);
   }
 
-  // On platforms that expose O_NOFOLLOW, reject a replacement final-component symlink.
-  // The regular-file check and read operate on the same handle, reducing check/read races.
-  const handle = await open(canonicalFile, SAFE_READ_FLAGS);
+  // Anchor every component, including the ancestors of the compilation root. Pathname
+  // checks above provide diagnostics only: no later open traverses a mutable ancestor.
+  const directories: FileHandle[] = [];
+  let handle: FileHandle | undefined;
   try {
-    const stat = await handle.stat();
-    if (!stat.isFile()) {
+    const filesystemRoot = parse(authoredFile).root;
+    const components = relative(filesystemRoot, authoredFile).split(sep);
+    const directoryFlags = LINUX_O_PATH | constants.O_DIRECTORY | constants.O_NOFOLLOW;
+    directories.push(await open(filesystemRoot, directoryFlags));
+    // Node has no openat API. Linux procfs lets us resolve a single child against a held
+    // directory descriptor; O_NOFOLLOW applies to that child, never a multi-part path.
+    const anchor = `/proc/self/fd/${directories[0].fd}`;
+    try {
+      const [expected, actual] = await Promise.all([
+        directories[0].stat({ bigint: true }),
+        realpath(anchor),
+      ]);
+      if (!expected.isDirectory() || actual !== filesystemRoot) throw new Error();
+    } catch {
+      throw new PublicCompileError(
+        "file-safe-read-unsupported",
+        safeRelativePath(filePath, rootDir),
+      );
+    }
+    for (const component of components.slice(0, -1)) {
+      const parent = directories[directories.length - 1];
+      directories.push(await open(`/proc/self/fd/${parent.fd}/${component}`, directoryFlags));
+      // The child is now pinned independently; retaining older ancestors would multiply
+      // descriptor use when many pages are compiled concurrently.
+      await parent.close();
+      directories.shift();
+    }
+    const parent = directories[directories.length - 1];
+    handle = await open(`/proc/self/fd/${parent.fd}/${components.at(-1)}`, SAFE_READ_FLAGS);
+    if (!(await handle.stat()).isFile()) {
       throw new FileNotRegularError(filePath, rootDir);
     }
     return handle;
   } catch (error) {
-    await handle.close();
+    await handle?.close();
+    if (["ELOOP", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) {
+      throw new FileNotRegularError(filePath, rootDir);
+    }
     throw error;
+  } finally {
+    await Promise.all(directories.map((directory) => directory.close()));
   }
 }
 

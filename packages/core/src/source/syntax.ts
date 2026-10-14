@@ -206,6 +206,14 @@ export function inspectSourceSyntax(raw: string, json = false) {
           entryStart = comma;
         }
       } else {
+        // Scalar ranges exclude key tags, anchors and explicit-key indicators.
+        // These tokens belong to this entry and must not survive its deletion.
+        const token = map.srcToken;
+        if (token?.type === "block-map")
+          entryStart =
+            token.items[index].start.find((part) =>
+              ["explicit-key-ind", "tag", "anchor"].includes(part.type),
+            )?.offset ?? entryStart;
         const lineStart = raw.lastIndexOf("\n", entryStart - 1) + 1;
         if (/^[ \t]*$/.test(raw.slice(lineStart, entryStart))) entryStart = lineStart;
       }
@@ -455,13 +463,22 @@ export function patchSourceFields(
         continue;
       }
       const trailingNewline = value !== undefined && base[span.end - 1] === 10 ? eol : "";
+      // A compact mapping starts after a sequence dash owned by its parent.
+      // Retain a line break so the next sibling keeps its original indentation.
+      const lineStart = span.start === 0 ? 0 : base.lastIndexOf(10, span.start - 1) + 1;
+      const keepItemLine =
+        value === undefined &&
+        base[span.end - 1] === 10 &&
+        /^[ \t]*(?:-[ \t]+)+$/.test(decodeSource(base.slice(lineStart, span.start)));
       edits.push({
         ...span,
         selector,
         oldSha256: sourceHash(base.slice(span.start, span.end)),
         replacement:
           value === undefined
-            ? new Uint8Array()
+            ? keepItemLine
+              ? encodeSource(eol)
+              : new Uint8Array()
             : encodeSource(JSON.stringify(value) + trailingNewline),
       });
     } else if (value !== undefined) {
@@ -508,11 +525,11 @@ export function patchSourceFields(
       const flow = syntax.flows.get(prefix)!;
       text = `${flow.padding}${retained.length && !flow.trailing ? "," : ""}${entries.map(([selector, value]) => `${JSON.stringify(decodeURIComponent(selector.slice(prefix.length)))}:${JSON.stringify(value)}`).join(",")}${flow.trailing ? "," : ""}`;
     } else {
-      const firstKey = map.items[0]?.key as Node | undefined;
-      const keyStart = firstKey?.range?.[0] ?? 0;
-      const lineStart = raw.lastIndexOf("\n", keyStart - 1) + 1;
-      const bomWidth = lineStart === 0 && raw.startsWith("\uFEFF") ? 1 : 0;
-      const indent = " ".repeat(keyStart - lineStart - bomWidth);
+      // The key's scalar column may include tags or an explicit-key indicator.
+      // The mapping token retains the actual indentation, including sequence items.
+      const token = map.srcToken;
+      if (token?.type !== "block-map") throw new TypeError("Missing block-map syntax");
+      const indent = " ".repeat(token.indent);
       text = `${offset > 0 && base[offset - 1] !== 10 ? eol : ""}${entries
         .map(([selector, value]) => {
           const key = decodeURIComponent(selector.slice(prefix.length));

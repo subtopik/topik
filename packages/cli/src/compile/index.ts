@@ -27,7 +27,7 @@ import {
   type TopikMaterializationRecordV1,
 } from "@topik/core";
 import { printDiagnostics } from "../diagnostics";
-import { CliError } from "../errors";
+import { CliError, PublicCliError } from "../errors";
 import { formatValidationFailure } from "../validation-output";
 
 const COMPILATION_GENERATION_PREFIX = ".topik-compilation-generation-";
@@ -167,30 +167,11 @@ export async function replaceCompilationTree(
     operationError = error;
   }
   if (!published && existing !== undefined && existing.name !== target) {
-    try {
-      const priorPath = procFdChild(parent.fd, existing.name);
-      const priorStat = lstatSync(priorPath, { bigint: true });
-      const heldStat = fstatSync(existing.handle.fd, { bigint: true });
-      if (
-        !priorStat.isDirectory() ||
-        priorStat.dev !== heldStat.dev ||
-        priorStat.ino !== heldStat.ino
-      ) {
-        throw new CliError("Previous compilation output identity changed before recovery");
-      }
-      // Do not replace a newly created output target during recovery. A failed restore
-      // must leave the previous generation available in its prior-generation directory.
-      const targetPath = procFdChild(parent.fd, target);
-      assertOutputPathAbsent(targetPath);
-      renameSync(priorPath, targetPath);
-      existing.name = target;
-      existing.path = targetPath;
-    } catch (recoveryError) {
-      operationError = new CliError(
-        "Compilation publication failed and previous output could not be restored; prior generation retained for recovery",
-        { cause: new AggregateError([operationError, recoveryError]) },
-      );
-    }
+    // A later rename cannot atomically verify the backup identity and refuse an
+    // occupied target. Leave recovery to the operator and retain the original error.
+    operationError = new PublicCliError("compilation-publication-failed", {
+      cause: operationError,
+    });
   }
   if (generation !== undefined && !published) {
     try {

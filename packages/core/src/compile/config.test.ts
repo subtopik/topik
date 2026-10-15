@@ -53,12 +53,12 @@ describe("compile config helpers", () => {
     await expect(readConfigFile(dir, candidates)).rejects.toMatchObject({ id: "config-not-found" });
   });
 
-  test.each(["darwin", "win32"] as const)(
-    "reads portable configs and preserves missing-candidate fallback on %s",
+  test.each(["native", "darwin", "win32"] as const)(
+    "reads configs and preserves missing-candidate fallback on %s",
     async (platform) => {
       await writeFile(join(dir, "wiki.yml"), "id: docs\ntitle: Docs\n");
       await writeFile(join(dir, "wiki.json"), JSON.stringify({ id: "other", title: "Other" }));
-      vi.spyOn(process, "platform", "get").mockReturnValue(platform);
+      if (platform !== "native") vi.spyOn(process, "platform", "get").mockReturnValue(platform);
       const candidates = ["wiki.yaml", "wiki.yml", "wiki.json"];
 
       for (const read of [readConfigFile, readOptionalConfigFile]) {
@@ -78,14 +78,14 @@ describe("compile config helpers", () => {
     },
   );
 
-  test.each(["darwin", "win32"] as const)(
+  test.each(["native", "darwin", "win32"] as const)(
     "standalone Wiki and Guide compilers read ordinary sources on %s",
     async (platform) => {
       await writeFile(join(dir, "wiki.yaml"), "id: docs\ntitle: Docs\nnavigation: [intro]\n");
       await writeFile(join(dir, "collection.yaml"), "id: guides\ntitle: Guides\n");
       const content = "# Intro\n\nSource content.\n";
       await writeFile(join(dir, "intro.md"), content);
-      vi.spyOn(process, "platform", "get").mockReturnValue(platform);
+      if (platform !== "native") vi.spyOn(process, "platform", "get").mockReturnValue(platform);
 
       const wiki = await compileWiki({ dir });
       expect(wiki.resources).toContainEqual(

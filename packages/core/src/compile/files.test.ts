@@ -25,8 +25,7 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 let root: string;
 let outside: string;
 const linuxTest = test.skipIf(process.platform !== "linux");
-const platforms: NodeJS.Platform[] =
-  process.platform === "linux" ? ["linux", "darwin", "win32"] : ["darwin", "win32"];
+const platforms = ["native", "darwin", "win32"] as const;
 beforeEach(async () => {
   root = await realpath(await mkdtemp(join(tmpdir(), "topik-contained-")));
   outside = await realpath(await mkdtemp(join(tmpdir(), "topik-outside-")));
@@ -164,12 +163,12 @@ test("a final-component symlink swapped at open is rejected", async () => {
 });
 
 test.each(platforms)("selects the contained reader for %s", async (platform) => {
-  vi.spyOn(process, "platform", "get").mockReturnValue(platform);
+  if (platform !== "native") vi.spyOn(process, "platform", "get").mockReturnValue(platform);
   expect(await readRegularFileWithinRoot(join(root, "pages/intro.md"), root, "utf8")).toBe(
     "# Contained\n",
   );
   const openedPaths = vi.mocked(open).mock.calls.map(([path]) => String(path));
-  if (platform === "linux") {
+  if (process.platform === "linux") {
     expect(openedPaths.some((path) => path.startsWith("/proc/self/fd/"))).toBe(true);
   } else {
     expect(openedPaths).toEqual([join(root, "pages/intro.md")]);
@@ -177,8 +176,9 @@ test.each(platforms)("selects the contained reader for %s", async (platform) => 
 });
 
 test.each(platforms)("rejects traversal and static symlink escapes on %s", async (platform) => {
-  vi.spyOn(process, "platform", "get").mockReturnValue(platform);
+  if (platform !== "native") vi.spyOn(process, "platform", "get").mockReturnValue(platform);
   await symlink(outside, join(root, "escape"), "junction");
+  await symlink(outside, join(root, "directory-link"), "dir");
   await symlink(join(root, "pages"), join(outside, "back"), "junction");
   await symlink(join(outside, "intro.md"), join(root, "outside.md"));
   await symlink(join(root, "pages/intro.md"), join(root, "alias.md"));
@@ -187,6 +187,7 @@ test.each(platforms)("rejects traversal and static symlink escapes on %s", async
     join(root, relative(root, join(outside, "intro.md"))),
     join(outside, "back/intro.md"),
     join(root, "escape/intro.md"),
+    join(root, "directory-link/intro.md"),
     join(root, "outside.md"),
   ]) {
     await expect(readRegularFileWithinRoot(path, root)).rejects.toMatchObject({

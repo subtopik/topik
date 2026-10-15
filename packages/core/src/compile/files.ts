@@ -1,4 +1,4 @@
-import { constants } from "node:fs";
+import { constants, type BigIntStats } from "node:fs";
 import { lstat, open, realpath, type FileHandle } from "node:fs/promises";
 import { isAbsolute, parse, relative, resolve, sep } from "node:path";
 import { PublicCompileError } from "./public-errors";
@@ -55,40 +55,89 @@ export async function assertRegularFileWithinRoot(
 
 async function openRegularFileWithinRoot(filePath: string, rootDir: string): Promise<FileHandle> {
   if (
-    process.platform !== "linux" ||
-    typeof constants.O_NOFOLLOW !== "number" ||
-    typeof constants.O_DIRECTORY !== "number"
+    process.platform === "linux" &&
+    (typeof constants.O_NOFOLLOW !== "number" || typeof constants.O_DIRECTORY !== "number")
   ) {
     throw new PublicCompileError("file-safe-read-unsupported", safeRelativePath(filePath, rootDir));
   }
   const authoredRoot = resolve(rootDir);
   const authoredFile = resolve(filePath);
-  const [canonicalRoot, canonicalFile] = await Promise.all([realpath(rootDir), realpath(filePath)]);
-  if (!isWithinRoot(authoredRoot, authoredFile) || !isWithinRoot(canonicalRoot, canonicalFile)) {
+  if (!isWithinRoot(authoredRoot, authoredFile)) {
     throw new FileOutsideCompilationRootError(filePath, rootDir);
   }
-  if (authoredRoot !== canonicalRoot || authoredFile !== canonicalFile) {
+  const [canonicalRoot, canonicalFile] = await Promise.all([realpath(rootDir), realpath(filePath)]);
+  if (!isWithinRoot(canonicalRoot, canonicalFile)) {
+    throw new FileOutsideCompilationRootError(filePath, rootDir);
+  }
+  // Portable reads allow canonical aliases above the source root (such as macOS /var),
+  // but still reject a symlinked root or a path redirected within it. Linux traversal
+  // also rejects aliases above the root because it opens every authored component.
+  // Keep exact spelling below the canonical root: Windows path.relative folds case
+  // even when the filesystem contains distinct case-sensitive entries.
+  const expectedFile = resolve(canonicalRoot, relative(authoredRoot, authoredFile));
+  if (
+    process.platform === "linux"
+      ? authoredRoot !== canonicalRoot || authoredFile !== canonicalFile
+      : !(await lstat(authoredRoot)).isDirectory() || expectedFile !== canonicalFile
+  ) {
     throw new FileNotRegularError(filePath, rootDir);
   }
 
   // Check before opening so directories and special files (notably FIFOs) cannot block or
   // produce platform-specific read errors. The handle is checked again after opening.
-  const initialStat = await lstat(canonicalFile);
+  const initialStat = await lstat(canonicalFile, { bigint: true });
   if (!initialStat.isFile()) {
     throw new FileNotRegularError(filePath, rootDir);
   }
 
+  return process.platform === "linux"
+    ? openAnchoredLinuxFile(authoredFile, rootDir)
+    : openPortableFile(filePath, rootDir, canonicalFile, initialStat);
+}
+
+async function openPortableFile(
+  filePath: string,
+  rootDir: string,
+  canonicalFile: string,
+  initialStat: BigIntStats,
+): Promise<FileHandle> {
+  // These pathname checks are ordinary containment, not a boundary against hostile
+  // concurrent filesystem mutation. Validate and read the same handle; identity checks
+  // also reject ordinary replacements when O_NOFOLLOW is unavailable.
+  let handle: FileHandle | undefined;
+  try {
+    handle = await open(canonicalFile, SAFE_READ_FLAGS);
+    const openedStat = await handle.stat({ bigint: true });
+    if (
+      !openedStat.isFile() ||
+      initialStat.dev !== openedStat.dev ||
+      initialStat.ino !== openedStat.ino
+    ) {
+      throw new FileNotRegularError(filePath, rootDir);
+    }
+    return handle;
+  } catch (error) {
+    await handle?.close();
+    if (["ELOOP", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) {
+      throw new FileNotRegularError(filePath, rootDir);
+    }
+    throw error;
+  }
+}
+
+async function openAnchoredLinuxFile(filePath: string, rootDir: string): Promise<FileHandle> {
   // Anchor every component, including the ancestors of the compilation root. Pathname
   // checks above provide diagnostics only: no later open traverses a mutable ancestor.
   const directories: FileHandle[] = [];
   let handle: FileHandle | undefined;
   try {
-    const filesystemRoot = parse(authoredFile).root;
-    const components = relative(filesystemRoot, authoredFile).split(sep);
+    const filesystemRoot = parse(filePath).root;
+    const components = relative(filesystemRoot, filePath).split(sep);
     const directoryFlags = LINUX_O_PATH | constants.O_DIRECTORY | constants.O_NOFOLLOW;
     directories.push(await open(filesystemRoot, directoryFlags));
     // Node has no openat API. Linux procfs lets us resolve a single child against a held
     // directory descriptor; O_NOFOLLOW applies to that child, never a multi-part path.
+    // If procfs is unavailable, fail explicitly instead of downgrading to pathname reads.
     const anchor = `/proc/self/fd/${directories[0].fd}`;
     try {
       const [expected, actual] = await Promise.all([

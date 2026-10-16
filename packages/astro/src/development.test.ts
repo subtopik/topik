@@ -145,31 +145,192 @@ describe("Astro development Asset delivery", () => {
       const replacementBytes = Buffer.concat([PNG_BYTES, Buffer.from([0])]);
       const replacementPath = `/blobs/${digest(replacementBytes)}`;
       await writeFile(join(root, "content/guides/hero.png"), replacementBytes);
-      await updateContentConfig(root, 1);
       await waitForStatus(server, replacementPath, 200);
       await expectPageAssets(server, [replacementPath], [initialPath]);
       await expectAssetResponse(server, replacementPath, replacementBytes, "image/png");
       await expectAssetNotServed(server, initialPath, PNG_BYTES);
 
       await writeFile(join(root, "content/guides/intro.md"), "# Guide\n\nNo Assets.\n");
-      await updateContentConfig(root, 2);
       await waitForStatus(server, replacementPath, 404);
       await expectPageAssets(server, [], [replacementPath]);
       await expectAssetNotServed(server, replacementPath, replacementBytes);
       expect((await requestDevelopmentServer(server.port, "/hero.png", "GET")).status).toBe(404);
 
       await writeFile(join(root, "content/guides/intro.md"), "# Guide\n\n![Hero](hero.png)\n");
-      await updateContentConfig(root, 3);
       await waitForStatus(server, replacementPath, 200);
       await expectPageAssets(server, [replacementPath], []);
       await writeFile(join(root, "content/guides/active.svg"), '<svg onload="alert(1)" />');
       await writeFile(join(root, "content/guides/intro.md"), "# Guide\n\n![Active](active.svg)\n");
-      await updateContentConfig(root, 4);
       await waitForStatus(server, replacementPath, 404);
       await expectPageAssets(server, [], [replacementPath]);
       await expectAssetNotServed(server, replacementPath, replacementBytes);
       expect((await requestDevelopmentServer(server.port, "/active.svg", "GET")).status).toBe(404);
       expect(server.child.exitCode).toBeNull();
+    } finally {
+      await releaseDevelopmentServer(server);
+    }
+  }, 30_000);
+
+  test("refreshes Guide and Wiki sources without changing content.config", async () => {
+    const root = await createFixture();
+    const contentConfig = await readFile(join(root, "src/content.config.mjs"), "utf8");
+    const server = await startDevelopmentServer(root);
+    try {
+      await waitForPage(server, ["Wiki before", "Guide"]);
+      await writeFile(
+        join(root, "content/guides/intro.md"),
+        "---\ntitle: Guide after\n---\n# Edited guide\n\n![Hero](hero.png)\n",
+      );
+      await waitForPage(server, ["Guide after", "Edited guide"]);
+      await writeFile(
+        join(root, "content/guides/collection.yaml"),
+        "id: guides\ntitle: Guides\ntags: [fresh-tag]\n",
+      );
+      await waitForPage(server, ["fresh-tag"]);
+      await writeFile(join(root, "content/wiki/nested/intro.md"), "# Wiki after\n");
+      await waitForPage(server, ["Wiki after"], ["Wiki before"]);
+
+      await writeFile(join(root, "content/guides/added.md"), "# Added guide\n");
+      await waitForPage(server, ["Added guide"]);
+      await rm(join(root, "content/guides/added.md"));
+      await waitForPage(server, ["Guide after"], ["Added guide"]);
+      await writeFile(join(root, "content/wiki/nested/added.md"), "# Added wiki page\n");
+      await writeFile(
+        join(root, "content/wiki/wiki.yaml"),
+        "id: wiki\ntitle: Wiki\nnavigation: [nested/intro, nested/added]\n",
+      );
+      await waitForPage(server, ["Added wiki page", "Wiki after"]);
+      await writeFile(
+        join(root, "content/wiki/wiki.yaml"),
+        "id: wiki\ntitle: Wiki\nnavigation: [nested/intro]\n",
+      );
+      await rm(join(root, "content/wiki/nested/added.md"));
+      await waitForPage(server, ["Wiki after"], ["Added wiki page"]);
+
+      const bytes = Buffer.concat([PNG_BYTES, Buffer.from([3])]);
+      const assetPath = `/blobs/${digest(bytes)}`;
+      await writeFile(join(root, "content/guides/hero.png"), bytes);
+      for (const title of ["Intermediate one", "Intermediate two", "Final guide"]) {
+        await writeFile(join(root, "content/guides/intro.md"), `# ${title}\n\n![Hero](hero.png)\n`);
+      }
+      await waitForPage(
+        server,
+        ["Final guide", assetPath],
+        ["Guide after", `/blobs/${digest(PNG_BYTES)}`],
+      );
+      await expectAssetResponse(server, assetPath, bytes, "image/png");
+      await rm(join(root, "content/guides/hero.png"));
+      await waitForPage(server, ["Wiki after"], ["Final guide", assetPath]);
+      await expectAssetNotServed(server, assetPath, bytes);
+      await writeFile(join(root, "content/guides/hero.png"), bytes);
+      await waitForPage(server, ["Final guide", assetPath, "Wiki after"]);
+      expect(await readFile(join(root, "src/content.config.mjs"), "utf8")).toBe(contentConfig);
+      expect(server.child.exitCode).toBeNull();
+    } finally {
+      await releaseDevelopmentServer(server);
+    }
+  }, 30_000);
+  test.each(["guides", "wiki"] as const)(
+    "%s collections keep healthy assets available when a shared-source collection fails",
+    async (kind) => {
+      const root = await createFixture();
+      await writeFile(
+        join(root, "content/guides/wiki.yaml"),
+        "id: wiki\ntitle: Wiki\nnavigation: [intro]\n",
+      );
+      await writeFile(
+        join(root, "topik-loaders.mjs"),
+        `import { fileURLToPath } from "node:url";\nimport { createProjectAssetNameGenerator } from "@topik/core";\nimport { topikGuidesLoader, topikWikiLoader } from ${JSON.stringify(TOPIK_ASTRO_SOURCE)};\nconst dir = fileURLToPath(new URL("./content/guides", import.meta.url));\nconst options = { dir, name: "shared-source", assets: { generateName: createProjectAssetNameGenerator({ projectRoot: dir, projectNamespace: "shared-source" }) } };\nconst create = ${kind === "guides" ? "topikGuidesLoader" : "topikWikiLoader"};\nexport const primaryLoader = create(options);\nexport const mirrorLoader = create(options);\n`,
+      );
+      await writeFile(
+        join(root, "astro.config.mjs"),
+        `import { defineConfig } from "astro/config";\nimport { topik } from ${JSON.stringify(TOPIK_ASTRO_SOURCE)};\nimport { primaryLoader } from "./topik-loaders.mjs";\nexport default defineConfig({ vite: { server: { strictPort: true } }, integrations: [topik({ loaders: [primaryLoader] })] });\n`,
+      );
+      await writeFile(
+        join(root, "src/content.config.mjs"),
+        `import { defineCollection } from "astro:content";\nimport { primaryLoader, mirrorLoader } from "../topik-loaders.mjs";\nfunction checked(loader) { return { ...loader, load(context) { return loader.load({ ...context, generateDigest(value) { if (value.includes("Reject all") || (context.collection === "mirror" && value.includes("Reject mirror"))) throw new Error("Collection rejected content"); return context.generateDigest(value); } }); } }; }\nexport const collections = { primary: defineCollection({ loader: checked(primaryLoader) }), mirror: defineCollection({ loader: checked(mirrorLoader) }) };\n`,
+      );
+      await writeFile(
+        join(root, "src/pages/index.astro"),
+        `---\nimport { getCollection } from "astro:content";\nconst primary = await getCollection("primary");\nconst mirror = await getCollection("mirror");\n---\n<h2>primary:{primary.map(entry => entry.data.title).join(",") || "empty"}</h2><h2>mirror:{mirror.map(entry => entry.data.title).join(",") || "empty"}</h2>\n`,
+      );
+      const server = await startDevelopmentServer(root);
+      try {
+        await waitForPage(server, ["primary:Guide", "mirror:Guide"]);
+        const oldPath = `/blobs/${digest(PNG_BYTES)}`;
+        await expectAssetResponse(server, oldPath, PNG_BYTES, "image/png");
+        const bytes = Buffer.concat([PNG_BYTES, Buffer.from([7])]);
+        const nextPath = `/blobs/${digest(bytes)}`;
+        await writeFile(join(root, "content/guides/hero.png"), bytes);
+        await writeFile(
+          join(root, "content/guides/intro.md"),
+          "# Reject mirror\n\n![Hero](hero.png)\n",
+        );
+        await waitForPage(server, ["primary:Reject mirror", "mirror:empty"]);
+        await expectAssetResponse(server, nextPath, bytes, "image/png");
+        await expectAssetNotServed(server, oldPath, PNG_BYTES);
+
+        await writeFile(
+          join(root, "content/guides/intro.md"),
+          "# Recovered\n\n![Hero](hero.png)\n",
+        );
+        await waitForPage(server, ["primary:Recovered", "mirror:Recovered"]);
+        await expectAssetResponse(server, nextPath, bytes, "image/png");
+        await writeFile(
+          join(root, "content/guides/intro.md"),
+          "# Reject all\n\n![Hero](hero.png)\n",
+        );
+        await waitForPage(server, ["primary:empty", "mirror:empty"]);
+        await expectAssetNotServed(server, nextPath, bytes);
+        await writeFile(join(root, "content/guides/intro.md"), "# Final\n\n![Hero](hero.png)\n");
+        await waitForPage(server, ["primary:Final", "mirror:Final"]);
+        await expectAssetResponse(server, nextPath, bytes, "image/png");
+      } finally {
+        await releaseDevelopmentServer(server);
+      }
+    },
+    30_000,
+  );
+
+  test("a project-root source stays idle after Astro writes generated content files", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topik-root-source-"));
+    roots.add(root);
+    await symlink(WORKSPACE_NODE_MODULES, join(root, "node_modules"), "dir");
+    await mkdir(join(root, "src/pages"), { recursive: true });
+    await writeFile(join(root, "collection.yaml"), "id: guides\ntitle: Guides\n");
+    await writeFile(join(root, "intro.md"), "# Before\n");
+    await writeFile(
+      join(root, "topik-loaders.mjs"),
+      `import { fileURLToPath } from "node:url";\nimport { topikGuidesLoader } from ${JSON.stringify(TOPIK_ASTRO_SOURCE)};\nexport const guidesLoader = topikGuidesLoader({ dir: fileURLToPath(new URL("./", import.meta.url)), name: "root-guides" });\n`,
+    );
+    await writeFile(
+      join(root, "astro.config.mjs"),
+      `import { defineConfig } from "astro/config";\nimport { topik } from ${JSON.stringify(TOPIK_ASTRO_SOURCE)};\nimport { guidesLoader } from "./topik-loaders.mjs";\nexport default defineConfig({ cacheDir: "./custom cache/astro", vite: { server: { strictPort: true } }, integrations: [topik({ loaders: [guidesLoader] })] });\n`,
+    );
+    await writeFile(
+      join(root, "src/content.config.mjs"),
+      `import { defineCollection } from "astro:content";\nimport { guidesLoader } from "../topik-loaders.mjs";\nexport const collections = { guides: defineCollection({ loader: guidesLoader }) };\n`,
+    );
+    await writeFile(
+      join(root, "src/pages/index.astro"),
+      `---\nimport { getCollection } from "astro:content";\nconst entries = await getCollection("guides");\n---\n{entries.map(entry => <h1>{entry.data.title}</h1>)}\n`,
+    );
+    const server = await startDevelopmentServer(root);
+    const compilations = () => (server.output().match(/Loaded 1 guide\(s\)/gu) ?? []).length;
+    async function expectIdle() {
+      // Allow Astro's deferred content-store and asset-import writes to complete.
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      const completed = compilations();
+      expect(completed).toBeGreaterThan(0);
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      expect(compilations(), server.output()).toBe(completed);
+    }
+    try {
+      await waitForPage(server, ["Before"]);
+      await expectIdle();
+      await writeFile(join(root, "intro.md"), "# After\n");
+      await waitForPage(server, ["After"], ["Before"]);
+      await expectIdle();
     } finally {
       await releaseDevelopmentServer(server);
     }
@@ -182,21 +343,27 @@ async function createFixture(): Promise<string> {
   await symlink(WORKSPACE_NODE_MODULES, join(root, "node_modules"), "dir");
   await mkdir(join(root, "src/pages"), { recursive: true });
   await mkdir(join(root, "content/guides"), { recursive: true });
+  await mkdir(join(root, "content/wiki/nested"), { recursive: true });
+  await writeFile(
+    join(root, "content/wiki/wiki.yaml"),
+    "id: wiki\ntitle: Wiki\nnavigation: [nested/intro]\n",
+  );
+  await writeFile(join(root, "content/wiki/nested/intro.md"), "# Wiki before\n");
   await writeFile(join(root, "content/guides/collection.yaml"), "id: guides\ntitle: Guides\n");
   await writeFile(join(root, "content/guides/hero.png"), PNG_BYTES);
   await writeFile(join(root, "content/guides/intro.md"), "# Guide\n\n![Hero](hero.png)\n");
   await writeFile(
     join(root, "topik-loaders.mjs"),
-    `import { createProjectAssetNameGenerator } from "@topik/core";\nimport { topikGuidesLoader } from ${JSON.stringify(TOPIK_ASTRO_SOURCE)};\nexport const guidesLoader = topikGuidesLoader({ dir: new URL("./content/guides", import.meta.url).pathname, name: "development-guides", assets: { generateName: createProjectAssetNameGenerator({ projectRoot: new URL("./content", import.meta.url).pathname, projectNamespace: "astro-project" }) } });\n`,
+    `import { createProjectAssetNameGenerator } from "@topik/core";\nimport { topikGuidesLoader, topikWikiLoader } from ${JSON.stringify(TOPIK_ASTRO_SOURCE)};\nexport const guidesLoader = topikGuidesLoader({ dir: new URL("./content/guides", import.meta.url).pathname, name: "development-guides", assets: { generateName: createProjectAssetNameGenerator({ projectRoot: new URL("./content", import.meta.url).pathname, projectNamespace: "astro-project" }) } });\nexport const wikiLoader = topikWikiLoader({ dir: new URL("./content/wiki", import.meta.url).pathname, name: "development-wiki" });\n`,
   );
   await updateContentConfig(root, 0);
   await writeFile(
     join(root, "astro.config.mjs"),
-    `import { defineConfig } from "astro/config";\nimport { topik } from ${JSON.stringify(TOPIK_ASTRO_SOURCE)};\nimport { guidesLoader } from "./topik-loaders.mjs";\nexport default defineConfig({ vite: { server: { strictPort: true } }, integrations: [topik({ loaders: [guidesLoader] })] });\n`,
+    `import { defineConfig } from "astro/config";\nimport { topik } from ${JSON.stringify(TOPIK_ASTRO_SOURCE)};\nimport { guidesLoader, wikiLoader } from "./topik-loaders.mjs";\nexport default defineConfig({ vite: { server: { strictPort: true } }, integrations: [topik({ loaders: [guidesLoader, wikiLoader] })] });\n`,
   );
   await writeFile(
     join(root, "src/pages/index.astro"),
-    `---\nimport { getCollection } from "astro:content";\nimport { guidesLoader } from "../../topik-loaders.mjs";\nconst entries = await getCollection("guides");\nconst urls = guidesLoader.getAssets().map((asset) => guidesLoader.resolveAsset(asset.name));\n---\n{entries.map((entry) => <pre>{entry.body}</pre>)}\n{urls.map((url) => <a href={url}>{url}</a>)}\n`,
+    `---\nimport { getCollection } from "astro:content";\nimport { guidesLoader } from "../../topik-loaders.mjs";\nconst entries = [...await getCollection("guides"), ...await getCollection("wiki")];\nconst urls = guidesLoader.getAssets().map((asset) => guidesLoader.resolveAsset(asset.name));\n---\n{entries.map((entry) => <section><h2>{entry.data.title}</h2><pre>{entry.body}</pre><span>{JSON.stringify(entry.data)}</span></section>)}\n{urls.map((url) => <a href={url}>{url}</a>)}\n`,
   );
   return root;
 }
@@ -204,7 +371,7 @@ async function createFixture(): Promise<string> {
 async function updateContentConfig(root: string, revision: number): Promise<void> {
   await writeFile(
     join(root, "src/content.config.mjs"),
-    `import { defineCollection } from "astro:content";\nimport { guidesLoader } from "../topik-loaders.mjs";\nexport const fixtureRevision = ${revision};\nexport const collections = { guides: defineCollection({ loader: guidesLoader }) };\n`,
+    `import { defineCollection } from "astro:content";\nimport { guidesLoader, wikiLoader } from "../topik-loaders.mjs";\nexport const fixtureRevision = ${revision};\nexport const collections = { guides: defineCollection({ loader: guidesLoader }), wiki: defineCollection({ loader: wikiLoader }) };\n`,
   );
 }
 
@@ -355,6 +522,29 @@ async function expectPageAssets(
   const html = page.body.toString("utf8");
   for (const path of present) expect(html).toContain(`href="${path}"`);
   for (const path of absent) expect(html).not.toContain(path);
+}
+
+async function waitForPage(
+  server: DevelopmentServer,
+  present: string[],
+  absent: string[] = [],
+): Promise<void> {
+  const deadline = Date.now() + STATUS_TIMEOUT_MS;
+  let html = "";
+  while (Date.now() < deadline) {
+    const response = await requestDevelopmentServer(server.port, "/", "GET");
+    html = response.body.toString("utf8");
+    if (
+      response.status === 200 &&
+      present.every((text) => html.includes(text)) &&
+      absent.every((text) => !html.includes(text))
+    )
+      return;
+    await delay(50);
+  }
+  throw new Error(
+    `Development content did not refresh. Expected ${JSON.stringify({ present, absent })}; received ${html}\n${server.output()}`,
+  );
 }
 
 async function requestDevelopmentServer(

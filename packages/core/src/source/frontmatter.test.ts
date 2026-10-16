@@ -295,3 +295,61 @@ test.each(
     );
   },
 );
+
+test.each(
+  ["\n", "\r\n"].flatMap((eol) =>
+    ["", "\uFEFF"].flatMap((bom) =>
+      [
+        [" ", ""],
+        ["", " "],
+        ["\t", "\t"],
+        [" \t", "\t "],
+      ].map(([opening, closing]) => ({ eol, bom, opening, closing })),
+    ),
+  ),
+)(
+  "fence whitespace preserves authored identity and source bytes: %j",
+  async ({ eol, bom, opening, closing }) => {
+    const prefix = `${bom}---${opening}${eol}`;
+    const header = `${prefix}id: stable${eol}title: Authored Title # Café${eol}custom: untouched${eol}---${closing}${eol}`;
+    const body = `# Heading${eol}${eol}Exact Café **body**.${eol}`;
+    const raw = header + body;
+    const project = await projectFor(raw);
+    const guide = project.compilation.resources.find(
+      (resource): resource is Guide => resource.type === "Guide",
+    )!;
+    expect(guide.name).toBe("stable");
+    expect(guide.spec.title).toBe("Authored Title");
+    expect(guide.spec.content.value).toBe(body);
+    const sections = sourceMarkdownSections(encodeSource(raw));
+    expect(sections.body).toBe(body);
+    expect(sections.frontmatterRange!.start).toBe(encodeSource(prefix).length);
+    expect(sections.bodyRange.start).toBe(encodeSource(header).length);
+    const title = project.documents[0].fields.find((field) => field.selector === "title")!;
+    expect(decodeSource(encodeSource(raw).slice(title.value!.start, title.value!.end))).toBe(
+      "Authored Title",
+    );
+    const request = {
+      project,
+      expectedTreeDigest: project.treeDigest,
+      packageCohort: cohort,
+      desiredResources: project.compilation.resources,
+      operations: [],
+      authority: authority(project),
+    };
+    const noOp = await planSourceUpdates(request);
+    expect(noOp.ok && noOp.plan.changes).toEqual([]);
+    const desired = structuredClone(project.compilation.resources);
+    (desired.find((resource) => resource.type === "Guide") as Guide).spec.title = "Edited";
+    const edited = await planSourceUpdates({
+      ...request,
+      desiredResources: desired,
+      operations: [{ kind: "update", resource: "Guide/stable" }],
+    });
+    expect(edited.ok, JSON.stringify(edited)).toBe(true);
+    if (!edited.ok) return;
+    const written = edited.plan.candidate.tree.find((entry) => entry.path === "post.md")!.bytes;
+    expect(decodeSource(written)).toBe(raw.replace("title: Authored Title", 'title: "Edited"'));
+    expect(edited.plan.candidate.compilation.resources).toEqual(desired);
+  },
+);

@@ -230,6 +230,49 @@ describe("Astro development Asset delivery", () => {
       await releaseDevelopmentServer(server);
     }
   }, 30_000);
+  test("a project-root source stays idle after Astro writes generated content files", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topik-root-source-"));
+    roots.add(root);
+    await symlink(WORKSPACE_NODE_MODULES, join(root, "node_modules"), "dir");
+    await mkdir(join(root, "src/pages"), { recursive: true });
+    await writeFile(join(root, "collection.yaml"), "id: guides\ntitle: Guides\n");
+    await writeFile(join(root, "intro.md"), "# Before\n");
+    await writeFile(
+      join(root, "topik-loaders.mjs"),
+      `import { fileURLToPath } from "node:url";\nimport { topikGuidesLoader } from ${JSON.stringify(TOPIK_ASTRO_SOURCE)};\nexport const guidesLoader = topikGuidesLoader({ dir: fileURLToPath(new URL("./", import.meta.url)), name: "root-guides" });\n`,
+    );
+    await writeFile(
+      join(root, "astro.config.mjs"),
+      `import { defineConfig } from "astro/config";\nimport { topik } from ${JSON.stringify(TOPIK_ASTRO_SOURCE)};\nimport { guidesLoader } from "./topik-loaders.mjs";\nexport default defineConfig({ cacheDir: "./custom cache/astro", vite: { server: { strictPort: true } }, integrations: [topik({ loaders: [guidesLoader] })] });\n`,
+    );
+    await writeFile(
+      join(root, "src/content.config.mjs"),
+      `import { defineCollection } from "astro:content";\nimport { guidesLoader } from "../topik-loaders.mjs";\nexport const collections = { guides: defineCollection({ loader: guidesLoader }) };\n`,
+    );
+    await writeFile(
+      join(root, "src/pages/index.astro"),
+      `---\nimport { getCollection } from "astro:content";\nconst entries = await getCollection("guides");\n---\n{entries.map(entry => <h1>{entry.data.title}</h1>)}\n`,
+    );
+    const server = await startDevelopmentServer(root);
+    const compilations = () => (server.output().match(/Loaded 1 guide\(s\)/gu) ?? []).length;
+    async function expectIdle() {
+      // Allow Astro's deferred content-store and asset-import writes to complete.
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      const completed = compilations();
+      expect(completed).toBeGreaterThan(0);
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      expect(compilations(), server.output()).toBe(completed);
+    }
+    try {
+      await waitForPage(server, ["Before"]);
+      await expectIdle();
+      await writeFile(join(root, "intro.md"), "# After\n");
+      await waitForPage(server, ["After"], ["Before"]);
+      await expectIdle();
+    } finally {
+      await releaseDevelopmentServer(server);
+    }
+  }, 30_000);
 });
 
 async function createFixture(): Promise<string> {

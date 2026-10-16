@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { compileGuides, createProjectAssetNameGenerator } from "@topik/core";
 import type { LoaderContext } from "astro/loaders";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
@@ -257,6 +258,31 @@ test("detaching a watcher cancels a pending debounce before compilation", async 
   await new Promise((resolve) => setTimeout(resolve, 80));
   expect(compileGuides).toHaveBeenCalledTimes(1);
   expect(ctx.publishedTitles).toEqual(["Before"]);
+});
+
+test("generated Astro files do not refresh sources or hide similarly named directories", async () => {
+  await writeFile(join(dir, "collection.yaml"), "id: docs\ntitle: Docs\n");
+  const loader = topikGuidesLoader(options());
+  const ctx = context();
+  ctx.value.config = {
+    root: pathToFileURL(`${dir}/`),
+    cacheDir: pathToFileURL(join(dir, "custom cache")),
+  } as LoaderContext["config"];
+  const otherListener = vi.fn();
+  watcher.on("all", otherListener);
+  await loader.load(ctx.value);
+  for (const event of ["add", "change", "unlink", "addDir", "unlinkDir"]) {
+    changed(".astro/content-assets.mjs", event);
+    changed("custom cache/nested/output.mjs", event);
+  }
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  expect(compileGuides).toHaveBeenCalledTimes(1);
+  expect(otherListener).toHaveBeenCalledTimes(10);
+  for (const path of [".astro-content/intro.md", "custom cache-content/intro.md"]) {
+    const calls = vi.mocked(compileGuides).mock.calls.length;
+    changed(path);
+    await vi.waitFor(() => expect(compileGuides).toHaveBeenCalledTimes(calls + 1));
+  }
 });
 
 test.each(

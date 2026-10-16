@@ -1,4 +1,5 @@
 import { isAbsolute, relative, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { AssetCompilationResult } from "@topik/core";
 import type { LoaderContext } from "astro/loaders";
 import type { TopikAssetSnapshotControl } from "./assets";
@@ -16,6 +17,11 @@ export async function loadTopikSource(
   let timer: ReturnType<typeof setTimeout> | undefined;
   let running: Promise<void> | undefined;
   const watcher = context.watcher;
+  const generatedDirectories: string[] = [];
+  if (context.config?.root) {
+    generatedDirectories.push(fileURLToPath(new URL(".astro/", context.config.root)));
+  }
+  if (context.config?.cacheDir) generatedDirectories.push(fileURLToPath(context.config.cacheDir));
 
   function dispose() {
     active = false;
@@ -28,6 +34,9 @@ export async function loadTopikSource(
   }
   function onChange(event: string, path: string) {
     if (!active || !["add", "change", "unlink", "addDir", "unlinkDir"].includes(event)) return;
+    // Publishing entries writes Astro's generated files; do not feed those writes back
+    // into compilation or alter the shared watcher's behavior for other consumers.
+    if (generatedDirectories.some((directory) => containsPath(directory, path))) return;
     const local = relative(root, path);
     if (isAbsolute(local) || local === ".." || local.startsWith(`..${sep}`)) return;
     if (local.split(sep).some((part) => part === ".git" || part === "node_modules")) return;
@@ -76,4 +85,9 @@ export async function loadTopikSource(
   watcher?.on("all", onChange);
   watcher?.add(root);
   await refresh();
+}
+
+function containsPath(directory: string, path: string): boolean {
+  const local = relative(directory, path);
+  return !isAbsolute(local) && local !== ".." && !local.startsWith(`..${sep}`);
 }

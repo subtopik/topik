@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import { compileGuides, type AssetCompilationOptions } from "@topik/core";
 import type { Guide } from "@topik/schema/guide/v1";
 import type { LoaderContext } from "astro/loaders";
+import { loadTopikSource } from "./source-watch";
 import {
   compileTopikAssetLoader,
   requireTopikLoaderName,
@@ -44,34 +45,35 @@ export function topikGuidesLoader(options: TopikGuidesOptions): TopikAssetLoader
 
       load: async (context: LoaderContext) => {
         context.logger.info(`Compiling guides from ${resolvedDir}`);
-        try {
-          const compiled = await compileTopikAssetLoader(enhanced.loader);
-          const guides = compiled.resources.filter(
-            (resource): resource is Guide => resource.type === "Guide",
-          );
+        await loadTopikSource(
+          resolvedDir,
+          context,
+          enhanced.snapshot,
+          () => compileTopikAssetLoader(enhanced.loader),
+          (compiled) => {
+            const guides = compiled.resources.filter(
+              (resource): resource is Guide => resource.type === "Guide",
+            );
 
-          context.store.clear();
-          for (const guide of guides) {
-            context.store.set({
-              id: guide.name,
-              data: {
-                title: guide.spec.title,
-                slug: guide.spec.slug,
-                description: guide.spec.description ?? undefined,
-                authors: guide.spec.authors ?? [],
-                tags: guide.spec.tags ?? [],
-              },
-              body: guide.spec.content.value,
-              digest: context.generateDigest(guide.spec.content.value),
-            });
-          }
-          enhanced.snapshot.publish(compiled);
+            context.store.clear();
+            for (const guide of guides) {
+              context.store.set({
+                id: guide.name,
+                data: {
+                  title: guide.spec.title,
+                  slug: guide.spec.slug,
+                  description: guide.spec.description ?? undefined,
+                  authors: guide.spec.authors ?? [],
+                  tags: guide.spec.tags ?? [],
+                },
+                body: guide.spec.content.value,
+                digest: context.generateDigest(guide.spec.content.value),
+              });
+            }
 
-          context.logger.info(`Loaded ${guides.length} guide(s)`);
-        } catch (error) {
-          enhanced.snapshot.clear();
-          throw error;
-        }
+            context.logger.info(`Loaded ${guides.length} guide(s)`);
+          },
+        );
       },
 
       createSchema: async () => {

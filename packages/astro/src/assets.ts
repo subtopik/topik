@@ -16,6 +16,8 @@ interface TopikAssetLoaderIdentity {
 interface LogicalTopikAssetSnapshot {
   current: TopikAssetSnapshot;
   identity: Readonly<TopikAssetLoaderIdentity>;
+  compilation: Promise<unknown>;
+  disposeSourceWatcher?: () => void;
 }
 
 interface TopikAssetAccess {
@@ -30,6 +32,7 @@ export type TopikAssetLoader = Loader & TopikAssetAccess;
 export interface TopikAssetSnapshotControl {
   clear(): void;
   publish(result: Pick<AssetCompilationResult, "payloads" | "resources">): void;
+  replaceSourceWatcher(dispose: () => void): void;
 }
 
 type TopikAssetCompiler = () => Promise<AssetCompilationResult>;
@@ -48,7 +51,7 @@ const EMPTY_SNAPSHOT: TopikAssetSnapshot = {
 const RUNTIME_ASSET_URLS = Symbol.for("@topik/astro/runtime-asset-urls");
 // Astro may evaluate configuration and content loaders in separate module graphs.
 // A global symbol bridges only their process-local, logically keyed current snapshots.
-const LOGICAL_ASSET_SNAPSHOTS = Symbol.for("@topik/astro/logical-asset-snapshots/v2");
+const LOGICAL_ASSET_SNAPSHOTS = Symbol.for("@topik/astro/logical-asset-snapshots/v3");
 const registeredLoaders = new WeakMap<object, RegisteredTopikAssetLoader>();
 
 export function requireTopikLoaderName(value: string): string {
@@ -70,6 +73,10 @@ export function withTopikAssetSnapshot<T extends Loader>(
     },
     publish(result) {
       logicalSnapshot.current = createSnapshot(result);
+    },
+    replaceSourceWatcher(dispose) {
+      logicalSnapshot.disposeSourceWatcher?.();
+      logicalSnapshot.disposeSourceWatcher = dispose;
     },
   };
   const enhanced = Object.assign(loader, {
@@ -109,7 +116,14 @@ export async function compileTopikAssetLoader(
   if (registered === undefined) {
     throw new TypeError("Topik Asset compilation accepts only loaders created by @topik/astro");
   }
-  return registered.compile();
+  // Equivalent loaders can live in different Astro module graphs. Serialize
+  // their compilation through the same logical identity, including reloads.
+  const compilation = registered.logicalSnapshot.compilation.then(registered.compile);
+  registered.logicalSnapshot.compilation = compilation.then(
+    () => {},
+    () => {},
+  );
+  return compilation;
 }
 
 /** Compile and publish a complete multi-loader snapshot without exposing partial results. */
@@ -120,7 +134,7 @@ export async function refreshTopikAssetSnapshots(
   const registered = loaders.map((loader) => registeredLoaders.get(loader)!);
   for (const entry of registered) entry.snapshot.clear();
   try {
-    const results = await Promise.all(registered.map((entry) => entry.compile()));
+    const results = await Promise.all(loaders.map(compileTopikAssetLoader));
     for (let index = 0; index < registered.length; index++) {
       registered[index].snapshot.publish(results[index]);
     }
@@ -193,6 +207,7 @@ function getLogicalSnapshot(identity: TopikAssetLoaderIdentity): LogicalTopikAss
   const created = {
     current: EMPTY_SNAPSHOT,
     identity: Object.freeze({ ...identity }),
+    compilation: Promise.resolve(),
   };
   registry.set(key, created);
   return created;

@@ -3,6 +3,7 @@ import { compileWiki, resolveWikiNavigation, type AssetCompilationOptions } from
 import type { Wiki, WikiNavNode } from "@topik/schema/wiki/v1";
 import type { WikiPage } from "@topik/schema/wiki-page/v1";
 import type { LoaderContext } from "astro/loaders";
+import { loadTopikSource } from "./source-watch";
 import {
   compileTopikAssetLoader,
   requireTopikLoaderName,
@@ -44,40 +45,41 @@ export function topikWikiLoader(options: TopikWikiOptions): TopikAssetLoader & {
 
       load: async (context: LoaderContext) => {
         context.logger.info(`Compiling wiki from ${resolvedDir}`);
-        try {
-          const compiled = await compileTopikAssetLoader(enhanced.loader);
-          const pageResources = compiled.resources.filter(
-            (resource): resource is WikiPage => resource.type === "WikiPage",
-          );
-          const wiki = compiled.resources.find(
-            (resource): resource is Wiki => resource.type === "Wiki",
-          );
-          const navigation = wiki?.spec.navigation ?? [];
-          const resolvedNavigation = resolveWikiNavigation(navigation, {
-            sourceVersion: wiki?.spec.sourceVersion,
-          });
-
-          context.store.clear();
-          for (const page of pageResources) {
-            context.store.set({
-              id: page.name,
-              data: {
-                wiki: page.spec.wiki,
-                title: page.spec.title,
-                slug: resolvedNavigation.pageByName.get(page.name)?.route ?? page.name,
-                description: page.spec.description ?? undefined,
-              },
-              body: page.spec.content.value,
-              digest: context.generateDigest(page.spec.content.value),
+        await loadTopikSource(
+          resolvedDir,
+          context,
+          enhanced.snapshot,
+          () => compileTopikAssetLoader(enhanced.loader),
+          (compiled) => {
+            const pageResources = compiled.resources.filter(
+              (resource): resource is WikiPage => resource.type === "WikiPage",
+            );
+            const wiki = compiled.resources.find(
+              (resource): resource is Wiki => resource.type === "Wiki",
+            );
+            const navigation = wiki?.spec.navigation ?? [];
+            const resolvedNavigation = resolveWikiNavigation(navigation, {
+              sourceVersion: wiki?.spec.sourceVersion,
             });
-          }
-          enhanced.snapshot.publish(compiled);
 
-          context.logger.info(`Loaded ${pageResources.length} wiki page(s)`);
-        } catch (error) {
-          enhanced.snapshot.clear();
-          throw error;
-        }
+            context.store.clear();
+            for (const page of pageResources) {
+              context.store.set({
+                id: page.name,
+                data: {
+                  wiki: page.spec.wiki,
+                  title: page.spec.title,
+                  slug: resolvedNavigation.pageByName.get(page.name)?.route ?? page.name,
+                  description: page.spec.description ?? undefined,
+                },
+                body: page.spec.content.value,
+                digest: context.generateDigest(page.spec.content.value),
+              });
+            }
+
+            context.logger.info(`Loaded ${pageResources.length} wiki page(s)`);
+          },
+        );
       },
 
       createSchema: async () => {

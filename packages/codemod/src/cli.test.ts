@@ -97,7 +97,7 @@ describe("codemod CLI file results", () => {
 
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining("unsupported.mdx:1:1"));
     expect(console.log).toHaveBeenCalledWith("✓ converted 1 file(s)");
-    expect(console.log).toHaveBeenCalledWith("⚠ 1 warning(s)");
+    expect(console.log).toHaveBeenCalledWith("⚠ 2 warning(s)");
     expect(process.exitCode).toBeUndefined();
   });
 });

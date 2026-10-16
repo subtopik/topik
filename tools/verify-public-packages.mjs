@@ -91,6 +91,10 @@ try {
   }
 
   verifyConsumer(consumer);
+  const codemodFixture = join(consumer, "codemod.mjs");
+  copyFileSync(join(root, "tools/codemod-consumer.mjs"), codemodFixture);
+  for (const runtime of runtimeNodes)
+    execFileSync(runtime, [codemodFixture], { cwd: consumer, stdio: "inherit", timeout: 30_000 });
   const sourceFixture = join(consumer, "source-writeback.mjs");
   copyFileSync(join(root, "tools/source-writeback-consumer.mjs"), sourceFixture);
   for (const runtime of runtimeNodes)

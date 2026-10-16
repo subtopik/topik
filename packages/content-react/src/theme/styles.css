@@ -131,6 +131,17 @@
     text-decoration: none;
   }
 
+  .topik-card__link {
+    color: inherit;
+    display: grid;
+    gap: 0.35rem;
+    text-decoration: none;
+  }
+
+  .topik-card__link:hover .topik-card__title {
+    text-decoration: underline;
+  }
+
   .topik-card__icon {
     color: var(--topik-color-accent);
     font-weight: 700;

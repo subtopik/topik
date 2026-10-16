@@ -214,32 +214,37 @@ export function TopikCard({
     renderLink,
     resolveLink,
   });
-  const content = (
+  const target = stringAttribute(href);
+  const label = stringAttribute(title);
+  const heading = (
     <>
       {icon ? <span className="topik-card__icon">{stringAttribute(icon)}</span> : null}
-      <span className="topik-card__title">{stringAttribute(title)}</span>
-      <span className="topik-card__body">{children}</span>
+      <span className="topik-card__title">{label?.trim() ? label : target}</span>
     </>
   );
-
-  const target = stringAttribute(href);
+  let navigation = heading;
   if (target) {
     const resolvedTarget = resolveSafeHref(target, linkResolver, __topikResolvedHref === true);
     if (resolvedTarget) {
       const linkProps = {
-        children: content,
-        className: "topik-card",
+        children: heading,
+        className: "topik-card__link",
         href: resolvedTarget,
         onClick: createLinkClickHandler(
           parseTopikResourceReference(target) === null ? target : resolvedTarget,
           handleNavigate,
         ),
       };
-      return <>{linkRenderer ? linkRenderer(linkProps) : <a {...linkProps} />}</>;
+      navigation = <>{linkRenderer ? linkRenderer(linkProps) : <a {...linkProps} />}</>;
     }
   }
 
-  return <div className="topik-card">{content}</div>;
+  return (
+    <div className="topik-card">
+      {navigation}
+      <div className="topik-card__body">{children}</div>
+    </div>
+  );
 }
 
 export function TopikCodeBlock({

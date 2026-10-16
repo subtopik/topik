@@ -116,6 +116,20 @@ describe("default Topik theme components", () => {
     expect(plain).toContain('<div class="topik-card">');
   });
 
+  it.each(["", "   "])("gives untitled card links a visible destination label (%j)", (title) => {
+    const dom = mount(
+      <TopikContent
+        content={`{% card title=${JSON.stringify(title)} href="/docs" %}\nRead the documentation.\n{% /card %}`}
+      />,
+    );
+    const link = dom.querySelector(".topik-card__link");
+    expect(link?.textContent).toBe("/docs");
+    expect(link?.getAttribute("href")).toBe("/docs");
+    expect(dom.querySelector(".topik-card__body")?.textContent).toContain(
+      "Read the documentation.",
+    );
+  });
+
   it.each([false, true])(
     "hydrates cards with linked block bodies and independent navigation (adapter: %s)",
     async (adapter) => {

@@ -214,14 +214,15 @@ export function TopikCard({
     renderLink,
     resolveLink,
   });
+  const target = stringAttribute(href);
+  const label = stringAttribute(title);
   const heading = (
     <>
       {icon ? <span className="topik-card__icon">{stringAttribute(icon)}</span> : null}
-      <span className="topik-card__title">{stringAttribute(title)}</span>
+      <span className="topik-card__title">{label?.trim() ? label : target}</span>
     </>
   );
   let navigation = heading;
-  const target = stringAttribute(href);
   if (target) {
     const resolvedTarget = resolveSafeHref(target, linkResolver, __topikResolvedHref === true);
     if (resolvedTarget) {

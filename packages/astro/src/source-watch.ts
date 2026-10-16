@@ -22,6 +22,10 @@ export async function loadTopikSource(
     clearTimeout(timer);
     watcher?.off("all", onChange);
   }
+  function isActive() {
+    if (active && watcher && !watcher.listeners("all").includes(onChange)) dispose();
+    return active;
+  }
   function onChange(event: string, path: string) {
     if (!active || !["add", "change", "unlink", "addDir", "unlinkDir"].includes(event)) return;
     const local = relative(root, path);
@@ -36,18 +40,18 @@ export async function loadTopikSource(
     }, 50);
   }
   async function run() {
-    while (active) {
+    while (isActive()) {
       const started = revision;
       try {
         const compiled = await compile();
-        if (!active) return;
+        if (!isActive()) return;
         if (started !== revision) continue;
         // Commit the loader store and its payload snapshot in one synchronous turn.
         publishEntries(compiled);
         snapshot.publish(compiled);
         return;
       } catch (error) {
-        if (!active) return;
+        if (!isActive()) return;
         if (started !== revision) continue;
         context.store.clear();
         snapshot.clear();
@@ -67,7 +71,8 @@ export async function loadTopikSource(
     }
   }
 
-  snapshot.replaceSourceWatcher(dispose);
+  const owner = JSON.stringify([context.config?.root?.href, context.collection]);
+  snapshot.replaceSourceWatcher(owner, dispose);
   watcher?.on("all", onChange);
   watcher?.add(root);
   await refresh();

@@ -46,11 +46,12 @@ function options() {
     },
   };
 }
-function context() {
+function context(collection = "guides") {
   const entries = new Map<string, { id: string; data: Record<string, unknown>; body?: string }>();
   const publishedTitles: unknown[] = [];
   const error = vi.fn();
   const value = {
+    collection,
     watcher,
     store: {
       clear: () => entries.clear(),
@@ -209,4 +210,78 @@ test("equivalent reloaded loaders detach old listeners and serialize pending com
   await new Promise((resolve) => setTimeout(resolve, 80));
   expect(compileGuides).toHaveBeenCalledTimes(calls);
   expect(await readFile(join(dir, "intro.md"), "utf8")).toBe(page("Replacement"));
+});
+
+test.each([false, true])(
+  "detached in-flight work cannot overwrite or clear a replacement collection (failure: %s)",
+  async (failure) => {
+    await writeFile(join(dir, "collection.yaml"), "id: docs\ntitle: Docs\n");
+    const first = topikGuidesLoader(options());
+    const ctx = context();
+    await first.load(ctx.value);
+    const captured = deferred();
+    const release = deferred();
+    const actual = await vi.importActual<typeof import("@topik/core")>("@topik/core");
+    vi.mocked(compileGuides).mockImplementationOnce(async (opts) => {
+      const result = await actual.compileGuides(opts);
+      captured.resolve();
+      await release.promise;
+      if (failure) throw new Error("Old source failed");
+      return result;
+    });
+    await writeFile(join(dir, "intro.md"), page("Stale"));
+    changed("intro.md");
+    await captured.promise;
+    // Astro removes tracked callbacks before evaluating a new content config.
+    watcher.removeAllListeners("all");
+    await writeFile(join(dir, "intro.md"), page("Replacement"));
+    const replacement = topikGuidesLoader({ ...options(), name: "replacement-source" });
+    await replacement.load(ctx.value);
+    release.resolve();
+    // The held compile has already finished all I/O; drain its completion callbacks.
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(ctx.publishedTitles).toEqual(["Before", "Replacement"]);
+    expect([...ctx.entries.values()][0]?.data.title).toBe("Replacement");
+    expect(ctx.error).not.toHaveBeenCalled();
+    expect(replacement.getAssets()).toHaveLength(1);
+  },
+);
+
+test("detaching a watcher cancels a pending debounce before compilation", async () => {
+  await writeFile(join(dir, "collection.yaml"), "id: docs\ntitle: Docs\n");
+  const loader = topikGuidesLoader(options());
+  const ctx = context();
+  await loader.load(ctx.value);
+  changed("intro.md");
+  watcher.removeAllListeners("all");
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  expect(compileGuides).toHaveBeenCalledTimes(1);
+  expect(ctx.publishedTitles).toEqual(["Before"]);
+});
+
+test.each(
+  [false, true].flatMap((watch) => [false, true].map((equivalent) => ({ watch, equivalent }))),
+)("collections sharing a logical source load independently: %j", async ({ watch, equivalent }) => {
+  await writeFile(join(dir, "collection.yaml"), "id: docs\ntitle: Docs\n");
+  const first = topikGuidesLoader(options());
+  const second = equivalent ? topikGuidesLoader(options()) : first;
+  const primary = context("guides");
+  const mirror = context("guidesMirror");
+  if (!watch) {
+    delete primary.value.watcher;
+    delete mirror.value.watcher;
+  }
+  await Promise.all([first.load(primary.value), second.load(mirror.value)]);
+  expect(primary.entries.size).toBe(1);
+  expect(mirror.entries.size).toBe(1);
+  expect(watcher.listenerCount("all")).toBe(watch ? 2 : 0);
+  if (watch) {
+    await writeFile(join(dir, "intro.md"), page("Shared update"));
+    changed("intro.md");
+    await Promise.all([
+      expectTitle(primary, "Shared update"),
+      expectTitle(mirror, "Shared update"),
+    ]);
+    expect(first.getAssets()).toEqual(second.getAssets());
+  }
 });

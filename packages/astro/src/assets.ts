@@ -17,7 +17,7 @@ interface LogicalTopikAssetSnapshot {
   current: TopikAssetSnapshot;
   identity: Readonly<TopikAssetLoaderIdentity>;
   compilation: Promise<unknown>;
-  disposeSourceWatcher?: () => void;
+  sourceWatchers: Map<string, () => void>;
 }
 
 interface TopikAssetAccess {
@@ -32,7 +32,7 @@ export type TopikAssetLoader = Loader & TopikAssetAccess;
 export interface TopikAssetSnapshotControl {
   clear(): void;
   publish(result: Pick<AssetCompilationResult, "payloads" | "resources">): void;
-  replaceSourceWatcher(dispose: () => void): void;
+  replaceSourceWatcher(owner: string, dispose: () => void): void;
 }
 
 type TopikAssetCompiler = () => Promise<AssetCompilationResult>;
@@ -74,9 +74,9 @@ export function withTopikAssetSnapshot<T extends Loader>(
     publish(result) {
       logicalSnapshot.current = createSnapshot(result);
     },
-    replaceSourceWatcher(dispose) {
-      logicalSnapshot.disposeSourceWatcher?.();
-      logicalSnapshot.disposeSourceWatcher = dispose;
+    replaceSourceWatcher(owner, dispose) {
+      logicalSnapshot.sourceWatchers.get(owner)?.();
+      logicalSnapshot.sourceWatchers.set(owner, dispose);
     },
   };
   const enhanced = Object.assign(loader, {
@@ -208,6 +208,7 @@ function getLogicalSnapshot(identity: TopikAssetLoaderIdentity): LogicalTopikAss
     current: EMPTY_SNAPSHOT,
     identity: Object.freeze({ ...identity }),
     compilation: Promise.resolve(),
+    sourceWatchers: new Map(),
   };
   registry.set(key, created);
   return created;

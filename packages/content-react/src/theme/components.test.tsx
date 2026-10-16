@@ -3,9 +3,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it } from "vite-plus/test";
+import { createRoot, hydrateRoot, type Root } from "react-dom/client";
+import { renderToStaticMarkup, renderToString } from "react-dom/server";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { TopikContentProvider } from "../core/context";
 import type { TopikLinkRenderProps } from "../core/components";
 import { TopikContent } from "./TopikContent";
@@ -110,11 +110,61 @@ describe("default Topik theme components", () => {
 
     expect(linked).toContain("topik-card-grid");
     expect(linked).toContain("--topik-card-grid-columns:2");
-    expect(linked).toContain('<a class="topik-card" href="/preview/start">');
+    expect(linked).toContain('<a class="topik-card__link" href="/preview/start">');
     expect(linked).toContain("topik-card__icon");
     expect(linked).toContain("Open the guide.");
     expect(plain).toContain('<div class="topik-card">');
   });
+
+  it.each([false, true])(
+    "hydrates cards with linked block bodies and independent navigation (adapter: %s)",
+    async (adapter) => {
+      const navigate = vi.fn((_href: string) => true);
+      const recover = vi.fn();
+      const renderLink = adapter
+        ? (props: TopikLinkRenderProps) => <a {...props} data-framework-link />
+        : undefined;
+      const element = (
+        <TopikContent
+          content={
+            '{% card title="Documentation" href="/docs" %}\nRead the [API reference](/api) first.\n\n- More details\n{% /card %}'
+          }
+          resolveLink={(href) => `/preview${href}`}
+          onNavigateLink={navigate}
+          renderLink={renderLink}
+        />
+      );
+      container = document.createElement("div");
+      container.innerHTML = renderToString(element);
+      document.body.append(container);
+      const card = container.querySelector(".topik-card");
+      const body = card?.querySelector(".topik-card__body");
+      expect(body?.querySelector("p")?.textContent).toBe("Read the API reference first.");
+      expect(body?.querySelector("ul li")?.textContent).toBe("More details");
+      expect(container.querySelectorAll("a")).toHaveLength(2);
+      expect(container.querySelector("a a")).toBeNull();
+
+      await act(async () => {
+        root = hydrateRoot(container!, element, { onRecoverableError: recover });
+      });
+      expect(recover).not.toHaveBeenCalled();
+      expect(container.querySelector(".topik-card")).toBe(card);
+      expect(container.querySelector(".topik-card__body")).toBe(body);
+      const links = [...container.querySelectorAll<HTMLAnchorElement>("a")];
+      expect(links.map((link) => link.getAttribute("href"))).toEqual([
+        "/preview/docs",
+        "/preview/api",
+      ]);
+      if (adapter)
+        expect(links.every((link) => link.hasAttribute("data-framework-link"))).toBe(true);
+      act(() => links[1].click());
+      expect(navigate).toHaveBeenCalledTimes(1);
+      expect(navigate.mock.calls[0]?.[0]).toBe("/api");
+      act(() => links[0].click());
+      expect(navigate).toHaveBeenCalledTimes(2);
+      expect(navigate.mock.calls[1]?.[0]).toBe("/docs");
+    },
+  );
 
   it("renders accordion open state and summary/body regions", () => {
     const html = renderToStaticMarkup(

@@ -110,6 +110,13 @@ try {
       },
     );
   const previewFixture = join(consumer, "preview-browser-consumer.mjs");
+  const figureFixture = join(consumer, "figure-browser-consumer.mjs");
+  copyFileSync(join(root, "tools/figure-browser-consumer.mjs"), figureFixture);
+  execFileSync(process.execPath, [figureFixture, rendererTestRequire.resolve("playwright")], {
+    cwd: consumer,
+    stdio: "inherit",
+    timeout: 30_000,
+  });
   copyFileSync(join(root, "tools/preview-browser-consumer.mjs"), previewFixture);
   execFileSync(
     process.execPath,

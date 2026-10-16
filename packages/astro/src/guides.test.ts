@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vite-plus/test";
 import type { LoaderContext } from "astro/loaders";
+import { z } from "astro/zod";
 import { topikGuidesLoader } from "./guides";
 import { createTopikLinkResolver } from "./links";
 
@@ -82,6 +83,52 @@ describe("topikGuidesLoader", () => {
     expect(entry!.data.authors).toEqual(["lukasnehrke"]);
     expect(entry!.data.tags).toEqual(["tutorial", "quickstart"]);
   });
+
+  test.each(
+    [undefined, 1].flatMap((version) =>
+      [
+        { metadata: "description: null\n", expected: undefined },
+        { metadata: "", expected: undefined },
+        { metadata: 'description: ""\n', expected: "" },
+        { metadata: "description: Authored description\n", expected: "Authored description" },
+      ].map((description) => ({ version, ...description })),
+    ),
+  )(
+    "loaded description satisfies the real loader schema: %j",
+    async ({ version, metadata, expected }) => {
+      const dir = await mkdtemp(join(tmpdir(), "topik-astro-guide-description-"));
+      try {
+        await writeFile(
+          join(dir, "collection.yaml"),
+          `id: guides\ntitle: Guides\n${version === 1 ? "sourceVersion: 1\n" : ""}`,
+        );
+        await writeFile(
+          join(dir, "intro.md"),
+          `---\nid: intro\ntitle: Intro\n${metadata}---\n# Intro\n`,
+        );
+        const loader = topikGuidesLoader({ dir, name: "guide-description" });
+        if (!("createSchema" in loader) || !loader.createSchema)
+          throw new Error("Expected a loader schema");
+        const { schema } = await loader.createSchema();
+        const context = createMockContext();
+        await loader.load(context);
+        expect(context.entries.size).toBe(1);
+        const entry = [...context.entries.values()][0];
+        expect(entry.data.description).toBe(expected);
+        expect(z.parse(schema, entry.data)).toEqual({
+          title: "Intro",
+          slug: "intro",
+          description: expected,
+          authors: [],
+          tags: [],
+        });
+        expect(z.safeParse(schema, { ...entry.data, description: null }).success).toBe(false);
+        expect(entry.body).toBe("# Intro\n");
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+  );
 
   test("includes body content", async () => {
     const loader = topikGuidesLoader(fixtureOptions);

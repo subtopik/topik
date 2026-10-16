@@ -120,6 +120,33 @@ describe("TopikContent", () => {
     ).toThrow(InvalidTopikContentError);
   });
 
+  it.each([
+    "https://images.example/dark.png 1x, http://127.0.0.1/private.png 2x",
+    "https://images.example/dark.png,",
+    "https://images.example/dark%20image.png?color=dark#view",
+  ])("keeps an authored dark image URL as one source candidate: %s", (source) => {
+    const html = renderToStaticMarkup(
+      <TopikContent
+        content={`{% figure src="light.png" darkSrc=${JSON.stringify(source)} alt="Diagram" /%}`}
+      />,
+    );
+    expect(html).toContain(`srcSet="${source.replaceAll(" ", "%20").replaceAll(",", "%2C")}"`);
+  });
+
+  it.each([
+    "https://images.example/dark.png 1x, http://127.0.0.1/private.png 2x",
+    "/images/dark.png 1x, /private.png 2x",
+  ])("keeps a resolved dark Asset URL as one source candidate: %s", (source) => {
+    const name = `auto-v1-${"a".repeat(52)}`;
+    const html = renderToStaticMarkup(
+      <TopikContent
+        content={`{% figure src="light.png" darkSrc="asset:${name}" alt="Diagram" /%}`}
+        resolveAsset={() => source}
+      />,
+    );
+    expect(html).toContain(`srcSet="${source.replaceAll(" ", "%20").replaceAll(",", "%2C")}"`);
+  });
+
   it("passes an explicit color scheme to figures", () => {
     const html = renderToStaticMarkup(
       <TopikContent

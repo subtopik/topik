@@ -409,13 +409,18 @@ export function TopikFigure({ alt, caption, colorScheme, darkSrc, src }: TopikCo
     <figure className="topik-figure">
       <picture>
         {explicitColorScheme === undefined && darkSource ? (
-          <source media="(prefers-color-scheme: dark)" srcSet={darkSource} />
+          <source media="(prefers-color-scheme: dark)" srcSet={singleImageCandidate(darkSource)} />
         ) : null}
         <img alt={stringAttribute(alt) ?? ""} src={imageSource} />
       </picture>
       {caption ? <figcaption>{stringAttribute(caption)}</figcaption> : null}
     </figure>
   );
+}
+
+/** srcset parses whitespace and commas as syntax, even inside an admitted single URL. */
+function singleImageCandidate(source: string): string {
+  return source.replace(/[\t\n\f\r ,]/g, (character) => encodeURIComponent(character));
 }
 
 export function TopikImage({ alt, src, title }: TopikComponentProps) {

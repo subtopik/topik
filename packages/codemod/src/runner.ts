@@ -38,7 +38,17 @@ export async function runMintlify(options: RunOptions): Promise<RunSummary> {
     const result: FileResult = { relativePath: relative(root, path), warnings: [], changed: false };
     files.push(result);
     try {
-      const source = await readFile(path, "utf8");
+      const bytes = await readFile(path);
+      const source = bytes.toString("utf8");
+      if (!Buffer.from(source, "utf8").equals(bytes)) {
+        result.warnings.push({
+          line: 1,
+          column: 1,
+          message: "File is not valid UTF-8; source kept",
+        });
+        opaqueSource = true;
+        continue;
+      }
       const transformed = transformMintlify(source);
       result.warnings = transformed.warnings;
       const plan: FilePlan = {
@@ -144,13 +154,14 @@ function renamedHref(
   } catch {
     return;
   }
-  if (!decoded.endsWith(".mdx")) return;
+  // The compiler also accepts explicit Markdown filenames with trailing separators.
+  if (!decoded.replace(/\/+$/, "").endsWith(".mdx")) return;
   const target = decoded.startsWith("/")
     ? resolve(root, `.${decoded}`)
     : resolve(dirname(sourcePath), decoded);
   if (!renames.has(target)) return;
   // Remove just the final x, retaining the spelling of the path, query, and hash.
-  return pathname.replace(/(?:x|%78)$/, "") + (end < 0 ? "" : href.slice(end));
+  return pathname.replace(/(?:x|%78)((?:\/|%2[fF])*)$/, "$1") + (end < 0 ? "" : href.slice(end));
 }
 
 async function* walk(dir: string): AsyncGenerator<string> {

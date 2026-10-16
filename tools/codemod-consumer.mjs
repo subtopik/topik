@@ -13,7 +13,10 @@ const fixture = await mkdtemp(join(tmpdir(), "topik-installed-codemod-"));
 try {
   await writeFile(join(fixture, "collection.yaml"), "id: docs\ntitle: Docs\n");
   await writeFile(join(fixture, "next.mdx"), "# Next\n");
-  await writeFile(join(fixture, "start.mdx"), "# Start\n\n[Next](./next.mdx?view=full#next)\n");
+  await writeFile(
+    join(fixture, "start.mdx"),
+    "# Start\n\n[Next](./next.mdx?view=full#next)\n[Trailing](./next.mdx/?view=full#next)\n[Encoded](./next.md%78%2f?view=full#next)\n",
+  );
   await compileGuides({ dir: fixture });
   execFileSync(
     process.execPath,
@@ -21,9 +24,11 @@ try {
     { stdio: "pipe" },
   );
   const result = await compileGuides({ dir: fixture });
-  assert.equal(result.references.length, 1);
-  assert.equal(result.references[0].href, "./next.md?view=full#next");
-  assert.equal(result.references[0].status, "verified");
+  assert.deepEqual(
+    result.references.map((reference) => reference.href),
+    ["./next.md?view=full#next", "./next.md/?view=full#next", "./next.md%2f?view=full#next"],
+  );
+  assert.ok(result.references.every((reference) => reference.status === "verified"));
   console.log("Verified installed codemod migration preserves compilable page links");
 } finally {
   await rm(fixture, { recursive: true, force: true });

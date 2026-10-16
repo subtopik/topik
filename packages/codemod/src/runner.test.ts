@@ -76,6 +76,19 @@ describe("runMintlify", () => {
     expect(await readdir(dir)).not.toContain("metadata.mdx");
   });
 
+  test("preserves non-UTF-8 bytes and keeps extensions when those sources cannot be inspected", async () => {
+    const bytes = Buffer.from([0x23, 0x20, 0x43, 0x61, 0x66, 0xe9, 0x0a]);
+    await writeFile(join(dir, "legacy.mdx"), bytes);
+    await writeFile(join(dir, "valid.mdx"), "# Valid\n");
+    const summary = await runMintlify({ dir, dryRun: false, keepExtension: false });
+    expect(summary.filesChanged).toBe(0);
+    expect(
+      summary.files.find((file) => file.relativePath === "legacy.mdx")?.warnings[0]?.message,
+    ).toMatch(/not valid UTF-8/);
+    expect(await readFile(join(dir, "legacy.mdx"))).toEqual(bytes);
+    expect(await readdir(dir)).toEqual(["legacy.mdx", "valid.mdx"]);
+  });
+
   test("keeps an unsupported MDX file and its extension unchanged", async () => {
     const source = '<Note>Helpful.</Note>\n<Icon icon="star" />\n';
     await writeFile(join(dir, "unsupported.mdx"), source);
@@ -122,6 +135,7 @@ describe("runMintlify", () => {
         "[External](https://example.com/nested/next%20page.mdx)",
         "[Missing](missing.mdx)",
         "[Anchor](#next.mdx)",
+        "[Trailing](./next%20page.mdx/%2F?mode=full#next)",
         "",
         "`[Example](./next%20page.mdx)`",
         "",
@@ -146,6 +160,7 @@ describe("runMintlify", () => {
       "https://example.com/nested/next%20page.mdx",
       "missing.mdx",
       "#next.mdx",
+      "./next%20page.md/%2F?mode=full#next",
     ]);
     expect(content).toContain("`[Example](./next%20page.mdx)`");
     expect(content).toContain("```md\n[Example](./next%20page.mdx)\n```");

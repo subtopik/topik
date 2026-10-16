@@ -9,6 +9,7 @@ import type { LoaderContext } from "astro/loaders";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { topikGuidesLoader } from "./guides";
 import { topikWikiLoader } from "./wiki";
+import { findTopikAssetPayload } from "./assets";
 
 vi.mock("@topik/core", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@topik/core")>();
@@ -311,3 +312,113 @@ test.each(
     expect(first.getAssets()).toEqual(second.getAssets());
   }
 });
+
+test.each(
+  (["guides", "wiki"] as const).flatMap((kind) =>
+    [false, true].flatMap((equivalent) =>
+      [false, true].flatMap((loaded) =>
+        [false, true].map((watch) => ({ kind, equivalent, loaded, watch })),
+      ),
+    ),
+  ),
+)(
+  "a failed collection only releases its own shared assets: %j",
+  async ({ kind, equivalent, loaded, watch }) => {
+    await writeFile(
+      join(dir, kind === "guides" ? "collection.yaml" : "wiki.yaml"),
+      "id: docs\ntitle: Docs\nnavigation: [intro]\n",
+    );
+    const create = kind === "guides" ? topikGuidesLoader : topikWikiLoader;
+    const healthyLoader = create(options());
+    const failingLoader = equivalent ? create(options()) : healthyLoader;
+    const healthy = context("healthy");
+    const failing = context("failing");
+    if (!watch) {
+      delete healthy.value.watcher;
+      delete failing.value.watcher;
+    }
+    await healthyLoader.load(healthy.value);
+    if (loaded) await failingLoader.load(failing.value);
+    const asset = healthyLoader.getAssets()[0];
+    const healthyEntries = [...healthy.entries.values()];
+    const originalDigest = failing.value.generateDigest.bind(failing.value);
+    const rejectContent = () => {
+      throw new Error("Collection rejected content");
+    };
+    failing.value.generateDigest = rejectContent;
+
+    await expect(failingLoader.load(failing.value)).rejects.toThrow("Collection rejected content");
+    expect(failing.entries.size).toBe(0);
+    expect([...healthy.entries.values()]).toEqual(healthyEntries);
+    expect(healthyLoader.resolveAsset(asset.name)).toBe(`/${asset.spec.uri}`);
+    expect(findTopikAssetPayload([healthyLoader], asset.spec.uri)?.bytes).toEqual(
+      Uint8Array.from(PNG),
+    );
+
+    healthy.value.generateDigest = rejectContent;
+    await expect(healthyLoader.load(healthy.value)).rejects.toThrow("Collection rejected content");
+    expect(healthy.entries.size).toBe(0);
+    expect(healthyLoader.getAssets()).toEqual([]);
+    expect(findTopikAssetPayload([healthyLoader], asset.spec.uri)).toBeUndefined();
+
+    failing.value.generateDigest = originalDigest;
+    await failingLoader.load(failing.value);
+    expect(failing.entries.size).toBe(1);
+    expect(findTopikAssetPayload([healthyLoader], asset.spec.uri)?.bytes).toEqual(
+      Uint8Array.from(PNG),
+    );
+  },
+);
+
+test.each(["guides", "wiki"] as const)(
+  "%s retains each active collection's payloads and releases detached owners",
+  async (kind) => {
+    await writeFile(
+      join(dir, kind === "guides" ? "collection.yaml" : "wiki.yaml"),
+      "id: docs\ntitle: Docs\nnavigation: [intro]\n",
+    );
+    const create = kind === "guides" ? topikGuidesLoader : topikWikiLoader;
+    const primaryLoader = create(options());
+    const mirrorLoader = create(options());
+    const primary = context("primary");
+    const mirror = context("mirror");
+    await primaryLoader.load(primary.value);
+    await mirrorLoader.load(mirror.value);
+    const mirrorListener = watcher.listeners("all")[1] as (...args: unknown[]) => void;
+    const firstAsset = primaryLoader.getAssets()[0];
+    const replacement = Buffer.concat([PNG, Buffer.from([9])]);
+    await writeFile(join(dir, "images/hero.png"), replacement);
+    await primaryLoader.load(primary.value);
+    const nextAsset = primaryLoader.getAssets()[0];
+    expect(nextAsset.spec.uri).not.toBe(firstAsset.spec.uri);
+    expect(primaryLoader.resolveAsset(nextAsset.name)).toBe(`/${nextAsset.spec.uri}`);
+    expect(findTopikAssetPayload([primaryLoader], firstAsset.spec.uri)?.bytes).toEqual(
+      Uint8Array.from(PNG),
+    );
+    expect(findTopikAssetPayload([primaryLoader], nextAsset.spec.uri)?.bytes).toEqual(
+      Uint8Array.from(replacement),
+    );
+
+    const originalDigest = primary.value.generateDigest.bind(primary.value);
+    primary.value.generateDigest = () => {
+      throw new Error("Newest owner failed");
+    };
+    await expect(primaryLoader.load(primary.value)).rejects.toThrow("Newest owner failed");
+    expect(primaryLoader.resolveAsset(firstAsset.name)).toBe(`/${firstAsset.spec.uri}`);
+    expect(findTopikAssetPayload([primaryLoader], firstAsset.spec.uri)?.bytes).toEqual(
+      Uint8Array.from(PNG),
+    );
+    expect(findTopikAssetPayload([primaryLoader], nextAsset.spec.uri)).toBeUndefined();
+    primary.value.generateDigest = originalDigest;
+    await primaryLoader.load(primary.value);
+
+    watcher.off("all", mirrorListener);
+    expect(findTopikAssetPayload([primaryLoader], firstAsset.spec.uri)).toBeUndefined();
+    expect(findTopikAssetPayload([primaryLoader], nextAsset.spec.uri)?.bytes).toEqual(
+      Uint8Array.from(replacement),
+    );
+    watcher.removeAllListeners("all");
+    expect(primaryLoader.getAssets()).toEqual([]);
+    expect(findTopikAssetPayload([primaryLoader], nextAsset.spec.uri)).toBeUndefined();
+  },
+);

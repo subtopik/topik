@@ -57,13 +57,13 @@ export async function loadTopikSource(
         if (started !== revision) continue;
         // Commit the loader store and its payload snapshot in one synchronous turn.
         publishEntries(compiled);
-        snapshot.publish(compiled);
+        sourceSnapshot.publish(compiled);
         return;
       } catch (error) {
         if (!isActive()) return;
         if (started !== revision) continue;
         context.store.clear();
-        snapshot.clear();
+        sourceSnapshot.clear();
         throw error;
       }
     }
@@ -81,7 +81,7 @@ export async function loadTopikSource(
   }
 
   const owner = JSON.stringify([context.config?.root?.href, context.collection]);
-  snapshot.replaceSourceWatcher(owner, dispose);
+  const sourceSnapshot = snapshot.forSource(owner, dispose, isActive);
   watcher?.on("all", onChange);
   watcher?.add(root);
   await refresh();

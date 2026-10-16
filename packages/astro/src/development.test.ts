@@ -230,6 +230,68 @@ describe("Astro development Asset delivery", () => {
       await releaseDevelopmentServer(server);
     }
   }, 30_000);
+  test.each(["guides", "wiki"] as const)(
+    "%s collections keep healthy assets available when a shared-source collection fails",
+    async (kind) => {
+      const root = await createFixture();
+      await writeFile(
+        join(root, "content/guides/wiki.yaml"),
+        "id: wiki\ntitle: Wiki\nnavigation: [intro]\n",
+      );
+      await writeFile(
+        join(root, "topik-loaders.mjs"),
+        `import { fileURLToPath } from "node:url";\nimport { createProjectAssetNameGenerator } from "@topik/core";\nimport { topikGuidesLoader, topikWikiLoader } from ${JSON.stringify(TOPIK_ASTRO_SOURCE)};\nconst dir = fileURLToPath(new URL("./content/guides", import.meta.url));\nconst options = { dir, name: "shared-source", assets: { generateName: createProjectAssetNameGenerator({ projectRoot: dir, projectNamespace: "shared-source" }) } };\nconst create = ${kind === "guides" ? "topikGuidesLoader" : "topikWikiLoader"};\nexport const primaryLoader = create(options);\nexport const mirrorLoader = create(options);\n`,
+      );
+      await writeFile(
+        join(root, "astro.config.mjs"),
+        `import { defineConfig } from "astro/config";\nimport { topik } from ${JSON.stringify(TOPIK_ASTRO_SOURCE)};\nimport { primaryLoader } from "./topik-loaders.mjs";\nexport default defineConfig({ vite: { server: { strictPort: true } }, integrations: [topik({ loaders: [primaryLoader] })] });\n`,
+      );
+      await writeFile(
+        join(root, "src/content.config.mjs"),
+        `import { defineCollection } from "astro:content";\nimport { primaryLoader, mirrorLoader } from "../topik-loaders.mjs";\nfunction checked(loader) { return { ...loader, load(context) { return loader.load({ ...context, generateDigest(value) { if (value.includes("Reject all") || (context.collection === "mirror" && value.includes("Reject mirror"))) throw new Error("Collection rejected content"); return context.generateDigest(value); } }); } }; }\nexport const collections = { primary: defineCollection({ loader: checked(primaryLoader) }), mirror: defineCollection({ loader: checked(mirrorLoader) }) };\n`,
+      );
+      await writeFile(
+        join(root, "src/pages/index.astro"),
+        `---\nimport { getCollection } from "astro:content";\nconst primary = await getCollection("primary");\nconst mirror = await getCollection("mirror");\n---\n<h2>primary:{primary.map(entry => entry.data.title).join(",") || "empty"}</h2><h2>mirror:{mirror.map(entry => entry.data.title).join(",") || "empty"}</h2>\n`,
+      );
+      const server = await startDevelopmentServer(root);
+      try {
+        await waitForPage(server, ["primary:Guide", "mirror:Guide"]);
+        const oldPath = `/blobs/${digest(PNG_BYTES)}`;
+        await expectAssetResponse(server, oldPath, PNG_BYTES, "image/png");
+        const bytes = Buffer.concat([PNG_BYTES, Buffer.from([7])]);
+        const nextPath = `/blobs/${digest(bytes)}`;
+        await writeFile(join(root, "content/guides/hero.png"), bytes);
+        await writeFile(
+          join(root, "content/guides/intro.md"),
+          "# Reject mirror\n\n![Hero](hero.png)\n",
+        );
+        await waitForPage(server, ["primary:Reject mirror", "mirror:empty"]);
+        await expectAssetResponse(server, nextPath, bytes, "image/png");
+        await expectAssetNotServed(server, oldPath, PNG_BYTES);
+
+        await writeFile(
+          join(root, "content/guides/intro.md"),
+          "# Recovered\n\n![Hero](hero.png)\n",
+        );
+        await waitForPage(server, ["primary:Recovered", "mirror:Recovered"]);
+        await expectAssetResponse(server, nextPath, bytes, "image/png");
+        await writeFile(
+          join(root, "content/guides/intro.md"),
+          "# Reject all\n\n![Hero](hero.png)\n",
+        );
+        await waitForPage(server, ["primary:empty", "mirror:empty"]);
+        await expectAssetNotServed(server, nextPath, bytes);
+        await writeFile(join(root, "content/guides/intro.md"), "# Final\n\n![Hero](hero.png)\n");
+        await waitForPage(server, ["primary:Final", "mirror:Final"]);
+        await expectAssetResponse(server, nextPath, bytes, "image/png");
+      } finally {
+        await releaseDevelopmentServer(server);
+      }
+    },
+    30_000,
+  );
+
   test("a project-root source stays idle after Astro writes generated content files", async () => {
     const root = await mkdtemp(join(tmpdir(), "topik-root-source-"));
     roots.add(root);

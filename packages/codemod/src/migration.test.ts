@@ -6,7 +6,12 @@ import { publishMigration, type MigrationEdit } from "./migration";
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
-  return { ...actual, rename: vi.fn(actual.rename), writeFile: vi.fn(actual.writeFile) };
+  return {
+    ...actual,
+    rename: vi.fn(actual.rename),
+    rm: vi.fn(actual.rm),
+    writeFile: vi.fn(actual.writeFile),
+  };
 });
 
 let dir: string;
@@ -31,6 +36,7 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   vi.mocked(rename).mockReset();
+  vi.mocked(rm).mockReset();
   vi.mocked(writeFile).mockReset();
   await rm(dir, { recursive: true, force: true });
 });
@@ -57,6 +63,32 @@ test("failed later publication rolls back previously updated links and filenames
   await expectOriginalFiles();
 });
 
+test.each(["staging", "publication"])(
+  "cleanup failure after %s failure preserves the original error and continues cleanup",
+  async (phase) => {
+    const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+    const originalError = new Error(`${phase} failed`);
+    if (phase === "staging") {
+      vi.mocked(writeFile)
+        .mockImplementationOnce(actual.writeFile)
+        .mockRejectedValueOnce(originalError);
+    } else {
+      vi.mocked(rename).mockImplementation(async (from, to) => {
+        if (basename(String(from)) === "candidate" && String(to) === edits[1].destination)
+          throw originalError;
+        return actual.rename(from, to);
+      });
+    }
+    vi.mocked(rm).mockRejectedValueOnce(new Error("cleanup denied"));
+
+    await expect(publishMigration(edits)).rejects.toBe(originalError);
+    expect(rm).toHaveBeenCalledTimes(2);
+    const retainedDirectory = basename(String(vi.mocked(rm).mock.calls[0][0]));
+    expect((await readdir(dir)).sort()).toEqual([retainedDirectory, "next.mdx", "start.md"].sort());
+    for (const edit of edits) expect(await readFile(edit.path, "utf8")).toBe(edit.source);
+  },
+);
+
 test("refuses an occupied destination before publishing links", async () => {
   await writeFile(edits[1].destination, "Existing\n");
   await expect(publishMigration(edits)).rejects.toThrow("Destination already exists");
@@ -66,15 +98,18 @@ test("refuses an occupied destination before publishing links", async () => {
 
 test("retains recovery files and reports their location if rollback fails", async () => {
   const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+  const originalError = new Error("publish failed");
   vi.mocked(rename).mockImplementation(async (from, to) => {
     if (basename(String(from)) === "original") throw new Error("restore failed");
     if (basename(String(from)) === "candidate" && String(to) === edits[1].destination)
-      throw new Error("publish failed");
+      throw originalError;
     return actual.rename(from, to);
   });
-  await expect(publishMigration(edits)).rejects.toThrow(
-    /rollback incomplete.*Recovery files retained:/,
-  );
+  const failure = await publishMigration(edits).catch((error: unknown) => error);
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).cause).toBe(originalError);
+  expect((failure as Error).message).toMatch(/rollback incomplete.*Recovery files retained:/);
+  expect(rm).not.toHaveBeenCalled();
   const recoveries = (await readdir(dir)).filter((name) => name.startsWith(".topik-codemod-"));
   expect(recoveries).toHaveLength(2);
   const originals = await Promise.all(

@@ -74,8 +74,11 @@ export async function publishMigration(edits: readonly MigrationEdit[]): Promise
     if (failures.length)
       throw new Error(
         `Migration failed (${String(error)}); rollback incomplete. Recovery files retained: ${failures.join("; ")}`,
+        { cause: error },
       );
-    for (const entry of staged) await rm(entry.directory, { recursive: true, force: true });
+    // Cleanup is best-effort after restoring sources; preserve the migration failure.
+    for (const entry of staged)
+      await rm(entry.directory, { recursive: true, force: true }).catch(() => {});
     throw error;
   }
   const warnings: string[] = [];

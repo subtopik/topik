@@ -27,7 +27,7 @@ import {
   type TopikMaterializationRecordV1,
 } from "@topik/core";
 import { printDiagnostics } from "../diagnostics";
-import { CliError } from "../errors";
+import { CliError, PublicCliError } from "../errors";
 import { formatValidationFailure } from "../validation-output";
 
 const COMPILATION_GENERATION_PREFIX = ".topik-compilation-generation-";
@@ -166,6 +166,13 @@ export async function replaceCompilationTree(
   } catch (error) {
     operationError = error;
   }
+  if (!published && existing !== undefined && existing.name !== target) {
+    // A later rename cannot atomically verify the backup identity and refuse an
+    // occupied target. Leave recovery to the operator and retain the original error.
+    operationError = new PublicCliError("compilation-publication-failed", {
+      cause: operationError,
+    });
+  }
   if (generation !== undefined && !published) {
     try {
       generation.tree = bindCompleteCompilationTreeSync(generation.handle);
@@ -174,7 +181,7 @@ export async function replaceCompilationTree(
       operationError ??= error;
     }
   }
-  if (existing !== undefined && !existingRemoved && existing.name !== target) {
+  if (published && existing !== undefined && !existingRemoved && existing.name !== target) {
     try {
       cleanupCompilationDirectory(parent, existing);
     } catch (error) {

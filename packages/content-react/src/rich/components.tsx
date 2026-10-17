@@ -37,6 +37,17 @@ const mermaidThemes = {
 } satisfies Record<RichTopikTheme, string>;
 const minimumMermaidLoadingDurationMs = 300;
 let initializedMermaidTheme: string | undefined;
+let mermaidRenderQueue: Promise<void> = Promise.resolve();
+
+function queueMermaidRender(render: () => Promise<string>): Promise<string> {
+  const result = mermaidRenderQueue.then(render);
+  // A rejected diagram must not prevent subsequent diagrams from rendering.
+  mermaidRenderQueue = result.then(
+    () => {},
+    () => {},
+  );
+  return result;
+}
 
 export function RichTopikThemeProvider({
   children,
@@ -263,20 +274,24 @@ export function RichTopikMermaid(props: TopikComponentProps) {
   const id = useId().replace(/:/g, "-");
   const rendered = useRenderedHtml(
     () =>
-      withMinimumDelay(async () => {
-        const { default: mermaid } = await import("mermaid");
-        const mermaidTheme = mermaidThemes[theme];
-        if (initializedMermaidTheme !== mermaidTheme) {
-          mermaid.initialize({
-            securityLevel: "strict",
-            startOnLoad: false,
-            theme: mermaidTheme,
-          });
-          initializedMermaidTheme = mermaidTheme;
-        }
-        const result = await mermaid.render(`topik-mermaid-${id}`, content);
-        return result.svg;
-      }, minimumMermaidLoadingDurationMs),
+      withMinimumDelay(
+        () =>
+          queueMermaidRender(async () => {
+            const { default: mermaid } = await import("mermaid");
+            const mermaidTheme = mermaidThemes[theme];
+            if (initializedMermaidTheme !== mermaidTheme) {
+              mermaid.initialize({
+                securityLevel: "strict",
+                startOnLoad: false,
+                theme: mermaidTheme,
+              });
+              initializedMermaidTheme = mermaidTheme;
+            }
+            const result = await mermaid.render(`topik-mermaid-${id}`, content);
+            return result.svg;
+          }),
+        minimumMermaidLoadingDurationMs,
+      ),
     [content, id, theme],
   );
 

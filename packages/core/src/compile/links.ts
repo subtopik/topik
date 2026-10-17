@@ -289,10 +289,23 @@ export async function compileResourceLinks(input: CompileResourceLinksInput): Pr
       // The root route has no portable file path; admit only the literal route, not
       // paths that normalize outside the source root and happen to resolve to it as URLs.
       const rootRoute = link.href.split(/[?#]/, 1)[0] === "/";
-      if (!target && (extensionless || rootRoute) && resource.type === "WikiPage") {
+      if (
+        !target &&
+        (rootRoute || (path !== undefined && !markdown)) &&
+        resource.type === "WikiPage"
+      ) {
         const resolved = navigation.get(resource.spec.wiki);
         const wikiTarget = resolved && resolveWikiContentHref(link.href, resource.name, resolved);
-        if (wikiTarget) target = localTargets.get(`WikiPage/${wikiTarget.page.page}`);
+        // Dotted logical sources remain page aliases unless a real download owns
+        // the link. Cards retain page semantics, as they do for Course sources.
+        if (
+          wikiTarget &&
+          (rootRoute ||
+            extensionless ||
+            link.kind === "card" ||
+            (path !== undefined && !(await hasNonPageFile(path))))
+        )
+          target = localTargets.get(`WikiPage/${wikiTarget.page.page}`);
       }
       if (!target && path !== undefined && !markdown && resource.type === "CoursePage") {
         const resolved = courseNavigationByPage.get(resource.name);

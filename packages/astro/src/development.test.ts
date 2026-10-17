@@ -37,11 +37,24 @@ interface DevelopmentServer {
 
 interface DevelopmentServerOptions {
   onSpawn?: (child: ChildProcess) => void;
+  pathname?: string;
   port?: number;
 }
 
 describe("Astro development Asset delivery", () => {
   afterEach(cleanupDevelopmentFixtures);
+
+  test("serves generated asset URLs under the configured deployment base", async () => {
+    const root = await createFixture("/docs");
+    const server = await startDevelopmentServer(root, { pathname: "/docs/" });
+    const path = `/docs/blobs/${digest(PNG_BYTES)}`;
+    const page = await requestDevelopmentServer(server.port, "/docs/", "GET");
+    expect(page.body.toString()).toContain(`href="${path}"`);
+    await expectAssetResponse(server, path, PNG_BYTES, "image/png");
+    for (const invalid of [path.slice("/docs".length), path.replace("/docs/", "/docs-other/")]) {
+      expect((await requestDevelopmentServer(server.port, invalid, "GET")).status).toBe(404);
+    }
+  }, 20_000);
 
   test("bounds stalled and aborted development exchanges", async () => {
     const server = createHttpServer((req, res) => {
@@ -337,7 +350,7 @@ describe("Astro development Asset delivery", () => {
   }, 30_000);
 });
 
-async function createFixture(): Promise<string> {
+async function createFixture(base = "/"): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "topik-astro-development-"));
   roots.add(root);
   await symlink(WORKSPACE_NODE_MODULES, join(root, "node_modules"), "dir");
@@ -359,7 +372,7 @@ async function createFixture(): Promise<string> {
   await updateContentConfig(root, 0);
   await writeFile(
     join(root, "astro.config.mjs"),
-    `import { defineConfig } from "astro/config";\nimport { topik } from ${JSON.stringify(TOPIK_ASTRO_SOURCE)};\nimport { guidesLoader, wikiLoader } from "./topik-loaders.mjs";\nexport default defineConfig({ vite: { server: { strictPort: true } }, integrations: [topik({ loaders: [guidesLoader, wikiLoader] })] });\n`,
+    `import { defineConfig } from "astro/config";\nimport { topik } from ${JSON.stringify(TOPIK_ASTRO_SOURCE)};\nimport { guidesLoader, wikiLoader } from "./topik-loaders.mjs";\nexport default defineConfig({ base: ${JSON.stringify(base)}, vite: { server: { strictPort: true } }, integrations: [topik({ loaders: [guidesLoader, wikiLoader] })] });\n`,
   );
   await writeFile(
     join(root, "src/pages/index.astro"),
@@ -412,7 +425,7 @@ async function startDevelopmentServer(
     options.onSpawn?.(child);
     const deadline = Date.now() + STATUS_TIMEOUT_MS;
     await waitForAstroOwnership(server, deadline);
-    await waitForStatusUntil(server, "/", 200, deadline);
+    await waitForStatusUntil(server, options.pathname ?? "/", 200, deadline);
     return server;
   } catch (error) {
     await releaseDevelopmentServer(server);

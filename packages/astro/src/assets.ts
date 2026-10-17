@@ -15,6 +15,7 @@ interface TopikAssetLoaderIdentity {
 
 interface LogicalTopikAssetSnapshot {
   current: TopikAssetSnapshot;
+  base: string;
   identity: Readonly<TopikAssetLoaderIdentity>;
   compilation: Promise<unknown>;
   sourceOwners: Map<string, SourceAssetSnapshot>;
@@ -60,7 +61,7 @@ const EMPTY_SNAPSHOT: TopikAssetSnapshot = {
 const RUNTIME_ASSET_URLS = Symbol.for("@topik/astro/runtime-asset-urls");
 // Astro may evaluate configuration and content loaders in separate module graphs.
 // A global symbol bridges only their process-local, logically keyed current snapshots.
-const LOGICAL_ASSET_SNAPSHOTS = Symbol.for("@topik/astro/logical-asset-snapshots/v4");
+const LOGICAL_ASSET_SNAPSHOTS = Symbol.for("@topik/astro/logical-asset-snapshots/v5");
 const registeredLoaders = new WeakMap<object, RegisteredTopikAssetLoader>();
 
 export function requireTopikLoaderName(value: string): string {
@@ -112,7 +113,9 @@ export function withTopikAssetSnapshot<T extends Loader>(
     getAssets: () => currentSnapshot(logicalSnapshot).assets,
     resolveAsset: (name: string) => {
       const asset = currentSnapshot(logicalSnapshot).assetsByName.get(name);
-      return asset === undefined ? runtimeAssetUrls()?.get(name) : `/${asset.spec.uri}`;
+      return asset === undefined
+        ? runtimeAssetUrls()?.get(name)
+        : `${logicalSnapshot.base}${asset.spec.uri}`;
     },
   });
   registeredLoaders.set(enhanced, { compile, logicalSnapshot, snapshot });
@@ -125,6 +128,12 @@ export function assertTopikAssetLoaders(
   if (loaders.some((loader) => !registeredLoaders.has(loader))) {
     throw new TypeError("Topik Asset delivery accepts only loaders created by @topik/astro");
   }
+}
+
+/** Share Astro's deployment base across its configuration and content module graphs. */
+export function setTopikAssetBase(loaders: readonly TopikAssetLoader[], base: string): void {
+  assertTopikAssetLoaders(loaders);
+  for (const loader of loaders) registeredLoaders.get(loader)!.logicalSnapshot.base = base;
 }
 
 export function findTopikAssetPayload(
@@ -210,7 +219,7 @@ export function collectTopikAssetUrls(
   const urls = new Map<string, string>();
   for (const loader of loaders) {
     for (const asset of currentSnapshot(registeredLoaders.get(loader)!.logicalSnapshot).assets) {
-      const url = `/${asset.spec.uri}`;
+      const url = `${registeredLoaders.get(loader)!.logicalSnapshot.base}${asset.spec.uri}`;
       const prior = urls.get(asset.name);
       if (prior !== undefined && prior !== url) {
         throw new TypeError("Topik loaders produced conflicting URLs for one Asset name");
@@ -237,6 +246,7 @@ function getLogicalSnapshot(identity: TopikAssetLoaderIdentity): LogicalTopikAss
   }
   const created = {
     current: EMPTY_SNAPSHOT,
+    base: "/",
     identity: Object.freeze({ ...identity }),
     compilation: Promise.resolve(),
     sourceOwners: new Map(),

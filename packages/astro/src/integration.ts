@@ -6,6 +6,7 @@ import {
   collectTopikAssetUrls,
   findTopikAssetPayload,
   refreshTopikAssetSnapshots,
+  setTopikAssetBase,
   type TopikAssetLoader,
 } from "./assets";
 import { publishDigestSnapshot, removeDigestSnapshot } from "./publication";
@@ -25,6 +26,7 @@ const RESOLVED_VIRTUAL_SNAPSHOT_ID = `\0${VIRTUAL_SNAPSHOT_ID}`;
 export function topik(options: TopikOptions): AstroIntegration {
   assertTopikAssetLoaders(options.loaders);
   const loaders = [...options.loaders];
+  let base = "/";
 
   return {
     name: "@topik/astro",
@@ -36,15 +38,17 @@ export function topik(options: TopikOptions): AstroIntegration {
         createCodegenDir,
         updateConfig,
       }) => {
+        base = `${(config.base ?? "/").replace(/\/+$/u, "")}/`;
+        setTopikAssetBase(loaders, base);
         if (command === "build") {
           await removePublishedSnapshot(
             config.output === "server" ? config.build.client : config.outDir,
           );
           const codegenDir = createCodegenDir();
           const middleware = new URL("topik-asset-middleware.mjs", codegenDir);
-          await writeFile(middleware, productionMiddlewareSource(), { encoding: "utf8" });
+          await writeFile(middleware, productionMiddlewareSource(base), { encoding: "utf8" });
           addMiddleware({ entrypoint: middleware, order: "pre" });
-          updateConfig({ vite: { plugins: [snapshotPlugin(loaders)] } });
+          updateConfig({ vite: { plugins: [snapshotPlugin(loaders, base)] } });
         }
       },
       "astro:build:start": async () => {
@@ -59,7 +63,9 @@ export function topik(options: TopikOptions): AstroIntegration {
           const rawTarget = (req as typeof req & { originalUrl?: string }).originalUrl ?? req.url;
           if (rawTarget === undefined) return next();
           const queryOffset = rawTarget.indexOf("?");
-          const pathname = queryOffset === -1 ? rawTarget : rawTarget.slice(0, queryOffset);
+          const requestPath = queryOffset === -1 ? rawTarget : rawTarget.slice(0, queryOffset);
+          if (!requestPath.startsWith(base)) return next();
+          const pathname = `/${requestPath.slice(base.length)}`;
           if (!PAYLOAD_PATH_PATTERN.test(pathname)) return next();
 
           const payload = findTopikAssetPayload(loaders, pathname.slice(1));
@@ -74,7 +80,7 @@ export function topik(options: TopikOptions): AstroIntegration {
   };
 }
 
-function snapshotPlugin(loaders: readonly TopikAssetLoader[]) {
+function snapshotPlugin(loaders: readonly TopikAssetLoader[], base: string) {
   return {
     name: "@topik/astro:asset-snapshot",
     resolveId(id: string) {
@@ -83,7 +89,7 @@ function snapshotPlugin(loaders: readonly TopikAssetLoader[]) {
     load(id: string) {
       if (id !== RESOLVED_VIRTUAL_SNAPSHOT_ID) return undefined;
       const records = collectTopikAssetPayloads(loaders).map((payload) => [
-        `/${payload.path}`,
+        `${base}${payload.path}`,
         payload.mediaType,
         payload.size,
         Buffer.from(payload.bytes).toString("base64"),
@@ -94,7 +100,7 @@ function snapshotPlugin(loaders: readonly TopikAssetLoader[]) {
   };
 }
 
-function productionMiddlewareSource(): string {
+function productionMiddlewareSource(base: string): string {
   return `import { topikAssetPayloads, topikAssetUrls } from ${JSON.stringify(VIRTUAL_SNAPSHOT_ID)};
 globalThis[Symbol.for("@topik/astro/runtime-asset-urls")] = topikAssetUrls;
 const pattern = /^\\/blobs\\/[0-9a-f]{64}$/u;
@@ -102,7 +108,8 @@ export async function onRequest(context, next) {
   const request = context.request;
   if (request.method !== "GET" && request.method !== "HEAD") return next();
   const pathname = new URL(request.url).pathname;
-  if (!pattern.test(pathname)) return next();
+  const base = ${JSON.stringify(base)};
+  if (!pathname.startsWith(base) || !pattern.test("/" + pathname.slice(base.length))) return next();
   const payload = topikAssetPayloads.get(pathname);
   if (payload === undefined) return next();
   return new Response(request.method === "HEAD" ? null : payload.bytes, {

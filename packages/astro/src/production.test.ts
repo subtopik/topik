@@ -56,6 +56,52 @@ describe("Astro production Asset delivery", () => {
     expect(html).not.toContain("manual.pdf");
   }, 15_000);
 
+  test.each([false, true])(
+    "deployment base prefixes assets in a real build (server=%s)",
+    async (server) => {
+      const root = await createFixture({ server, base: "/docs/" });
+      roots.push(root);
+      await buildFixture(root);
+      const runtime = server
+        ? ((await import(
+            `${pathToFileURL(join(root, "dist/server/entry.mjs")).href}?base=${Date.now()}`
+          )) as { fetch: (request: Request) => Promise<Response> })
+        : undefined;
+      const html = runtime
+        ? await (await runtime.fetch(new Request("http://example.test/docs/"))).text()
+        : await readFile(join(root, "dist/index.html"), "utf8");
+      const urls = [...html.matchAll(/href="(\/docs\/blobs\/[0-9a-f]{64})"/gu)].map(
+        (match) => match[1],
+      );
+      expect(urls).toHaveLength(4);
+      for (const url of new Set(urls)) {
+        const bytes = await readFile(
+          join(root, server ? "dist/client" : "dist", url.slice("/docs/".length)),
+        );
+        expect(bytes.equals(PNG_BYTES) || bytes.equals(PDF_BYTES)).toBe(true);
+        if (runtime) {
+          const response = await runtime.fetch(new Request(`http://example.test${url}`));
+          expect(response.status).toBe(200);
+          expect(Buffer.from(await response.arrayBuffer())).toEqual(bytes);
+          const head = await runtime.fetch(
+            new Request(`http://example.test${url}`, { method: "HEAD" }),
+          );
+          expect(head.status).toBe(200);
+          expect((await head.arrayBuffer()).byteLength).toBe(0);
+          for (const invalid of [
+            url.slice("/docs".length),
+            url.replace("/docs/", "/docs-other/"),
+          ]) {
+            expect((await runtime.fetch(new Request(`http://example.test${invalid}`))).status).toBe(
+              404,
+            );
+          }
+        }
+      }
+    },
+    15_000,
+  );
+
   test("a replacement build removes payloads that are no longer compiler-referenced", async () => {
     const root = await createFixture();
     await buildFixture(root);
@@ -173,7 +219,7 @@ describe("Astro production Asset delivery", () => {
   }, 15_000);
 });
 
-async function createFixture(options: { server?: boolean } = {}): Promise<string> {
+async function createFixture(options: { server?: boolean; base?: string } = {}): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "topik-astro-production-"));
   await symlink(WORKSPACE_NODE_MODULES, join(root, "node_modules"), "dir");
   await mkdir(join(root, "src/pages"), { recursive: true });
@@ -221,7 +267,7 @@ async function createFixture(options: { server?: boolean } = {}): Promise<string
   );
   await writeFile(
     join(root, "astro.config.mjs"),
-    `import { defineConfig } from "astro/config";\nimport { topik } from ${JSON.stringify(TOPIK_ASTRO_SOURCE)};\nimport { guidesLoader, wikiLoader } from "./topik-loaders.mjs";\n${options.server === true ? 'import testAdapter from "./test-adapter.mjs";\n' : ""}export default defineConfig({ ${options.server === true ? 'output: "server", adapter: testAdapter(), ' : ""}integrations: [topik({ loaders: [guidesLoader, wikiLoader] })] });\n`,
+    `import { defineConfig } from "astro/config";\nimport { topik } from ${JSON.stringify(TOPIK_ASTRO_SOURCE)};\nimport { guidesLoader, wikiLoader } from "./topik-loaders.mjs";\n${options.server === true ? 'import testAdapter from "./test-adapter.mjs";\n' : ""}export default defineConfig({ base: ${JSON.stringify(options.base ?? "/")}, ${options.server === true ? 'output: "server", adapter: testAdapter(), ' : ""}integrations: [topik({ loaders: [guidesLoader, wikiLoader] })] });\n`,
   );
   if (options.server === true) {
     await writeFile(

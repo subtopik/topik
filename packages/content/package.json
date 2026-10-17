@@ -1,6 +1,6 @@
 {
   "name": "@topik/content",
-  "version": "0.1.0-alpha.5",
+  "version": "0.1.0-alpha.6",
   "description": "Declarative Topik content model, Markdown format, validation and rendering",
   "license": "MIT",
   "repository": {

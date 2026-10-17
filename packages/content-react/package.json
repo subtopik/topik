@@ -1,6 +1,6 @@
 {
   "name": "@topik/content-react",
-  "version": "0.1.0-alpha.5",
+  "version": "0.1.0-alpha.6",
   "description": "React renderer for declarative Topik content",
   "license": "MIT",
   "repository": {

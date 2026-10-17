@@ -62,6 +62,23 @@ const typeParityFixture = [
   { type: "tab", title: "GitHub", href: "https://github.com/subtopik/topik" },
 ] satisfies WikiNavigation;
 
+test("compiled WikiPage references resolve by name independently of source or public slug", () => {
+  const resolved = resolveWikiNavigation(
+    [{ type: "page", page: "installation", slug: "getting-started", sourcePath: "moved/install" }],
+    { sourceVersion: 1 },
+  );
+  expect(
+    resolveWikiContentHref("ref://wiki-page/installation?view=full#setup", "missing", resolved),
+  ).toMatchObject({
+    page: { page: "installation" },
+    route: "getting-started",
+    search: "?view=full",
+    hash: "setup",
+  });
+  expect(resolveWikiContentHref("ref://guide/installation", "installation", resolved)).toBeNull();
+  expect(resolveWikiContentHref("ref://wiki-page/missing", "installation", resolved)).toBeNull();
+});
+
 test("compiled-reference classification distinguishes missing context from external and Asset links", () => {
   const resolved = resolveWikiNavigation(
     [
@@ -182,14 +199,35 @@ describe("resolveWikiNavigation", () => {
     },
   );
 
-  test("normalizes queries, trailing slashes, and encoded internal paths", () => {
+  test("resolves unique folder landings without shadowing explicit Markdown filenames", () => {
+    const pages = [
+      { type: "page" as const, page: "home", slug: "home", sourcePath: "home" },
+      { type: "page" as const, page: "sibling", slug: "sibling", sourcePath: "files" },
+      { type: "page" as const, page: "landing", slug: "landing", sourcePath: "files/index" },
+    ];
+    const navigation = resolveWikiNavigation(pages, { sourceVersion: 1 });
+    for (const href of ["./files", "./files/", "/files/", "./files?view=%FF#heading"])
+      expect(resolveWikiContentHref(href, "home", navigation)?.page.page).toBe("landing");
+    for (const href of ["./files.md", "/files.md/", "/sibling"])
+      expect(resolveWikiContentHref(href, "home", navigation)?.page.page).toBe("sibling");
+    const ambiguous = resolveWikiNavigation(
+      [...pages, { type: "page", page: "readme", slug: "readme", sourcePath: "files/README" }],
+      { sourceVersion: 1 },
+    );
+    expect(resolveWikiContentHref("./files/", "home", ambiguous)).toBeNull();
+    expect(resolveWikiContentHref("./files/index.md", "home", ambiguous)?.page.page).toBe(
+      "landing",
+    );
+  });
+
+  test("distinguishes explicit folders from routes and normalizes encoded paths", () => {
     expect(
       resolveWikiContentHref(
         "/docs/guides/installation/?view=full#setup",
         "guides-index",
         resolved,
       ),
-    ).toMatchObject({ route: "docs/guides/installation", hash: "setup" });
+    ).toBeNull();
     expect(
       resolveWikiContentHref("/docs/guides/%69nstallation", "guides-index", resolved),
     ).toMatchObject({ route: "docs/guides/installation" });

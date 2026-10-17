@@ -9,6 +9,8 @@ export class CliError extends Error {
 
 const PUBLIC_CLI_ERROR_MESSAGES = Object.freeze({
   "browser-origin-invalid": "Browser origin configuration is invalid",
+  "compilation-publication-failed":
+    "Compilation output publication failed after moving the existing output aside. For manual recovery, first stop concurrent writers, then inspect .topik-compilation-prior-* directories beside the output path. Verify the backup contents and do not overwrite an existing output path.",
   "resource-access-failed": "Resource input could not be accessed.",
   "resource-format-unsupported": "Resource input format is unsupported.",
   "resource-json-invalid": "JSON resource input could not be parsed.",
@@ -24,8 +26,8 @@ export type PublicCliErrorId = keyof typeof PUBLIC_CLI_ERROR_MESSAGES;
 export class PublicCliError extends CliError {
   public readonly id: PublicCliErrorId;
 
-  constructor(id: PublicCliErrorId) {
-    super(publicCliErrorMessage(id) ?? "Topik command failed.");
+  constructor(id: PublicCliErrorId, options?: ErrorOptions) {
+    super(publicCliErrorMessage(id) ?? "Topik command failed.", options);
     this.name = "PublicCliError";
     this.id = id;
   }

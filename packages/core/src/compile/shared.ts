@@ -1,11 +1,18 @@
-import { sanitizeTopikContentDiagnostic, type TopikContentDiagnostic } from "@topik/content";
+import {
+  analyzeTopikContent,
+  sanitizeTopikContentDiagnostic,
+  type TopikContentDiagnostic,
+  type TopikHeading,
+} from "@topik/content";
 import { parse as parseYaml } from "yaml";
 import type { TopikAssetSemanticRecordV1, TopikMaterializationRecordV1 } from "../assets/identity";
 import type { AssetPayload, CompiledResource } from "./assets";
 import { PublicCompileError } from "./public-errors";
 import { parseSafeConfigurationYaml } from "./config";
+import { markdownFrontmatter } from "./frontmatter";
 
 export interface CompileResult {
+  courseNavigation: import("../preview").CourseNavigationIndex;
   /** Present for manifest compilation, in declaration order. */
   provenance?: import("./manifest").ManifestSourceProvenance[];
   diagnostics: TopikContentDiagnostic[];
@@ -13,12 +20,14 @@ export interface CompileResult {
   payloads: AssetPayload[];
   semantic: TopikAssetSemanticRecordV1;
   materialization: TopikMaterializationRecordV1;
+  /** Portable document references and their compilation-time validation state. */
+  references: import("./links").CompiledResourceReference[];
 }
 
 export type LinkValidationPolicy = "error" | "warning" | "off";
 
 export interface CompileValidationOptions {
-  /** How unresolved wiki page links and same-page guide fragments are handled. */
+  /** How unresolved document targets and invalid destination fragments are handled. */
   links?: LinkValidationPolicy;
 }
 
@@ -57,16 +66,18 @@ export function parseMarkdownFrontmatter(
   filePath: string,
   sourceVersion?: 1,
 ): { frontmatter: Record<string, unknown>; content: string } {
-  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)([\s\S]*)$/);
+  const match = markdownFrontmatter(raw);
   if (!match) {
-    return { frontmatter: {}, content: raw };
+    return { frontmatter: {}, content: raw.replace(/^\uFEFF/u, "") };
   }
 
   try {
     const frontmatter =
-      sourceVersion === 1 ? parseSafeConfigurationYaml(match[1]) : parseYaml(match[1]);
+      sourceVersion === 1
+        ? parseSafeConfigurationYaml(match.frontmatter)
+        : parseYaml(match.frontmatter);
     if (frontmatter == null) {
-      return { frontmatter: {}, content: match[2] };
+      return { frontmatter: {}, content: match.content };
     }
     if (typeof frontmatter !== "object" || Array.isArray(frontmatter)) {
       throw new Error("Frontmatter must parse to an object");
@@ -78,16 +89,20 @@ export function parseMarkdownFrontmatter(
     ) {
       throw new Error("Frontmatter title must be a string");
     }
-    return { frontmatter, content: match[2] };
+    return { frontmatter, content: match.content };
   } catch {
     throw new PublicCompileError("frontmatter-invalid", filePath);
   }
 }
 
-export function extractMarkdownTitle(content: string, fallback: string): string {
-  const match = content.match(/^#\s+(.+)$/m);
-  if (match) {
-    return match[1].trim();
+export function extractMarkdownTitle(
+  content: string,
+  fallback: string,
+  headings: readonly TopikHeading[] = analyzeTopikContent(content).headings,
+): string {
+  const heading = headings.find((entry) => entry.level === 1 && entry.title.length > 0);
+  if (heading) {
+    return heading.title;
   }
   return fallback
     .split("-")

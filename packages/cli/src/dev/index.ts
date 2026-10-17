@@ -1,7 +1,9 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { resolve } from "node:path";
 import { command, positional, string } from "@drizzle-team/brocli";
-import { watch, type Watcher } from "@topik/core";
+import { watch, TOPIK_PREVIEW_PROTOCOL, type PreviewState, type Watcher } from "@topik/core";
+
+import { version } from "../../package.json";
 
 import { formatPublicCliError, PublicCliError } from "../errors";
 
@@ -20,14 +22,10 @@ function handleResources(
 ) {
   res.writeHead(200, {
     "Content-Type": "application/json",
+    "Cache-Control": "no-store",
     ...corsHeaders,
   });
-  res.end(
-    JSON.stringify({
-      resources: [...watcher.resources.values()],
-      payloads: [...watcher.payloads.values()].map(({ bytes: _bytes, ...payload }) => payload),
-    }),
-  );
+  res.end(JSON.stringify(watcher.state));
 }
 
 function handleEvents(watcher: Watcher, res: ServerResponse, corsHeaders: Record<string, string>) {
@@ -37,6 +35,10 @@ function handleEvents(watcher: Watcher, res: ServerResponse, corsHeaders: Record
     Connection: "keep-alive",
     ...corsHeaders,
   });
+
+  sendSSE(res, "preview-state", watcher.state);
+  const onState = (state: PreviewState) => sendSSE(res, "preview-state", state);
+  watcher.on("preview-state", onState);
 
   // Send initial sync with all current resources
   sendSSE(res, "sync", {
@@ -57,6 +59,7 @@ function handleEvents(watcher: Watcher, res: ServerResponse, corsHeaders: Record
 
   res.on("close", () => {
     watcher.off("update", onUpdate);
+    watcher.off("preview-state", onState);
   });
 }
 
@@ -216,9 +219,17 @@ function createRequestHandler(watcher: Watcher, getPort: () => number, allowedOr
     if (req.method === "GET" && url.pathname === "/health") {
       res.writeHead(200, {
         "Content-Type": "application/json",
+        "Cache-Control": "no-store",
         ...corsHeaders,
       });
-      res.end(JSON.stringify({ status: "ok" }));
+      res.end(
+        JSON.stringify({
+          status: "ok",
+          version,
+          capabilities: [TOPIK_PREVIEW_PROTOCOL],
+          sessionId: watcher.state.sessionId,
+        }),
+      );
       return;
     }
 
@@ -232,6 +243,22 @@ function createRequestHandler(watcher: Watcher, getPort: () => number, allowedOr
       return;
     }
 
+    // Opt-in identity binding prevents stale clients reading from a restarted producer.
+    if (
+      url.pathname.startsWith("/blobs/") &&
+      (url.searchParams.has("sessionId") || url.searchParams.has("generation"))
+    ) {
+      if (
+        url.searchParams.getAll("sessionId").length !== 1 ||
+        url.searchParams.getAll("generation").length !== 1 ||
+        url.searchParams.get("sessionId") !== watcher.state.sessionId ||
+        url.searchParams.get("generation") !== String(watcher.state.generation)
+      ) {
+        res.writeHead(409, { ...corsHeaders, "Cache-Control": "no-store" });
+        res.end();
+        return;
+      }
+    }
     const queryOffset = requestTarget.indexOf("?");
     const rawPathname = queryOffset === -1 ? requestTarget : requestTarget.slice(0, queryOffset);
     if (
@@ -267,7 +294,12 @@ export async function startDevServer(options: {
 
   console.log("Watching content for changes...");
   const watcher = await watch({ dir });
-  console.log(`Compiled ${watcher.resources.size} resources`);
+  if (watcher.state.status === "error")
+    console.error(
+      "Compile error:",
+      watcher.state.diagnostics.map((diagnostic) => diagnostic.message).join(" "),
+    );
+  else console.log(`Compiled ${watcher.resources.size} resources`);
 
   watcher.on("error", (error: Error) => {
     console.error("Compile error:", formatPublicCliError(error));

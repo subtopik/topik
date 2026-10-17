@@ -33,6 +33,10 @@ jobs:
 
       - run: vp run -r build
 
+      - name: Install browser for packed preview integration
+        working-directory: packages/content-react
+        run: vp exec playwright install --with-deps chromium
+
       - name: Verify packed packages
         if: matrix.node-version != '22.18.0'
         run: vp run verify:public-packages

@@ -76,6 +76,7 @@ function convert(
   declarations: TagDeclarations,
   options: TagSyntaxOptions,
   closedFences: WeakSet<Code>,
+  rawHeaders?: WeakMap<Node, string>,
 ): void {
   assertTreeLimits(root);
   const errors: TagDiagnostic[] = [];
@@ -126,7 +127,7 @@ function convert(
             ),
             id: "topik-code-template-structure",
           });
-        } else if (invalidCodeTemplateHeader(code.lang, code.meta)) {
+        } else if (!rawHeaders && invalidCodeTemplateHeader(code.lang, code.meta)) {
           errors.push({
             ...location("Code template language and metadata must fit one fence header", code),
             id: "topik-code-template-structure",
@@ -148,6 +149,8 @@ function convert(
               meta: code.meta ?? null,
               template,
             });
+            const rawHeader = rawHeaders?.get(code);
+            if (rawHeader !== undefined) rawHeaders!.set(node, rawHeader);
             delete (node as TreeNode).children;
           } catch (error) {
             if (!(error instanceof TemplateSyntaxError)) throw error;
@@ -341,18 +344,23 @@ export function tagFromMarkdown(
     enter: {
       topikTextTag: enter("inline"),
       topikFlowTag: enter("block"),
-      codeFencedFence() {
+      codeFencedFence(token) {
         const node = this.stack.findLast((item) => item.type === "code") as Code | undefined;
         if (!node) return;
         const count = (fenceCounts.get(node) ?? 0) + 1;
         fenceCounts.set(node, count);
+        if (count === 1 && options.fencedCodeHeaders)
+          options.fencedCodeHeaders.set(
+            node,
+            this.sliceSerialize(token).replace(/^(?:`{3,}|~{3,})[ \t]*/, ""),
+          );
         if (count === 2) closedFences.add(node);
       },
     },
     exit: { topikTextTag: exit, topikFlowTag: exit },
     transforms: [
       (tree) => {
-        convert(tree, declarations, options, closedFences);
+        convert(tree, declarations, options, closedFences, options.fencedCodeHeaders);
       },
     ],
   };

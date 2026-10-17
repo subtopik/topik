@@ -1,0 +1,45 @@
+name: Compiler portability
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  compiler:
+    name: ${{ matrix.os }} / Node ${{ matrix.node-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+        node-version: ["22", "24"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: voidzero-dev/setup-vp@3754dd7dbdb32bd8f6d28b6043de13ad3a75f21f # v1.21.1
+        with:
+          node-version: ${{ matrix.node-version }}
+          run-install: false
+          cache: true
+
+      - run: vp install --frozen-lockfile
+
+      - name: Record native runtime
+        run: >-
+          vp exec node -p "JSON.stringify({platform: process.platform, arch: process.arch, node: process.version})"
+
+      - name: Build compiler and workspace dependencies
+        run: vp run --filter '@topik/core...' --fail-if-no-match build
+
+      - name: Test native compiler reads and platform path semantics
+        working-directory: packages/core
+        # Native cases use the host filesystem; Windows path models supplement them.
+        # Linux descriptor traversal and procfs capability cases remain Linux-only.
+        run: vp test --run src/compile/files.test.ts src/compile/files-windows.test.ts src/compile/config.test.ts --maxWorkers=1 --fileParallelism=false --reporter=verbose

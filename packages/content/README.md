@@ -54,6 +54,13 @@ definitions, tables, and leading YAML frontmatter. Frontmatter is retained but
 not rendered. Raw HTML and footnotes are refused. URLs and email addresses remain
 text unless expressed as explicit Markdown links or angle-bracket autolinks.
 
+Portable document destinations use `ref://wiki-page/<name>`, `ref://guide/<name>`,
+or `ref://course-page/<name>`, where the name is the target resource identity.
+`parseTopikResourceReference` and `serializeTopikResourceReference` retain its
+query and fragment separately from publishing routes. Renderers must resolve
+these identities to browser URLs; see the
+[resource-link reference](https://github.com/subtopik/topik/blob/main/docs/resources/navigation.md#links-between-pages).
+
 Block tags occupy their own lines; inline tags appear inside prose. Properties
 are literal strings, numbers, and booleans; selected built-in text properties also
 accept explicit templates. Unsupported syntax is diagnosed instead of silently
@@ -80,6 +87,14 @@ remain literal formula data; they do not add Markdown blocks or inline nodes.
 The exported `components` registry contains complete property, placement, and
 child constraints. Defaults are applied when reading or rendering; absent authored
 properties remain absent when writing.
+
+Fenced code accepts presentation attributes such as `filename="Client.java"`,
+`lines`, `highlight="2"` and `collapse="3-4,8-9"`. Selections use closed physical-row
+ranges and normalize to sorted, merged intervals. Each collapsed interval has an
+independent inline control; Copy always retains the full exact code, and every row
+remains visible before hydration or without JavaScript. See the
+[code presentation reference](https://github.com/subtopik/topik/blob/main/docs/content/code-presentation.md)
+for options, limits and source-preservation rules.
 
 ## Variables and conditions
 
@@ -243,10 +258,11 @@ compiler's closed asset-occurrence protocol.
 
 - [Format, normalization, and reference scopes](https://github.com/subtopik/topik/blob/main/docs/content/content-design.md)
 - [Text and code templates](https://github.com/subtopik/topik/blob/main/docs/content/templates.md)
+- [Code presentation](https://github.com/subtopik/topik/blob/main/docs/content/code-presentation.md)
 - [Explicit links and plain URLs](https://github.com/subtopik/topik/blob/main/docs/content/autolinks.md)
 - [Rendering and migration from content-schema](https://github.com/subtopik/topik/blob/main/docs/content/rendering.md)
 
-The schema version is `0.2.1` and `FORMAT_VERSION` is `1`. This package is alpha
+The schema version is `0.2.2` and `FORMAT_VERSION` is `1`. This package is alpha
 software. Review canonical output when upgrading and keep compiler and renderer
 versions aligned. The package verifier type-checks and executes every TypeScript
 example above against the published-package layout.

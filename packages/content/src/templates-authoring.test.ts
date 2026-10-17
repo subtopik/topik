@@ -29,7 +29,7 @@ function authored(value: unknown): ContentDocument {
 
 describe("text template authoring", () => {
   test("declares the exact canonical text slots and content version", () => {
-    expect(TOPIK_CONTENT_SCHEMA_VERSION).toBe("0.2.1");
+    expect(TOPIK_CONTENT_SCHEMA_VERSION).toBe("0.2.2");
     for (const name of ["callout", "accordion", "card", "tab", "step", "codeTab"])
       expect(components[name].attributes.title).toMatchObject({ interpolation: "text" });
     for (const name of ["alt", "caption"])

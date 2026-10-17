@@ -170,6 +170,6 @@ AST APIs require independent plain-data nodes: cycles, shared node objects,
 getters, and executable values are refused. Applications manipulating trees must
 preserve those constraints as well as the component rules.
 
-The current content schema version is `0.2.1` and `FORMAT_VERSION` is `1`. These
+The current content schema version is `0.2.2` and `FORMAT_VERSION` is `1`. These
 versions describe the content contract, separately from package versions and the
 `apiVersion` of [resource envelopes](../resources/index.md).

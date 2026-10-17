@@ -17,6 +17,7 @@ import { PublicCompileError, type PublicCompileErrorId } from "./public-errors";
 import { throwOnCompileErrors, type CompileResult } from "./shared";
 import type { SourceResource } from "../resource";
 import type { CompileOptions } from "./index";
+import { compileResourceLinks } from "./links";
 
 export interface ManifestSourceDescriptor extends TopikManifestSource {
   /** Zero-based declaration index, used only for provenance and diagnostics. */
@@ -125,6 +126,7 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
   const provenance: ManifestSourceProvenance[] = [];
   const diagnostics: CompileResult["diagnostics"] = [];
   const resources: SourceResource[] = [];
+  const courseNavigation: CompileResult["courseNavigation"] = {};
   const sourcePathsByResource: Record<string, string> = {};
   const sourceDirectoriesByResource: Record<string, string> = {};
   const protectedSourcePaths = [TOPIK_MANIFEST_FILENAME, ...sources.map((source) => source.config)];
@@ -181,6 +183,7 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
       })),
     );
     resources.push(...discovered.resources);
+    Object.assign(courseNavigation, discovered.courseNavigation);
     if (discovered.sourceVersion === 1)
       for (const resource of discovered.resources)
         if (resource.type === "Guide") versionedGuideNames.add(resource.name);
@@ -198,9 +201,19 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
     resources,
     Object.assign({}, ...provenance.map((source) => source.sourcePathsByResource)),
   );
-  const compiled = await compileAssetResources({
+  const linked = await compileResourceLinks({
     rootDir: root,
     resources,
+    sourcePathsByResource,
+    sourceDirectoriesByResource,
+    validation: options.validation,
+    referenceTargets: options.referenceTargets,
+  });
+  diagnostics.push(...linked.diagnostics);
+  throwOnCompileErrors(diagnostics);
+  const compiled = await compileAssetResources({
+    rootDir: root,
+    resources: linked.resources,
     sourcePathsByResource,
     sourceDirectoriesByResource,
     protectedSourcePaths,
@@ -209,5 +222,5 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
       projectNamespace: manifest.namespace,
     }),
   });
-  return { diagnostics, provenance, ...compiled };
+  return { diagnostics, references: linked.references, provenance, courseNavigation, ...compiled };
 }

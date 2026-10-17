@@ -13,6 +13,8 @@ export const TAG_LIMITS = Object.freeze({
   templateLength: 1_000_000,
 });
 export interface TagSyntaxOptions {
+  /** Capture raw opening-fence headers for host-owned header admission, including templates. */
+  fencedCodeHeaders?: WeakMap<Node, string>;
   /** Opt in to variables, conditions, text templates, and bounded code templates. */
   expressions?: boolean;
   /** Named attributes that can encode LF, CR and TAB with backslash escapes. */
@@ -89,6 +91,7 @@ declare module "mdast" {
 }
 export interface TagDiagnostic {
   id?: string;
+  option?: string;
   message: string;
   line?: number;
   column?: number;

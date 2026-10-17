@@ -464,7 +464,7 @@ test("a last-module metadata insertion precedes a new enclosing module appended 
   );
 });
 
-test("changed Course authoring content requires its complete original context when routes change", async () => {
+test("compiled Course references retain identity while source links need their original context when routes change", async () => {
   const project = await courseProject();
   const desired = structuredClone(project.compilation.resources);
   resource(desired, "CourseModule", "basics").spec.slug = "renamed";
@@ -473,6 +473,19 @@ test("changed Course authoring content requires its complete original context wh
     { kind: "update", resource: "CourseModule/basics" },
     { kind: "update", resource: "CoursePage/intro" },
   ];
+  const compiled = await plan(project, desired, operations);
+  expect(compiled.ok, JSON.stringify(compiled)).toBe(true);
+  if (compiled.ok) {
+    expect(rawFile(compiled.plan.candidate, "lessons/pages/intro.md")).toContain(
+      "[Details](./target.md?view=full#details)",
+    );
+    expect(
+      resource(compiled.plan.candidate.compilation.resources, "CoursePage", "intro").spec.content
+        .value,
+    ).toContain("ref://course-page/target?view=full#details");
+  }
+  resource(desired, "CoursePage", "intro").spec.content.value =
+    "# Intro\n\n[Details](./target.md?view=full#details)\n\nSaved later.\n";
   expect(await plan(project, desired, operations)).toMatchObject({
     ok: false,
     diagnostics: [{ code: "reference-context-required", resource: "CoursePage/intro" }],

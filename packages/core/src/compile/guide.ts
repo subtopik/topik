@@ -20,14 +20,13 @@ import {
 import { PublicCompileError } from "./public-errors";
 import {
   extractMarkdownTitle,
-  linkValidationPolicy,
   parseMarkdownFrontmatter,
   parseReferenceList,
   throwOnCompileErrors,
   type CompileValidationOptions,
   type CompileResult,
 } from "./shared";
-import { validateLocalFragments } from "./links";
+import { compileResourceLinks, type CompileResourceReferenceTarget } from "./links";
 
 export interface CompileGuidesOptions {
   dir: string;
@@ -35,9 +34,11 @@ export interface CompileGuidesOptions {
   configFile?: string;
   validation?: CompileValidationOptions;
   assets?: AssetCompilationOptions;
+  referenceTargets?: readonly CompileResourceReferenceTarget[];
 }
 
 export interface CompileResourceDiscovery {
+  courseNavigation?: import("../preview").CourseNavigationIndex;
   sourceVersion?: 1;
   /** Destination relative to the selected configuration directory, if a config was loaded. */
   assetDirectory?: string;
@@ -57,14 +58,27 @@ export async function inspectGuides(options: CompileGuidesOptions): Promise<Comp
   const discovered = await discoverGuides(options);
   if (discovered.sourceVersion === 1)
     validateGuideAuthors(discovered.resources, discovered.sourcePathsByResource);
-  const compiled = await compileAssetResources({
+  const linked = await compileResourceLinks({
     rootDir: configurationDirectory(options.dir, options.configFile),
     resources: discovered.resources,
+    sourcePathsByResource: discovered.sourcePathsByResource,
+    validation: options.validation,
+    referenceTargets: options.referenceTargets,
+  });
+  throwOnCompileErrors(linked.diagnostics);
+  const compiled = await compileAssetResources({
+    rootDir: configurationDirectory(options.dir, options.configFile),
+    resources: linked.resources,
     sourcePathsByResource: discovered.sourcePathsByResource,
     protectedSourcePaths: discovered.consumedSourcePaths,
     ...options.assets,
   });
-  return { diagnostics: discovered.diagnostics, ...compiled };
+  return {
+    diagnostics: [...discovered.diagnostics, ...linked.diagnostics],
+    references: linked.references,
+    courseNavigation: {},
+    ...compiled,
+  };
 }
 
 /** @internal Discovery phase used by the mixed top-level compiler. */
@@ -152,10 +166,12 @@ export async function discoverGuides(
       config.sourceVersion === 1 && typeof frontmatter.id === "string"
         ? frontmatter.id
         : `${config.id}-${fileToSlug(file)}`;
+    const analysis = analyzeTopikContent(content, { file });
+    diagnostics.push(...analysis.diagnostics);
     const title =
       typeof frontmatter.title === "string"
         ? frontmatter.title
-        : extractMarkdownTitle(content, slug);
+        : extractMarkdownTitle(content, slug, analysis.headings);
 
     const tags =
       config.sourceVersion === 1 && frontmatter.inheritTags === false
@@ -170,10 +186,6 @@ export async function discoverGuides(
       (config.sourceVersion === 1 && frontmatter.description === null)
         ? frontmatter.description
         : undefined;
-    const analysis = analyzeTopikContent(content, { file });
-    diagnostics.push(...analysis.diagnostics);
-    diagnostics.push(...validateLocalFragments(analysis, linkValidationPolicy(options.validation)));
-
     const guide: Guide = {
       apiVersion: "v1",
       type: "Guide",

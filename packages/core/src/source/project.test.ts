@@ -10,6 +10,112 @@ const file = (path: string, value: string) => ({
   bytes: encodeSource(value),
 });
 
+test.each(["wiki", "course"] as const)(
+  "%s source provenance excludes compiled downloads from legacy page lookup",
+  async (kind) => {
+    const configuration =
+      "id: docs\ntitle: Docs\nsourceVersion: 1\n" +
+      (kind === "wiki"
+        ? "navigation: [home, manual, other]\n"
+        : "slug: docs\nmodules: [{id: basics, title: Basics, slug: basics, order: 0, pages: [home, manual, other]}]\n");
+    const page = (id: string, body: string) =>
+      `---\nid: ${id}\nslug: ${id}\ntitle: ${id}\norder: 0\n---\n${body}`;
+    const project = await readSourceProject({
+      tree: [
+        file(
+          ".topik.yaml",
+          `version: 1\nnamespace: refs\nsources: [{kind: ${kind}, config: config.yaml}]\n`,
+        ),
+        file("config.yaml", configuration),
+        file(
+          "home.md",
+          page(
+            "home",
+            [
+              "# Home",
+              "[Download][download]",
+              "> - [Again][download]",
+              "[Page](./manual.md)",
+              `{% card title="Page" href="${kind === "wiki" ? "./manual" : "ref://guide/remote"}" /%}`,
+              "[Self](#home)",
+              "[download]: ./manual",
+            ].join("\n\n") + "\n",
+          ),
+        ),
+        file("manual.md", page("manual-page", "# Manual\n")),
+        file("other.md", page("other", "# Other\n\n[Page](./manual.md)\n")),
+        file("manual", "Download bytes.\n"),
+      ],
+    });
+    const type = kind === "wiki" ? "WikiPage" : "CoursePage";
+    const home = project.documents.find((document) => document.resource === `${type}/home`)!;
+    const downloads = home.references.filter(
+      (reference) => reference.kind === "link" && reference.href === "./manual",
+    );
+    expect(downloads).toHaveLength(2);
+    for (const download of downloads) {
+      expect(download.target).toBeUndefined();
+      expect(download.search).toBeUndefined();
+      expect(download.hash).toBeUndefined();
+    }
+    expect(home.assetReferences).toHaveLength(1);
+    expect(
+      project.compilation.semantic.references.filter(
+        (reference) => reference.resource === `${type}/home` && reference.slot === "link.href",
+      ),
+    ).toHaveLength(2);
+    expect(home.references.find((reference) => reference.href === "./manual.md")?.target).toBe(
+      `${type}/manual-page`,
+    );
+    expect(home.references.find((reference) => reference.kind === "card")?.target).toBe(
+      kind === "wiki" ? "WikiPage/manual-page" : "Guide/remote",
+    );
+    expect(home.references.find((reference) => reference.href === "#home")?.target).toBe(
+      `${type}/home`,
+    );
+    expect(
+      project.documents.find((document) => document.resource === `${type}/other`)?.references,
+    ).toMatchObject([{ position: "1/0", href: "./manual.md", target: `${type}/manual-page` }]);
+  },
+);
+
+test("source provenance retains authored links and records cross-kind and deferred reference targets", async () => {
+  const project = await readSourceProject({
+    tree: [
+      file(
+        ".topik.yaml",
+        "version: 1\nnamespace: refs\nsources: [{kind: wiki, config: docs/wiki.yaml}, {kind: collection, config: guides/collection.yaml}]\n",
+      ),
+      file("docs/wiki.yaml", "sourceVersion: 1\nid: docs\ntitle: Docs\nnavigation: [index]\n"),
+      file(
+        "docs/index.md",
+        "---\nid: home\n---\n# Home\n\n[Install](../guides/install.md#setup)\n",
+      ),
+      file("guides/collection.yaml", "sourceVersion: 1\nid: guides\ntitle: Guides\n"),
+      file(
+        "guides/install.md",
+        "---\nid: install\n---\n# Setup\n\n[Home](ref://wiki-page/home)\n\n[Elsewhere](ref://guide/external-guide?view=full#details)\n",
+      ),
+    ],
+  });
+  expect(
+    project.documents.find((document) => document.resource === "WikiPage/home")?.references,
+  ).toMatchObject([
+    { href: "../guides/install.md#setup", target: "Guide/install", search: "", hash: "setup" },
+  ]);
+  expect(
+    project.documents.find((document) => document.resource === "Guide/install")?.references,
+  ).toMatchObject([
+    { href: "ref://wiki-page/home", target: "WikiPage/home" },
+    {
+      href: "ref://guide/external-guide?view=full#details",
+      target: "Guide/external-guide",
+      search: "?view=full",
+      hash: "details",
+    },
+  ]);
+});
+
 test("aggregate source-tree limits reject reused buffers before any byte copy", () => {
   const ByteArray = Uint8Array;
   const bytes = new ByteArray(64 * 1024 * 1024);

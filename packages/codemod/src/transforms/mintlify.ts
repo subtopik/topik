@@ -1,4 +1,21 @@
 import { components, validateTopikContent } from "@topik/content";
+import { fromMarkdown, type Extension, type Handle } from "mdast-util-from-markdown";
+import { frontmatterFromMarkdown } from "mdast-util-frontmatter";
+import { frontmatter } from "micromark-extension-frontmatter";
+// Build-time reuse keeps the content grammar and admission budgets aligned.
+// The codemod bundle includes these internals; published consumers need no src.
+import {
+  assertSourceLimit,
+  assertTreeLimits,
+  ContentLimitError,
+} from "../../../content/src/limits.js";
+import { parserLimitSyntax } from "../../../content/src/parser-limits.js";
+import { gfmFromMarkdown, gfmSyntax } from "../../../content/src/gfm.js";
+import { headingIdSyntax } from "../../../content/src/heading-ids.js";
+import { tagOptions } from "../../../content/src/tag-options.js";
+import { tagSyntax } from "../../../remark-tags/src/syntax.js";
+import { frontmatterEnd } from "./frontmatter";
+import { jsxBoundarySyntax } from "./jsx-boundaries";
 
 export interface TransformWarning {
   line: number;
@@ -44,19 +61,69 @@ const UNSUPPORTED_TAGS = new Set([
   "Icon",
 ]);
 
+// Every convertible component maps to a block in the target registry.
+const BLOCK_COMPONENT_NAMES = new Set([...CALLOUT_VARIANTS.keys(), ...BLOCK_TAGS.keys()]);
+
 const TAG_NAME_RE = /[A-Z][A-Za-z0-9]*/;
 const ATTR_RE =
   /([A-Za-z_][A-Za-z0-9_-]*)\s*=\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|(\{[^}]*\}))/g;
 
 export function transformMintlify(source: string): TransformResult {
   const warnings: TransformWarning[] = [];
-  let out = "";
-  let cursor = 0;
+  // Micromark drops exactly one initial BOM before assigning offsets. Align
+  // budget lookups with those offsets, then restore original-source ranges.
+  const bomLength = source.startsWith("\uFEFF") ? 1 : 0;
+  const parserSource = source.slice(bomLength);
+  let tree: ReturnType<typeof fromMarkdown>;
+  try {
+    assertSourceLimit(source);
+    tree = fromMarkdown(source, {
+      // JSX wrappers must not become opaque HTML blocks: their Markdown children
+      // can contain fenced or inline code whose original source ranges we retain.
+      // Keep inline HTML tokenization so quoted attribute backticks stay in tags.
+      extensions: [
+        frontmatter(),
+        ...gfmSyntax(),
+        tagSyntax(
+          Object.fromEntries(
+            Object.entries(components).map(([name, { kind }]) => [name, { kind }]),
+          ),
+          tagOptions(components),
+        ),
+        headingIdSyntax(),
+        jsxBoundarySyntax(BLOCK_COMPONENT_NAMES),
+        { disable: { null: ["htmlFlow"] } },
+        parserLimitSyntax(parserSource),
+      ],
+      mdastExtensions: [
+        {
+          transforms: [
+            (root) => {
+              assertTreeLimits(root);
+              return root;
+            },
+          ],
+        },
+        ...gfmFromMarkdown(),
+        frontmatterFromMarkdown(),
+        protectedMarkersFromMarkdown(),
+      ],
+    });
+    assertTreeLimits(tree);
+  } catch (error) {
+    if (!(error instanceof ContentLimitError)) throw error;
+    warn(warnings, source, 0, `${error.message}; source kept`);
+    return { content: source, warnings, changed: false };
+  }
+  const protectedRanges = collectProtectedRanges(tree, bomLength);
+  const bodyStart = frontmatterEnd(source);
+  let out = source.slice(0, bodyStart);
+  let cursor = bodyStart;
   let changed = false;
   let firstTag = 0;
 
   while (cursor < source.length) {
-    const next = findNextTag(source, cursor);
+    const next = findNextTag(source, cursor, protectedRanges);
     if (next == null) {
       out += source.slice(cursor);
       break;
@@ -116,18 +183,24 @@ interface FoundTag {
   attrsStart: number;
 }
 
-function findNextTag(source: string, from: number): FoundTag | null {
+function findNextTag(
+  source: string,
+  from: number,
+  protectedRanges: SourceRange[],
+): FoundTag | null {
   let i = from;
+  let rangeIndex = firstRangeAfter(protectedRanges, from);
   while (i < source.length) {
+    const range = protectedRanges[rangeIndex];
+    if (range && i >= range.start) {
+      i = range.end;
+      rangeIndex++;
+      continue;
+    }
     if (source[i] !== "<") {
       i++;
       continue;
     }
-    if (isInsideCodeBlock(source, i)) {
-      i++;
-      continue;
-    }
-
     const isClose = source[i + 1] === "/";
     const nameStart = isClose ? i + 2 : i + 1;
     const nameMatch = TAG_NAME_RE.exec(source.slice(nameStart));
@@ -278,22 +351,83 @@ function lineColumnAt(source: string, offset: number): { line: number; column: n
   return { line, column: offset - lastNewline };
 }
 
-function isInsideCodeBlock(source: string, offset: number): boolean {
-  const lines = source.slice(0, offset).split("\n");
-  let fence: { marker: string; length: number } | undefined;
-  for (const line of lines.slice(0, -1)) {
-    const match = /^ {0,3}(`{3,}|~{3,})(.*)$/u.exec(line);
-    if (!match) continue;
-    const marker = match[1][0];
-    if (!fence) fence = { marker, length: match[1].length };
-    else if (marker === fence.marker && match[1].length >= fence.length && !match[2].trim())
-      fence = undefined;
+interface SourceRange {
+  start: number;
+  end: number;
+}
+
+interface SourceNode {
+  type: string;
+  position?: { start: { offset?: number }; end: { offset?: number } };
+  children?: SourceNode[];
+}
+
+const PROTECTED_NODE_TYPES = new Set([
+  "code",
+  "inlineCode",
+  "link",
+  "linkReference",
+  "image",
+  "imageReference",
+  "definition",
+  "topikProtectedMarker",
+]);
+
+function protectedMarkersFromMarkdown(): Extension {
+  // Retain Topik's paragraph boundaries and opaque directive headers without
+  // grouping their children: actual JSX inside a directive body still migrates.
+  const enter: Handle = function (token) {
+    this.enter({ type: "topikProtectedMarker" } as never, token);
+  };
+  const exit: Handle = function (token) {
+    this.exit(token);
+  };
+  const enterJsx: Handle = function (token) {
+    // Count structural headers toward tree admission without making them opaque.
+    this.enter({ type: "topikJsxBoundary" } as never, token);
+  };
+  return {
+    enter: {
+      topikTextTag: enter,
+      topikFlowTag: enter,
+      topikHeadingId: enter,
+      topikJsxFlowBoundary: enterJsx,
+    },
+    exit: {
+      topikTextTag: exit,
+      topikFlowTag: exit,
+      topikHeadingId: exit,
+      topikJsxFlowBoundary: exit,
+    },
+  };
+}
+
+function collectProtectedRanges(tree: SourceNode, offset: number): SourceRange[] {
+  const ranges: SourceRange[] = [];
+  function visit(node: SourceNode): void {
+    // Resource titles, destinations and image alt text are opaque Markdown
+    // values, not JSX bodies. Protect the whole resource: the block components
+    // migrated here cannot be nested inside an inline link label either.
+    if (PROTECTED_NODE_TYPES.has(node.type)) {
+      ranges.push({
+        start: node.position!.start.offset! + offset,
+        end: node.position!.end.offset! + offset,
+      });
+    } else {
+      node.children?.forEach(visit);
+    }
   }
-  if (fence) return true;
-  let inlineTicks = 0;
-  for (const match of lines.at(-1)!.matchAll(/`+/gu)) {
-    if (inlineTicks === 0) inlineTicks = match[0].length;
-    else if (inlineTicks === match[0].length) inlineTicks = 0;
+  visit(tree);
+  return ranges;
+}
+
+function firstRangeAfter(ranges: SourceRange[], offset: number): number {
+  let start = 0;
+  let end = ranges.length;
+  while (start < end) {
+    const middle = (start + end) >>> 1;
+    if (ranges[middle].end <= offset) start = middle + 1;
+    else end = middle;
   }
-  return inlineTicks > 0;
+  return start;
 }

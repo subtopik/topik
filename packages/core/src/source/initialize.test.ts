@@ -5,6 +5,7 @@ import type { WikiPage } from "@topik/schema/wiki-page/v1";
 import { initializeSourceProject, addSourceToProject } from "./initialize";
 import { digestSourceTree, readSourceProject, type SourceTreeFile } from "./project";
 import { encodeSource, decodeSource } from "./syntax";
+import type { Resource } from "../resource";
 
 const cohort = "a".repeat(64);
 test("explicit admitted Guide paths preserve the public slug and refuse ungranted destinations", async () => {
@@ -117,6 +118,159 @@ test("initialization preserves saved link identities after routes and source pat
   expect(
     await initializeSourceProject({ ...request, referenceContexts: { "WikiPage/home": foreign } }),
   ).toMatchObject({ ok: false, diagnostics: [{ code: "reference-context-invalid" }] });
+});
+
+test("adding sources resolves authored cross-kind links and retains saved local route meaning", async () => {
+  const project = await readSourceProject({
+    tree: [
+      {
+        path: ".topik.yaml",
+        mode: "100644",
+        bytes: encodeSource(
+          "version: 1\nnamespace: refs\nsources:\n  - {kind: collection, config: guides/collection.yaml}\n",
+        ),
+      },
+      {
+        path: "guides/collection.yaml",
+        mode: "100644",
+        bytes: encodeSource("sourceVersion: 1\nid: guides\ntitle: Guides\n"),
+      },
+      {
+        path: "guides/install.md",
+        mode: "100644",
+        bytes: encodeSource("---\nid: install-md\nslug: install-md\n---\n# Setup\n"),
+      },
+      {
+        path: "guides/install.mdx",
+        mode: "100644",
+        bytes: encodeSource("---\nid: install-mdx\nslug: install-mdx\n---\n# Other\n"),
+      },
+    ],
+  });
+  const saved: Wiki = {
+    apiVersion: "v1",
+    type: "Wiki",
+    name: "docs",
+    spec: {
+      title: "Docs",
+      sourceVersion: 1,
+      navigation: [
+        { type: "page", page: "home", slug: "home", sourcePath: "old/home" },
+        { type: "page", page: "target", slug: "old-target", sourcePath: "old/target" },
+      ],
+    },
+  };
+  const wiki = structuredClone(saved);
+  wiki.spec.navigation = [
+    { type: "page", page: "home", slug: "home", sourcePath: "pages/nested/home" },
+    { type: "page", page: "target", slug: "new-target", sourcePath: "relocated/target" },
+  ];
+  const pages: WikiPage[] = [
+    {
+      apiVersion: "v1",
+      type: "WikiPage",
+      name: "home",
+      spec: {
+        wiki: "docs",
+        title: "Home",
+        content: {
+          format: "topik",
+          value:
+            "# Home\n\n[Local](./target.md#local)\n\n[Install](../../guides/install.md#setup)\n",
+        },
+      },
+    },
+    {
+      apiVersion: "v1",
+      type: "WikiPage",
+      name: "target",
+      spec: { wiki: "docs", title: "Local", content: { format: "topik", value: "# Local\n" } },
+    },
+  ];
+  const manifest = project.configurations.find((config) => config.path === ".topik.yaml")!;
+  const result = await addSourceToProject({
+    project,
+    expectedTreeDigest: project.treeDigest,
+    packageCohort: cohort,
+    source: { kind: "wiki", config: "docs/wiki.yaml", id: "docs", title: "Docs" },
+    resources: [wiki, ...pages],
+    referenceContexts: { "WikiPage/home": saved, "WikiPage/target": saved },
+    createPaths: ["docs/wiki.yaml", "docs/pages/nested/home.md", "docs/relocated/target.md"],
+    manifestAuthority: {
+      ...manifest,
+      fields: manifest.fields.filter((field) => field.selector === "sources/+"),
+    },
+  });
+  expect(result.ok, JSON.stringify(result)).toBe(true);
+  if (!result.ok) return;
+  const home = result.plan.candidate.compilation.resources.find(
+    (resource): resource is WikiPage => resource.type === "WikiPage" && resource.name === "home",
+  )!;
+  expect(home.spec.content.value).toContain("ref://guide/install-md#setup");
+  expect(home.spec.content.value).toContain("ref://wiki-page/target#local");
+  const authored = decodeSource(
+    result.plan.candidate.tree.find((entry) => entry.path === "docs/pages/nested/home.md")!.bytes,
+  );
+  expect(authored).toContain("[Install](../../../guides/install.md#setup)");
+  expect(authored).toContain("[Local](/new-target#local)");
+  const withWiki = result.plan.candidate;
+  const courseResources: Resource[] = [
+    {
+      apiVersion: "v1",
+      type: "Course",
+      name: "lessons",
+      spec: { title: "Lessons", slug: "lessons" },
+    },
+    {
+      apiVersion: "v1",
+      type: "CourseModule",
+      name: "basics",
+      spec: { course: "lessons", title: "Basics", slug: "basics", order: 0 },
+    },
+    {
+      apiVersion: "v1",
+      type: "CoursePage",
+      name: "intro",
+      spec: {
+        module: "basics",
+        title: "Intro",
+        slug: "intro",
+        order: 0,
+        content: {
+          format: "topik",
+          value:
+            "# Intro\n\n[Guide](../guides/install.md#setup)\n\n[Home](../docs/pages/nested/home.md#home)\n",
+        },
+      },
+    },
+  ];
+  const nextManifest = withWiki.configurations.find((config) => config.path === ".topik.yaml")!;
+  const courseResult = await addSourceToProject({
+    project: withWiki,
+    expectedTreeDigest: withWiki.treeDigest,
+    packageCohort: cohort,
+    source: { kind: "course", config: "lessons/course.yaml", id: "lessons", title: "Lessons" },
+    resources: courseResources,
+    documentPaths: { "CoursePage/intro": "lessons/intro.md" },
+    createPaths: ["lessons/course.yaml", "lessons/intro.md"],
+    manifestAuthority: {
+      ...nextManifest,
+      fields: nextManifest.fields.filter((field) => field.selector === "sources/+"),
+    },
+  });
+  expect(courseResult.ok, JSON.stringify(courseResult)).toBe(true);
+  if (!courseResult.ok) return;
+  const intro = courseResult.plan.candidate.compilation.resources.find(
+    (resource) => resource.type === "CoursePage",
+  )!;
+  if (intro.type !== "CoursePage") throw new Error("Expected a Course page");
+  expect(intro.spec.content.value).toContain("ref://guide/install-md#setup");
+  expect(intro.spec.content.value).toContain("ref://wiki-page/home#home");
+  expect(
+    decodeSource(
+      courseResult.plan.candidate.tree.find((entry) => entry.path === "lessons/intro.md")!.bytes,
+    ),
+  ).toContain("[Home](../docs/pages/nested/home.md#home)");
 });
 test.each(["", "\uFEFF"])("source addition retains root bytes with prefix %j", async (prefix) => {
   const root =
@@ -349,5 +503,7 @@ test("Wiki initialization preserves resolved targets when enabling source link s
   const candidatePage = result.plan.candidate.compilation.resources.find(
     (resource) => resource.type === "WikiPage" && resource.name === "start",
   ) as WikiPage;
-  expect(candidatePage.spec.content.value).toContain("/pages/next?x=a%20b#heading");
+  expect(candidatePage.spec.content.value).toContain(
+    "ref://wiki-page/route-target?x=a%20b#heading",
+  );
 });

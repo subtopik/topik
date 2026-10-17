@@ -146,6 +146,34 @@ possible application relationship. Keep the generated inventories and payloads
 with the resources when transferring a compilation. [Assets](./assets.md#compiled-output)
 explains that output boundary.
 
+### Source filesystem safety
+
+Markdown inputs and conventionally discovered Wiki and Guide collection
+configurations must stay within their source directory and be regular files. The compiler checks both
+lexical and resolved paths, rejects symlinked source entries, and validates and
+reads each file through the same handle.
+
+On Linux, these reads also open every path component through held directory
+descriptors with no-follow flags. This prevents a directory replaced with a
+symlink during traversal from redirecting the read. Linux requires accessible
+`/proc/self/fd`; if descriptor traversal is unavailable, compilation fails with
+`file-safe-read-unsupported` instead of falling back to pathname reads.
+
+On macOS, Windows, and other non-Linux systems, the compiler uses portable
+pathname checks and verifies the opened file's identity. Canonical aliases above
+the source directory, such as macOS's `/var` path, are accepted. These checks
+reject ordinary traversal and static symlink escapes, but cannot guarantee
+containment against malicious concurrent filesystem mutation. Compile from a
+trusted workspace; compilation is not a security boundary against another
+process that can modify the source tree or its ancestors. Linux's stronger
+traversal also does not provide an immutable snapshot of file contents.
+
+[Manifest and explicitly selected configuration files](./manifest.md), Course
+configurations, and
+[local assets](./assets.md#file-and-output-constraints) retain their separate,
+stricter file rules, including their current Linux requirement. The portable
+reader does not extend support for those operations.
+
 ## Multi-source projects
 
 The [project manifest](./manifest.md) can select multiple existing Wiki and collection configurations. Each local configuration keeps its own settings and relative content paths.

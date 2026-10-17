@@ -113,6 +113,18 @@ function headerSource(value: string, metadata = false): string {
   return chunks.join("");
 }
 
+function reservedCodeHead(value: string): boolean {
+  return /^(?:filename|title|lines|startLine|highlight|focus|collapse|wrap|added|removed)(?:[ \t=]|$)/.test(
+    value,
+  );
+}
+
+function literalCodeHeaderSource(value: string, metadata = false): string {
+  return reservedCodeHead(value)
+    ? `&#${value.charCodeAt(0)};${headerSource(value.slice(1), metadata)}`
+    : headerSource(value, metadata);
+}
+
 function tagStart(
   node: ComponentNode,
   declarations: TagDeclarations,
@@ -196,7 +208,9 @@ export function tagToMarkdown(
           : "`";
       const fenceLength = marker === "`" ? backtickLength : tildeLength;
       const encodedHeaderLength =
-        headerLength(node.lang ?? "") + (node.meta ? 1 + headerLength(node.meta, true) : 0);
+        headerLength(node.lang ?? "") +
+        (reservedCodeHead(node.lang ?? "") ? 5 : 0) +
+        (node.meta ? 1 + headerLength(node.meta, true) + (reservedCodeHead(node.meta) ? 5 : 0) : 0);
       const outputLength =
         42 + 2 * fenceLength + encodedHeaderLength + (value ? value.length + 1 : 0);
       if (outputLength > TAG_LIMITS.templateLength)
@@ -204,7 +218,8 @@ export function tagToMarkdown(
       // Encode only string-parser-sensitive header characters. Passing a huge
       // fence as `before` to the host's safe() makes its position work quadratic.
       const header =
-        headerSource(node.lang ?? "") + (node.meta ? ` ${headerSource(node.meta, true)}` : "");
+        literalCodeHeaderSource(node.lang ?? "") +
+        (node.meta ? ` ${literalCodeHeaderSource(node.meta, true)}` : "");
       const fence = marker.repeat(fenceLength);
       return `{% template code %}\n${fence}${header}\n${value ? value + "\n" : ""}${fence}\n{% /template code %}`;
     },

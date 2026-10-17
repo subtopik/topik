@@ -15,12 +15,39 @@ const context: CourseReferenceContext = {
   ],
 };
 
+test("Course folder landings, explicit filenames and public routes retain distinct identities", () => {
+  const pages = [
+    { name: "home", module: "module", slug: "home", sourcePath: "home" },
+    { name: "sibling", module: "module", slug: "sibling", sourcePath: "files" },
+    { name: "landing", module: "module", slug: "landing", sourcePath: "files/index" },
+  ];
+  const resolved = resolveCourseNavigation({ ...context, pages });
+  for (const href of ["./files", "./files/", "/files/", "./files?view=%FF#heading"])
+    expect(resolveCourseContentHref(href, "home", resolved)?.page.page).toBe("landing");
+  for (const href of ["./files.md", "/files.md/", "/basics/sibling"])
+    expect(resolveCourseContentHref(href, "home", resolved)?.page.page).toBe("sibling");
+  expect(resolveCourseContentHref("/basics/sibling/", "home", resolved)).toBeNull();
+  const ambiguous = resolveCourseNavigation({
+    ...context,
+    pages: [
+      ...pages,
+      { name: "readme", module: "module", slug: "readme", sourcePath: "files/README" },
+    ],
+  });
+  expect(resolveCourseContentHref("./files/", "home", ambiguous)).toBeNull();
+  expect(resolveCourseContentHref("./files/index.md", "home", ambiguous)?.page.page).toBe(
+    "landing",
+  );
+});
+
 test("resolves Course source paths and public routes independently while retaining query and fragment", () => {
   const resolved = resolveCourseNavigation(context);
   for (const href of [
     "../moved/target.md?mode=full#details",
     "/basics/destination?mode=full#details",
     "/moved/target.mdx?mode=full#details",
+    "/moved/target.md///?mode=full#details",
+    "/moved/target.md%2F%2F?mode=full#details",
   ]) {
     expect(resolveCourseContentHref(href, "intro", resolved)).toMatchObject({
       page: { page: "target", sourcePath: "moved/target" },
@@ -51,6 +78,27 @@ test("unknown Course context remains unresolved and compiled Assets and external
   expect(resolveCourseContentReference("#details", "missing", resolved)).toEqual({
     kind: "unresolved",
   });
+});
+
+test("portable CoursePage identities resolve independently of the current page and publishing slug", () => {
+  const resolved = resolveCourseNavigation(context);
+  expect(
+    resolveCourseContentHref("ref://course-page/target?mode=full#details", "missing", resolved),
+  ).toMatchObject({
+    page: { page: "target" },
+    route: "basics/destination",
+    search: "?mode=full",
+    hash: "details",
+  });
+  for (const href of [
+    "ref://course-page/destination",
+    "ref://course-page/missing",
+    "ref://guide/target",
+    "ref://wiki-page/target",
+  ])
+    expect(resolveCourseContentReference(href, "intro", resolved)).toEqual({
+      kind: "unresolved",
+    });
 });
 
 test("literal hash characters in Course source paths remain path data when resolving relative links", () => {

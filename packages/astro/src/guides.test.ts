@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vite-plus/test";
 import type { LoaderContext } from "astro/loaders";
+import { z } from "astro/zod";
 import { topikGuidesLoader } from "./guides";
+import { createTopikLinkResolver } from "./links";
 
 const fixturesDir = join(import.meta.dirname, "__fixtures__/guides");
 const fixtureOptions = {
@@ -82,6 +84,52 @@ describe("topikGuidesLoader", () => {
     expect(entry!.data.tags).toEqual(["tutorial", "quickstart"]);
   });
 
+  test.each(
+    [undefined, 1].flatMap((version) =>
+      [
+        { metadata: "description: null\n", expected: undefined },
+        { metadata: "", expected: undefined },
+        { metadata: 'description: ""\n', expected: "" },
+        { metadata: "description: Authored description\n", expected: "Authored description" },
+      ].map((description) => ({ version, ...description })),
+    ),
+  )(
+    "loaded description satisfies the real loader schema: %j",
+    async ({ version, metadata, expected }) => {
+      const dir = await mkdtemp(join(tmpdir(), "topik-astro-guide-description-"));
+      try {
+        await writeFile(
+          join(dir, "collection.yaml"),
+          `id: guides\ntitle: Guides\n${version === 1 ? "sourceVersion: 1\n" : ""}`,
+        );
+        await writeFile(
+          join(dir, "intro.md"),
+          `---\nid: intro\ntitle: Intro\n${metadata}---\n# Intro\n`,
+        );
+        const loader = topikGuidesLoader({ dir, name: "guide-description" });
+        if (!("createSchema" in loader) || !loader.createSchema)
+          throw new Error("Expected a loader schema");
+        const { schema } = await loader.createSchema();
+        const context = createMockContext();
+        await loader.load(context);
+        expect(context.entries.size).toBe(1);
+        const entry = [...context.entries.values()][0];
+        expect(entry.data.description).toBe(expected);
+        expect(z.parse(schema, entry.data)).toEqual({
+          title: "Intro",
+          slug: "intro",
+          description: expected,
+          authors: [],
+          tags: [],
+        });
+        expect(z.safeParse(schema, { ...entry.data, description: null }).success).toBe(false);
+        expect(entry.body).toBe("# Intro\n");
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+  );
+
   test("includes body content", async () => {
     const loader = topikGuidesLoader(fixtureOptions);
     const ctx = createMockContext();
@@ -107,6 +155,34 @@ describe("topikGuidesLoader", () => {
 
     const entry = ctx.entries.get("guides-writing-markdown");
     expect(entry!.data.authors).toEqual([]);
+  });
+
+  test("preserves compiled resource references and exposes route metadata for publishing", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "topik-astro-guide-links-"));
+    try {
+      await writeFile(join(dir, "collection.yaml"), "id: guides\ntitle: Guides\n");
+      await writeFile(join(dir, "intro.md"), "# Intro\n\n[Next](target.md?view=full#setup)\n");
+      await writeFile(join(dir, "target.md"), "# Target\n\n## Setup\n");
+      const loader = topikGuidesLoader({ dir, name: "astro-guide-links" });
+      const context = createMockContext();
+      await loader.load(context);
+
+      expect(context.entries.get("guides-intro")?.body).toContain(
+        "[Next](ref://guide/guides-target?view=full#setup)",
+      );
+      const resolveLink = createTopikLinkResolver({
+        guides: [...context.entries.values()].map((entry) => ({
+          id: entry.id,
+          data: { slug: String(entry.data.slug) },
+        })),
+        resolveGuide: (entry) => `/learning/${entry.data.slug}`,
+      });
+      expect(resolveLink("ref://guide/guides-target?view=full#setup")).toBe(
+        "/learning/target?view=full#setup",
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   test("retains compiler-emitted Asset descriptors and resolves rewritten Guide content", async () => {

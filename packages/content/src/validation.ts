@@ -16,6 +16,8 @@ import {
   limitDiagnostic,
 } from "./limits.js";
 import { codeTemplateProblem, nodeShapeProblem, textTemplateProblem } from "./node-validation.js";
+import { codePresentationProblem } from "./code-presentation.js";
+import { assertCodePresentationOutputLimit } from "./presentation-output.js";
 import { nodeTypes as allowed, isContentKind, isInlineParent } from "./node-grammar.js";
 import {
   indexDocument,
@@ -254,6 +256,9 @@ export function validateDocumentWithIndex(
   }
   const errors: Diagnostic[] = [];
   const templateData = new Set<object>();
+  const presentationData = new Set<object>();
+  const parents = new WeakMap<TreeNode, TreeNode>();
+  const callbacks: Array<{ node: TreeNode; invoke: () => ValidationIssue[] }> = [];
   function add(problem: string | ValidationIssue, node: TreeNode, id?: string): void {
     errors.push(diagnostic(problem, node, id));
   }
@@ -271,6 +276,7 @@ export function validateDocumentWithIndex(
       delete: 0,
     },
   ): void {
+    if (parent) parents.set(node, parent);
     const shapeProblem = nodeShapeProblem(node, registry);
     if (shapeProblem) {
       add(shapeProblem, node, "topik-node-invalid");
@@ -362,6 +368,10 @@ export function validateDocumentWithIndex(
     const errorsBeforeChildren = errors.length;
     for (const child of node.children ?? []) walk(child, node, insideLink || link, marks);
     const childrenValid = errors.length === errorsBeforeChildren;
+    if (node.type === "topikCodePresentation" && childrenValid) {
+      const invalid = codePresentationProblem(node, presentationData);
+      if (invalid) add(invalid, node);
+    }
     if (node.type === "topikComponent") {
       const component = node as TreeNode & Component;
       const invalid = validateTag(
@@ -381,15 +391,41 @@ export function validateDocumentWithIndex(
       ])
         add(problem, node);
       const definition = registry[component.name];
-      if (definition?.validate && !invalid && childrenValid)
-        for (const problem of definition.validate(
-          component,
-          getEffectiveProps(component, registry),
-        ))
-          add(problem, node);
+      if (definition?.validate && !invalid && childrenValid) {
+        const invoke = () =>
+          definition.validate!(component, getEffectiveProps(component, registry));
+        // Canonical validators are trusted admission rules and retain their
+        // existing local diagnostics. Caller callbacks wait for whole-tree bounds.
+        if (definition.validate === components[component.name]?.validate)
+          for (const problem of invoke()) add(problem, node);
+        else callbacks.push({ node, invoke });
+      }
     }
   }
   walk(document as TreeNode);
+  if (errors.length === 0) {
+    try {
+      assertCodePresentationOutputLimit(document);
+    } catch (error) {
+      if (!(error instanceof ContentLimitError)) throw error;
+      errors.push(limitDiagnostic(error));
+    }
+  }
+  if (errors.length === 0) {
+    const invalidSubtrees = new Set<TreeNode>();
+    for (const { node, invoke } of callbacks) {
+      if (invalidSubtrees.has(node)) continue;
+      const problems = invoke();
+      for (const problem of problems) add(problem, node);
+      if (problems.length) {
+        let ancestor: TreeNode | undefined = node;
+        while (ancestor) {
+          invalidSubtrees.add(ancestor);
+          ancestor = parents.get(ancestor);
+        }
+      }
+    }
+  }
   let index: DocumentIndex | undefined;
   if (errors.length === 0) {
     index = indexDocument(document);

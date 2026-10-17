@@ -5,6 +5,7 @@ import { afterEach, expect, test } from "vite-plus/test";
 import { compileCourse } from "./course";
 import { compileManifest } from "./manifest";
 import { validateResources } from "../validate";
+import { analyzeTopikContent } from "@topik/content";
 
 const roots: string[] = [];
 async function fixture(files: Record<string, string | Buffer>) {
@@ -99,9 +100,18 @@ test("compiles the complete Course graph with exact identities, ordering, nullab
       module: "basics",
       order: 12,
       authors: ["alice"],
-      content: { value: welcome.split("---\n")[2] },
+      content: { value: expect.stringContaining("ref://course-page/next?mode=full#details") },
     },
   });
+  const page = result.resources.find(
+    (resource) => resource.type === "CoursePage" && resource.name === "welcome",
+  )!;
+  if (page.type !== "CoursePage") throw new Error("Expected a Course page");
+  expect(analyzeTopikContent(page.spec.content.value).links.map(({ href }) => href)).toEqual([
+    "ref://course-page/next?mode=full#details",
+    "ref://course-page/next#details",
+    "#welcome",
+  ]);
   expect(
     result.resources.find((resource) => resource.type === "CoursePage" && resource.name === "next"),
   ).toMatchObject({ spec: { authors: [] } });
@@ -164,7 +174,9 @@ test("Course source files with literal hash characters compile relative links wi
       (resource) => resource.type === "CoursePage" && resource.name === "welcome",
     ),
   ).toMatchObject({
-    spec: { content: { value: expect.stringContaining("./next.md?mode=full#details") } },
+    spec: {
+      content: { value: expect.stringContaining("ref://course-page/next?mode=full#details") },
+    },
   });
 });
 
@@ -237,5 +249,56 @@ test("Course configurations reject unsafe aliases, repeated memberships, travers
   await expect(compileCourse({ dir })).rejects.toMatchObject({
     id: "frontmatter-invalid",
     location: "pages/welcome.md",
+  });
+});
+
+test("transports authored module/page indices independently from sorted resources", async () => {
+  const config = {
+    sourceVersion: 1,
+    id: "learning",
+    title: "Learning",
+    slug: "learning",
+    modules: [
+      { id: "z-module", title: "Z", slug: "z", order: 0, pages: ["z", "a"] },
+      { id: "a-module", title: "A", slug: "a", order: 0, pages: [] },
+    ],
+  };
+  const dir = await fixture({
+    "course.yaml": JSON.stringify(config),
+    ".topik.yaml": JSON.stringify({
+      version: 1,
+      namespace: "ordering",
+      sources: [{ kind: "course", config: "course.yaml" }],
+    }),
+    "z.md": "---\nid: z-page\ntitle: Z\nslug: z\norder: 0\n---\n# Z\n",
+    "a.md": "---\nid: a-page\ntitle: A\nslug: a\norder: 0\n---\n# A\n",
+  });
+  const before = await compileManifest({ dir });
+  const standalone = await compileCourse({ dir });
+  const { discoverCourseResources } = await import("./discovery");
+  expect((await discoverCourseResources({ dir })).courseNavigation).toEqual(
+    before.courseNavigation,
+  );
+  expect(standalone.courseNavigation).toEqual(before.courseNavigation);
+  expect(before.courseNavigation.learning.modules).toEqual([
+    {
+      name: "z-module",
+      declarationIndex: 0,
+      pages: [
+        { name: "z-page", declarationIndex: 0 },
+        { name: "a-page", declarationIndex: 1 },
+      ],
+    },
+    { name: "a-module", declarationIndex: 1, pages: [] },
+  ]);
+  config.modules[0].pages.reverse();
+  config.modules.reverse();
+  await writeFile(join(dir, "course.yaml"), JSON.stringify(config));
+  const after = await compileManifest({ dir });
+  expect(after.resources).toEqual(before.resources);
+  expect(after.courseNavigation).not.toEqual(before.courseNavigation);
+  expect(after.courseNavigation.learning.modules[1].pages[0]).toEqual({
+    name: "a-page",
+    declarationIndex: 0,
   });
 });

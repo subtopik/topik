@@ -120,6 +120,33 @@ describe("TopikContent", () => {
     ).toThrow(InvalidTopikContentError);
   });
 
+  it.each([
+    "https://images.example/dark.png 1x, http://127.0.0.1/private.png 2x",
+    "https://images.example/dark.png,",
+    "https://images.example/dark%20image.png?color=dark#view",
+  ])("keeps an authored dark image URL as one source candidate: %s", (source) => {
+    const html = renderToStaticMarkup(
+      <TopikContent
+        content={`{% figure src="light.png" darkSrc=${JSON.stringify(source)} alt="Diagram" /%}`}
+      />,
+    );
+    expect(html).toContain(`srcSet="${source.replaceAll(" ", "%20").replaceAll(",", "%2C")}"`);
+  });
+
+  it.each([
+    "https://images.example/dark.png 1x, http://127.0.0.1/private.png 2x",
+    "/images/dark.png 1x, /private.png 2x",
+  ])("keeps a resolved dark Asset URL as one source candidate: %s", (source) => {
+    const name = `auto-v1-${"a".repeat(52)}`;
+    const html = renderToStaticMarkup(
+      <TopikContent
+        content={`{% figure src="light.png" darkSrc="asset:${name}" alt="Diagram" /%}`}
+        resolveAsset={() => source}
+      />,
+    );
+    expect(html).toContain(`srcSet="${source.replaceAll(" ", "%20").replaceAll(",", "%2C")}"`);
+  });
+
   it("passes an explicit color scheme to figures", () => {
     const html = renderToStaticMarkup(
       <TopikContent
@@ -209,6 +236,99 @@ describe("TopikContent", () => {
     expect(html).toContain('href="/preview/guide"');
     expect(html).toContain('href="/preview/card"');
   });
+
+  it.each(["guide", "course-page"])(
+    "resolves %s links and cards once before SSR and framework adapters",
+    (kind) => {
+      const resolveLink = vi.fn((href: string) =>
+        href === `ref://${kind}/getting-started?view=full#setup`
+          ? "/learn/start?view=full#setup"
+          : undefined,
+      );
+      const html = renderToStaticMarkup(
+        <TopikContent
+          content={`[Install](ref://${kind}/getting-started?view=full#setup)\n\n{% card title="Start" href="ref://${kind}/getting-started?view=full#setup" /%}`}
+          resolveLink={resolveLink}
+          renderLink={(props) => <a {...props} data-framework-link />}
+        />,
+      );
+
+      expect(html.match(/href="\/learn\/start\?view=full#setup"/gu)).toHaveLength(2);
+      expect(html.match(/data-framework-link/gu)).toHaveLength(2);
+      expect(html).not.toContain("ref://");
+      expect(resolveLink).toHaveBeenCalledTimes(2);
+      expect(resolveLink).toHaveBeenNthCalledWith(
+        1,
+        `ref://${kind}/getting-started?view=full#setup`,
+      );
+      expect(resolveLink).toHaveBeenNthCalledWith(
+        2,
+        `ref://${kind}/getting-started?view=full#setup`,
+      );
+    },
+  );
+
+  it("resolves refs for custom components using provider routes", () => {
+    const html = renderToStaticMarkup(
+      <TopikContentProvider resolveLink={() => "/docs/current"}>
+        <TopikContent
+          content={
+            '[Wiki](ref://wiki-page/wiki-name)\n\n{% card title="Wiki" href="ref://wiki-page/wiki-name" /%}'
+          }
+          components={{
+            TopikLink: ({ children, href }) => <a href={String(href)}>{children}</a>,
+            TopikCard: ({ href }) => <a href={String(href)}>Card</a>,
+          }}
+        />
+      </TopikContentProvider>,
+    );
+
+    expect(html.match(/href="\/docs\/current"/gu)).toHaveLength(2);
+    expect(html).not.toContain("ref://");
+  });
+
+  it.each([
+    undefined,
+    () => undefined,
+    () => "ref://guide/still-unresolved",
+    () => "javascript:alert(1)",
+    () => {
+      throw new Error("private route failure");
+    },
+  ])(
+    "removes unresolved refs before custom rendering and reports safe diagnostics",
+    (resolveLink) => {
+      const diagnostics: string[] = [];
+      const received: unknown[] = [];
+      const html = renderToStaticMarkup(
+        <TopikContent
+          content={
+            '[Wiki](ref://wiki-page/wiki-name)\n\n{% card title="Wiki" href="ref://wiki-page/wiki-name" /%}'
+          }
+          resolveLink={resolveLink}
+          onLinkDiagnostic={(diagnostic) => diagnostics.push(diagnostic.id)}
+          components={{
+            TopikLink: ({ children, href }) => {
+              received.push(href);
+              return <>{children}</>;
+            },
+            TopikCard: ({ href }) => {
+              received.push(href);
+              return <span>Card</span>;
+            },
+          }}
+        />,
+      );
+
+      expect(received).toEqual([undefined, undefined]);
+      expect(diagnostics).toEqual([
+        "TOPIK_RESOURCE_REFERENCE_UNRESOLVED",
+        "TOPIK_RESOURCE_REFERENCE_UNRESOLVED",
+      ]);
+      expect(html).not.toContain("ref://");
+      expect(html).not.toContain("private route failure");
+    },
+  );
 
   it("renders links and cards through a framework adapter", () => {
     const html = renderToStaticMarkup(

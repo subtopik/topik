@@ -1,23 +1,10 @@
-import { join, posix } from "node:path";
-import {
-  analyzeTopikContent,
-  validateTopikAssetReference,
-  validateTopikContent,
-  topikLinkDiagnosticMessage,
-  type AnalyzeTopikContentResult,
-  type TopikContentDiagnostic,
-} from "@topik/content";
+import { join } from "node:path";
+import { analyzeTopikContent, validateTopikContent } from "@topik/content";
 import type { Course } from "@topik/schema/course/v1";
 import type { CourseModule } from "@topik/schema/course-module/v1";
 import type { CoursePage } from "@topik/schema/course-page/v1";
 import { parseCourseConfig, parseCoursePageMetadata } from "../config/course";
-import {
-  resolveCourseNavigation,
-  resolveCourseContentReference,
-  type CourseReferenceContext,
-} from "../course-navigation";
-import { readPortableAssetFile, classifyPortableNavigationPath } from "../assets/files";
-import { validateTopikPath } from "../assets/path";
+import { resolveCourseNavigation, type CourseReferenceContext } from "../course-navigation";
 import type { SourceResource } from "../resource";
 import { compileAssetResources, type AssetCompilationOptions } from "./assets";
 import { configurationDirectory, readExactConfigFile, type LoadedConfig } from "./config";
@@ -25,14 +12,12 @@ import type { CompileResourceDiscovery } from "./guide";
 import { readRegularFileWithinRoot } from "./files";
 import { PublicCompileError } from "./public-errors";
 import {
-  hasCompileErrors,
-  linkValidationPolicy,
   parseMarkdownFrontmatter,
   throwOnCompileErrors,
   type CompileResult,
   type CompileValidationOptions,
-  type LinkValidationPolicy,
 } from "./shared";
+import { compileResourceLinks, type CompileResourceReferenceTarget } from "./links";
 
 export interface CompileCourseOptions {
   dir: string;
@@ -40,6 +25,7 @@ export interface CompileCourseOptions {
   configFile?: string;
   validation?: CompileValidationOptions;
   assets?: AssetCompilationOptions;
+  referenceTargets?: readonly CompileResourceReferenceTarget[];
 }
 
 export async function compileCourse(options: CompileCourseOptions): Promise<CompileResult> {
@@ -51,14 +37,27 @@ export async function compileCourse(options: CompileCourseOptions): Promise<Comp
 export async function inspectCourse(options: CompileCourseOptions): Promise<CompileResult> {
   const discovered = await discoverCourse(options);
   validateCourseAuthors(discovered.resources, discovered.sourcePathsByResource);
-  const compiled = await compileAssetResources({
+  const linked = await compileResourceLinks({
     rootDir: configurationDirectory(options.dir, options.configFile),
     resources: discovered.resources,
+    sourcePathsByResource: discovered.sourcePathsByResource,
+    validation: options.validation,
+    referenceTargets: options.referenceTargets,
+  });
+  throwOnCompileErrors(linked.diagnostics);
+  const compiled = await compileAssetResources({
+    rootDir: configurationDirectory(options.dir, options.configFile),
+    resources: linked.resources,
     sourcePathsByResource: discovered.sourcePathsByResource,
     protectedSourcePaths: discovered.consumedSourcePaths,
     ...options.assets,
   });
-  return { diagnostics: discovered.diagnostics, ...compiled };
+  return {
+    diagnostics: [...discovered.diagnostics, ...linked.diagnostics],
+    references: linked.references,
+    courseNavigation: discovered.courseNavigation!,
+    ...compiled,
+  };
 }
 
 /** @internal Source discovery shares the manifest's project-wide Asset and author pipeline. */
@@ -90,8 +89,14 @@ export async function discoverCourse(
   const diagnostics: CompileResult["diagnostics"] = [];
   const sourcePathsByResource: Record<string, string> = {};
   const pages: CourseReferenceContext["pages"][number][] = [];
-  const analyses = new Map<string, AnalyzeTopikContentResult>();
-  for (const module of config.modules) {
+  const modules: import("../preview").CourseNavigationModule[] = [];
+  for (const [declarationIndex, module] of config.modules.entries()) {
+    const navigation = {
+      name: module.id,
+      declarationIndex,
+      pages: [] as { name: string; declarationIndex: number }[],
+    };
+    modules.push(navigation);
     const resource: CourseModule = {
       apiVersion: "v1",
       type: "CourseModule",
@@ -106,7 +111,7 @@ export async function discoverCourse(
       },
     };
     resources.push(resource);
-    for (const sourcePath of module.pages) {
+    for (const [pageIndex, sourcePath] of module.pages.entries()) {
       const file = await readCoursePage(dir, sourcePath);
       const parsed = parseMarkdownFrontmatter(file.raw, file.path, 1);
       let metadata;
@@ -136,11 +141,11 @@ export async function discoverCourse(
         },
       };
       resources.push(page);
+      navigation.pages.push({ name: page.name, declarationIndex: pageIndex });
       sourcePathsByResource[key] = file.path;
       pages.push({ name: page.name, module: module.id, slug: metadata.slug, sourcePath });
       const analysis = analyzeTopikContent(parsed.content, { file: file.path });
       diagnostics.push(...analysis.diagnostics);
-      analyses.set(page.name, analysis);
     }
   }
   const context: CourseReferenceContext = {
@@ -153,20 +158,12 @@ export async function discoverCourse(
   } catch {
     throw new PublicCompileError("config-invalid", loaded.path);
   }
-  if (!hasCompileErrors(diagnostics))
-    diagnostics.push(
-      ...(await validateCourseLinks(
-        dir,
-        context,
-        analyses,
-        linkValidationPolicy(options.validation),
-      )),
-    );
   return {
     resources,
     diagnostics,
     sourcePathsByResource,
     consumedSourcePaths: [loaded.path],
+    courseNavigation: { [course.name]: { modules } },
     assetDirectory: config.assets.directory,
     sourceVersion: 1,
   };
@@ -222,72 +219,4 @@ export function validateCourseAuthors(
       resource.spec.authors?.some((author) => !persons.has(author))
     )
       throw new PublicCompileError("author-not-found", paths[`${resource.type}/${resource.name}`]);
-}
-
-async function validateCourseLinks(
-  root: string,
-  context: CourseReferenceContext,
-  analyses: ReadonlyMap<string, AnalyzeTopikContentResult>,
-  policy: LinkValidationPolicy,
-): Promise<TopikContentDiagnostic[]> {
-  if (policy === "off") return [];
-  const resolved = resolveCourseNavigation(context);
-  const diagnostics: TopikContentDiagnostic[] = [];
-  for (const page of resolved.pages)
-    for (const link of analyses.get(page.page)?.links ?? []) {
-      if (link.kind !== "link") continue;
-      const reference = resolveCourseContentReference(link.href, page.page, resolved);
-      if (reference.kind === "external" || reference.kind === "asset") continue;
-      let id: "link-page-not-found" | "link-fragment-not-found" | undefined;
-      if (reference.kind === "page") {
-        let fragment = reference.target.hash;
-        try {
-          fragment = decodeURIComponent(fragment);
-        } catch {
-          /* The literal fragment remains unresolved. */
-        }
-        if (
-          fragment &&
-          !analyses
-            .get(reference.target.page.page)
-            ?.headings.some((heading) => heading.id === fragment)
-        )
-          id = "link-fragment-not-found";
-      } else {
-        if (!/\.(?:mdx?|markdown)(?:[?#]|$)/i.test(link.href)) {
-          const asset = validateTopikAssetReference(link.href);
-          if (asset.valid && asset.kind === "local") {
-            const path = validateTopikPath(
-              posix.join(posix.dirname(page.sourcePath), asset.decodedPath),
-            );
-            if (path.ok) {
-              const kind = await classifyPortableNavigationPath({ root, path: path.value.path });
-              const proof =
-                kind === "directory"
-                  ? undefined
-                  : await readPortableAssetFile({ root, path: path.value.path });
-              if (
-                kind === "directory" ||
-                proof?.ok ||
-                proof?.diagnostics.some(
-                  (diagnostic) => diagnostic.id !== "TOPIK_ASSET_FILE_MISSING",
-                )
-              )
-                continue;
-            }
-          }
-        }
-        id = "link-page-not-found";
-      }
-      if (id)
-        diagnostics.push({
-          id,
-          type: link.kind,
-          level: policy === "error" ? "error" : "warning",
-          message: topikLinkDiagnosticMessage(id)!,
-          lines: link.lines,
-          ...(link.file ? { file: link.file } : {}),
-        });
-    }
-  return diagnostics;
 }

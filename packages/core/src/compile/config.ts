@@ -32,6 +32,9 @@ export async function readOptionalConfigFileWithPath(
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         continue;
       }
+      if (error instanceof PublicCompileError && error.id === "file-safe-read-unsupported") {
+        throw error;
+      }
       throw new PublicCompileError("config-read-failed", name);
     }
 
@@ -52,6 +55,9 @@ export async function findConfigFile(dir: string, candidates: string[]): Promise
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         continue;
+      }
+      if (error instanceof PublicCompileError && error.id === "file-safe-read-unsupported") {
+        throw error;
       }
       throw new PublicCompileError("config-access-failed", name);
     }

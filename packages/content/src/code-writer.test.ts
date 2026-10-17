@@ -39,6 +39,19 @@ function withLinearMembershipBudget<T>(size: number, action: () => T): T {
 }
 
 describe("ordinary code writer", () => {
+  it.each([
+    { lang: "lines" },
+    { lang: "wrap" },
+    { lang: "text", meta: "lines" },
+    { lang: "text", meta: 'filename="literal.ts"' },
+  ])("preserves literal AST headers that resemble compact options: %j", (header) => {
+    const code: Code = { type: "code", value: "literal", ...header };
+    const parsed = parseDocument(serialize(code));
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) throw new Error(JSON.stringify(parsed.diagnostics));
+    expect(parsed.document.children[0]).toMatchObject(code);
+  });
+
   it.each(["`", "~"] as const)("retains canonical %s fences and header escaping", (fence) => {
     const alphabet = [
       "`",

@@ -1,5 +1,9 @@
 import { posix } from "node:path";
-import { rewriteTopikAssetOccurrences, rewriteTopikNavigationReferences } from "@topik/content";
+import {
+  parseTopikResourceReference,
+  rewriteTopikAssetOccurrences,
+  rewriteTopikNavigationReferences,
+} from "@topik/content";
 import type { Resource } from "../resource";
 import type { Wiki } from "@topik/schema/wiki/v1";
 import type { Guide } from "@topik/schema/guide/v1";
@@ -15,6 +19,10 @@ import {
   transportCourseReferences,
 } from "./course";
 import { resolveSourceReferenceContext } from "./reference-context";
+import {
+  normalizeSourceResourceReferences,
+  resolveSourcePathReference,
+} from "./resource-references";
 import { sourcePlanDiagnostics, SourcePlanningError } from "./diagnostics";
 import {
   applySourceAssetReferenceContexts,
@@ -118,6 +126,14 @@ export async function addSourceToProject(
   input: AddSourceToProjectInput,
 ): Promise<SourcePlanResult> {
   try {
+    if (
+      serializeTopikJson(input.project.descriptor) !== serializeTopikJson(SOURCE_WRITER_DESCRIPTOR)
+    )
+      throw new SourcePlanningError({
+        code: "source-writer-incompatible",
+        message:
+          "The saved source grammar or writer has changed. Reinspect the source project before retrying.",
+      });
     if (digestSourceTree(input.project.tree) !== input.expectedTreeDigest)
       throw new TypeError("Stale source base");
     const project = await readSourceProject({ tree: input.project.tree });
@@ -252,6 +268,44 @@ async function buildSource(
       });
     };
     const expected = structuredClone([...input.resources]);
+    const existingPaths = new Map(
+      existing?.project.documents.map((document) => [document.resource, document.path]) ?? [],
+    );
+    const existingResources = new Map(
+      existing?.project.compilation.resources.map((resource) => [
+        `${resource.type}/${resource.name}`,
+        resource,
+      ]) ?? [],
+    );
+    const transportOtherReference = (
+      href: string,
+      savedPath: string,
+      currentPath: string,
+      resource: string,
+    ): string | undefined => {
+      const target = resolveSourcePathReference(
+        href,
+        savedPath,
+        directory,
+        existingPaths,
+        existingResources,
+      );
+      if (!target) return undefined;
+      if (href.startsWith("/") || posix.dirname(savedPath) === posix.dirname(currentPath))
+        return href;
+      const url = new URL(href, "https://topik.invalid");
+      const targetPath = existingPaths.get(`${target.type}/${target.name}`)!;
+      const after = `${posix.relative(posix.dirname(currentPath), targetPath).split("/").map(encodeURIComponent).join("/")}${url.search}${url.hash}`;
+      if (after !== href)
+        derivedRepairs.push({
+          resource,
+          kind: "reference",
+          before: href,
+          after,
+          target: target.name,
+        });
+      return after;
+    };
     applySourceAssetReferenceContexts(
       expected,
       input.assetReferenceContexts,
@@ -403,7 +457,21 @@ async function buildSource(
           page.spec.content.value,
           (reference) => {
             const { href } = reference;
+            if (parseTopikResourceReference(href)) return undefined;
             const saved = resolveWikiContentReference(href, page.name, savedNavigation);
+            if (saved.kind === "unresolved") {
+              const savedPath = posix.join(
+                directory,
+                `${savedNavigation.pageByName.get(page.name)!.sourcePath}.md`,
+              );
+              const other = transportOtherReference(
+                href,
+                savedPath,
+                paths.get(`WikiPage/${page.name}`)!,
+                `WikiPage/${page.name}`,
+              );
+              if (other !== undefined) return other;
+            }
             if (saved.kind === "unresolved")
               throw new SourcePlanningError({
                 code: "reference-target-unresolved",
@@ -506,7 +574,14 @@ async function buildSource(
           course.name,
           page.name,
         );
-        transportCourseReferences(page, saved, current, derivedRepairs);
+        transportCourseReferences(page, saved, current, derivedRepairs, (href) =>
+          transportOtherReference(
+            href,
+            posix.join(directory, `${saved.pageByName.get(page.name)!.sourcePath}.md`),
+            paths.get(`CoursePage/${page.name}`)!,
+            `CoursePage/${page.name}`,
+          ),
+        );
       }
       config = {
         id: course.name,
@@ -688,9 +763,10 @@ async function buildSource(
         resource,
       ]),
     );
+    const normalizedExpected = await normalizeSourceResourceReferences(expected, candidate);
     if (
       compiled.size !== expected.length ||
-      expected.some(
+      normalizedExpected.some(
         (resource) =>
           !compiled.has(`${resource.type}/${resource.name}`) ||
           canonicalResource(resource) !==

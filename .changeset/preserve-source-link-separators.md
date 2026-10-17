@@ -1,0 +1,19 @@
+---
+"@topik/core": patch
+---
+
+Preserve the target, query, and fragment of newly authored Markdown links with
+trailing path separators when their source files move. Source planning now uses
+the same path normalization as compilation while retaining unchanged authored
+link spelling.
+
+Keep existing file downloads and declared folder landings distinct from page
+aliases during inspection, source comparison and source repairs. Moving a
+same-stem page does not retarget a folder's declared landing.
+
+Repair retained page links when moving another page creates a directory that
+shadows their source alias. Saved Markdown and compiled resources preserve the
+same target, and incoming repairs require authority over the referring page.
+
+Include planned media uploads and their parent directories in reference repair,
+so uploads through another page also preserve existing page-link targets.

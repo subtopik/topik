@@ -12,11 +12,12 @@ import {
 } from "./rich";
 import { TopikContent } from "./theme/TopikContent";
 
-const codeToHtmlMock = vi.hoisted(() =>
-  vi.fn(
-    async (_code: string, options: { lang: string; theme: string }) =>
-      `<pre data-shiki-lang="${options.lang}" data-shiki-theme="${options.theme}"><code>highlighted</code></pre>`,
-  ),
+const codeToTokensMock = vi.hoisted(() =>
+  vi.fn(async (code: string, _options: { lang: string; theme: string }) => ({
+    tokens: code.split("\n").map((content) => [{ content, color: "#24292e" }]),
+    fg: "#24292e",
+    bg: "#ffffff",
+  })),
 );
 const renderToStringMock = vi.hoisted(() =>
   vi.fn(
@@ -29,7 +30,7 @@ const mermaidRenderMock = vi.hoisted(() =>
   vi.fn(async () => ({ svg: '<svg data-mermaid-rendered="true"></svg>' })),
 );
 
-vi.mock("shiki", () => ({ codeToHtml: codeToHtmlMock }));
+vi.mock("shiki", () => ({ codeToTokens: codeToTokensMock }));
 vi.mock("katex", () => ({ renderToString: renderToStringMock }));
 vi.mock("mermaid", () => ({
   default: {
@@ -53,7 +54,7 @@ let root: Root | undefined;
 let container: HTMLDivElement | undefined;
 
 beforeEach(() => {
-  codeToHtmlMock.mockClear();
+  codeToTokensMock.mockClear();
   renderToStringMock.mockClear();
   mermaidInitializeMock.mockClear();
   mermaidRenderMock.mockClear();
@@ -202,16 +203,14 @@ describe("rich content-react entry", () => {
     );
 
     await waitFor(() => {
-      expect(
-        dom.querySelector('.topik-rich-code-block [data-shiki-theme="github-dark"]'),
-      ).not.toBeNull();
+      expect(dom.querySelector(".topik-rich-code-block pre.shiki")).not.toBeNull();
       expect(dom.querySelector('.topik-rich-math [data-katex-display="true"]')).not.toBeNull();
       expect(
         dom.querySelector('.topik-rich-mermaid [data-mermaid-rendered="true"]'),
       ).not.toBeNull();
     });
 
-    expect(codeToHtmlMock).toHaveBeenCalledWith(expect.stringContaining("const answer = 42"), {
+    expect(codeToTokensMock).toHaveBeenCalledWith("const answer = 42;", {
       lang: "ts",
       theme: "github-dark",
     });

@@ -3,11 +3,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it } from "vite-plus/test";
+import { createRoot, hydrateRoot, type Root } from "react-dom/client";
+import { renderToStaticMarkup, renderToString } from "react-dom/server";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { TopikContentProvider } from "../core/context";
 import type { TopikLinkRenderProps } from "../core/components";
+import { TopikContent } from "./TopikContent";
 import {
   TopikAccordion,
   TopikBadge,
@@ -109,11 +110,75 @@ describe("default Topik theme components", () => {
 
     expect(linked).toContain("topik-card-grid");
     expect(linked).toContain("--topik-card-grid-columns:2");
-    expect(linked).toContain('<a class="topik-card" href="/preview/start">');
+    expect(linked).toContain('<a class="topik-card__link" href="/preview/start">');
     expect(linked).toContain("topik-card__icon");
     expect(linked).toContain("Open the guide.");
     expect(plain).toContain('<div class="topik-card">');
   });
+
+  it.each(["", "   "])("gives untitled card links a visible destination label (%j)", (title) => {
+    const dom = mount(
+      <TopikContent
+        content={`{% card title=${JSON.stringify(title)} href="/docs" %}\nRead the documentation.\n{% /card %}`}
+      />,
+    );
+    const link = dom.querySelector(".topik-card__link");
+    expect(link?.textContent).toBe("/docs");
+    expect(link?.getAttribute("href")).toBe("/docs");
+    expect(dom.querySelector(".topik-card__body")?.textContent).toContain(
+      "Read the documentation.",
+    );
+  });
+
+  it.each([false, true])(
+    "hydrates cards with linked block bodies and independent navigation (adapter: %s)",
+    async (adapter) => {
+      const navigate = vi.fn((_href: string) => true);
+      const recover = vi.fn();
+      const renderLink = adapter
+        ? (props: TopikLinkRenderProps) => <a {...props} data-framework-link />
+        : undefined;
+      const element = (
+        <TopikContent
+          content={
+            '{% card title="Documentation" href="/docs" %}\nRead the [API reference](/api) first.\n\n- More details\n{% /card %}'
+          }
+          resolveLink={(href) => `/preview${href}`}
+          onNavigateLink={navigate}
+          renderLink={renderLink}
+        />
+      );
+      container = document.createElement("div");
+      container.innerHTML = renderToString(element);
+      document.body.append(container);
+      const card = container.querySelector(".topik-card");
+      const body = card?.querySelector(".topik-card__body");
+      expect(body?.querySelector("p")?.textContent).toBe("Read the API reference first.");
+      expect(body?.querySelector("ul li")?.textContent).toBe("More details");
+      expect(container.querySelectorAll("a")).toHaveLength(2);
+      expect(container.querySelector("a a")).toBeNull();
+
+      await act(async () => {
+        root = hydrateRoot(container!, element, { onRecoverableError: recover });
+      });
+      expect(recover).not.toHaveBeenCalled();
+      expect(container.querySelector(".topik-card")).toBe(card);
+      expect(container.querySelector(".topik-card__body")).toBe(body);
+      const links = [...container.querySelectorAll<HTMLAnchorElement>("a")];
+      expect(links.map((link) => link.getAttribute("href"))).toEqual([
+        "/preview/docs",
+        "/preview/api",
+      ]);
+      if (adapter)
+        expect(links.every((link) => link.hasAttribute("data-framework-link"))).toBe(true);
+      act(() => links[1].click());
+      expect(navigate).toHaveBeenCalledTimes(1);
+      expect(navigate.mock.calls[0]?.[0]).toBe("/api");
+      act(() => links[0].click());
+      expect(navigate).toHaveBeenCalledTimes(2);
+      expect(navigate.mock.calls[1]?.[0]).toBe("/docs");
+    },
+  );
 
   it("renders accordion open state and summary/body regions", () => {
     const html = renderToStaticMarkup(
@@ -239,6 +304,117 @@ describe("default Topik theme components", () => {
 
     expect(tabs[0].getAttribute("aria-selected")).toBe("true");
     expect(document.activeElement).toBe(tabs[0]);
+  });
+
+  describe.each([
+    { name: "tabs", Group: TopikTabs, Tab: TopikTab, childTag: "tab" },
+    { name: "codeGroup", Group: TopikCodeGroup, Tab: TopikCodeTab, childTag: "codeTab" },
+  ])("$name content changes", ({ name, Group, Tab, childTag }) => {
+    function renderTabs(count: number, renderer = "direct") {
+      const titles = ["First", "Second", "Third"].slice(0, count);
+      if (renderer === "TopikContent") {
+        const content = [
+          `{% ${name} %}`,
+          ...titles.flatMap((title) => [
+            `{% ${childTag} title="${title}" %}`,
+            "```text",
+            `${title} panel`,
+            "```",
+            `{% /${childTag} %}`,
+          ]),
+          `{% /${name} %}`,
+        ].join("\n");
+        return <TopikContent content={content} />;
+      }
+      return (
+        <Group>
+          {titles.map((title) => (
+            <Tab key={title} title={title}>
+              <TopikCodeBlock content={`${title} panel`} />
+            </Tab>
+          ))}
+        </Group>
+      );
+    }
+
+    function expectSelection(dom: HTMLElement, selected: number) {
+      const tabs = [...dom.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+      const panels = [...dom.querySelectorAll<HTMLElement>('[role="tabpanel"]')];
+      expect(tabs.filter((tab) => tab.getAttribute("aria-selected") === "true")).toEqual([
+        tabs[selected],
+      ]);
+      expect(tabs.filter((tab) => tab.tabIndex === 0)).toEqual([tabs[selected]]);
+      expect(panels.filter((panel) => !panel.hidden)).toEqual([panels[selected]]);
+      for (const [index, tab] of tabs.entries()) {
+        expect(tab.tabIndex).toBe(index === selected ? 0 : -1);
+        expect(tab.getAttribute("aria-controls")).toBe(panels[index].id);
+        expect(panels[index].getAttribute("aria-labelledby")).toBe(tab.id);
+      }
+    }
+
+    it.each(["direct", "TopikContent"])(
+      "clamps removed selections and preserves valid choices through %s rerenders",
+      (renderer) => {
+        const dom = mount(renderTabs(3, renderer));
+        const tabs = () => dom.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+        act(() => tabs()[2].click());
+        expectSelection(dom, 2);
+
+        act(() => root?.render(renderTabs(2, renderer)));
+        expectSelection(dom, 1);
+        expect(dom.querySelectorAll('[role="tab"]')).toHaveLength(2);
+        // Growing the list must not restore the removed selection.
+        act(() => root?.render(renderTabs(3, renderer)));
+        expectSelection(dom, 1);
+        act(() => root?.render(renderTabs(2, renderer)));
+        expectSelection(dom, 1);
+
+        for (const [key, selected] of [
+          ["Home", 0],
+          ["End", 1],
+          ["ArrowRight", 0],
+          ["ArrowLeft", 1],
+        ] as const) {
+          const active = dom.querySelector('[role="tab"][aria-selected="true"]');
+          const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key });
+          act(() => {
+            active?.dispatchEvent(event);
+          });
+          expect(event.defaultPrevented).toBe(true);
+          expectSelection(dom, selected);
+          expect(document.activeElement).toBe(tabs()[selected]);
+        }
+        const tabEvent = new KeyboardEvent("keydown", {
+          bubbles: true,
+          cancelable: true,
+          key: "Tab",
+        });
+        act(() => {
+          tabs()[1].dispatchEvent(tabEvent);
+        });
+        expect(tabEvent.defaultPrevented).toBe(false);
+        expectSelection(dom, 1);
+
+        act(() => root?.render(renderTabs(1, renderer)));
+        expectSelection(dom, 0);
+        act(() => root?.render(renderTabs(1, renderer)));
+        expectSelection(dom, 0);
+      },
+    );
+
+    it("resets the selection after all children are removed and restored", () => {
+      const dom = mount(renderTabs(0));
+      expect(dom.querySelectorAll('[role="tab"]')).toHaveLength(0);
+      act(() => root?.render(renderTabs(3)));
+      expectSelection(dom, 0);
+      act(() => dom.querySelectorAll<HTMLButtonElement>('[role="tab"]')[2].click());
+      expectSelection(dom, 2);
+      act(() => root?.render(renderTabs(0)));
+      expect(dom.querySelectorAll('[role="tab"]')).toHaveLength(0);
+      expect(dom.querySelectorAll('[role="tabpanel"]')).toHaveLength(0);
+      act(() => root?.render(renderTabs(3)));
+      expectSelection(dom, 0);
+    });
   });
 
   it("renders ordered steps with optional titles", () => {
@@ -401,6 +577,60 @@ describe("default Topik theme components", () => {
     expect(providerDom.querySelector("a")?.hasAttribute("data-provider-link")).toBe(true);
   });
 
+  it("publishes resolved ref hrefs for ordinary and modified clicks", () => {
+    const handled: string[] = [];
+    const dom = mount(
+      <TopikContent
+        content={
+          '[Install](ref://guide/install)\n\n{% card title="Install" href="ref://guide/install" /%}'
+        }
+        resolveLink={() => "/learn/install#setup"}
+        onNavigateLink={(href) => {
+          handled.push(href);
+          return true;
+        }}
+      />,
+    );
+    const anchors = [...dom.querySelectorAll<HTMLAnchorElement>("a")];
+    expect(anchors).toHaveLength(2);
+    for (const anchor of anchors) {
+      expect(anchor.getAttribute("href")).toBe("/learn/install#setup");
+      act(() => anchor.click());
+      const modifiedClick = new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+        ctrlKey: true,
+      });
+      // Prevent jsdom navigation after React has observed the unhandled modified click.
+      let preventedByRenderer: boolean | undefined;
+      anchor.addEventListener(
+        "click",
+        (event) => {
+          preventedByRenderer = event.defaultPrevented;
+          event.preventDefault();
+        },
+        { once: true },
+      );
+      act(() => {
+        anchor.dispatchEvent(modifiedClick);
+      });
+      expect(preventedByRenderer).toBe(false);
+    }
+    expect(handled).toEqual(["/learn/install#setup", "/learn/install#setup"]);
+  });
+
+  it("does not expose unresolved refs from standalone themed components", () => {
+    const html = renderToStaticMarkup(
+      <>
+        <TopikLink href="ref://guide/install">Install</TopikLink>
+        <TopikCard title="Install" href="ref://guide/install" resolveLink={() => undefined} />
+      </>,
+    );
+    expect(html).toContain("Install");
+    expect(html).not.toContain("href=");
+    expect(html).not.toContain("ref://");
+  });
+
   it("renders unsafe link targets as non-interactive content", () => {
     const calls: string[] = [];
     const unsafeLink = renderToStaticMarkup(
@@ -515,6 +745,70 @@ describe("default Topik theme components", () => {
 
     expect(dom.querySelector(".topik-question")?.getAttribute("data-correct")).toBe("true");
     expect(status?.textContent).toBe("Correct");
+  });
+
+  describe.each(["single-choice", "multiple-choice"])("TopikContent %s quiz", (type) => {
+    it.each(["default", "props", "provider"])(
+      "shows explanations after answering with %s components",
+      (overrideSource) => {
+        const overrides = {
+          TopikChoice: ({ children }: React.PropsWithChildren) => (
+            <span className="custom-choice">{children}</span>
+          ),
+          TopikExplanation: ({ children }: React.PropsWithChildren) => (
+            <div className="custom-explanation">{children}</div>
+          ),
+        };
+        const content = [
+          "{% quiz %}",
+          `{% question type="${type}" %}`,
+          "{% choice correct=true %}",
+          "Yes",
+          "{% /choice %}",
+          "{% choice %}",
+          "No",
+          "{% /choice %}",
+          "{% explanation %}",
+          "Because yes.",
+          "{% /explanation %}",
+          "{% /question %}",
+          "{% /quiz %}",
+        ].join("\n");
+        const dom = mount(
+          <TopikContentProvider components={overrideSource === "provider" ? overrides : undefined}>
+            <TopikContent
+              content={content}
+              components={overrideSource === "props" ? overrides : undefined}
+            />
+          </TopikContentProvider>,
+        );
+        const inputs = dom.querySelectorAll<HTMLInputElement>("input");
+        const status = dom.querySelector('[role="status"]');
+        const explanationSelector =
+          overrideSource === "default" ? ".topik-explanation" : ".custom-explanation";
+        expect(inputs).toHaveLength(2);
+        expect(dom.textContent).toBe("YesNo");
+        expect(status?.textContent).toBe("");
+        expect(dom.querySelector(explanationSelector)).toBeNull();
+        if (overrideSource !== "default") {
+          expect(dom.querySelectorAll(".custom-choice")).toHaveLength(2);
+        }
+
+        act(() => inputs[0].click());
+        expect(status?.textContent).toBe("Correct");
+        expect(dom.querySelector(explanationSelector)?.textContent).toBe("Because yes.");
+
+        if (type === "multiple-choice") {
+          act(() => inputs[0].click());
+          expect(status?.textContent).toBe("");
+          expect(dom.querySelector(explanationSelector)).toBeNull();
+        }
+        act(() => inputs[1].click());
+        expect(status?.textContent).toBe("Try again");
+        expect(dom.querySelector(explanationSelector)?.textContent).toBe("Because yes.");
+        expect(dom.querySelector('[role="status"]')).toBe(status);
+      },
+    );
   });
 
   it("handles multiple-choice quiz answers", () => {

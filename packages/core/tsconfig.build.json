@@ -1,4 +1,9 @@
 {
   "extends": "./tsconfig.json",
-  "include": ["src/index.ts", "src/wiki-navigation.ts", "src/course-navigation.ts"]
+  "include": [
+    "src/index.ts",
+    "src/wiki-navigation.ts",
+    "src/course-navigation.ts",
+    "src/preview.ts"
+  ]
 }

@@ -7,7 +7,7 @@ allowBuilds:
   sharp: true
 
 catalog:
-  "@changesets/cli": 3.0.1
+  "@changesets/cli": 3.0.3
   "@drizzle-team/brocli": ^0.12.0
   "@storybook/addon-a11y": 10.6.1
   "@storybook/addon-vitest": 10.6.1
@@ -15,12 +15,12 @@ catalog:
   "@types/mdast": ^4.0.4
   "@types/unist": ^3.0.3
   "@types/node": 22.20.4
-  "@vitest/browser-playwright": 5.0.1
-  "@vitest/coverage-v8": 5.0.1
+  "@vitest/browser-playwright": 5.0.3
+  "@vitest/coverage-v8": 5.0.3
   github-slugger: ^2.0.0
   json-schema-to-typescript: ^15.0.4
   mdast-util-directive: ^3.1.0
-  mdast-util-from-markdown: ^2.0.3
+  mdast-util-from-markdown: ^2.1.0
   mdast-util-frontmatter: ^2.0.1
   mdast-util-gfm: ^3.1.0
   mdast-util-gfm-footnote: ^2.1.0
@@ -42,9 +42,9 @@ catalog:
   remark-stringify: ^11.0.0
   typescript: ^7.0.2
   unified: ^11.0.5
-  vite: npm:@voidzero-dev/vite-plus-core@1.0.0
-  vite-plus: 1.0.0
-  vitest: 5.0.2
+  vite: npm:@voidzero-dev/vite-plus-core@1.1.0
+  vite-plus: 1.1.0
+  vitest: 5.0.3
 
 catalogMode: prefer
 

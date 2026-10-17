@@ -50,7 +50,7 @@ describe("topikWikiLoader", () => {
     const loader = topikWikiLoader({ dir: docsDir, name: "docs-without-assets" });
     const context = createMockContext();
     await loader.load(context);
-    expect(context.entries.size).toBe(10);
+    expect(context.entries.size).toBe(11);
     expect(loader.getAssets()).toEqual([]);
   });
 
@@ -59,7 +59,7 @@ describe("topikWikiLoader", () => {
     const context = createMockContext();
     await loader.load(context);
 
-    expect(context.entries.size).toBe(10);
+    expect(context.entries.size).toBe(11);
     const home = [...context.entries.values()].find((entry) => entry.data.slug === "");
     expect(home).toMatchObject({
       id: expect.stringMatching(wikiPageNamePattern),
@@ -77,6 +77,7 @@ describe("topikWikiLoader", () => {
     expect(slugs.sort((a, b) => a.localeCompare(b))).toEqual([
       "",
       "content/autolinks",
+      "content/code-presentation",
       "content/content-design",
       "content/rendering",
       "content/templates",
@@ -119,6 +120,12 @@ describe("topikWikiLoader", () => {
             page: expect.stringMatching(wikiPageNamePattern),
             slug: "templates",
             sourcePath: "content/templates",
+          },
+          {
+            type: "page",
+            page: expect.stringMatching(wikiPageNamePattern),
+            slug: "code-presentation",
+            sourcePath: "content/code-presentation",
           },
           {
             type: "page",

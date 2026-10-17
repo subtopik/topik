@@ -7,6 +7,7 @@ type ValidationError = { id: string; level: "error"; message: string };
 import { isTopikGeneratedAssetName } from "./asset-reference-policy.js";
 import { assignHeadingIds, type TopikHeading } from "./headings";
 import { parseTopikContent } from "./content";
+import { parseTopikResourceReference } from "./resource-references.js";
 import {
   sanitizeTopikContentDiagnostic,
   topikLinkDiagnosticMessage,
@@ -127,6 +128,10 @@ export function validateTopikHref(value: unknown): ValidationError[] {
 
   const explicitScheme = SCHEME.exec(value)?.[1].toLowerCase();
 
+  if (explicitScheme === "ref") {
+    return parseTopikResourceReference(value) ? [] : [linkError("link-reference-invalid")];
+  }
+
   if (explicitScheme === "asset") {
     return isTopikGeneratedAssetName(value.slice("asset:".length))
       ? []
@@ -159,6 +164,14 @@ export function validateTopikHref(value: unknown): ValidationError[] {
   }
 
   return [];
+}
+
+/** Admit only resolved hrefs at a boundary that can emit browser navigation. */
+export function validateTopikBrowserHref(value: unknown): ValidationError[] {
+  if (typeof value === "string" && SCHEME.exec(value)?.[1].toLowerCase() === "ref") {
+    return [linkError("link-reference-unresolved")];
+  }
+  return validateTopikHref(value);
 }
 
 export function validateTopikNavigationHref(value: unknown): ValidationError[] {

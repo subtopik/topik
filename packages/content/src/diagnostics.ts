@@ -24,6 +24,10 @@ export interface TopikContentDiagnostic {
   attribute?: string;
   /** Bounded authored variable path; context values are never included. */
   variable?: string;
+  /** Supported code presentation option, with no authored/resolved values. */
+  option?: string;
+  /** One-based source column when available. */
+  column?: number;
 }
 
 const TOPIK_LINK_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
@@ -32,6 +36,9 @@ const TOPIK_LINK_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "link-fragment-not-found": "Link target heading was not found.",
   "link-href-empty": "Link target is required.",
   "link-page-not-found": "Internal link target page was not found.",
+  "link-reference-ambiguous": "Resource reference target is ambiguous.",
+  "link-reference-invalid": "Resource link target is not a valid reference.",
+  "link-reference-unresolved": "Resource link target requires a browser URL resolver.",
   "link-scheme-unsafe": "Link scheme is unsafe.",
   "link-scheme-unsupported": "Link scheme is unsupported.",
   "link-url-credentials": "Link URL credentials are not supported.",
@@ -123,6 +130,19 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "topik-code-template-structure":
     "A code template requires exactly one closed fenced code block in the same content scope.",
   "topik-code-template-language": "Code templates require a language that displays plain text.",
+  "topik-code-presentation-scope":
+    "A presentation requires one code or code-template child; remove nested or extra blocks.",
+  "topik-code-presentation-metadata":
+    'Use fence attributes such as filename="client.ts", lines and highlight="1,3-5"; quote values containing spaces.',
+  "topik-code-presentation-option":
+    "Use supported presentation options with valid labels, booleans and integer bounds.",
+  "topik-code-presentation-lines":
+    "Select physical rows using positive numbers or closed ranges, separated by commas without spaces.",
+  "topik-code-presentation-line-bounds":
+    "Keep line selections within the physical payload rows; startLine changes labels only.",
+  "topik-code-presentation-diff-conflict": "Choose disjoint added and removed row selections.",
+  "topik-code-presentation-language":
+    "Use presentation attributes with text code languages rather than interpreted Mermaid diagrams.",
   "topik-template-variable-missing": "A template variable is not defined.",
   "topik-template-variable-type":
     "Template variables require strings, finite numbers, booleans, or null.",
@@ -164,6 +184,8 @@ export function sanitizeTopikContentDiagnostic(
     message: _untrustedMessage,
     attribute,
     variable,
+    option,
+    column,
     ...safe
   } = diagnostic;
   const template =
@@ -171,6 +193,29 @@ export function sanitizeTopikContentDiagnostic(
   return {
     ...safe,
     message,
+    ...(diagnostic.id.startsWith("topik-code-presentation-") &&
+    typeof option === "string" &&
+    [
+      "filename",
+      "title",
+      "lineNumbers",
+      "startLine",
+      "highlight",
+      "focus",
+      "collapse",
+      "wrap",
+      "added",
+      "removed",
+    ].includes(option)
+      ? { option }
+      : {}),
+    ...(diagnostic.id.startsWith("topik-code-presentation-") &&
+    typeof column === "number" &&
+    Number.isSafeInteger(column) &&
+    column > 0 &&
+    column <= 1_000_000
+      ? { column }
+      : {}),
     ...(file === undefined ? {} : { file }),
     ...(template && attribute !== undefined && ["title", "alt", "caption"].includes(attribute)
       ? { attribute }

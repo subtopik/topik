@@ -49,12 +49,12 @@
     "@vitest/browser-playwright": "catalog:",
     "ajv": "^8.20.0",
     "jsdom": "^28.1.0",
-    "katex": "^0.18.2",
+    "katex": "^0.19.0",
     "mermaid": "^11.16.1",
     "playwright": "catalog:",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "shiki": "^4.0.0",
+    "shiki": "^4.5.0",
     "storybook": "^10.6.1",
     "typescript": "catalog:",
     "vite": "catalog:",
@@ -62,7 +62,7 @@
     "vitest": "catalog:"
   },
   "peerDependencies": {
-    "katex": "^0.18.2",
+    "katex": "^0.18.2 || ^0.19.0",
     "mermaid": "^11.16.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

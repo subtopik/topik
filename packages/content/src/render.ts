@@ -7,6 +7,12 @@ import {
 } from "./config.js";
 import { evaluateDocumentForRendering } from "./evaluate.js";
 import { getEffectiveProps } from "./registry.js";
+import {
+  effectiveCodePresentationOptions,
+  normalizeCodePresentationOptions,
+  codePresentationRows,
+} from "./code-presentation.js";
+import { assertCodePresentationOutputLimit } from "./presentation-output.js";
 
 /** Framework-independent, serializable output. It contains no executable values. */
 export type RenderableTreeNode =
@@ -56,6 +62,7 @@ export function transformDocument(
   config: ResolvedTopikContentConfig,
 ): RenderableTreeNode {
   const resolved = evaluateDocumentForRendering(document, config.variables, config.components);
+  assertCodePresentationOutputLimit(resolved);
 
   function render(
     node: ContentDocument | RootContent | Branch,
@@ -86,11 +93,28 @@ export function transformDocument(
         return tag(
           node.lang === "mermaid" ? "TopikMermaid" : "TopikCodeBlock",
           {
+            payload: node.value,
             content: `${node.value}\n`,
             language: node.lang ?? "",
           },
           [],
         );
+      case "topikCodePresentation": {
+        const code = node.children[0];
+        if (code.type !== "code") throw new Error("Presented code must be evaluated first");
+        return tag(
+          "TopikCodeBlock",
+          {
+            payload: code.value,
+            content: `${code.value}\n`,
+            language: code.lang ?? "",
+            presentation: effectiveCodePresentationOptions(
+              normalizeCodePresentationOptions(node.options, codePresentationRows(code.value)),
+            ),
+          },
+          [],
+        );
+      }
       case "break":
         return tag("br", {}, []);
       case "thematicBreak":

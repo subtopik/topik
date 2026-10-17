@@ -58,7 +58,13 @@ export function prepareSource(
   options: ValidateTopikContentOptions = {},
 ): PreparedSource {
   const errors: TopikContentDiagnostic[] = [];
-  function add(id: string, type = "document", lines: number[] = []): void {
+  function add(
+    id: string,
+    type = "document",
+    lines: number[] = [],
+    option?: string,
+    column?: number,
+  ): void {
     errors.push(
       sanitizeTopikContentDiagnostic({
         id,
@@ -74,6 +80,8 @@ export function prepareSource(
           : "error",
         message: "",
         lines,
+        ...(option === undefined ? {} : { option }),
+        ...(column === undefined ? {} : { column }),
         ...(options.file === undefined ? {} : { file: options.file }),
       }),
     );
@@ -97,6 +105,8 @@ export function prepareSource(
         diagnostic.id ?? "parse-error",
         diagnostic.type,
         diagnostic.line ? [diagnostic.line] : [],
+        diagnostic.option,
+        diagnostic.column,
       );
     if (!parsed.document) return failure();
 

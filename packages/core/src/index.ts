@@ -33,6 +33,13 @@ export {
   compileGuides,
   compileCourse,
   compileAssetResources,
+  compileResourceLinks,
+  discoverGuideResources,
+  discoverWikiResources,
+  discoverCourseResources,
+  type DiscoverResourceOptions,
+  type SourceResourceDiscovery,
+  type CompileResourceLinksInput,
   createProjectAssetNameGenerator,
   type ProjectAssetNameOptions,
   type AssetNameInput,
@@ -47,6 +54,8 @@ export {
   type CompileCourseOptions,
   type CompileResult,
   type CompileValidationOptions,
+  type CompiledResourceReference,
+  type CompileResourceReferenceTarget,
   type PublicCompileErrorId,
   type LinkValidationPolicy,
   type LintResult,
@@ -136,3 +145,5 @@ export {
   type SourceInitializationIntent,
   type SourceMediaSelection,
 } from "./source/initialize";
+
+export * from "./preview";

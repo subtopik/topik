@@ -13,6 +13,8 @@ export const CONTENT_LIMITS = Object.freeze({
   expressionLength: 16_384,
   expressionDepth: 32,
   expressionNodes: 256,
+  /** Bounded escaped payload and row decorations, before reader allocation. */
+  presentationOutputLength: 8_000_000,
 });
 
 export class ContentLimitError extends Error {

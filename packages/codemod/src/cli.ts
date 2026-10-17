@@ -27,7 +27,12 @@ const mintlify = command({
       keepExtension: options.keepExtension,
     });
 
+    let errors = 0;
     for (const file of summary.files) {
+      if (file.error !== undefined) {
+        console.error(`✗ ${file.relativePath} — ${file.error}`);
+        errors++;
+      }
       for (const warning of file.warnings) {
         console.error(
           `⚠ ${file.relativePath}:${warning.line}:${warning.column} — ${warning.message}`,
@@ -36,9 +41,13 @@ const mintlify = command({
     }
 
     const tense = options.dryRun ? "would convert" : "converted";
-    console.log(`✓ ${tense} ${summary.filesChanged} file(s)`);
+    console.log(`${errors === 0 ? "✓ " : ""}${tense} ${summary.filesChanged} file(s)`);
     if (summary.warnings > 0) {
       console.log(`⚠ ${summary.warnings} warning(s)`);
+    }
+    if (errors > 0) {
+      console.error(`✗ ${errors} file(s) failed`);
+      process.exitCode = 1;
     }
   },
 });

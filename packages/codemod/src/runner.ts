@@ -1,5 +1,7 @@
-import { access, readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { readdir, readFile, stat } from "node:fs/promises";
+import { dirname, join, relative, resolve } from "node:path";
+import { rewriteTopikNavigationReferences } from "@topik/content";
+import { pathExists, publishMigration, type MigrationEdit } from "./migration";
 import { transformMintlify, type TransformWarning } from "./transforms/mintlify";
 
 export interface RunOptions {
@@ -22,66 +24,144 @@ export interface RunSummary {
   warnings: number;
 }
 
-export async function runMintlify(options: RunOptions): Promise<RunSummary> {
-  const files: FileResult[] = [];
-  let filesChanged = 0;
-  let warnings = 0;
-
-  for await (const absPath of walk(options.dir)) {
-    if (!absPath.endsWith(".mdx") && !absPath.endsWith(".md")) continue;
-    const rel = relative(options.dir, absPath);
-    const fileResult: FileResult = {
-      relativePath: rel,
-      warnings: [],
-      changed: false,
-    };
-
-    try {
-      const source = await readFile(absPath, "utf-8");
-      const result = transformMintlify(source);
-      fileResult.warnings = result.warnings;
-      warnings += result.warnings.length;
-
-      if (!options.dryRun && result.changed) {
-        await writeFile(absPath, result.content);
-      }
-
-      let renameWillRun = false;
-      // A warned file may still contain MDX; keep its extension for manual migration.
-      if (!options.keepExtension && result.warnings.length === 0 && absPath.endsWith(".mdx")) {
-        const newPath = absPath.slice(0, -4) + ".md";
-        fileResult.newRelativePath = relative(options.dir, newPath);
-        if (await pathExists(newPath)) {
-          fileResult.error = `Skipping rename: destination ${fileResult.newRelativePath} already exists`;
-        } else {
-          renameWillRun = true;
-          if (!options.dryRun) {
-            await rename(absPath, newPath);
-          }
-        }
-      }
-
-      if (result.changed || renameWillRun) {
-        fileResult.changed = true;
-        filesChanged++;
-      }
-    } catch (err) {
-      fileResult.error = err instanceof Error ? err.message : String(err);
-    }
-
-    files.push(fileResult);
-  }
-
-  return { files, filesChanged, warnings };
+interface FilePlan extends MigrationEdit {
+  result: FileResult;
 }
 
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
+export async function runMintlify(options: RunOptions): Promise<RunSummary> {
+  const root = resolve(options.dir);
+  const files: FileResult[] = [];
+  const plans: FilePlan[] = [];
+  let opaqueSource = false;
+  for await (const path of walk(root)) {
+    if (!path.endsWith(".mdx") && !path.endsWith(".md")) continue;
+    const result: FileResult = { relativePath: relative(root, path), warnings: [], changed: false };
+    files.push(result);
+    try {
+      const bytes = await readFile(path);
+      const source = bytes.toString("utf8");
+      if (!Buffer.from(source, "utf8").equals(bytes)) {
+        result.warnings.push({
+          line: 1,
+          column: 1,
+          message: "File is not valid UTF-8; source kept",
+        });
+        opaqueSource = true;
+        continue;
+      }
+      const transformed = transformMintlify(source);
+      result.warnings = transformed.warnings;
+      const plan: FilePlan = {
+        path,
+        destination: path,
+        source,
+        content: transformed.content,
+        result,
+      };
+      plans.push(plan);
+      if (result.warnings.length) {
+        opaqueSource = true;
+      } else if (!options.keepExtension && path.endsWith(".mdx")) {
+        const destination = path.slice(0, -4) + ".md";
+        if (await pathExists(destination)) {
+          result.error = `Skipping rename: destination ${relative(root, destination)} already exists`;
+        } else {
+          plan.destination = destination;
+        }
+      }
+    } catch (error) {
+      opaqueSource = true;
+      result.error = error instanceof Error ? error.message : String(error);
+    }
   }
+
+  const renames = new Set(
+    plans.filter((plan) => plan.path !== plan.destination).map((plan) => plan.path),
+  );
+  if (renames.size) {
+    let reason = opaqueSource ? "some source files could not be safely inspected" : undefined;
+    const rewritten = new Map<FilePlan, string>();
+    if (!reason) {
+      for (const plan of plans) {
+        const result = rewriteTopikNavigationReferences(plan.content, ({ href }) =>
+          renamedHref(href, plan.path, root, renames),
+        );
+        if (!result.ok) {
+          reason = `navigation in ${plan.result.relativePath} could not be safely rewritten`;
+          break;
+        }
+        rewritten.set(plan, result.content);
+      }
+    }
+    if (reason) {
+      // An untouched source may link to any candidate. Keep extensions across the
+      // run, while still applying independent, supported component conversions.
+      for (const plan of plans) {
+        if (plan.destination === plan.path) continue;
+        plan.destination = plan.path;
+        plan.result.warnings.push({
+          line: 1,
+          column: 1,
+          message: `Keeping .mdx extensions because ${reason}; fix the reported files and rerun`,
+        });
+      }
+    } else {
+      for (const [plan, content] of rewritten) plan.content = content;
+    }
+  }
+
+  const edits = plans.filter(
+    (plan) => plan.source !== plan.content || plan.path !== plan.destination,
+  );
+  for (const plan of edits) {
+    plan.result.changed = true;
+    if (plan.path !== plan.destination)
+      plan.result.newRelativePath = relative(root, plan.destination);
+  }
+  if (!options.dryRun && edits.length) {
+    try {
+      const cleanupWarnings = await publishMigration(edits);
+      for (const message of cleanupWarnings)
+        edits[0].result.warnings.push({ line: 1, column: 1, message });
+    } catch (error) {
+      for (const plan of edits) {
+        plan.result.changed = false;
+        delete plan.result.newRelativePath;
+        const failure = `Migration failed: ${error instanceof Error ? error.message : String(error)}`;
+        plan.result.error = plan.result.error ? `${plan.result.error}; ${failure}` : failure;
+      }
+    }
+  }
+  return {
+    files,
+    filesChanged: files.filter((file) => file.changed).length,
+    warnings: files.reduce((total, file) => total + file.warnings.length, 0),
+  };
+}
+
+function renamedHref(
+  href: string,
+  sourcePath: string,
+  root: string,
+  renames: ReadonlySet<string>,
+): string | undefined {
+  if (/^(?:[a-z][a-z\d+.-]*:|\/\/|#|\?)/i.test(href)) return;
+  const end = href.search(/[?#]/);
+  const pathname = end < 0 ? href : href.slice(0, end);
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    return;
+  }
+  // The compiler also accepts explicit Markdown filenames with trailing separators.
+  if (!decoded.replace(/\/+$/, "").endsWith(".mdx")) return;
+  const target = decoded.startsWith("/")
+    ? resolve(root, `.${decoded}`)
+    : resolve(dirname(sourcePath), decoded);
+  if (!renames.has(target)) return;
+  // Remove just the final x, retaining the spelling of the path, query, and hash.
+  return pathname.replace(/(?:x|%78)((?:\/|%2[fF])*)$/, "$1") + (end < 0 ? "" : href.slice(end));
 }
 
 async function* walk(dir: string): AsyncGenerator<string> {
@@ -89,18 +169,14 @@ async function* walk(dir: string): AsyncGenerator<string> {
   for (const entry of entries) {
     if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
     const full = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      yield* walk(full);
-    } else if (entry.isFile()) {
-      yield full;
-    }
+    if (entry.isDirectory()) yield* walk(full);
+    else if (entry.isFile()) yield full;
   }
 }
 
 export async function isDirectory(path: string): Promise<boolean> {
   try {
-    const s = await stat(path);
-    return s.isDirectory();
+    return (await stat(path)).isDirectory();
   } catch {
     return false;
   }

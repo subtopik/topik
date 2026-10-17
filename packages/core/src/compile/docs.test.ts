@@ -14,7 +14,7 @@ describe("Topik documentation wiki", () => {
     const pages = resources.filter((resource) => resource.type === "WikiPage");
 
     expect(wiki?.name).toBe("topik-docs");
-    expect(pages).toHaveLength(10);
+    expect(pages).toHaveLength(11);
     expect(validateResources(resources)).toEqual({ valid: true, errors: [] });
     const resolved = resolveWikiNavigation(wiki?.spec.navigation ?? []);
     expect(resolved.pages.map((page) => page.route)).toEqual([
@@ -22,6 +22,7 @@ describe("Topik documentation wiki", () => {
       "content/content-design",
       "content/autolinks",
       "content/templates",
+      "content/code-presentation",
       "content/rendering",
       "resources",
       "resources/navigation",

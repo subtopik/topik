@@ -1,4 +1,8 @@
-import { validateTopikHref } from "@topik/content";
+import {
+  parseTopikResourceReference,
+  validateTopikBrowserHref,
+  validateTopikHref,
+} from "@topik/content";
 import {
   Children,
   isValidElement,
@@ -21,6 +25,8 @@ import type {
   TopikLinkResolver,
 } from "../core/components";
 import { useTopikLinkHandler, useTopikLinkRenderer, useTopikLinkResolver } from "../core/context";
+import { CodeBlockView } from "./code-block";
+import type { CodePresentationEffectiveOptions } from "@topik/content";
 
 interface TopikRoleProps {
   __topikRole?: "choice" | "explanation";
@@ -101,10 +107,25 @@ function useTopikLinkBehavior({
   };
 }
 
-function resolveSafeHref(target: string, resolveLink?: TopikLinkResolver): string | undefined {
+function resolveSafeHref(
+  target: string,
+  resolveLink?: TopikLinkResolver,
+  alreadyResolved = false,
+): string | undefined {
   if (validateTopikHref(target).length > 0) return undefined;
-  const resolvedTarget = resolveLink?.(target) ?? target;
-  return typeof resolvedTarget === "string" && validateTopikHref(resolvedTarget).length === 0
+  let resolvedTarget: string | undefined;
+  try {
+    resolvedTarget = alreadyResolved ? target : resolveLink?.(target);
+  } catch {
+    return undefined;
+  }
+  if (resolvedTarget === undefined && parseTopikResourceReference(target) === null) {
+    resolvedTarget = target;
+  }
+  if (parseTopikResourceReference(target) !== null && /^asset:/iu.test(resolvedTarget ?? "")) {
+    return undefined;
+  }
+  return typeof resolvedTarget === "string" && validateTopikBrowserHref(resolvedTarget).length === 0
     ? resolvedTarget
     : undefined;
 }
@@ -118,8 +139,12 @@ function createLinkClickHandler(target: string, handleNavigate?: TopikLinkHandle
 }
 
 function useRovingTabs(tabCount: number) {
-  const [selected, setSelected] = useState(0);
+  const [selectedIndex, setSelected] = useState(0);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const selected = Math.max(0, Math.min(selectedIndex, tabCount - 1));
+
+  // Persist the clamp so removed selections do not return when tabs are added.
+  if (selected !== selectedIndex) setSelected(selected);
 
   function selectTab(index: number, focus = false) {
     setSelected(index);
@@ -175,6 +200,7 @@ export function TopikCardGrid({ children, columns }: TopikComponentProps) {
 }
 
 export function TopikCard({
+  __topikResolvedHref,
   children,
   href,
   icon,
@@ -188,41 +214,57 @@ export function TopikCard({
     renderLink,
     resolveLink,
   });
-  const content = (
+  const target = stringAttribute(href);
+  const label = stringAttribute(title);
+  const heading = (
     <>
       {icon ? <span className="topik-card__icon">{stringAttribute(icon)}</span> : null}
-      <span className="topik-card__title">{stringAttribute(title)}</span>
-      <span className="topik-card__body">{children}</span>
+      <span className="topik-card__title">{label?.trim() ? label : target}</span>
     </>
   );
-
-  const target = stringAttribute(href);
+  let navigation = heading;
   if (target) {
-    const resolvedTarget = resolveSafeHref(target, linkResolver);
+    const resolvedTarget = resolveSafeHref(target, linkResolver, __topikResolvedHref === true);
     if (resolvedTarget) {
       const linkProps = {
-        children: content,
-        className: "topik-card",
+        children: heading,
+        className: "topik-card__link",
         href: resolvedTarget,
-        onClick: createLinkClickHandler(target, handleNavigate),
+        onClick: createLinkClickHandler(
+          parseTopikResourceReference(target) === null ? target : resolvedTarget,
+          handleNavigate,
+        ),
       };
-      return <>{linkRenderer ? linkRenderer(linkProps) : <a {...linkProps} />}</>;
+      navigation = <>{linkRenderer ? linkRenderer(linkProps) : <a {...linkProps} />}</>;
     }
   }
 
-  return <div className="topik-card">{content}</div>;
+  return (
+    <div className="topik-card">
+      {navigation}
+      <div className="topik-card__body">{children}</div>
+    </div>
+  );
 }
 
-export function TopikCodeBlock({ children, content, language }: TopikComponentProps) {
-  const code = stringAttribute(content) ?? stringChildren(children);
-  const languageName = stringAttribute(language);
+export function TopikCodeBlock({
+  children,
+  content,
+  payload,
+  language,
+  presentation,
+}: TopikComponentProps) {
+  const code =
+    stringAttribute(content) ??
+    (typeof payload === "string" ? `${payload}\n` : stringChildren(children));
+  const source = stringAttribute(payload) ?? (code.endsWith("\n") ? code.slice(0, -1) : code);
   return (
-    <div className="topik-code-block" data-language={languageName}>
-      {languageName ? <div className="topik-code-block__language">{languageName}</div> : null}
-      <pre>
-        <code>{code}</code>
-      </pre>
-    </div>
+    <CodeBlockView
+      payload={source}
+      content={code}
+      language={stringAttribute(language)}
+      presentation={presentation as CodePresentationEffectiveOptions | undefined}
+    />
   );
 }
 
@@ -372,13 +414,18 @@ export function TopikFigure({ alt, caption, colorScheme, darkSrc, src }: TopikCo
     <figure className="topik-figure">
       <picture>
         {explicitColorScheme === undefined && darkSource ? (
-          <source media="(prefers-color-scheme: dark)" srcSet={darkSource} />
+          <source media="(prefers-color-scheme: dark)" srcSet={singleImageCandidate(darkSource)} />
         ) : null}
         <img alt={stringAttribute(alt) ?? ""} src={imageSource} />
       </picture>
       {caption ? <figcaption>{stringAttribute(caption)}</figcaption> : null}
     </figure>
   );
+}
+
+/** srcset parses whitespace and commas as syntax, even inside an admitted single URL. */
+function singleImageCandidate(source: string): string {
+  return source.replace(/[\t\n\f\r ,]/g, (character) => encodeURIComponent(character));
 }
 
 export function TopikImage({ alt, src, title }: TopikComponentProps) {
@@ -395,6 +442,7 @@ export function TopikImage({ alt, src, title }: TopikComponentProps) {
 }
 
 export function TopikLink({
+  __topikResolvedHref,
   children,
   href,
   onNavigateLink,
@@ -408,14 +456,17 @@ export function TopikLink({
     resolveLink,
   });
   const target = stringAttribute(href) ?? "";
-  const resolvedTarget = resolveSafeHref(target, linkResolver);
+  const resolvedTarget = resolveSafeHref(target, linkResolver, __topikResolvedHref === true);
 
   if (!resolvedTarget) return <>{children}</>;
 
   const linkProps = {
     children,
     href: resolvedTarget,
-    onClick: createLinkClickHandler(target, handleNavigate),
+    onClick: createLinkClickHandler(
+      parseTopikResourceReference(target) === null ? target : resolvedTarget,
+      handleNavigate,
+    ),
     title: stringAttribute(title),
   };
   return <>{linkRenderer ? linkRenderer(linkProps) : <a {...linkProps} />}</>;
@@ -559,14 +610,22 @@ export function TopikTableHeader({
 
 function isChoiceElement(child: ReactNode): child is ReactElement<TopikComponentProps> {
   if (!isValidElement<TopikComponentProps & TopikRoleProps>(child)) return false;
-  return (
-    child.type === TopikChoice || child.props.__topikRole === "choice" || "correct" in child.props
-  );
+  return child.type === TopikChoice || hasTopikRole(child, "choice") || "correct" in child.props;
 }
 
 function isExplanationElement(child: ReactNode): child is ReactElement<TopikComponentProps> {
   if (!isValidElement<TopikComponentProps & TopikRoleProps>(child)) return false;
-  return child.type === TopikExplanation || child.props.__topikRole === "explanation";
+  return child.type === TopikExplanation || hasTopikRole(child, "explanation");
+}
+
+function hasTopikRole(child: ReactElement<TopikRoleProps>, role: "choice" | "explanation") {
+  // Questions inspect their children before the slot components render.
+  return (
+    child.props.__topikRole === role ||
+    (typeof child.type === "function" &&
+      "__topikRole" in child.type &&
+      child.type.__topikRole === role)
+  );
 }
 
 export const defaultTopikComponents = {
@@ -628,12 +687,18 @@ export function getDefaultTopikComponents(
         />
       );
     },
-    TopikChoice: function TopikChoiceSlot(props: TopikComponentProps) {
-      return <TopikChoiceComponent {...props} __topikRole="choice" />;
-    },
-    TopikExplanation: function TopikExplanationSlot(props: TopikComponentProps) {
-      return <TopikExplanationComponent {...props} __topikRole="explanation" />;
-    },
+    TopikChoice: Object.assign(
+      function TopikChoiceSlot(props: TopikComponentProps) {
+        return <TopikChoiceComponent {...props} __topikRole="choice" />;
+      },
+      { __topikRole: "choice" },
+    ),
+    TopikExplanation: Object.assign(
+      function TopikExplanationSlot(props: TopikComponentProps) {
+        return <TopikExplanationComponent {...props} __topikRole="explanation" />;
+      },
+      { __topikRole: "explanation" },
+    ),
     TopikFigure: function TopikFigureSlot(props: TopikComponentProps) {
       return <TopikFigureComponent {...props} colorScheme={options.colorScheme} />;
     },

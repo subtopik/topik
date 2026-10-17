@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createHash, webcrypto } from "node:crypto";
-import { act } from "react";
+import { act, startTransition, Suspense } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vite-plus/test";
 import { TopikContent } from "../theme/TopikContent";
@@ -78,42 +78,67 @@ test("failed media has an accessible explanation while text remains readable", a
   expect(container.textContent).not.toContain("private network error");
 });
 
-test("a delayed download cannot activate after the rendered content changes", async () => {
-  setup();
-  let finish!: (value: unknown) => void;
-  let requested!: URL;
-  vi.stubGlobal("fetch", (url: URL) => {
-    requested = url;
-    return new Promise((resolve) => {
-      finish = resolve;
+test.each(["unchanged", "suspended", "replaced", "unmounted"] as const)(
+  "a delayed download respects committed content: %s",
+  async (lifecycle) => {
+    setup();
+    let finish!: (value: Response) => void;
+    let requested!: URL;
+    vi.stubGlobal("fetch", (url: URL) => {
+      requested = url;
+      return new Promise<Response>((resolve) => {
+        finish = resolve;
+      });
     });
-  });
-  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
-  await act(async () =>
-    root.render(<TopikContent content={`[Download](asset:${name})`} previewAssets={adapter} />),
-  );
-  expect(container.querySelector("a")).toBeNull();
-  await act(async () => container.querySelector("button")!.click());
-  await act(async () =>
-    root.render(<TopikContent content={`[Changed page](asset:${name})`} previewAssets={adapter} />),
-  );
-  await act(async () => {
-    finish({
-      ok: true,
-      redirected: false,
-      url: requested.href,
-      headers: { get: () => "image/png" },
-      body: new ReadableStream({
-        start(controller) {
-          controller.enqueue(bytes);
-          controller.close();
-        },
-      }),
+    const objectUrl = vi.spyOn(URL, "createObjectURL");
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const never = new Promise<void>(() => {});
+    let suspended = false;
+    function Block({ block }: { block: boolean }) {
+      if (block) {
+        suspended = true;
+        throw never;
+      }
+      return null;
+    }
+    function Page({ replacement = false, block = false }) {
+      return (
+        <Suspense fallback="Waiting">
+          <TopikContent
+            content={`[${replacement ? "Changed page" : "Download"}](asset:${name})`}
+            previewAssets={adapter}
+          />
+          <Block block={block} />
+        </Suspense>
+      );
+    }
+    await act(async () => root.render(<Page />));
+    expect(container.querySelector("a")).toBeNull();
+    if (lifecycle === "suspended") {
+      await act(async () => {
+        startTransition(() => root.render(<Page replacement block />));
+      });
+      expect(suspended).toBe(true);
+      expect(container.querySelector("button")?.textContent).toBe("Download");
+      expect(container.textContent).not.toContain("Waiting");
+    }
+    await act(async () => container.querySelector("button")!.click());
+    if (lifecycle === "replaced") {
+      await act(async () => root.render(<Page replacement />));
+      expect(container.querySelector("button")?.textContent).toBe("Changed page");
+    } else if (lifecycle === "unmounted") {
+      await act(async () => root.render(null));
+      expect(container.querySelector("button")).toBeNull();
+    }
+    await act(async () => {
+      finish(mediaResponse(requested));
+      await vi.waitFor(() => expect(objectUrl).toHaveBeenCalledTimes(1));
     });
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  });
-  expect(click).not.toHaveBeenCalled();
-});
+    expect(click).toHaveBeenCalledTimes(
+      lifecycle === "unchanged" || lifecycle === "suspended" ? 1 : 0,
+    );
+  },
+);
 
 function mediaResponse(url: URL) {
   const result = new Response(bytes, { headers: { "content-type": "image/png" } });

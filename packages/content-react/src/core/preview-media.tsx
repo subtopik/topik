@@ -1,4 +1,4 @@
-import { createElement, useEffect, useState, useRef, type ReactNode } from "react";
+import { createElement, useEffect, useLayoutEffect, useState, useRef, type ReactNode } from "react";
 import type { TopikComponent, TopikComponentProps } from "./components";
 import { getPreviewAssetToken } from "./preview-assets";
 
@@ -19,7 +19,9 @@ export function PreviewMedia({
   const [failed, setFailed] = useState<TopikComponentProps>();
   const mounted = useRef(true);
   const currentAttributes = useRef(attributes);
-  currentAttributes.current = attributes;
+  useLayoutEffect(() => {
+    currentAttributes.current = attributes;
+  }, [attributes]);
   useEffect(() => {
     mounted.current = true;
     return () => {

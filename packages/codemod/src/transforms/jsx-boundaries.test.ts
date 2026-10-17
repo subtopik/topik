@@ -40,18 +40,25 @@ describe("Markdown contexts in JSX bodies", () => {
     }
   });
 
-  test.each(["", " ", "  ", "   ", "> ", "- ", "> - "])(
-    "uses parser flow positions with prefix %j",
-    (prefix) => {
-      const continuation = prefix.replaceAll("-", " ");
-      const body = `${prefix}<Note>\n${continuation}Use a single \` as delimiter.\n${continuation}</Note>\n\n\`example\`\n`;
-      const result = transformMintlify(body);
-      expect(result.warnings).toEqual([]);
-      expect(result.changed).toBe(true);
-      expect(result.content).toContain("`example`");
-      expect(validateTopikContent(result.content).valid).toBe(true);
-    },
-  );
+  test.each(["", " ", "  ", "   "])("uses parser flow positions with prefix %j", (prefix) => {
+    const continuation = prefix.replaceAll("-", " ");
+    const body = `${prefix}<Note>\n${continuation}Use a single \` as delimiter.\n${continuation}</Note>\n\n\`example\`\n`;
+    const result = transformMintlify(body);
+    expect(result.warnings).toEqual([]);
+    expect(result.changed).toBe(true);
+    expect(result.content).toContain("`example`");
+    expect(validateTopikContent(result.content).valid).toBe(true);
+  });
+
+  test.each(["> ", "- ", "> - "])("keeps container flow context with prefix %j", (prefix) => {
+    const continuation = prefix.replaceAll("-", " ");
+    const body = `${prefix}<Note>\n${continuation}Use a single \` as delimiter.\n${continuation}</Note>\n\n\`example\`\n`;
+    const result = transformMintlify(body);
+    expect(result).toMatchObject({ content: body, changed: false });
+    expect(result.warnings).toEqual([
+      expect.objectContaining({ message: expect.stringContaining("Markdown list or blockquote") }),
+    ]);
+  });
 
   test.each(["`", "``"])("retains genuine multiline %s literals", (ticks) => {
     const literal = `Use ${ticks}first\ntext <Note>example</Note> and <Icon />\nlast${ticks}.\n`;

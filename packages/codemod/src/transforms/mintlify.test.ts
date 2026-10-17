@@ -313,3 +313,74 @@ describe("Mintlify to Topik content", () => {
     expect(result.warnings.length).toBeGreaterThan(0);
   });
 });
+
+describe("migration preserves Markdown context and JSX attribute values", () => {
+  test.each([1, 3])("preserves tags escaped by %s backslashes", (count) => {
+    const slashes = "\\".repeat(count);
+    const literal = `${slashes}<Note>literal${slashes}</Note>\n`;
+    expect(transformMintlify(literal)).toEqual({ content: literal, warnings: [], changed: false });
+    const output = converted(`${literal}\n<Note>Actual.</Note>\n`);
+    expect(output).toBe(`${literal}\n{% callout variant="info" %}\nActual.\n{% /callout %}\n`);
+  });
+
+  test.each([2, 4])("converts tags after %s backslashes", (count) => {
+    const slashes = "\\".repeat(count);
+    const output = converted(`${slashes}<Note>Actual.</Note>\n`);
+    expect(output).toBe(`${slashes}\n{% callout variant="info" %}\nActual.\n{% /callout %}\n`);
+  });
+
+  test.each([
+    "> <Note>Text.</Note>\n",
+    "- <Note>Text.</Note>\n",
+    "1. <Note>Text.</Note>\n",
+    "> - <Note>Text.</Note>\n",
+    "- Item\n\n  <Note>\n  Text.\n  </Note>\n",
+    "> <Note>\n> Text.\n> </Note>\n",
+  ])("keeps container-nested JSX transactionally: %j", (nested) => {
+    for (const source of [nested, `<Note>Before.</Note>\n\n${nested}\n<Note>After.</Note>\n`]) {
+      for (const eol of ["\n", "\r\n"]) {
+        const original = source.replaceAll("\n", eol);
+        const result = transformMintlify(original);
+        expect(result).toMatchObject({ content: original, changed: false });
+        expect(result.warnings).toContainEqual(
+          expect.objectContaining({
+            message: expect.stringContaining("Markdown list or blockquote"),
+          }),
+        );
+      }
+    }
+  });
+
+  test.each(['"', "'"])("preserves literal backslashes in %s JSX attributes", (quote) => {
+    for (const value of [
+      String.raw`Literal \u0041 and \\server`,
+      String.raw`C:\new\test`,
+      "trailing\\",
+    ]) {
+      const output = converted(`<Card title=${quote}${value}${quote} />`);
+      expect(parseTopikContent(output).children[0]).toMatchObject({
+        type: "topikComponent",
+        name: "card",
+        props: { title: value },
+      });
+    }
+  });
+
+  test("recognizes a body after a quoted attribute ending in a backslash", () => {
+    const source = '<Note title="Trailing\\">\n`<Note>literal</Note>`\n</Note>\n';
+    const output = converted(source);
+    expect(output).toContain("`<Note>literal</Note>`");
+    expect(parseTopikContent(output).children[0]).toMatchObject({
+      type: "topikComponent",
+      name: "callout",
+      props: { title: "Trailing\\" },
+    });
+  });
+});
+
+test("escaped unsupported components remain literal while genuine JSX migrates", () => {
+  const source = String.raw`\<Icon />` + "\n\n<Note>Actual.</Note>\n";
+  expect(converted(source)).toBe(
+    String.raw`\<Icon />` + '\n\n{% callout variant="info" %}\nActual.\n{% /callout %}\n',
+  );
+});

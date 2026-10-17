@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "vite-plus/test";
 import { decodeString } from "micromark-util-decode-string";
 import {
   CODE_PRESENTATION_LIMITS,

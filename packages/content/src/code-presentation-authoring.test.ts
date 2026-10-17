@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vite-plus/test";
 import { parseDocument, formatDocument, parseDocumentTree } from "./markdown.js";
 import { parseTopikContent } from "./content.js";
 import { compileTopikContent } from "./compile.js";

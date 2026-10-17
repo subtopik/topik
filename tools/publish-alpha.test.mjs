@@ -171,13 +171,14 @@ describe("alpha publication retries", () => {
     const temporary = mkdtempSync(join(tmpdir(), "topik-release-notes-"));
     try {
       const cwd = createPublishWorkspace(temporary);
-      for (const name of readdirSync(join(root, ".changeset"))) {
-        if (name.endsWith(".md") && name !== "README.md") {
-          writeFileSync(
-            join(cwd, ".changeset", name),
-            readFileSync(join(root, ".changeset", name)),
-          );
-        }
+      const isReleaseNote = (name) => name.endsWith(".md") && name !== "README.md";
+      const pendingNotes = readdirSync(join(root, ".changeset")).filter(isReleaseNote);
+      const notesDirectory =
+        pendingNotes.length > 0 ? join(root, ".changeset") : join(root, ".changeset", "pre");
+      const notes = readdirSync(notesDirectory).filter(isReleaseNote);
+      expect(notes.length).toBeGreaterThan(0);
+      for (const name of notes) {
+        writeFileSync(join(cwd, ".changeset", name), readFileSync(join(notesDirectory, name)));
       }
       execFileSync(
         process.execPath,

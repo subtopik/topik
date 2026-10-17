@@ -62,7 +62,9 @@ export function resourceWriterExtension(): NonNullable<Options["extensions"]>[nu
     const node = untyped as Image;
     const exit = state.enter("image");
     const labelExit = state.enter("label");
-    const alt = state.safe(node.alt ?? "", { ...info, before: "![", after: "]" });
+    const alt = state
+      .safe(node.alt ?? "", { ...info, before: "![", after: "]" })
+      .replaceAll("\n", "&#xa;");
     labelExit();
     const result = `![${alt}](${destination(node.url, state)}${title(node.title, state)})`;
     exit();
@@ -71,7 +73,7 @@ export function resourceWriterExtension(): NonNullable<Options["extensions"]>[nu
   const definition: Handle = (untyped, _parent, state) => {
     const node = untyped as Definition;
     const exit = state.enter("definition");
-    const label = referenceLabel(node, state);
+    const label = referenceLabel(node);
     const result = `[${label}]: ${destination(node.url, state)}${title(node.title, state)}`;
     exit();
     return result;

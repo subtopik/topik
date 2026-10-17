@@ -681,9 +681,9 @@ export function getDefaultTopikComponents(
       return (
         <TopikCardComponent
           {...props}
-          onNavigateLink={options.onNavigateLink}
-          renderLink={options.renderLink}
-          resolveLink={options.resolveLink}
+          onNavigateLink={options.onNavigateLink ?? props.onNavigateLink}
+          renderLink={options.renderLink ?? props.renderLink}
+          resolveLink={options.resolveLink ?? props.resolveLink}
         />
       );
     },
@@ -700,15 +700,17 @@ export function getDefaultTopikComponents(
       { __topikRole: "explanation" },
     ),
     TopikFigure: function TopikFigureSlot(props: TopikComponentProps) {
-      return <TopikFigureComponent {...props} colorScheme={options.colorScheme} />;
+      return (
+        <TopikFigureComponent {...props} colorScheme={options.colorScheme ?? props.colorScheme} />
+      );
     },
     TopikLink: function TopikLinkSlot(props: TopikComponentProps) {
       return (
         <TopikLinkComponent
           {...props}
-          onNavigateLink={options.onNavigateLink}
-          renderLink={options.renderLink}
-          resolveLink={options.resolveLink}
+          onNavigateLink={options.onNavigateLink ?? props.onNavigateLink}
+          renderLink={options.renderLink ?? props.renderLink}
+          resolveLink={options.resolveLink ?? props.resolveLink}
         />
       );
     },

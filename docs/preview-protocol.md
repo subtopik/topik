@@ -54,6 +54,11 @@ previous generation's resources, payloads and navigation together. With no prior
 success those inventories are empty and generation is null; this is a source
 failure, not an empty project. The initial failure does not terminate the server.
 
+A filesystem watcher failure publishes `error` with diagnostic ID `watch-failed`.
+The last successful generation remains available, but updates stop because watch
+coverage is no longer reliable. Restart the preview after resolving the filesystem
+error; editing source alone does not recover this watcher.
+
 Compilations are serialized and filesystem notifications coalesced. A candidate
 invalidated by a notification during compilation is discarded before publication.
 Closing the watcher prevents pending results from being committed. The in-process

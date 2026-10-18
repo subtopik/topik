@@ -154,7 +154,11 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
     closed = true;
     if (debounceTimer) clearTimeout(debounceTimer);
     options.signal?.removeEventListener("abort", onAbort);
-    await Promise.all([fsWatcher.close(), running]);
+    const closing = fsWatcher.close();
+    // Chokidar removes listeners synchronously, but in-flight I/O can still emit errors.
+    // Keep a sink even after close resolves, without accumulating it on repeated closes.
+    if (fsWatcher.listenerCount("error") === 0) fsWatcher.on("error", () => {});
+    await Promise.all([closing, running]);
   };
   const onAbort = () => {
     void close();

@@ -1,7 +1,7 @@
-import { EventEmitter } from "node:events";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { FSWatcher } from "chokidar";
 import { afterEach, expect, test, vi } from "vite-plus/test";
 import { compileManifest } from "./compile/manifest";
 import type { CompileResult } from "./compile/shared";
@@ -18,17 +18,25 @@ vi.mock("./compile", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   compile: control.compile,
 }));
-vi.mock("chokidar", () => ({
-  watch() {
-    const events = Object.assign(new EventEmitter(), { close: control.close });
-    control.fs = events;
-    queueMicrotask(() => {
-      if (control.startupError) events.emit("error", control.startupError);
-      else if (!control.pendingStartup) events.emit("ready");
-    });
-    return events;
-  },
-}));
+vi.mock("chokidar", async (importOriginal) => {
+  const { FSWatcher } = await importOriginal<typeof import("chokidar")>();
+  return {
+    watch() {
+      const events = new FSWatcher();
+      const close = events.close.bind(events);
+      vi.spyOn(events, "close").mockImplementation(() => {
+        const closing = close();
+        return Promise.all([closing, control.close()]).then(() => {});
+      });
+      control.fs = events;
+      queueMicrotask(() => {
+        if (control.startupError) events.emit("error", control.startupError);
+        else if (!control.pendingStartup) events.emit("ready");
+      });
+      return events;
+    },
+  };
+});
 let dir: string | undefined;
 let watcher: Watcher | undefined;
 afterEach(async () => {
@@ -49,7 +57,7 @@ async function fixture() {
   return { dir, result };
 }
 function fs() {
-  return control.fs as EventEmitter;
+  return control.fs as FSWatcher;
 }
 
 test("startup watcher errors close the underlying watcher before rejecting", async () => {
@@ -131,5 +139,52 @@ test.each([false, true])(
     expect(control.compile).not.toHaveBeenCalled();
     expect(fs().listenerCount("ready")).toBe(0);
     expect(() => fs().emit("error", new Error("late error"))).not.toThrow();
+  },
+);
+
+test.each(["failure", "abort", "close"] as const)(
+  "late errors stay safe during and after %s cleanup",
+  async (reason) => {
+    const fixtureData = await fixture();
+    const controller = new AbortController();
+    const originalError = new Error("startup failure");
+    let finishClose!: () => void;
+    control.close.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishClose = resolve;
+        }),
+    );
+    if (reason === "failure") control.startupError = originalError;
+    if (reason === "abort") control.pendingStartup = true;
+    const starting = watch({ dir: fixtureData.dir, signal: controller.signal });
+    const outcome = starting.then(
+      (value) => ({ value }),
+      (error) => ({ error }),
+    );
+    let closing: Promise<void> | undefined;
+    if (reason === "abort") controller.abort();
+    if (reason === "close") {
+      watcher = await starting;
+      closing = watcher.close();
+    }
+    await vi.waitFor(() => expect(control.close).toHaveBeenCalledTimes(1));
+    const state = watcher?.state;
+    // Real Chokidar close removes listeners synchronously, before its promise settles.
+    expect(fs().listenerCount("change")).toBe(0);
+    expect(() => fs()._handleError(new Error("in-flight filesystem failure"))).not.toThrow();
+    finishClose();
+    await closing;
+    const result = await outcome;
+    if (reason === "failure") expect(result).toEqual({ error: originalError });
+    else if ("value" in result) watcher = result.value;
+    expect(() => fs()._handleError(new Error("error after close resolved"))).not.toThrow();
+    if (state) expect(watcher?.state).toBe(state);
+    else expect(control.compile).not.toHaveBeenCalled();
+    if (watcher) {
+      await watcher.close();
+      await watcher.close();
+      expect(fs().listenerCount("error")).toBe(1);
+    }
   },
 );

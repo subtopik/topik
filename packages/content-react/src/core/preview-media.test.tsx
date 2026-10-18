@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { createHash, webcrypto } from "node:crypto";
-import { act, startTransition, Suspense } from "react";
-import { createRoot, type Root } from "react-dom/client";
+import { act, startTransition, Suspense, useEffect, useLayoutEffect, StrictMode } from "react";
+import { createRoot, hydrateRoot, type Root } from "react-dom/client";
+import { renderToString } from "react-dom/server";
 import { afterEach, expect, test, vi } from "vite-plus/test";
 import { TopikContent } from "../theme/TopikContent";
 import { createPreviewAssetAdapter, type PreviewAssetAdapter } from "./preview-assets";
@@ -201,4 +202,100 @@ test("late image errors from retired content and disposed generations are ignore
   adapter.dispose();
   await act(async () => container.querySelector("img")!.dispatchEvent(new Event("error")));
   expect(container.querySelector('[role="alert"]')).toBeNull();
+});
+
+test.each([false, true])(
+  "suppresses downloads before passive unmount cleanup (StrictMode: %s)",
+  async (strict) => {
+    setup();
+    vi.stubGlobal("fetch", async (url: URL) => mediaResponse(url));
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const actualDigest = await crypto.subtle.digest("SHA-256", bytes);
+    let finishDigest!: (value: ArrayBuffer) => void;
+    const hashing = vi.spyOn(crypto.subtle, "digest").mockImplementation(
+      () =>
+        new Promise<ArrayBuffer>((resolve) => {
+          finishDigest = resolve;
+        }),
+    );
+    let passiveCleanup = false;
+    let removed!: () => void;
+    const afterRemoval = new Promise<void>((resolve) => {
+      removed = resolve;
+    });
+    function Sentinel() {
+      useEffect(() => {
+        passiveCleanup = false;
+        return () => {
+          passiveCleanup = true;
+        };
+      }, []);
+      return null;
+    }
+    function Page({ show }: { show: boolean }) {
+      useLayoutEffect(() => {
+        if (!show) {
+          finishDigest(actualDigest);
+          removed();
+        }
+      }, [show]);
+      return show ? (
+        <>
+          <TopikContent content={`[Download](asset:${name})`} previewAssets={adapter} />
+          <Sentinel />
+        </>
+      ) : (
+        <p>Removed</p>
+      );
+    }
+    const page = (show: boolean) =>
+      strict ? (
+        <StrictMode>
+          <Page show={show} />
+        </StrictMode>
+      ) : (
+        <Page show={show} />
+      );
+    await act(async () => root.render(page(true)));
+    await act(async () => {
+      container.querySelector("button")!.click();
+      await vi.waitFor(() => expect(hashing).toHaveBeenCalledTimes(1));
+    });
+    // act would flush passive cleanup and hide the interval this test exercises.
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", false);
+    try {
+      startTransition(() => root.render(page(false)));
+      await afterRemoval;
+      // Drain the adapter's promise chain without advancing the passive-effect task.
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+      expect(container.textContent).toBe("Removed");
+      expect(passiveCleanup).toBe(false);
+      expect(click).not.toHaveBeenCalled();
+    } finally {
+      vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    }
+  },
+);
+
+test("preview downloads hydrate and activate under StrictMode", async () => {
+  setup();
+  await act(async () => root.unmount());
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.stubGlobal("fetch", async (url: URL) => mediaResponse(url));
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  const content = (
+    <StrictMode>
+      <TopikContent content={`[Download](asset:${name})`} previewAssets={adapter} />
+    </StrictMode>
+  );
+  container.innerHTML = renderToString(content);
+  expect(container.querySelector("button")?.textContent).toBe("Download");
+  await act(async () => {
+    root = hydrateRoot(container, content);
+  });
+  await act(async () => {
+    container.querySelector("button")!.click();
+    await vi.waitFor(() => expect(click).toHaveBeenCalledTimes(1));
+  });
+  expect(errors).not.toHaveBeenCalled();
 });

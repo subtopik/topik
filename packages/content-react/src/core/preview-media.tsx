@@ -22,7 +22,7 @@ export function PreviewMedia({
   useLayoutEffect(() => {
     currentAttributes.current = attributes;
   }, [attributes]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;

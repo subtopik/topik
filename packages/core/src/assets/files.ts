@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { constants } from "node:fs";
+import { constants, type BigIntStats } from "node:fs";
 import { lstat, open } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
@@ -386,15 +386,7 @@ async function readPortableAssetFileAnchored(
     const bytes = buffer.subarray(0, length);
     await afterFileRead?.();
     const after = await fileHandle.stat({ bigint: true });
-    if (
-      before.dev !== after.dev ||
-      before.ino !== after.ino ||
-      before.mode !== after.mode ||
-      before.nlink !== after.nlink ||
-      before.size !== after.size ||
-      before.ctimeNs !== after.ctimeNs ||
-      before.mtimeNs !== after.mtimeNs
-    ) {
+    if (!hasStableFileIdentity(before, after)) {
       return {
         ok: false,
         diagnostics: [unsupportedPath(options.path, "File identity changed while hashing")],
@@ -568,15 +560,7 @@ async function anchoredGitBoundaryFingerprint(
       return { ok: false, failure: "Git boundary is not a regular file or directory" };
     }
     const after = await handle.stat({ bigint: true });
-    if (
-      before.dev !== after.dev ||
-      before.ino !== after.ino ||
-      before.mode !== after.mode ||
-      before.nlink !== after.nlink ||
-      before.size !== after.size ||
-      before.ctimeNs !== after.ctimeNs ||
-      before.mtimeNs !== after.mtimeNs
-    ) {
+    if (!hasStableFileIdentity(before, after)) {
       return { ok: false, failure: "Git boundary identity changed while it was inspected" };
     }
     return {
@@ -719,15 +703,7 @@ async function applyGitAttributes(
     }
     const bytes = await handle.readFile();
     const after = await handle.stat({ bigint: true });
-    if (
-      before.dev !== after.dev ||
-      before.ino !== after.ino ||
-      before.mode !== after.mode ||
-      before.nlink !== after.nlink ||
-      before.size !== after.size ||
-      before.ctimeNs !== after.ctimeNs ||
-      before.mtimeNs !== after.mtimeNs
-    ) {
+    if (!hasStableFileIdentity(before, after)) {
       return "Git attribute evidence changed while it was evaluated";
     }
     let source: string;
@@ -848,4 +824,17 @@ function unsupportedPath(path: string, message: string): TopikAssetDiagnostic {
     location: { path },
     recovery: "preserve-read-only",
   });
+}
+
+/** Keep the mutation evidence identical for bytes, Git boundaries, and Git attributes. */
+function hasStableFileIdentity(before: BigIntStats, after: BigIntStats): boolean {
+  return (
+    before.dev === after.dev &&
+    before.ino === after.ino &&
+    before.mode === after.mode &&
+    before.nlink === after.nlink &&
+    before.size === after.size &&
+    before.ctimeNs === after.ctimeNs &&
+    before.mtimeNs === after.mtimeNs
+  );
 }

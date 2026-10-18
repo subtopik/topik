@@ -50,7 +50,7 @@
     "ajv": "^8.20.0",
     "jsdom": "^28.1.0",
     "katex": "^0.18.2",
-    "mermaid": "^11.16.1",
+    "pele": "catalog:",
     "playwright": "catalog:",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
@@ -63,7 +63,7 @@
   },
   "peerDependencies": {
     "katex": "^0.18.2",
-    "mermaid": "^11.16.1",
+    "pele": "catalog:",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "shiki": "^4.0.0"
@@ -72,10 +72,10 @@
     "katex": {
       "optional": true
     },
-    "mermaid": {
+    "shiki": {
       "optional": true
     },
-    "shiki": {
+    "pele": {
       "optional": true
     }
   }

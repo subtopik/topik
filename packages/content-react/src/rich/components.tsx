@@ -8,6 +8,7 @@ import {
   type DependencyList,
   type ReactNode,
 } from "react";
+import { safeDiagramSvg } from "./diagram-svg";
 import { TopikMath, TopikMathInline, TopikMermaid } from "../theme/components";
 import type { TopikComponentMap, TopikComponentProps } from "../core/components";
 import { CodeBlockView, type CodeHighlight } from "../theme/code-block";
@@ -31,12 +32,7 @@ const shikiThemes = {
   light: "github-light",
   dark: "github-dark",
 } satisfies Record<RichTopikTheme, string>;
-const mermaidThemes = {
-  light: "default",
-  dark: "dark",
-} satisfies Record<RichTopikTheme, string>;
 const minimumMermaidLoadingDurationMs = 300;
-let initializedMermaidTheme: string | undefined;
 
 export function RichTopikThemeProvider({
   children,
@@ -264,18 +260,18 @@ export function RichTopikMermaid(props: TopikComponentProps) {
   const rendered = useRenderedHtml(
     () =>
       withMinimumDelay(async () => {
-        const { default: mermaid } = await import("mermaid");
-        const mermaidTheme = mermaidThemes[theme];
-        if (initializedMermaidTheme !== mermaidTheme) {
-          mermaid.initialize({
-            securityLevel: "strict",
-            startOnLoad: false,
-            theme: mermaidTheme,
-          });
-          initializedMermaidTheme = mermaidTheme;
-        }
-        const result = await mermaid.render(`topik-mermaid-${id}`, content);
-        return result.svg;
+        const { render } = await import("pele");
+        const result = render(content, {
+          idPrefix: `topik-mermaid-${id}`,
+          links: false,
+          images: false,
+          maxEdges: 500,
+          limit: 50_000,
+          outputLimit: 4_000_000,
+          responsive: true,
+          autoDirection: false,
+        });
+        return safeDiagramSvg(result.svg);
       }, minimumMermaidLoadingDurationMs),
     [content, id, theme],
   );
@@ -290,7 +286,13 @@ export function RichTopikMermaid(props: TopikComponentProps) {
     );
   }
   if (rendered.status === "error") return <TopikMermaid {...props} />;
-  return <div className="topik-rich-mermaid" dangerouslySetInnerHTML={{ __html: rendered.html }} />;
+  return (
+    <div
+      className="topik-rich-mermaid"
+      data-theme={theme}
+      dangerouslySetInnerHTML={{ __html: rendered.html }}
+    />
+  );
 }
 
 export const richTopikComponents = {

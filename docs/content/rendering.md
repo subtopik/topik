@@ -120,14 +120,14 @@ same `compileTopikContent` function for consumers with another rendering framewo
 
 ## Rich code, math, and diagrams
 
-`@topik/content-react/rich` adds Shiki syntax highlighting, KaTeX math, and Mermaid
-diagrams. Install the optional peers needed by your content:
+`@topik/content-react/rich` adds Shiki syntax highlighting, KaTeX math, and Mermaid-syntax
+diagrams through Pele. Install the optional peers needed by your content:
 
-| Feature           | Peer dependency and supported range |
-| ----------------- | ----------------------------------- |
-| Code highlighting | `shiki@^4.0.0`                      |
-| Math              | `katex@^0.18.2`                     |
-| Mermaid           | `mermaid@^11.16.1`                  |
+| Feature               | Peer dependency and supported range |
+| --------------------- | ----------------------------------- |
+| Code highlighting     | `shiki@^4.0.0`                      |
+| Math                  | `katex@^0.18.2`                     |
+| Mermaid syntax (Pele) | `pele@1.6.0`                        |
 
 Wrap the themed renderer with the rich provider:
 
@@ -156,9 +156,21 @@ import "katex/dist/katex.min.css";
 Rich components load their peers in the browser. Server rendering emits the
 initial fallback or loading state; hydration completes the rich presentation.
 Code and math retain plain fallbacks if rendering fails. Mermaid displays a
-loading state and falls back to diagram source on failure. Topik initializes
-Mermaid with `securityLevel: "strict"`; code sharing that instance must preserve
-its configuration and sanitizer.
+loading state and falls back to diagram source on failure. The authored `mermaid` fences and public `TopikMermaid` / `RichTopikMermaid`
+components are unchanged; replace the optional `mermaid` installation with `pele@1.6.0`.
+
+Pele uses its own layouts and CSS colors, so output differs from Mermaid.js.
+Provider themes are isolated per diagram. `accTitle` and `accDescr` retain unique
+accessible references. Mermaid `themeVariables`, arbitrary HTML labels, plugins,
+and click callbacks are not supported. Topik disables all diagram links and images,
+including remote images, and validates SVG before insertion. Unrecognized SVG or
+unsupported syntax falls back to plain source. Source is limited to 50,000 characters,
+flowcharts to 500 edges, and generated SVG to 4,000,000 characters. Author directives
+cannot enable links/images or change these application-controlled limits.
+
+Pele's synchronous rendering still runs on the browser main thread after the lazy
+import. Topik retains the existing 300 ms minimum loading indicator; a smaller
+renderer does not remove this visible delay.
 
 ## Integrate with application URLs
 

@@ -7,14 +7,6 @@ declare module "katex" {
   ): string;
 }
 
-declare module "mermaid" {
-  const mermaid: {
-    initialize(options: Record<string, unknown>): void;
-    render(id: string, content: string): Promise<{ svg: string }>;
-  };
-  export default mermaid;
-}
-
 declare module "shiki" {
   export function codeToTokens(
     code: string,

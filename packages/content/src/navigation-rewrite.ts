@@ -1,6 +1,6 @@
 import { indexDocument, isReference } from "./document-index.js";
 import { prepareSource, writeFailure } from "./source.js";
-import { writeDocument } from "./writer.js";
+import { serializeDocument } from "./writer.js";
 import { sameDocumentMeaning } from "./document-meaning.js";
 import type { TreeNode } from "./model.js";
 import type { ValidateTopikContentOptions } from "./validate.js";
@@ -67,7 +67,7 @@ export function rewriteTopikNavigationReferences(
   }
   let content: string;
   try {
-    content = writeDocument(prepared.document, prepared.config.components);
+    content = serializeDocument(prepared.document, prepared.config.components);
   } catch {
     return writeFailure(source, options.file);
   }

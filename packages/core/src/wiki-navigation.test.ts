@@ -260,3 +260,27 @@ describe("resolveWikiNavigation", () => {
     ).toThrow("contains duplicate route /guide");
   });
 });
+
+test.each([undefined, 1] as const)(
+  "exact index routes precede aliases (sourceVersion=%s)",
+  (sourceVersion) => {
+    const navigation = resolveWikiNavigation(
+      [
+        { type: "page", page: "home", slug: "", sourcePath: "home" },
+        { type: "page", page: "special", slug: "index", sourcePath: "special" },
+        { type: "page", page: "section", slug: "section", sourcePath: "section-home" },
+        { type: "page", page: "nested", slug: "section/index", sourcePath: "nested" },
+      ],
+      { sourceVersion },
+    );
+    for (const [href, target] of [
+      ["/", "home"],
+      ["/index", "special"],
+      ["/section", "section"],
+      ["/section/index", "nested"],
+      ["/section/index/index", "nested"],
+    ]) {
+      expect(resolveWikiContentHref(href, "home", navigation)?.page.page).toBe(target);
+    }
+  },
+);

@@ -66,7 +66,7 @@ export function resolveDeclaredSourcePage<T>(
   return candidates.length === 1 ? candidates[0] : undefined;
 }
 
-/** Wiki's index aliases are public routes in every consumer, including compilation. */
+/** Exact public routes take precedence over Wiki's fallback index aliases. */
 export function resolveDeclaredPublicRoute<T>(
   href: string,
   pages: ReadonlyMap<string, T>,
@@ -75,6 +75,7 @@ export function resolveDeclaredPublicRoute<T>(
   if (!href.startsWith("/") || isFolderHref(href)) return undefined;
   const path = resolveNavigationPath(href, "");
   if (path === undefined || /\.(?:mdx?|markdown)$/i.test(path)) return undefined;
+  if (pages.has(path)) return pages.get(path);
   const route = wiki ? (path === "index" ? "" : path.replace(/\/index$/, "")) : path;
   return pages.get(route);
 }

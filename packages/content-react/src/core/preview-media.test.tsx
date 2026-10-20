@@ -79,6 +79,65 @@ test("failed media has an accessible explanation while text remains readable", a
   expect(container.textContent).not.toContain("private network error");
 });
 
+test.each(["success", "failure"] as const)(
+  "retains an image load that settles while Suspense hides its content: %s",
+  async (outcome) => {
+    setup();
+    let finish!: (value: Response) => void;
+    let fail!: (reason: Error) => void;
+    let requested!: URL;
+    const fetcher = vi.fn((url: URL) => {
+      requested = url;
+      return new Promise<Response>((resolve, reject) => {
+        finish = resolve;
+        fail = reject;
+      });
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const objectUrl = vi.spyOn(URL, "createObjectURL");
+    const never = new Promise<void>(() => {});
+    function Block({ block }: { block: boolean }) {
+      if (block) throw never;
+      return null;
+    }
+    // Keep the media's props stable so revealing the boundary does not start a new load.
+    const media = <TopikContent content={`![Hero](asset:${name})`} previewAssets={adapter} />;
+    function Page({ block = false }) {
+      return (
+        <Suspense fallback="Waiting">
+          {media}
+          <Block block={block} />
+        </Suspense>
+      );
+    }
+    await act(async () => root.render(<Page />));
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    await act(async () => root.render(<Page block />));
+    expect(container.textContent).toContain("Waiting");
+    await act(async () => {
+      if (outcome === "success") {
+        finish(mediaResponse(requested));
+        await vi.waitFor(() => expect(objectUrl).toHaveBeenCalledTimes(1));
+      } else {
+        fail(new Error("Temporary failure"));
+      }
+    });
+    await act(async () => root.render(<Page />));
+    expect(container.textContent).not.toContain("Waiting");
+    expect(container.querySelector('[role="status"]')).toBeNull();
+    if (outcome === "success") {
+      expect(container.querySelector("img")?.getAttribute("src")).toBe("blob:managed");
+      expect(container.querySelector('[role="alert"]')).toBeNull();
+    } else {
+      expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+        "Preview media unavailable.",
+      );
+      expect(container.querySelector("img")).toBeNull();
+    }
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  },
+);
+
 test.each(["unchanged", "suspended", "replaced", "unmounted"] as const)(
   "a delayed download respects committed content: %s",
   async (lifecycle) => {

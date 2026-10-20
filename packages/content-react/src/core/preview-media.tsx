@@ -29,9 +29,10 @@ export function PreviewMedia({
     };
   }, []);
   const download = getPreviewAssetToken(attributes.href);
+  // Suspense hides layout effects while keeping image-loading effects connected.
+  // Let those effects retain their result; their own cleanup handles unmount.
   function isCurrent() {
     return (
-      mounted.current &&
       currentAttributes.current === attributes &&
       Object.values(attributes).every(
         (value) => getPreviewAssetToken(value)?.state.active() !== false,

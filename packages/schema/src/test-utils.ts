@@ -7,19 +7,19 @@ import { parse as parseYaml } from "yaml";
 
 const fixturesPath = join(import.meta.dirname, "..", "fixtures");
 
-function parseFixture(path: string): unknown[] {
+export function parseFixture(path: string): unknown[] {
   const content = readFileSync(path, "utf-8");
   // Split multi-document YAML
   const documents = content.split(/^---$/m).filter((doc) => doc.trim().length > 0);
+  if (documents.length === 0) throw new Error(`Schema fixture contains no documents: ${path}`);
   return documents.map((doc) => parseYaml(doc));
 }
 
-function listYamlFiles(dir: string): string[] {
-  try {
-    return readdirSync(dir).filter((f) => f.endsWith(".yaml"));
-  } catch {
-    return [];
-  }
+export function listYamlFiles(dir: string): string[] {
+  const files = readdirSync(dir).filter((f) => f.endsWith(".yaml"));
+  if (files.length === 0)
+    throw new Error(`Schema fixture directory contains no YAML files: ${dir}`);
+  return files;
 }
 
 interface FixtureValidator {

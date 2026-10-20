@@ -273,7 +273,7 @@ export function RichTopikMermaid(props: TopikComponentProps) {
         });
         return safeDiagramSvg(result.svg);
       }, minimumMermaidLoadingDurationMs),
-    [content, id, theme],
+    [content, id],
   );
 
   if (rendered.status === "loading") {

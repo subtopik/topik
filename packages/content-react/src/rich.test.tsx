@@ -233,6 +233,84 @@ describe("rich content-react entry", () => {
     expect(dom.querySelector('[data-theme="light"] svg')).not.toBeNull();
     expect(dom.querySelector('[data-theme="dark"] svg')).not.toBeNull();
   });
+
+  it("preserves the rendered diagram across theme changes without rendering again", async () => {
+    vi.useFakeTimers();
+
+    try {
+      const diagram = (theme: "light" | "dark") => (
+        <RichTopikContentProvider theme={theme}>
+          <RichTopikMermaid content="flowchart LR; A-->B" />
+        </RichTopikContentProvider>
+      );
+      const dom = mount(diagram("light"));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+      const svg = dom.querySelector("svg");
+      expect(svg).not.toBeNull();
+      expect(mermaidRenderMock).toHaveBeenCalledTimes(1);
+
+      for (const theme of ["dark", "light"] as const) {
+        act(() => root?.render(diagram(theme)));
+
+        expect(dom.querySelector(".topik-rich-mermaid")?.getAttribute("data-theme")).toBe(theme);
+        expect(dom.querySelector(".topik-rich-mermaid--loading")).toBeNull();
+        expect(dom.querySelector("svg")).toBe(svg);
+
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(300);
+        });
+
+        expect(dom.querySelector(".topik-rich-mermaid--loading")).toBeNull();
+        expect(dom.querySelector("svg")).toBe(svg);
+        expect(mermaidRenderMock).toHaveBeenCalledTimes(1);
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("replaces the rendered diagram when its source changes", async () => {
+    vi.useFakeTimers();
+    mermaidRenderMock
+      .mockReturnValueOnce({
+        svg: '<svg xmlns="http://www.w3.org/2000/svg"><text>First diagram</text></svg>',
+      })
+      .mockReturnValueOnce({
+        svg: '<svg xmlns="http://www.w3.org/2000/svg"><text>Updated diagram</text></svg>',
+      });
+
+    try {
+      const dom = mount(<RichTopikMermaid content="flowchart LR; A-->B" />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+      expect(dom.querySelector("svg")?.textContent).toBe("First diagram");
+      expect(mermaidRenderMock).toHaveBeenCalledTimes(1);
+
+      act(() => root?.render(<RichTopikMermaid content="flowchart LR; B-->C" />));
+      expect(dom.querySelector(".topik-rich-mermaid--loading")).not.toBeNull();
+      expect(dom.querySelector("svg")).toBeNull();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(299);
+      });
+      expect(dom.querySelector(".topik-rich-mermaid--loading")).not.toBeNull();
+      expect(dom.querySelector("svg")).toBeNull();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(dom.querySelector(".topik-rich-mermaid--loading")).toBeNull();
+      expect(dom.querySelector("svg")?.textContent).toBe("Updated diagram");
+      expect(mermaidRenderMock).toHaveBeenCalledTimes(2);
+      expect(mermaidRenderMock).toHaveBeenLastCalledWith("flowchart LR; B-->C", expect.any(Object));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("discards a pending result after source changes", async () => {
     const dom = mount(<RichTopikMermaid content="flowchart LR; A-->B" />);
     await waitFor(() => expect(mermaidRenderMock).toHaveBeenCalled());

@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { createHash, webcrypto } from "node:crypto";
-import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
+import { act, startTransition, Suspense, useEffect, useLayoutEffect, StrictMode } from "react";
+import { createRoot, hydrateRoot, type Root } from "react-dom/client";
+import { renderToString } from "react-dom/server";
 import { afterEach, expect, test, vi } from "vite-plus/test";
 import { TopikContent } from "../theme/TopikContent";
 import { createPreviewAssetAdapter, type PreviewAssetAdapter } from "./preview-assets";
@@ -78,42 +79,126 @@ test("failed media has an accessible explanation while text remains readable", a
   expect(container.textContent).not.toContain("private network error");
 });
 
-test("a delayed download cannot activate after the rendered content changes", async () => {
-  setup();
-  let finish!: (value: unknown) => void;
-  let requested!: URL;
-  vi.stubGlobal("fetch", (url: URL) => {
-    requested = url;
-    return new Promise((resolve) => {
-      finish = resolve;
+test.each(["success", "failure"] as const)(
+  "retains an image load that settles while Suspense hides its content: %s",
+  async (outcome) => {
+    setup();
+    let finish!: (value: Response) => void;
+    let fail!: (reason: Error) => void;
+    let requested!: URL;
+    const fetcher = vi.fn((url: URL) => {
+      requested = url;
+      return new Promise<Response>((resolve, reject) => {
+        finish = resolve;
+        fail = reject;
+      });
     });
-  });
-  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
-  await act(async () =>
-    root.render(<TopikContent content={`[Download](asset:${name})`} previewAssets={adapter} />),
-  );
-  expect(container.querySelector("a")).toBeNull();
-  await act(async () => container.querySelector("button")!.click());
-  await act(async () =>
-    root.render(<TopikContent content={`[Changed page](asset:${name})`} previewAssets={adapter} />),
-  );
-  await act(async () => {
-    finish({
-      ok: true,
-      redirected: false,
-      url: requested.href,
-      headers: { get: () => "image/png" },
-      body: new ReadableStream({
-        start(controller) {
-          controller.enqueue(bytes);
-          controller.close();
-        },
-      }),
+    vi.stubGlobal("fetch", fetcher);
+    const objectUrl = vi.spyOn(URL, "createObjectURL");
+    const never = new Promise<void>(() => {});
+    function Block({ block }: { block: boolean }) {
+      if (block) throw never;
+      return null;
+    }
+    // Keep the media's props stable so revealing the boundary does not start a new load.
+    const media = <TopikContent content={`![Hero](asset:${name})`} previewAssets={adapter} />;
+    function Page({ block = false }) {
+      return (
+        <Suspense fallback="Waiting">
+          {media}
+          <Block block={block} />
+        </Suspense>
+      );
+    }
+    await act(async () => root.render(<Page />));
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    await act(async () => root.render(<Page block />));
+    expect(container.textContent).toContain("Waiting");
+    await act(async () => {
+      if (outcome === "success") {
+        finish(mediaResponse(requested));
+        await vi.waitFor(() => expect(objectUrl).toHaveBeenCalledTimes(1));
+      } else {
+        fail(new Error("Temporary failure"));
+      }
     });
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  });
-  expect(click).not.toHaveBeenCalled();
-});
+    await act(async () => root.render(<Page />));
+    expect(container.textContent).not.toContain("Waiting");
+    expect(container.querySelector('[role="status"]')).toBeNull();
+    if (outcome === "success") {
+      expect(container.querySelector("img")?.getAttribute("src")).toBe("blob:managed");
+      expect(container.querySelector('[role="alert"]')).toBeNull();
+    } else {
+      expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+        "Preview media unavailable.",
+      );
+      expect(container.querySelector("img")).toBeNull();
+    }
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  },
+);
+
+test.each(["unchanged", "suspended", "replaced", "unmounted"] as const)(
+  "a delayed download respects committed content: %s",
+  async (lifecycle) => {
+    setup();
+    let finish!: (value: Response) => void;
+    let requested!: URL;
+    vi.stubGlobal("fetch", (url: URL) => {
+      requested = url;
+      return new Promise<Response>((resolve) => {
+        finish = resolve;
+      });
+    });
+    const objectUrl = vi.spyOn(URL, "createObjectURL");
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const never = new Promise<void>(() => {});
+    let suspended = false;
+    function Block({ block }: { block: boolean }) {
+      if (block) {
+        suspended = true;
+        throw never;
+      }
+      return null;
+    }
+    function Page({ replacement = false, block = false }) {
+      return (
+        <Suspense fallback="Waiting">
+          <TopikContent
+            content={`[${replacement ? "Changed page" : "Download"}](asset:${name})`}
+            previewAssets={adapter}
+          />
+          <Block block={block} />
+        </Suspense>
+      );
+    }
+    await act(async () => root.render(<Page />));
+    expect(container.querySelector("a")).toBeNull();
+    if (lifecycle === "suspended") {
+      await act(async () => {
+        startTransition(() => root.render(<Page replacement block />));
+      });
+      expect(suspended).toBe(true);
+      expect(container.querySelector("button")?.textContent).toBe("Download");
+      expect(container.textContent).not.toContain("Waiting");
+    }
+    await act(async () => container.querySelector("button")!.click());
+    if (lifecycle === "replaced") {
+      await act(async () => root.render(<Page replacement />));
+      expect(container.querySelector("button")?.textContent).toBe("Changed page");
+    } else if (lifecycle === "unmounted") {
+      await act(async () => root.render(null));
+      expect(container.querySelector("button")).toBeNull();
+    }
+    await act(async () => {
+      finish(mediaResponse(requested));
+      await vi.waitFor(() => expect(objectUrl).toHaveBeenCalledTimes(1));
+    });
+    expect(click).toHaveBeenCalledTimes(
+      lifecycle === "unchanged" || lifecycle === "suspended" ? 1 : 0,
+    );
+  },
+);
 
 function mediaResponse(url: URL) {
   const result = new Response(bytes, { headers: { "content-type": "image/png" } });
@@ -176,4 +261,100 @@ test("late image errors from retired content and disposed generations are ignore
   adapter.dispose();
   await act(async () => container.querySelector("img")!.dispatchEvent(new Event("error")));
   expect(container.querySelector('[role="alert"]')).toBeNull();
+});
+
+test.each([false, true])(
+  "suppresses downloads before passive unmount cleanup (StrictMode: %s)",
+  async (strict) => {
+    setup();
+    vi.stubGlobal("fetch", async (url: URL) => mediaResponse(url));
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const actualDigest = await crypto.subtle.digest("SHA-256", bytes);
+    let finishDigest!: (value: ArrayBuffer) => void;
+    const hashing = vi.spyOn(crypto.subtle, "digest").mockImplementation(
+      () =>
+        new Promise<ArrayBuffer>((resolve) => {
+          finishDigest = resolve;
+        }),
+    );
+    let passiveCleanup = false;
+    let removed!: () => void;
+    const afterRemoval = new Promise<void>((resolve) => {
+      removed = resolve;
+    });
+    function Sentinel() {
+      useEffect(() => {
+        passiveCleanup = false;
+        return () => {
+          passiveCleanup = true;
+        };
+      }, []);
+      return null;
+    }
+    function Page({ show }: { show: boolean }) {
+      useLayoutEffect(() => {
+        if (!show) {
+          finishDigest(actualDigest);
+          removed();
+        }
+      }, [show]);
+      return show ? (
+        <>
+          <TopikContent content={`[Download](asset:${name})`} previewAssets={adapter} />
+          <Sentinel />
+        </>
+      ) : (
+        <p>Removed</p>
+      );
+    }
+    const page = (show: boolean) =>
+      strict ? (
+        <StrictMode>
+          <Page show={show} />
+        </StrictMode>
+      ) : (
+        <Page show={show} />
+      );
+    await act(async () => root.render(page(true)));
+    await act(async () => {
+      container.querySelector("button")!.click();
+      await vi.waitFor(() => expect(hashing).toHaveBeenCalledTimes(1));
+    });
+    // act would flush passive cleanup and hide the interval this test exercises.
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", false);
+    try {
+      startTransition(() => root.render(page(false)));
+      await afterRemoval;
+      // Drain the adapter's promise chain without advancing the passive-effect task.
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+      expect(container.textContent).toBe("Removed");
+      expect(passiveCleanup).toBe(false);
+      expect(click).not.toHaveBeenCalled();
+    } finally {
+      vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    }
+  },
+);
+
+test("preview downloads hydrate and activate under StrictMode", async () => {
+  setup();
+  await act(async () => root.unmount());
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.stubGlobal("fetch", async (url: URL) => mediaResponse(url));
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  const content = (
+    <StrictMode>
+      <TopikContent content={`[Download](asset:${name})`} previewAssets={adapter} />
+    </StrictMode>
+  );
+  container.innerHTML = renderToString(content);
+  expect(container.querySelector("button")?.textContent).toBe("Download");
+  await act(async () => {
+    root = hydrateRoot(container, content);
+  });
+  await act(async () => {
+    container.querySelector("button")!.click();
+    await vi.waitFor(() => expect(click).toHaveBeenCalledTimes(1));
+  });
+  expect(errors).not.toHaveBeenCalled();
 });

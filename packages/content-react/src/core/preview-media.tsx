@@ -1,4 +1,4 @@
-import { createElement, useEffect, useState, useRef, type ReactNode } from "react";
+import { createElement, useEffect, useLayoutEffect, useState, useRef, type ReactNode } from "react";
 import type { TopikComponent, TopikComponentProps } from "./components";
 import { getPreviewAssetToken } from "./preview-assets";
 
@@ -19,17 +19,20 @@ export function PreviewMedia({
   const [failed, setFailed] = useState<TopikComponentProps>();
   const mounted = useRef(true);
   const currentAttributes = useRef(attributes);
-  currentAttributes.current = attributes;
-  useEffect(() => {
+  useLayoutEffect(() => {
+    currentAttributes.current = attributes;
+  }, [attributes]);
+  useLayoutEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
     };
   }, []);
   const download = getPreviewAssetToken(attributes.href);
+  // Suspense hides layout effects while keeping image-loading effects connected.
+  // Let those effects retain their result; their own cleanup handles unmount.
   function isCurrent() {
     return (
-      mounted.current &&
       currentAttributes.current === attributes &&
       Object.values(attributes).every(
         (value) => getPreviewAssetToken(value)?.state.active() !== false,

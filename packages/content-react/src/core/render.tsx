@@ -104,6 +104,19 @@ export function renderTrustedTopikTree(
   tree: RenderableTreeNode,
   options: RenderTrustedTopikTreeOptions = {},
 ): React.ReactNode {
+  // Question state belongs to its authored meaning, before host URL resolution.
+  // Stop at each question: its key also resets nested questions, so serialized
+  // subtrees never overlap and the work remains linear in the reader tree.
+  const questionKeys: string[] = [];
+  function collectQuestionKeys(node: RenderableTreeNode): void {
+    if (Array.isArray(node)) node.forEach(collectQuestionKeys);
+    else if (isContentTag(node)) {
+      if (node.name === "TopikQuestion") questionKeys.push(JSON.stringify(node));
+      else node.children.forEach(collectQuestionKeys);
+    }
+  }
+  collectQuestionKeys(tree);
+  let questionIndex = 0;
   const resolved = resolveTopikAssetReferences(tree, options.resolveAsset, {
     onDiagnostic: options.onAssetDiagnostic,
     previewAssets: options.previewAssets,
@@ -112,28 +125,31 @@ export function renderTrustedTopikTree(
     onNavigationDiagnostic: options.onNavigationDiagnostic,
   });
   const components = getTopikComponents(options.components);
-  function render(node: RenderableTreeNode, key = 0): React.ReactNode {
-    if (Array.isArray(node)) return node.map(render);
+  function render(node: RenderableTreeNode, key = 0, insideQuestion = false): React.ReactNode {
+    if (Array.isArray(node))
+      return node.map((child, index) => render(child, index, insideQuestion));
     if (!isContentTag(node)) return node;
+    const isQuestion = node.name === "TopikQuestion";
+    const elementKey =
+      isQuestion && !insideQuestion ? `${key}:${questionKeys[questionIndex++]}` : key;
+    const children = node.children.map((child, index) =>
+      render(child, index, insideQuestion || isQuestion),
+    );
     const component = Object.hasOwn(components, node.name)
       ? components[node.name as keyof typeof components]
       : node.name;
     if (Object.values(node.attributes).some((value) => getPreviewAssetToken(value))) {
       return (
         <PreviewMedia
-          key={key}
+          key={elementKey}
           component={component as import("./components").TopikComponent}
           attributes={node.attributes}
         >
-          {node.children.map(render)}
+          {children}
         </PreviewMedia>
       );
     }
-    return React.createElement(
-      component,
-      { ...node.attributes, key },
-      ...node.children.map(render),
-    );
+    return React.createElement(component, { ...node.attributes, key: elementKey }, ...children);
   }
   return render(resolved);
 }

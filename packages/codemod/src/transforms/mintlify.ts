@@ -65,8 +65,7 @@ const UNSUPPORTED_TAGS = new Set([
 const BLOCK_COMPONENT_NAMES = new Set([...CALLOUT_VARIANTS.keys(), ...BLOCK_TAGS.keys()]);
 
 const TAG_NAME_RE = /[A-Z][A-Za-z0-9]*/;
-const ATTR_RE =
-  /([A-Za-z_][A-Za-z0-9_-]*)\s*=\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|(\{[^}]*\}))/g;
+const ATTR_RE = /([A-Za-z_][A-Za-z0-9_-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|(\{[^}]*\}))/g;
 
 export function transformMintlify(source: string): TransformResult {
   const warnings: TransformWarning[] = [];
@@ -116,6 +115,7 @@ export function transformMintlify(source: string): TransformResult {
     return { content: source, warnings, changed: false };
   }
   const protectedRanges = collectProtectedRanges(tree, bomLength);
+  const containerRanges = collectContainerRanges(tree, bomLength);
   const bodyStart = frontmatterEnd(source);
   let out = source.slice(0, bodyStart);
   let cursor = bodyStart;
@@ -135,6 +135,17 @@ export function transformMintlify(source: string): TransformResult {
       out += source.slice(next.start, next.end);
       cursor = next.end;
       continue;
+    }
+
+    const container = containerRanges[firstRangeAfter(containerRanges, next.start)];
+    if (container && next.start >= container.start) {
+      warn(
+        warnings,
+        source,
+        next.start,
+        "JSX inside a Markdown list or blockquote cannot be converted safely; source kept",
+      );
+      return { content: source, warnings, changed: false };
     }
 
     if (!changed) firstTag = next.start;
@@ -201,6 +212,13 @@ function findNextTag(
       i++;
       continue;
     }
+    let backslashes = 0;
+    for (let previous = i - 1; previous >= 0 && source[previous] === "\\"; previous--)
+      backslashes++;
+    if (backslashes % 2 !== 0) {
+      i++;
+      continue;
+    }
     const isClose = source[i + 1] === "/";
     const nameStart = isClose ? i + 2 : i + 1;
     const nameMatch = TAG_NAME_RE.exec(source.slice(nameStart));
@@ -237,10 +255,6 @@ function findTagEnd(source: string, from: number): number {
   for (let j = from; j < source.length; j++) {
     const ch = source[j];
     if (inQuote) {
-      if (ch === "\\") {
-        j++;
-        continue;
-      }
       if (ch === inQuote) inQuote = null;
     } else {
       if (ch === '"' || ch === "'") inQuote = ch;
@@ -290,8 +304,9 @@ function parseAttrs(
       continue;
     }
     seen.add(name);
-    const value = decodeQuoted(doubleQuoted ?? singleQuoted ?? "", doubleQuoted !== undefined);
-    if (value === undefined || /\p{Cc}/u.test(value) || /&(?:#\w+|[a-z][a-z0-9]+);/iu.test(value)) {
+    // JSX quoted attributes preserve backslashes literally; they are not JS strings.
+    const value = doubleQuoted ?? singleQuoted ?? "";
+    if (/\p{Cc}/u.test(value) || /&(?:#\w+|[a-z][a-z0-9]+);/iu.test(value)) {
       warn(warnings, source, offset, `Attribute ${name} cannot be converted safely`);
       continue;
     }
@@ -312,27 +327,6 @@ function parseAttrs(
   if (raw.slice(previousEnd).trim())
     warn(warnings, source, tag.attrsStart + previousEnd, `Unsupported attributes on <${tag.name}>`);
   return attrs;
-}
-
-function decodeQuoted(raw: string, doubleQuoted: boolean): string | undefined {
-  if (doubleQuoted) {
-    try {
-      return JSON.parse(`"${raw}"`) as string;
-    } catch {
-      return undefined;
-    }
-  }
-  let result = "";
-  for (let index = 0; index < raw.length; index++) {
-    if (raw[index] !== "\\") {
-      result += raw[index];
-      continue;
-    }
-    const next = raw[++index];
-    if (next !== "'" && next !== '"' && next !== "\\") return undefined;
-    result += next;
-  }
-  return result;
 }
 
 function warn(warnings: TransformWarning[], source: string, offset: number, message: string): void {
@@ -409,6 +403,22 @@ function collectProtectedRanges(tree: SourceNode, offset: number): SourceRange[]
     // values, not JSX bodies. Protect the whole resource: the block components
     // migrated here cannot be nested inside an inline link label either.
     if (PROTECTED_NODE_TYPES.has(node.type)) {
+      ranges.push({
+        start: node.position!.start.offset! + offset,
+        end: node.position!.end.offset! + offset,
+      });
+    } else {
+      node.children?.forEach(visit);
+    }
+  }
+  visit(tree);
+  return ranges;
+}
+
+function collectContainerRanges(tree: SourceNode, offset: number): SourceRange[] {
+  const ranges: SourceRange[] = [];
+  function visit(node: SourceNode): void {
+    if (node.type === "list" || node.type === "blockquote") {
       ranges.push({
         start: node.position!.start.offset! + offset,
         end: node.position!.end.offset! + offset,

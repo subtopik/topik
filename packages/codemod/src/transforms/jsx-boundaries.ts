@@ -20,7 +20,6 @@ export function jsxBoundarySyntax(names: ReadonlySet<string>): Extension {
   const tokenize: Tokenizer = (effects, ok, nok) => {
     let name = "";
     let quote: Code = null;
-    let escaped = false;
     let braces = 0;
     return start;
 
@@ -68,9 +67,7 @@ export function jsxBoundarySyntax(names: ReadonlySet<string>): Extension {
       )
         return nok(code);
       if (quote !== null) {
-        if (escaped) escaped = false;
-        else if (code === 92) escaped = true;
-        else if (code === quote) quote = null;
+        if (code === quote) quote = null;
       } else if (code === 34 || code === 39) quote = code;
       else if (code === 123) braces++;
       else if (code === 125 && braces > 0) braces--;

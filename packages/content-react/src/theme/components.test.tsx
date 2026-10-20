@@ -811,6 +811,77 @@ describe("default Topik theme components", () => {
     );
   });
 
+  it("resets quiz answers when the same document selects another question branch", () => {
+    const quiz = (answer: string) =>
+      [
+        "{% quiz %}",
+        "{% question %}",
+        "{% choice correct=true %}",
+        answer,
+        "{% /choice %}",
+        "{% choice %}",
+        "Other",
+        "{% /choice %}",
+        "{% explanation %}",
+        `Explanation for ${answer}`,
+        "{% /explanation %}",
+        "{% /question %}",
+        "{% /quiz %}",
+      ].join("\n");
+    const content = `{% if $first %}\n${quiz("Apple")}\n{% else /%}\n${quiz("Tokyo")}\n{% /if %}`;
+    const render = (first: boolean, className = "") => (
+      <TopikContent
+        content={content}
+        file="quiz.md"
+        config={{ variables: { first } }}
+        className={className}
+      />
+    );
+    const dom = mount(render(true));
+    act(() => dom.querySelector<HTMLInputElement>("input")!.click());
+    expect(dom.querySelector('[role="status"]')?.textContent).toBe("Correct");
+    // New config objects and unrelated presentation updates preserve the answer.
+    act(() => root?.render(render(true, "updated")));
+    expect(dom.querySelector<HTMLInputElement>("input")?.checked).toBe(true);
+    expect(dom.querySelector('[role="status"]')?.textContent).toBe("Correct");
+    act(() => root?.render(render(false)));
+    expect(dom.querySelector<HTMLInputElement>("input")?.checked).toBe(false);
+    expect(dom.querySelector('[role="status"]')?.textContent).toBe("");
+    expect(dom.querySelector(".topik-explanation")).toBeNull();
+  });
+
+  it("resets quiz answers when choices are removed or the interaction type changes", () => {
+    const content = (extra: boolean, multiple = false) =>
+      [
+        "{% quiz %}",
+        `{% question type="${multiple ? "multiple-choice" : "single-choice"}" %}`,
+        "{% choice correct=true %}",
+        "Apple",
+        "{% /choice %}",
+        "{% choice %}",
+        "Orange",
+        "{% /choice %}",
+        ...(extra ? ["{% choice %}", "Banana", "{% /choice %}"] : []),
+        "{% explanation %}",
+        "Explanation",
+        "{% /explanation %}",
+        "{% /question %}",
+        "{% /quiz %}",
+      ].join("\n");
+    const dom = mount(<TopikContent content={content(true)} />);
+    act(() => dom.querySelectorAll<HTMLInputElement>("input")[2].click());
+    act(() => root?.render(<TopikContent content={content(false)} />));
+    expect(
+      [...dom.querySelectorAll<HTMLInputElement>("input")].every((input) => !input.checked),
+    ).toBe(true);
+    expect(dom.querySelector('[role="status"]')?.textContent).toBe("");
+    expect(dom.querySelector(".topik-explanation")).toBeNull();
+    act(() => dom.querySelector<HTMLInputElement>("input")!.click());
+    act(() => root?.render(<TopikContent content={content(false, true)} />));
+    expect(dom.querySelector<HTMLInputElement>("input")?.checked).toBe(false);
+    expect(dom.querySelector('[role="status"]')?.textContent).toBe("");
+  });
+
   it("handles multiple-choice quiz answers", () => {
     const dom = mount(
       <TopikQuestion type="multiple-choice">

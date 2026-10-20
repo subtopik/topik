@@ -259,4 +259,43 @@ describe("rich content-react entry", () => {
       );
     });
   });
+  it.each([false, true])(
+    "serializes Mermaid theme changes and continues after failure=%s",
+    async (fail) => {
+      let finish: (() => void) | undefined;
+      mermaidRenderMock.mockImplementationOnce(
+        () =>
+          new Promise((resolve, reject) => {
+            finish = () =>
+              fail ? reject(new Error("Invalid first diagram")) : resolve({ svg: "<svg></svg>" });
+          }),
+      );
+      const diagram = (theme: "light" | "dark", key: number) => (
+        <RichTopikContentProvider theme={theme} key={key}>
+          <TopikContent content={"```mermaid\ngraph TD; A-->B;\n```"} />
+        </RichTopikContentProvider>
+      );
+      const dom = mount(
+        <>
+          {diagram("light", 0)}
+          {diagram("light", 1)}
+          {diagram("dark", 2)}
+        </>,
+      );
+      await waitFor(() => expect(finish).toBeTypeOf("function"));
+      expect(mermaidRenderMock).toHaveBeenCalledTimes(1);
+      expect(mermaidInitializeMock).not.toHaveBeenCalledWith(
+        expect.objectContaining({ theme: "dark" }),
+      );
+      await act(async () => finish?.());
+      await waitFor(() => {
+        expect(mermaidRenderMock).toHaveBeenCalledTimes(3);
+        expect(mermaidInitializeMock).toHaveBeenCalledWith(
+          expect.objectContaining({ theme: "dark" }),
+        );
+        expect(dom.querySelectorAll('[data-mermaid-rendered="true"]')).toHaveLength(2);
+      });
+      expect(dom.querySelectorAll("pre.topik-mermaid")).toHaveLength(fail ? 1 : 0);
+    },
+  );
 });

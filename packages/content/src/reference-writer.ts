@@ -1,12 +1,12 @@
 import type { Association, ImageReference, LinkReference } from "mdast";
-import type { Handle, Options, State } from "mdast-util-to-markdown";
+import type { Handle, Options } from "mdast-util-to-markdown";
 import { referenceSourceLabel } from "./document-index.js";
 
 /** Escapes and entities are part of reference identity, not decoded Markdown text. */
-export function referenceLabel(node: Association, state: State): string {
-  const value = referenceSourceLabel(node);
-  // Tables remove this escape before parsing inline references.
-  return state.stack.includes("tableCell") ? value.replaceAll("|", "\\|") : value;
+export function referenceLabel(node: Association): string {
+  // Reference identifiers retain authored escapes, including the odd backslash
+  // run that protects a pipe inside a table. Adding an escape changes identity.
+  return referenceSourceLabel(node);
 }
 
 export function referenceWriterExtension(): NonNullable<Options["extensions"]>[number] {
@@ -19,10 +19,10 @@ export function referenceWriterExtension(): NonNullable<Options["extensions"]>[n
     const context = { before: prefix, after: "]", ...tracker.current() };
     const text =
       node.type === "imageReference"
-        ? state.safe(node.alt ?? "", context)
+        ? state.safe(node.alt ?? "", context).replaceAll("\n", "&#xa;")
         : state.containerPhrasing(node, context);
     labelExit();
-    const label = referenceLabel(node, state);
+    const label = referenceLabel(node);
     exit();
     const suffix =
       node.referenceType === "full" || !text || text !== label

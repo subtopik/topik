@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 
 import { act, type ReactNode } from "react";
-import { createRoot, type Root } from "react-dom/client";
+import { createRoot, hydrateRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import {
   getRichTopikComponents,
   RichTopikCodeBlock,
+  RichTopikMermaid,
   RichTopikContentProvider,
   richTopikComponents,
 } from "./rich";
@@ -25,19 +26,15 @@ const renderToStringMock = vi.hoisted(() =>
       `<span data-katex-display="${String(options?.displayMode)}">${content}</span>`,
   ),
 );
-const mermaidInitializeMock = vi.hoisted(() => vi.fn());
 const mermaidRenderMock = vi.hoisted(() =>
-  vi.fn(async () => ({ svg: '<svg data-mermaid-rendered="true"></svg>' })),
+  vi.fn(() => ({
+    svg: '<svg xmlns="http://www.w3.org/2000/svg" data-mermaid-rendered="true"></svg>',
+  })),
 );
 
 vi.mock("shiki", () => ({ codeToTokens: codeToTokensMock }));
 vi.mock("katex", () => ({ renderToString: renderToStringMock }));
-vi.mock("mermaid", () => ({
-  default: {
-    initialize: mermaidInitializeMock,
-    render: mermaidRenderMock,
-  },
-}));
+vi.mock("pele", () => ({ render: mermaidRenderMock }));
 
 const richContent = `\`\`\`ts
 const answer = 42;
@@ -56,7 +53,6 @@ let container: HTMLDivElement | undefined;
 beforeEach(() => {
   codeToTokensMock.mockClear();
   renderToStringMock.mockClear();
-  mermaidInitializeMock.mockClear();
   mermaidRenderMock.mockClear();
 });
 
@@ -119,14 +115,6 @@ describe("rich content-react entry", () => {
   });
 
   it("shows a placeholder instead of Mermaid source while rendering", async () => {
-    let resolveRender: ((result: { svg: string }) => void) | undefined;
-    mermaidRenderMock.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          resolveRender = resolve;
-        }),
-    );
-
     const dom = mount(
       <RichTopikContentProvider>
         <TopikContent content={richContent} />
@@ -135,14 +123,6 @@ describe("rich content-react entry", () => {
 
     expect(dom.querySelector(".topik-rich-mermaid--loading")).not.toBeNull();
     expect(dom.querySelector("pre.topik-mermaid")).toBeNull();
-
-    await waitFor(() => {
-      expect(resolveRender).toBeTypeOf("function");
-    });
-
-    await act(async () => {
-      resolveRender?.({ svg: '<svg data-mermaid-rendered="true"></svg>' });
-    });
 
     await waitFor(() => {
       expect(
@@ -182,7 +162,9 @@ describe("rich content-react entry", () => {
   });
 
   it("shows Mermaid source when rendering fails", async () => {
-    mermaidRenderMock.mockRejectedValueOnce(new Error("Invalid diagram"));
+    mermaidRenderMock.mockImplementationOnce(() => {
+      throw new Error("Invalid diagram");
+    });
 
     const dom = mount(
       <RichTopikContentProvider>
@@ -218,84 +200,152 @@ describe("rich content-react entry", () => {
       displayMode: true,
       throwOnError: false,
     });
-    expect(mermaidInitializeMock).toHaveBeenCalledWith({
-      securityLevel: "strict",
-      startOnLoad: false,
-      theme: "dark",
-    });
     expect(mermaidRenderMock).toHaveBeenCalledWith(
-      expect.stringMatching(/^topik-mermaid-/),
       expect.stringContaining("graph TD"),
+      expect.objectContaining({
+        idPrefix: expect.stringMatching(/^topik-mermaid-/),
+        links: false,
+        images: false,
+      }),
     );
   });
 
-  it("reinitializes mermaid when the rich theme changes", async () => {
-    const render = (theme: "light" | "dark") => (
-      <RichTopikContentProvider theme={theme}>
+  it("keeps simultaneous themes independent and recovers from a failed diagram", async () => {
+    mermaidRenderMock.mockImplementationOnce(() => {
+      throw new Error("Bad diagram");
+    });
+    const diagram = (theme: "light" | "dark", key: number) => (
+      <RichTopikContentProvider theme={theme} key={key}>
         <TopikContent content={richContent} />
       </RichTopikContentProvider>
     );
-
-    mount(render("light"));
-
+    const dom = mount(
+      <>
+        {diagram("light", 0)}
+        {diagram("light", 1)}
+        {diagram("dark", 2)}
+      </>,
+    );
     await waitFor(() => {
-      expect(mermaidRenderMock).toHaveBeenCalled();
+      expect(dom.querySelectorAll("pre.topik-mermaid")).toHaveLength(1);
+      expect(dom.querySelectorAll(".topik-rich-mermaid svg")).toHaveLength(2);
     });
-
-    mermaidInitializeMock.mockClear();
-    mermaidRenderMock.mockClear();
-
-    act(() => root?.render(render("dark")));
-
-    await waitFor(() => {
-      expect(mermaidInitializeMock).toHaveBeenCalledWith({
-        securityLevel: "strict",
-        startOnLoad: false,
-        theme: "dark",
-      });
-      expect(mermaidRenderMock).toHaveBeenCalledWith(
-        expect.stringMatching(/^topik-mermaid-/),
-        expect.stringContaining("graph TD"),
-      );
-    });
+    expect(dom.querySelector('[data-theme="light"] svg')).not.toBeNull();
+    expect(dom.querySelector('[data-theme="dark"] svg')).not.toBeNull();
   });
-  it.each([false, true])(
-    "serializes Mermaid theme changes and continues after failure=%s",
-    async (fail) => {
-      let finish: (() => void) | undefined;
-      mermaidRenderMock.mockImplementationOnce(
-        () =>
-          new Promise((resolve, reject) => {
-            finish = () =>
-              fail ? reject(new Error("Invalid first diagram")) : resolve({ svg: "<svg></svg>" });
-          }),
-      );
-      const diagram = (theme: "light" | "dark", key: number) => (
-        <RichTopikContentProvider theme={theme} key={key}>
-          <TopikContent content={"```mermaid\ngraph TD; A-->B;\n```"} />
+
+  it("preserves the rendered diagram across theme changes without rendering again", async () => {
+    vi.useFakeTimers();
+
+    try {
+      const diagram = (theme: "light" | "dark") => (
+        <RichTopikContentProvider theme={theme}>
+          <RichTopikMermaid content="flowchart LR; A-->B" />
         </RichTopikContentProvider>
       );
-      const dom = mount(
-        <>
-          {diagram("light", 0)}
-          {diagram("light", 1)}
-          {diagram("dark", 2)}
-        </>,
-      );
-      await waitFor(() => expect(finish).toBeTypeOf("function"));
-      expect(mermaidRenderMock).toHaveBeenCalledTimes(1);
-      expect(mermaidInitializeMock).not.toHaveBeenCalledWith(
-        expect.objectContaining({ theme: "dark" }),
-      );
-      await act(async () => finish?.());
-      await waitFor(() => {
-        expect(mermaidRenderMock).toHaveBeenCalledTimes(3);
-        expect(mermaidInitializeMock).toHaveBeenCalledWith(
-          expect.objectContaining({ theme: "dark" }),
-        );
-        expect(dom.querySelectorAll('[data-mermaid-rendered="true"]')).toHaveLength(2);
+      const dom = mount(diagram("light"));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
       });
-      expect(dom.querySelectorAll("pre.topik-mermaid")).toHaveLength(fail ? 1 : 0);
-    },
-  );
+      const svg = dom.querySelector("svg");
+      expect(svg).not.toBeNull();
+      expect(mermaidRenderMock).toHaveBeenCalledTimes(1);
+
+      for (const theme of ["dark", "light"] as const) {
+        act(() => root?.render(diagram(theme)));
+
+        expect(dom.querySelector(".topik-rich-mermaid")?.getAttribute("data-theme")).toBe(theme);
+        expect(dom.querySelector(".topik-rich-mermaid--loading")).toBeNull();
+        expect(dom.querySelector("svg")).toBe(svg);
+
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(300);
+        });
+
+        expect(dom.querySelector(".topik-rich-mermaid--loading")).toBeNull();
+        expect(dom.querySelector("svg")).toBe(svg);
+        expect(mermaidRenderMock).toHaveBeenCalledTimes(1);
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("replaces the rendered diagram when its source changes", async () => {
+    vi.useFakeTimers();
+    mermaidRenderMock
+      .mockReturnValueOnce({
+        svg: '<svg xmlns="http://www.w3.org/2000/svg"><text>First diagram</text></svg>',
+      })
+      .mockReturnValueOnce({
+        svg: '<svg xmlns="http://www.w3.org/2000/svg"><text>Updated diagram</text></svg>',
+      });
+
+    try {
+      const dom = mount(<RichTopikMermaid content="flowchart LR; A-->B" />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+      expect(dom.querySelector("svg")?.textContent).toBe("First diagram");
+      expect(mermaidRenderMock).toHaveBeenCalledTimes(1);
+
+      act(() => root?.render(<RichTopikMermaid content="flowchart LR; B-->C" />));
+      expect(dom.querySelector(".topik-rich-mermaid--loading")).not.toBeNull();
+      expect(dom.querySelector("svg")).toBeNull();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(299);
+      });
+      expect(dom.querySelector(".topik-rich-mermaid--loading")).not.toBeNull();
+      expect(dom.querySelector("svg")).toBeNull();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(dom.querySelector(".topik-rich-mermaid--loading")).toBeNull();
+      expect(dom.querySelector("svg")?.textContent).toBe("Updated diagram");
+      expect(mermaidRenderMock).toHaveBeenCalledTimes(2);
+      expect(mermaidRenderMock).toHaveBeenLastCalledWith("flowchart LR; B-->C", expect.any(Object));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("discards a pending result after source changes", async () => {
+    const dom = mount(<RichTopikMermaid content="flowchart LR; A-->B" />);
+    await waitFor(() => expect(mermaidRenderMock).toHaveBeenCalled());
+    mermaidRenderMock.mockImplementationOnce(() => {
+      throw new Error("Invalid new source");
+    });
+    act(() => root?.render(<RichTopikMermaid content="invalid new source" />));
+    await waitFor(() => expect(dom.querySelector("pre")?.textContent).toBe("invalid new source"));
+    expect(dom.querySelector("svg")).toBeNull();
+  });
+
+  it("discards pending results on unmount", async () => {
+    const dom = mount(<RichTopikMermaid content="flowchart LR; A-->B" />);
+    await waitFor(() => expect(mermaidRenderMock).toHaveBeenCalled());
+    act(() => root?.unmount());
+    root = undefined;
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    });
+    expect(dom.innerHTML).toBe("");
+    dom.remove();
+  });
+
+  it("hydrates the server placeholder without mismatches", async () => {
+    const element = <RichTopikMermaid content="flowchart LR; A-->B" />;
+    const errors: unknown[] = [];
+    container = document.createElement("div");
+    container.innerHTML = renderToStaticMarkup(element);
+    document.body.append(container);
+    act(() => {
+      root = hydrateRoot(container!, element, {
+        onRecoverableError: (error) => errors.push(error),
+      });
+    });
+    await waitFor(() => expect(container?.querySelector("svg")).not.toBeNull());
+    expect(errors).toEqual([]);
+  });
 });

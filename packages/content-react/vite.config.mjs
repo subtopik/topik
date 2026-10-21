@@ -18,7 +18,7 @@ const config = defineConfig({
     deps: {
       neverBundle: [
         "katex",
-        "mermaid",
+        "pele",
         "react",
         "react-dom",
         "react/jsx-dev-runtime",

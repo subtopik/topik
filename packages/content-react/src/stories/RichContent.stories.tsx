@@ -36,7 +36,7 @@ const meta = {
     docs: {
       description: {
         component:
-          "Real KaTeX, Shiki, and Mermaid rendering through RichTopikContentProvider. Install the optional peers katex, shiki, and mermaid, then import the theme CSS, rich/styles.css, and katex/dist/katex.min.css. Rich content loads asynchronously; Mermaid shows a loading placeholder and falls back to source on failure. Use the Theme toolbar to change the rich provider and surrounding content together.",
+          "Real KaTeX, Shiki, and Pele rendering of Mermaid syntax through RichTopikContentProvider. Install the optional peers katex, shiki, and pele, then import the theme CSS, rich/styles.css, and katex/dist/katex.min.css. Rich content loads asynchronously; Mermaid shows a loading placeholder and falls back to source on failure. Use the Theme toolbar to change the rich provider and surrounding content together.",
       },
     },
   },
@@ -158,5 +158,51 @@ export const NarrowCode: Story = {
       timeout: 10000,
     });
     await expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+  },
+};
+
+export const IsolatedDiagramThemes: Story = {
+  render: () => (
+    <>
+      <RichTopikContentProvider theme="light">
+        <TopikContent content={mermaid} />
+      </RichTopikContentProvider>
+      <RichTopikContentProvider theme="dark">
+        <TopikContent content={mermaid} />
+      </RichTopikContentProvider>
+    </>
+  ),
+  play: async ({ canvasElement }) => {
+    await waitFor(() =>
+      expect(canvasElement.querySelectorAll(".topik-rich-mermaid svg")).toHaveLength(2),
+    );
+    const svgs = [...canvasElement.querySelectorAll(".topik-rich-mermaid svg")];
+    const titles = svgs.map((svg) => svg.getAttribute("aria-labelledby"));
+    await expect(new Set(titles).size).toBe(2);
+    for (const title of titles)
+      await expect(canvasElement.querySelector(`[id="${title}"]`)).toHaveTextContent(
+        "Content publishing",
+      );
+    await expect(getComputedStyle(svgs[0]).color).not.toBe(getComputedStyle(svgs[1]).color);
+  },
+};
+
+export const InertDiagramContent: Story = {
+  args: {
+    content:
+      '```mermaid\nflowchart LR\n A@{ img: "https://example.invalid/tracker.svg", label: "Safe", w: 60, h: 60 } --> B[End]\n click B "javascript:alert(1)"\n```',
+  },
+  play: async ({ canvasElement }) => {
+    await waitFor(() =>
+      expect(canvasElement.querySelector(".topik-rich-mermaid svg")).toBeVisible(),
+    );
+    await expect(
+      canvasElement.querySelector("svg image, svg a, svg script, svg foreignObject, svg [onclick]"),
+    ).toBeNull();
+    await expect(
+      performance
+        .getEntriesByType("resource")
+        .some((entry) => entry.name.includes("example.invalid")),
+    ).toBe(false);
   },
 };

@@ -225,6 +225,34 @@ test.each(
   },
 );
 
+test.each(["", "section/"].flatMap((prefix) => [false, true].map((exact) => ({ prefix, exact }))))(
+  "Wiki exact index routes agree across compilation, reader and portable writes ($prefix, $exact)",
+  async ({ prefix, exact }) => {
+    const href = `/${prefix}index?q=%E9#landing`;
+    const body = `# Landing\n\n[Special](${href})\n`;
+    const entries = tree("wiki", [
+      { path: "home.md", name: "home", slug: prefix ? "section" : "index", body },
+      ...(exact ? [{ path: "special.md", name: "special", slug: `${prefix}index/index` }] : []),
+    ]);
+    const project = await readSourceProject({ tree: entries });
+    const target = exact ? "special" : "home";
+    expect(getPage(project.compilation.resources).spec.content.value).toContain(
+      `ref://wiki-page/${target}?q=%E9#landing`,
+    );
+    expect(resolve(project, "wiki", href)).toMatchObject({
+      page: { page: target },
+      route: exact ? `${prefix}index` : prefix.replace(/\/$/, ""),
+      search: "?q=%E9",
+      hash: "landing",
+    });
+    expect(resolve(project, "wiki", `/${prefix}%69ndex`)?.page.page).toBe(target);
+    expect(resolve(project, "wiki", "/home.md")?.page.page).toBe("home");
+    expect(resolve(project, "wiki", `/${prefix}index/`)).toBeNull();
+    await noop(project, "wiki");
+    await noop(project, "wiki", body);
+  },
+);
+
 test.each(["", "section/"])(
   "Wiki %sindex route aliases agree with compilation and no-op writes",
   async (prefix) => {

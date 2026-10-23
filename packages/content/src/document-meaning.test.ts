@@ -1,4 +1,5 @@
 import { afterEach, expect, test, vi } from "vite-plus/test";
+import * as markdownWriter from "mdast-util-to-markdown";
 import {
   formatDocument,
   formatTopikContent,
@@ -10,7 +11,12 @@ import {
 import { parse } from "./test-helpers.js";
 import * as writer from "./writer.js";
 
-afterEach(() => vi.restoreAllMocks());
+vi.mock("mdast-util-to-markdown", { spy: true });
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.mocked(markdownWriter.toMarkdown).mockReset();
+});
 
 test.each([
   ["**Hello**", "__Hello__\n"],
@@ -37,9 +43,10 @@ test.each([
 
 test("rejects a valid but lossy serializer result without returning partial output", () => {
   const source = "  ![Image](old.png)\r\n";
-  vi.spyOn(writer, "serializeDocument").mockReturnValue("Image disappeared.\n");
+  vi.mocked(markdownWriter.toMarkdown).mockReturnValue("Image disappeared.\n");
   for (const result of [
     formatTopikContent(source),
+    formatDocument(source),
     rewriteTopikAssetOccurrences(source, () => "new.png"),
   ]) {
     expect(result).toMatchObject({

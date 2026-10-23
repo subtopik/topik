@@ -2,6 +2,7 @@ import { afterEach, expect, test, vi } from "vite-plus/test";
 import { rewriteTopikNavigationReferences } from "./navigation-rewrite";
 import { analyzeTopikContent } from "./links";
 import * as parser from "./parser";
+import * as writer from "./writer";
 import type { TopikContentConfig } from "./config";
 import { ContentLimitError } from "./limits";
 
@@ -128,8 +129,9 @@ test.each([undefined, "/next"])(
   },
 );
 
-test("retains the meaning check when serialization changes Markdown interpretation", () => {
+test("rejects serializer output that loses nested marks during navigation rewrite", () => {
   const source = "***_a_****_a_***\n\n[Next](next.md)\n";
+  vi.spyOn(writer, "serializeDocument").mockReturnValue("aa\n\n[Next](/next)\n");
   expect(rewriteTopikNavigationReferences(source, () => "/next")).toMatchObject({
     ok: false,
     source,

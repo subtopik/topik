@@ -35,7 +35,8 @@ The default export and named `remarkTags` export refer to the same plugin. This 
 an ESM package requiring Node.js 22.12 or later.
 
 Contributor tooling uses the workspace's `.node-version` and requires
-`^22.18.0 || ^24.11.0 || >=26.0.0` for Vite+ 1.0 and Vitest 5. CI verifies the
+`^22.23.4 || ^24.22.1 || >=26.12.1` for the development toolchain and Astro
+integration tests, including the October 2026 Node.js security fixes. CI verifies the
 built library on Node.js 22.12 separately from the test runner.
 
 ## Syntax

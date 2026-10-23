@@ -1,4 +1,5 @@
 import { afterEach, expect, test, vi } from "vite-plus/test";
+import * as markdownWriter from "mdast-util-to-markdown";
 import {
   formatDocument,
   formatTopikContent,
@@ -10,7 +11,12 @@ import {
 import { parse } from "./test-helpers.js";
 import * as writer from "./writer.js";
 
-afterEach(() => vi.restoreAllMocks());
+vi.mock("mdast-util-to-markdown", { spy: true });
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.mocked(markdownWriter.toMarkdown).mockReset();
+});
 
 test.each([
   ["**Hello**", "__Hello__\n"],
@@ -37,9 +43,10 @@ test.each([
 
 test("rejects a valid but lossy serializer result without returning partial output", () => {
   const source = "  ![Image](old.png)\r\n";
-  vi.spyOn(writer, "serializeDocument").mockReturnValue("Image disappeared.\n");
+  vi.mocked(markdownWriter.toMarkdown).mockReturnValue("Image disappeared.\n");
   for (const result of [
     formatTopikContent(source),
+    formatDocument(source),
     rewriteTopikAssetOccurrences(source, () => "new.png"),
   ]) {
     expect(result).toMatchObject({
@@ -58,22 +65,34 @@ test("checks unselected branches without evaluating their conditions", () => {
   expect(formatTopikContent(source)).toMatchObject({ ok: false, source });
 });
 
-test("writing, formatting, and rewriting refuse unresolved delimiter ambiguity", () => {
+test("writing, formatting, and rewriting preserve adjacent nested marks", () => {
   const source = "***_a_****_a_***";
-  expect(() => writeDocument(parse(source))).toThrow(/meaning/);
-  for (const result of [
-    formatTopikContent(source),
-    formatDocument(source),
-    rewriteTopikAssetOccurrences(source, () => undefined),
-  ]) {
-    expect(result).toMatchObject({
-      ok: false,
-      source,
-      diagnostics: [{ id: "topik-write-failed" }],
-    });
-    expect(result).not.toHaveProperty("formatted");
-    expect(result).not.toHaveProperty("content");
+  const document = parse(source);
+  expect(document.children).toMatchObject([
+    {
+      type: "paragraph",
+      children: [
+        {
+          type: "emphasis",
+          children: ["a", "a"].map((value) => ({
+            type: "strong",
+            children: [{ type: "emphasis", children: [{ type: "text", value }] }],
+          })),
+        },
+      ],
+    },
+  ]);
+  const written = writeDocument(document);
+  expect(sameDocumentMeaning(document, parse(written))).toBe(true);
+  expect(writeDocument(parse(written))).toBe(written);
+  for (const result of [formatTopikContent(source), formatDocument(source)]) {
+    expect(result).toMatchObject({ ok: true, source, formatted: written });
   }
+  expect(rewriteTopikAssetOccurrences(source, () => undefined)).toMatchObject({
+    ok: true,
+    content: written,
+    diagnostics: [],
+  });
 });
 
 test("merges adjacent text nodes while retaining an explicit empty title", () => {

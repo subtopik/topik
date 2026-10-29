@@ -15,8 +15,8 @@ catalog:
   "@types/mdast": ^4.0.4
   "@types/node": 22.20.4
   "@types/unist": ^3.0.3
-  "@vitest/browser-playwright": 5.0.4
-  "@vitest/coverage-v8": 5.0.4
+  "@vitest/browser-playwright": 5.0.5
+  "@vitest/coverage-v8": 5.0.5
   github-slugger: ^2.0.0
   json-schema-to-typescript: ^15.0.4
   mdast-util-directive: ^3.1.0
@@ -43,7 +43,7 @@ catalog:
   remark-stringify: ^11.0.0
   typescript: ^7.0.2
   unified: ^11.0.5
-  vite: npm:@voidzero-dev/vite-plus-core@1.2.0
+  vite: npm:@voidzero-dev/vite-plus-core@1.4.0
   vite-plus: 1.4.0
   vitest: 5.0.5
 

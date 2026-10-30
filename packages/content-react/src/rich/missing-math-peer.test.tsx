@@ -16,9 +16,13 @@ it("keeps the diagram and escaped TeX when optional KaTeX cannot load", async ()
     await act(async () => {
       root.render(<RichTopikMermaid content={'flowchart LR\n A["$$x^2$$"] --> B'} />);
     });
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 350));
-    });
+    await vi.waitFor(
+      async () => {
+        await act(async () => {});
+        expect(container.querySelector("svg")).not.toBeNull();
+      },
+      { timeout: 3000 },
+    );
     expect(container.querySelector("svg")?.textContent).toContain("$$x^2$$");
     expect(container.querySelector("pre")).toBeNull();
     expect(container.querySelector("foreignObject")).toBeNull();

@@ -137,14 +137,15 @@ try {
   );
   const diagramMathFixture = join(consumer, "diagram-math-browser-consumer.mjs");
   // Earlier consumers intentionally verify that every optional rich peer is
-  // absent. Add only the peers needed by the browser math integration afterward.
+  // absent. Vite resolves every optional import in the rich entry, including
+  // lazy Shiki imports, so install its peers for the browser integration afterward.
   execFileSync(
     "npm",
     [
       "install",
       "--ignore-scripts",
       "--no-save",
-      ...["katex", "pele"].map(
+      ...["katex", "pele", "shiki"].map(
         (name) =>
           `${name}@${readJson(join(root, `packages/content-react/node_modules/${name}/package.json`)).version}`,
       ),

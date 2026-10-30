@@ -47,6 +47,9 @@ const host = await createServer({
   logLevel: "error",
 });
 let browser;
+let page;
+const errors = [];
+const messages = [];
 try {
   await host.listen();
   const origin = `http://127.0.0.1:${host.httpServer.address().port}`;
@@ -54,11 +57,13 @@ try {
     headless: true,
     executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
   });
-  const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
+  page = await browser.newPage({ viewport: { width: 900, height: 700 } });
   const requests = [];
-  const errors = [];
   page.on("request", (request) => requests.push(request.url()));
   page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (["error", "warning"].includes(message.type())) messages.push(message.text());
+  });
   await page.goto(`${origin}/diagram-math.html`);
   await page.locator(".topik-rich-mermaid svg").waitFor();
   assert.equal(
@@ -71,7 +76,7 @@ try {
   await page.waitForFunction(() => document.querySelectorAll("foreignObject math").length === 3);
   assert.ok(requests.some((url) => /katex/i.test(url)));
   assert.equal(await page.locator("pre.topik-mermaid, .katex, .katex-html").count(), 0);
-  assert.equal(await page.getByRole("img", { name: "Formula graph" }).count(), 1);
+  assert.equal(await page.getByLabel("Formula graph", { exact: true }).count(), 1);
   const geometry = await page.locator("foreignObject").evaluateAll((boxes) =>
     boxes.map((box) => {
       const rect = box.getBoundingClientRect();
@@ -151,6 +156,13 @@ try {
   console.log(
     "Verified packed diagram MathML, measurement, lazy peers, themes, accessibility and safe formula fallbacks",
   );
+} catch (error) {
+  console.error("Diagram math browser diagnostics", {
+    errors,
+    messages,
+    body: await page?.locator("body").innerHTML().catch(() => "Page unavailable"),
+  });
+  throw error;
 } finally {
   await browser?.close();
   await host.close();

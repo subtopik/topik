@@ -158,7 +158,7 @@ Rich components load their peers in the browser. Server rendering emits the
 initial fallback or loading state; hydration completes the rich presentation.
 Code and math retain plain fallbacks if rendering fails. Mermaid displays a
 loading state and falls back to diagram source on failure. The authored `mermaid` fences and public `TopikMermaid` / `RichTopikMermaid`
-components are unchanged; replace the optional `mermaid` installation with `pele@1.8.0`.
+components are unchanged; replace the optional `mermaid` installation with `pele@1.12.0`.
 
 Pele uses its own layouts and CSS colors, so output differs from Mermaid.js.
 Provider themes are isolated per diagram. `accTitle` and `accDescr` retain unique

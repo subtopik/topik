@@ -76,7 +76,7 @@ describe("diagram math resolver", () => {
     });
     const draw = vi.fn();
     const pending = withDiagramMath("$$x$$", draw);
-    await Promise.resolve();
+    await vi.dynamicImportSettled();
     expect(draw).not.toHaveBeenCalled();
     expect(document.querySelector('[aria-hidden="true"]')).toBeNull();
     ready();

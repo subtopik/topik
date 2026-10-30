@@ -84,11 +84,7 @@ try {
   });
   await page.goto(`${origin}/diagram-math.html`);
   await page.locator(".topik-rich-mermaid svg").waitFor();
-  assert.equal(
-    requests.some(requestsKaTeX),
-    false,
-    "plain diagrams must not load KaTeX",
-  );
+  assert.equal(requests.some(requestsKaTeX), false, "plain diagrams must not load KaTeX");
 
   await page.evaluate((content) => window.show(content), source);
   await page.waitForFunction(() => document.querySelectorAll("foreignObject math").length === 3);
@@ -108,7 +104,10 @@ try {
   for (const { box, math } of geometry) {
     assert.ok(math.width > 0 && math.height > 0);
     assert.ok(Math.abs(math.width - box.width) < 2, "measured math width must match its SVG box");
-    assert.ok(Math.abs(math.height - box.height) < 2, "measured math height must match its SVG box");
+    assert.ok(
+      Math.abs(math.height - box.height) < 2,
+      "measured math height must match its SVG box",
+    );
     assert.ok(Math.abs(math.x - box.x) < 2 && Math.abs(math.y - box.y) < 2);
   }
   await page.evaluate(() => {

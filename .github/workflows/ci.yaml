@@ -31,6 +31,13 @@ jobs:
 
       - run: vp install --frozen-lockfile
 
+      - name: Diagnose formatter output
+        continue-on-error: true
+        run: vp check --fix
+
+      - name: Show formatter correction
+        run: git diff -- tools/diagram-math-browser-consumer.mjs
+
       - run: vp run -r build
 
       - name: Install browser for packed preview integration

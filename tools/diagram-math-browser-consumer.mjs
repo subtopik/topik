@@ -165,7 +165,10 @@ try {
     await page.locator("svg a, svg image, svg img, svg script, svg [href], svg [src]").count(),
     0,
   );
-  assert.equal(requests.some((url) => url.includes("untrusted.example")), false);
+  assert.equal(
+    requests.some((url) => url.includes("untrusted.example")),
+    false,
+  );
   assert.equal(await page.locator("pre.topik-mermaid").count(), 0);
   assert.equal(await page.locator('.topik-rich-mermaid[aria-hidden="true"]').count(), 0);
   await page.evaluate(() => window.dispose());
@@ -177,7 +180,10 @@ try {
   console.error("Diagram math browser diagnostics", {
     errors,
     messages,
-    body: await page?.locator("body").innerHTML().catch(() => "Page unavailable"),
+    body: await page
+      ?.locator("body")
+      .innerHTML()
+      .catch(() => "Page unavailable"),
   });
   throw error;
 } finally {

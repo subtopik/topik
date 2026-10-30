@@ -47,7 +47,7 @@
   "inlinedDependencies": {
     "devlop": "1.1.0",
     "mdast-util-gfm-footnote": "2.1.0",
-    "mdast-util-gfm-strikethrough": "2.0.0",
+    "mdast-util-gfm-strikethrough": "2.0.1",
     "mdast-util-gfm-table": "2.0.0",
     "mdast-util-gfm-task-list-item": "2.0.0",
     "micromark-core-commonmark": "2.0.3",

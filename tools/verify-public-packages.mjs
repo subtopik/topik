@@ -135,6 +135,33 @@ try {
       timeout: 60_000,
     },
   );
+  const diagramMathFixture = join(consumer, "diagram-math-browser-consumer.mjs");
+  // Earlier consumers intentionally verify that every optional rich peer is
+  // absent. Vite resolves every optional import in the rich entry, including
+  // lazy Shiki imports, so install its peers for the browser integration afterward.
+  execFileSync(
+    "npm",
+    [
+      "install",
+      "--ignore-scripts",
+      "--no-save",
+      ...["katex", "pele", "shiki"].map(
+        (name) =>
+          `${name}@${readJson(join(root, `packages/content-react/node_modules/${name}/package.json`)).version}`,
+      ),
+    ],
+    { cwd: consumer, stdio: "inherit" },
+  );
+  copyFileSync(join(root, "tools/diagram-math-browser-consumer.mjs"), diagramMathFixture);
+  execFileSync(
+    process.execPath,
+    [
+      diagramMathFixture,
+      rendererTestRequire.resolve("vite"),
+      rendererTestRequire.resolve("playwright"),
+    ],
+    { cwd: consumer, stdio: "inherit", timeout: 60_000 },
+  );
   const contentManifest = readJson(join(modules, "@topik/content/package.json"));
   if (contentManifest.dependencies?.["linkify-it"]) {
     throw new Error("Packed content must not depend on implicit autolinking");

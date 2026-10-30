@@ -123,11 +123,12 @@ same `compileTopikContent` function for consumers with another rendering framewo
 `@topik/content-react/rich` adds Shiki syntax highlighting, KaTeX math, and Mermaid-syntax
 diagrams through Pele. Install the optional peers needed by your content:
 
-| Feature               | Peer dependency and supported range |
-| --------------------- | ----------------------------------- |
-| Code highlighting     | `shiki@^4.0.0`                      |
-| Math                  | `katex@^0.18.2`                     |
-| Mermaid syntax (Pele) | `pele@1.8.0`                        |
+| Feature                | Peer dependency and supported range |
+| ---------------------- | ----------------------------------- |
+| Code highlighting      | `shiki@^4.0.0`                      |
+| Math                   | `katex@^0.18.2`                     |
+| Mermaid syntax (Pele)  | `pele@1.8.0`                        |
+| Math in diagram labels | `pele@1.8.0` and `katex@^0.18.2`    |
 
 Wrap the themed renderer with the rich provider:
 
@@ -167,6 +168,39 @@ including remote images, and validates SVG before insertion. Unrecognized SVG or
 unsupported syntax falls back to plain source. Source is limited to 50,000 characters,
 flowcharts to 500 edges, and generated SVG to 4,000,000 characters. Author directives
 cannot enable links/images or change these application-controlled limits.
+
+Use `$$...$$` inside supported diagram labels for formulas:
+
+````topik
+```mermaid
+flowchart LR
+  accTitle: Energy equation
+  accDescr: Mass is converted to energy using E equals m c squared.
+  A["Mass $$m$$"] -->|"$$E = mc^2$$"| B["Energy $$E$$"]
+```
+````
+
+KaTeX loads only when a diagram source contains `$$`. Pele typesets labels in
+flowchart, swimlane, sequence, state, class, ER, mindmap, kanban, block,
+requirement, and use case diagrams; diagram titles and class members stay as text.
+Topik inserts native MathML and measures each expression in the browser before
+Pele lays out the diagram. Diagram formulas use the browser's math font and do
+not require KaTeX's stylesheet; standalone rich math still requires the CSS above.
+MathML follows diagram label colors in both provider themes. Use `accTitle` and
+`accDescr` to describe diagrams for assistive technology.
+
+Missing KaTeX, invalid TeX, unsupported MathML, or unavailable measurements leave
+the affected `$$...$$` expression as escaped TeX inside the rendered diagram.
+Typesetting runs with KaTeX trust disabled, strict errors, fresh macros per
+expression, at most 1,000 macro expansions, and a maximum explicit size of 10 em.
+Each diagram permits 100 expression resolutions, 4,096 characters per expression,
+100,000 generated characters per expression, and 1,000,000 across expressions.
+Measured width and height must each be at most 4,096 pixels. These limits also
+fall back to TeX. The SVG boundary accepts only Pele's fixed MathML wrapper and
+passive presentation elements; formulas cannot enable links, images, or HTML.
+Pending page fonts may delay measurement by up to one second. Native MathML
+appearance varies with browser and installed math fonts; SVG exports containing
+these formulas require a browser that supports MathML inside `foreignObject`.
 
 Pele's synchronous rendering still runs on the browser main thread after the lazy
 import. Topik retains the existing 300 ms minimum loading indicator; a smaller

@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { safeDiagramSvg } from "./diagram-svg";
+import { withDiagramMath } from "./diagram-math";
 import { TopikMath, TopikMathInline, TopikMermaid } from "../theme/components";
 import type { TopikComponentMap, TopikComponentProps } from "../core/components";
 import { CodeBlockView, type CodeHighlight } from "../theme/code-block";
@@ -261,16 +262,19 @@ export function RichTopikMermaid(props: TopikComponentProps) {
     () =>
       withMinimumDelay(async () => {
         const { render } = await import("pele");
-        const result = render(content, {
-          idPrefix: `topik-mermaid-${id}`,
-          links: false,
-          images: false,
-          maxEdges: 500,
-          limit: 50_000,
-          outputLimit: 4_000_000,
-          responsive: true,
-          autoDirection: false,
-        });
+        const result = await withDiagramMath(content, (math) =>
+          render(content, {
+            idPrefix: `topik-mermaid-${id}`,
+            links: false,
+            images: false,
+            maxEdges: 500,
+            limit: 50_000,
+            outputLimit: 4_000_000,
+            responsive: true,
+            autoDirection: false,
+            math,
+          }),
+        );
         return safeDiagramSvg(result.svg);
       }, minimumMermaidLoadingDurationMs),
     [content, id],

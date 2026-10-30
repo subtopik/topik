@@ -30,4 +30,3 @@ declare module "shiki" {
     options: { lang: string; theme: string },
   ): Promise<string>;
 }
-

@@ -6,20 +6,28 @@ import { withDiagramMath } from "./diagram-math";
 import { safeDiagramSvg } from "./diagram-svg";
 
 const loaded = vi.hoisted(() => vi.fn());
-const typeset = vi.hoisted(() => vi.fn());
+const typeset = vi.hoisted(() => vi.fn<typeof import("katex").renderToString>());
 vi.mock("katex", () => {
   loaded();
   return { renderToString: typeset };
 });
 
-const math = '<math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><mfrac><mi>x</mi><mi>y</mi></mfrac></math>';
+const math =
+  '<math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><mfrac><mi>x</mi><mi>y</mi></mfrac></math>';
 const markup = `<span class="katex">${math}</span>`;
 const fonts = Object.getOwnPropertyDescriptor(document, "fonts");
 
 beforeEach(() => {
   typeset.mockReset().mockReturnValue(markup);
   vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
-    width: 60, height: 45, x: 0, y: 0, top: 0, right: 60, bottom: 45, left: 0,
+    width: 60,
+    height: 45,
+    x: 0,
+    y: 0,
+    top: 0,
+    right: 60,
+    bottom: 45,
+    left: 0,
     toJSON: () => ({}),
   });
 });
@@ -39,19 +47,32 @@ describe("diagram math resolver", () => {
     await withDiagramMath("$$x$$", (resolver) => {
       expect(resolver?.("x", 16)).toEqual({ html: math, width: 60, height: 45 });
       expect(resolver?.("x", 14)).toEqual({ html: math, width: 60, height: 45 });
-      expect(document.querySelector('.topik-rich-mermaid[aria-hidden="true"]')?.children).toHaveLength(0);
+      expect(
+        document.querySelector('.topik-rich-mermaid[aria-hidden="true"]')?.children,
+      ).toHaveLength(0);
     });
     expect(typeset).toHaveBeenCalledWith("x", {
-      displayMode: true, output: "mathml", throwOnError: true, trust: false,
-      strict: "error", maxExpand: 1000, maxSize: 10, macros: {},
+      displayMode: true,
+      output: "mathml",
+      throwOnError: true,
+      trust: false,
+      strict: "error",
+      maxExpand: 1000,
+      maxSize: 10,
+      macros: {},
     });
-    expect(typeset.mock.calls[0][1].macros).not.toBe(typeset.mock.calls[1][1].macros);
+    expect(typeset.mock.calls[0][1]!.macros).not.toBe(typeset.mock.calls[1][1]!.macros);
   });
 
   it("waits for pending fonts without adding a probe to the page", async () => {
     let ready!: () => void;
     Object.defineProperty(document, "fonts", {
-      configurable: true, value: { ready: new Promise<void>((resolve) => { ready = resolve; }) },
+      configurable: true,
+      value: {
+        ready: new Promise<void>((resolve) => {
+          ready = resolve;
+        }),
+      },
     });
     const draw = vi.fn();
     const pending = withDiagramMath("$$x$$", draw);
@@ -67,7 +88,8 @@ describe("diagram math resolver", () => {
     vi.useFakeTimers();
     try {
       Object.defineProperty(document, "fonts", {
-        configurable: true, value: { ready: new Promise<void>(() => {}) },
+        configurable: true,
+        value: { ready: new Promise<void>(() => {}) },
       });
       const draw = vi.fn();
       const pending = withDiagramMath("$$x$$", draw);
@@ -86,21 +108,26 @@ describe("diagram math resolver", () => {
       return markup;
     });
     const source = 'flowchart LR\n A["$$good$$ and $$bad$$"] --> B';
-    const svg = await withDiagramMath(source, (resolver) => safeDiagramSvg(render(source, {
-      math: resolver, links: false, images: false,
-    }).svg));
+    const svg = await withDiagramMath(source, (resolver) =>
+      safeDiagramSvg(render(source, { math: resolver, links: false, images: false }).svg),
+    );
     expect(svg).toContain("<math");
     expect(svg).toContain("$$bad$$");
     expect(svg).not.toContain("$$good$$");
   });
 
   it.each([0, NaN, Infinity, 4097])("keeps TeX when measurement is unusable (%s)", async (width) => {
-    vi.mocked(Element.prototype.getBoundingClientRect).mockReturnValue({ width, height: 40 } as DOMRect);
+    vi.mocked(Element.prototype.getBoundingClientRect).mockReturnValue({
+      width,
+      height: 40,
+    } as DOMRect);
     await withDiagramMath("$$x$$", (resolver) => expect(resolver?.("x", 16)).toBeNull());
   });
 
   it("rejects unsafe typesetter output before measuring it", async () => {
-    typeset.mockReturnValue('<span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><mtext href="https://example.com">x</mtext></math></span>');
+    typeset.mockReturnValue(
+      '<span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><mtext href="https://example.com">x</mtext></math></span>',
+    );
     await withDiagramMath("$$x$$", (resolver) => expect(resolver?.("x", 16)).toBeNull());
     expect(Element.prototype.getBoundingClientRect).not.toHaveBeenCalled();
   });
@@ -129,9 +156,11 @@ describe("diagram math resolver", () => {
   });
 
   it("removes the probe even when diagram rendering throws", async () => {
-    await expect(withDiagramMath("$$x$$", (resolver) => {
-      resolver?.("x", 16);
-      throw new Error("Invalid diagram");
-    })).rejects.toThrow("Invalid diagram");
+    await expect(
+      withDiagramMath("$$x$$", (resolver) => {
+        resolver?.("x", 16);
+        throw new Error("Invalid diagram");
+      }),
+    ).rejects.toThrow("Invalid diagram");
   });
 });

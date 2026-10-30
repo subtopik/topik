@@ -15,8 +15,13 @@ const source = String.raw`flowchart LR
   accDescr: A fraction and a sum lead to the energy equation.
   A["Before $$\frac{x_1^2}{\sqrt{y}}$$ after"] -->|"$$\sum_{i=1}^{n} i$$"| B["$$E=mc^2$$"]`;
 const ordinary = "flowchart LR\n A[Plain] --> B[Diagram]";
-await writeFile(html, '<div id="root"></div><script type="module" src="/diagram-math-app.js"></script>');
-await writeFile(app, `
+await writeFile(
+  html,
+  '<div id="root"></div><script type="module" src="/diagram-math-app.js"></script>',
+);
+await writeFile(
+  app,
+  `
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { RichTopikContentProvider, RichTopikMermaid } from "@topik/content-react/rich";
@@ -29,12 +34,16 @@ window.show = (content, theme = "light", together = false) => {
 };
 window.dispose = () => root.unmount();
 window.show(${JSON.stringify(ordinary)});
-`);
+`,
+);
 const host = await createServer({
   root,
   configFile: false,
   server: { host: "127.0.0.1", port: 0 },
-  optimizeDeps: { include: ["react", "react-dom/client", "pele", "katex"] },
+  optimizeDeps: {
+    include: ["react", "react-dom/client", "pele", "katex"],
+    exclude: ["@topik/content-react/rich"],
+  },
   logLevel: "error",
 });
 let browser;
@@ -52,41 +61,66 @@ try {
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`${origin}/diagram-math.html`);
   await page.locator(".topik-rich-mermaid svg").waitFor();
-  assert.equal(requests.some((url) => /katex/i.test(url)), false, "plain diagrams must not load KaTeX");
+  assert.equal(
+    requests.some((url) => /katex/i.test(url)),
+    false,
+    "plain diagrams must not load KaTeX",
+  );
 
   await page.evaluate((content) => window.show(content), source);
   await page.waitForFunction(() => document.querySelectorAll("foreignObject math").length === 3);
   assert.ok(requests.some((url) => /katex/i.test(url)));
   assert.equal(await page.locator("pre.topik-mermaid, .katex, .katex-html").count(), 0);
   assert.equal(await page.getByRole("img", { name: "Formula graph" }).count(), 1);
-  const geometry = await page.locator("foreignObject").evaluateAll((boxes) => boxes.map((box) => {
-    const rect = box.getBoundingClientRect();
-    const math = box.querySelector("math").getBoundingClientRect();
-    return { box: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-      math: { x: math.x, y: math.y, width: math.width, height: math.height } };
-  }));
+  const geometry = await page.locator("foreignObject").evaluateAll((boxes) =>
+    boxes.map((box) => {
+      const rect = box.getBoundingClientRect();
+      const math = box.querySelector("math").getBoundingClientRect();
+      return {
+        box: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+        math: { x: math.x, y: math.y, width: math.width, height: math.height },
+      };
+    }),
+  );
   for (const { box, math } of geometry) {
     assert.ok(math.width > 0 && math.height > 0);
     assert.ok(Math.abs(math.width - box.width) < 2, "measured math width must match its SVG box");
     assert.ok(Math.abs(math.height - box.height) < 2, "measured math height must match its SVG box");
     assert.ok(Math.abs(math.x - box.x) < 2 && Math.abs(math.y - box.y) < 2);
   }
-  await page.evaluate(() => { window.previousSvg = document.querySelector("svg"); });
-  const lightColor = await page.locator("math").first().evaluate((math) => getComputedStyle(math).color);
+  await page.evaluate(() => {
+    window.previousSvg = document.querySelector("svg");
+  });
+  const lightColor = await page
+    .locator("math")
+    .first()
+    .evaluate((math) => getComputedStyle(math).color);
   await page.evaluate((content) => window.show(content, "dark"), source);
   await page.locator('.topik-rich-mermaid[data-theme="dark"]').waitFor();
-  assert.equal(await page.evaluate(() => window.previousSvg === document.querySelector("svg")), true);
-  const darkColor = await page.locator("math").first().evaluate((math) => getComputedStyle(math).color);
+  assert.equal(
+    await page.evaluate(() => window.previousSvg === document.querySelector("svg")),
+    true,
+  );
+  const darkColor = await page
+    .locator("math")
+    .first()
+    .evaluate((math) => getComputedStyle(math).color);
   assert.notEqual(lightColor, darkColor);
 
   await page.evaluate((content) => window.show(content, "light", true), source);
   await page.waitForFunction(() => document.querySelectorAll("foreignObject math").length === 6);
-  const ids = await page.locator(".topik-rich-mermaid svg").evaluateAll((svgs) => svgs.map((svg) => {
-    const title = svg.getAttribute("aria-labelledby");
-    const desc = svg.getAttribute("aria-describedby");
-    return { title, desc, titleText: document.getElementById(title)?.textContent,
-      descText: document.getElementById(desc)?.textContent };
-  }));
+  const ids = await page.locator(".topik-rich-mermaid svg").evaluateAll((svgs) =>
+    svgs.map((svg) => {
+      const title = svg.getAttribute("aria-labelledby");
+      const desc = svg.getAttribute("aria-describedby");
+      return {
+        title,
+        desc,
+        titleText: document.getElementById(title)?.textContent,
+        descText: document.getElementById(desc)?.textContent,
+      };
+    }),
+  );
   assert.equal(new Set(ids.map(({ title }) => title)).size, 2);
   assert.equal(new Set(ids.map(({ desc }) => desc)).size, 2);
   for (const { titleText, descText } of ids) {
@@ -100,14 +134,23 @@ try {
   B --> C["$$\unknowncommand{x}$$"]
   click A "https://untrusted.example/click"`;
   await page.evaluate((content) => window.show(content), hostile);
-  await page.waitForFunction(() => document.querySelectorAll("svg").length === 1 && document.querySelector("svg")?.textContent.includes("unknowncommand"));
-  assert.equal(await page.locator("svg a, svg image, svg img, svg script, svg [href], svg [src]").count(), 0);
+  await page.waitForFunction(
+    () =>
+      document.querySelectorAll("svg").length === 1 &&
+      document.querySelector("svg")?.textContent.includes("unknowncommand"),
+  );
+  assert.equal(
+    await page.locator("svg a, svg image, svg img, svg script, svg [href], svg [src]").count(),
+    0,
+  );
   assert.equal(requests.some((url) => url.includes("untrusted.example")), false);
   assert.equal(await page.locator("pre.topik-mermaid").count(), 0);
   assert.equal(await page.locator('.topik-rich-mermaid[aria-hidden="true"]').count(), 0);
   await page.evaluate(() => window.dispose());
   assert.deepEqual(errors, []);
-  console.log("Verified packed diagram MathML, measurement, lazy peers, themes, accessibility and safe formula fallbacks");
+  console.log(
+    "Verified packed diagram MathML, measurement, lazy peers, themes, accessibility and safe formula fallbacks",
+  );
 } finally {
   await browser?.close();
   await host.close();

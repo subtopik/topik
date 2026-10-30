@@ -123,12 +123,12 @@ same `compileTopikContent` function for consumers with another rendering framewo
 `@topik/content-react/rich` adds Shiki syntax highlighting, KaTeX math, and Mermaid-syntax
 diagrams through Pele. Install the optional peers needed by your content:
 
-| Feature               | Peer dependency and supported range |
-| --------------------- | ----------------------------------- |
-| Code highlighting     | `shiki@^4.0.0`                      |
-| Math                  | `katex@^0.18.2`                     |
-| Mermaid syntax (Pele) | `pele@1.8.0`                        |
-| Math in diagram labels | `pele@1.8.0` and `katex@^0.18.2` |
+| Feature                | Peer dependency and supported range |
+| ---------------------- | ----------------------------------- |
+| Code highlighting      | `shiki@^4.0.0`                      |
+| Math                   | `katex@^0.18.2`                     |
+| Mermaid syntax (Pele)  | `pele@1.8.0`                        |
+| Math in diagram labels | `pele@1.8.0` and `katex@^0.18.2`    |
 
 Wrap the themed renderer with the rich provider:
 
@@ -312,4 +312,3 @@ For callers that already own a validated reader tree, `renderTrustedTopikTree`
 is available separately. The caller owns validation; the renderer still checks
 browser-facing asset and navigation fields. `TopikContent` accepts source strings,
 not trusted trees.
-

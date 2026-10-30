@@ -53,8 +53,6 @@ try {
         devDependencies: {
           typescript: lockedTypescriptVersion(),
           "@types/react": installedReactTypesVersion(),
-          katex: readJson(join(root, "packages/content-react/node_modules/katex/package.json")).version,
-          pele: readJson(join(root, "packages/content-react/node_modules/pele/package.json")).version,
         },
       },
       null,
@@ -138,10 +136,29 @@ try {
     },
   );
   const diagramMathFixture = join(consumer, "diagram-math-browser-consumer.mjs");
+  // Earlier consumers intentionally verify that every optional rich peer is
+  // absent. Add only the peers needed by the browser math integration afterward.
+  execFileSync(
+    "npm",
+    [
+      "install",
+      "--ignore-scripts",
+      "--no-save",
+      ...["katex", "pele"].map(
+        (name) =>
+          `${name}@${readJson(join(root, `packages/content-react/node_modules/${name}/package.json`)).version}`,
+      ),
+    ],
+    { cwd: consumer, stdio: "inherit" },
+  );
   copyFileSync(join(root, "tools/diagram-math-browser-consumer.mjs"), diagramMathFixture);
   execFileSync(
     process.execPath,
-    [diagramMathFixture, rendererTestRequire.resolve("vite"), rendererTestRequire.resolve("playwright")],
+    [
+      diagramMathFixture,
+      rendererTestRequire.resolve("vite"),
+      rendererTestRequire.resolve("playwright"),
+    ],
     { cwd: consumer, stdio: "inherit", timeout: 60_000 },
   );
   const contentManifest = readJson(join(modules, "@topik/content/package.json"));
@@ -755,4 +772,3 @@ function lockedTypescriptVersion() {
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
 }
-

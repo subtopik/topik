@@ -21,8 +21,10 @@ const diagrams = [
 ];
 
 describe("Pele SVG boundary", () => {
-  const mathContainer = (body: string) => `<foreignObject class="pele-math" x="0" y="0" width="80" height="60" overflow="visible" color="var(--_fg)"><div xmlns="http://www.w3.org/1999/xhtml" style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:16px;line-height:normal;white-space:nowrap">${body}</div></foreignObject>`;
-  const mathSvg = (body: string) => `<svg xmlns="http://www.w3.org/2000/svg">${mathContainer(body)}</svg>`;
+  const mathContainer = (body: string) =>
+    `<foreignObject class="pele-math" x="0" y="0" width="80" height="60" overflow="visible" color="var(--_fg)"><div xmlns="http://www.w3.org/1999/xhtml" style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:16px;line-height:normal;white-space:nowrap">${body}</div></foreignObject>`;
+  const mathSvg = (body: string) =>
+    `<svg xmlns="http://www.w3.org/2000/svg">${mathContainer(body)}</svg>`;
 
   it.each([
     String.raw`\frac{x_1^2}{\sqrt{y}}`,
@@ -45,7 +47,9 @@ describe("Pele SVG boundary", () => {
     '<mtext><?x ><img src="x" onerror="window.pwned=1">?></mtext>',
     '<mtext><![CDATA[<img src="x" onerror="window.pwned=1">]]></mtext>',
   ])("rejects unsafe MathML: %s", (body) => {
-    expect(() => safeDiagramSvg(mathSvg(`<math xmlns="http://www.w3.org/1998/Math/MathML">${body}</math>`))).toThrow();
+    expect(() =>
+      safeDiagramSvg(mathSvg(`<math xmlns="http://www.w3.org/1998/Math/MathML">${body}</math>`)),
+    ).toThrow();
   });
 
   it("requires the exact Pele MathML bridge and bounded geometry", () => {
@@ -53,12 +57,17 @@ describe("Pele SVG boundary", () => {
     for (const unsafe of [
       valid.replace('class="pele-math"', 'class="html-label"'),
       valid.replace('width="80"', 'width="999999"'),
-      valid.replace('font-size:16px', 'font-size:999999px'),
-      valid.replace('width:100%', 'width:100%;background:url(https://example.com)'),
-      valid.replace('</math>', '</math><a href="https://example.com">link</a>'),
+      valid.replace("font-size:16px", "font-size:999999px"),
+      valid.replace("width:100%", "width:100%;background:url(https://example.com)"),
+      valid.replace("</math>", '</math><a href="https://example.com">link</a>'),
       valid.replace('color="var(--_fg)"', 'color="url(https://example.com)"'),
-    ]) expect(() => safeDiagramSvg(unsafe)).toThrow();
-    expect(() => safeDiagramSvg('<svg xmlns="http://www.w3.org/2000/svg"><math xmlns="http://www.w3.org/1998/Math/MathML"><mi>x</mi></math></svg>')).toThrow();
+    ])
+      expect(() => safeDiagramSvg(unsafe)).toThrow();
+    expect(() =>
+      safeDiagramSvg(
+        '<svg xmlns="http://www.w3.org/2000/svg"><math xmlns="http://www.w3.org/1998/Math/MathML"><mi>x</mi></math></svg>',
+      ),
+    ).toThrow();
   });
 
   it.each(diagrams)("renders %s", (source) => {
@@ -97,4 +106,3 @@ describe("Pele SVG boundary", () => {
     expect(() => render("not a diagram")).toThrow();
   });
 });
-

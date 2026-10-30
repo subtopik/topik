@@ -116,7 +116,11 @@ export function safeDiagramSvg(svg: string): string {
   for (const element of [root, ...root.querySelectorAll("*")]) {
     // XML processing instructions/CDATA can change meaning when this string
     // is later parsed as HTML. Pele needs only elements and ordinary text.
-    if ([...element.childNodes].some((node) => node.nodeType !== Node.ELEMENT_NODE && node.nodeType !== Node.TEXT_NODE)) {
+    if (
+      [...element.childNodes].some(
+        (node) => node.nodeType !== Node.ELEMENT_NODE && node.nodeType !== Node.TEXT_NODE,
+      )
+    ) {
       throw new Error("Unsupported diagram node");
     }
     if (mathNodes.has(element)) continue;
@@ -176,7 +180,8 @@ function validateMathContainer(container: Element): void {
         ((name === "width" || name === "height") && (number <= 0 || number > maximumMathDimension)) ||
         ((name === "x" || name === "y") && Math.abs(number) > 10_000_000) ||
         (name === "opacity" && (number < 0 || number > 1))
-      ) throw new Error("Invalid diagram math container size");
+      )
+        throw new Error("Invalid diagram math container size");
     }
     if (name === "color" && !/^(#[\da-f]{3,8}|[a-z]+|var\(--[\w-]+\))$/i.test(value)) {
       throw new Error("Unsupported diagram math color");
@@ -188,16 +193,22 @@ function validateMathContainer(container: Element): void {
     container.getAttribute("class") !== "pele-math" ||
     container.getAttribute("overflow") !== "visible" ||
     !["x", "y", "width", "height"].every((name) => container.hasAttribute(name)) ||
-    container.childNodes.length !== 1 || !wrapper || wrapper.localName !== "div" ||
-    wrapper.namespaceURI !== htmlNamespace || wrapper.attributes.length !== 2 ||
+    container.childNodes.length !== 1 ||
+    !wrapper ||
+    wrapper.localName !== "div" ||
+    wrapper.namespaceURI !== htmlNamespace ||
+    wrapper.attributes.length !== 2 ||
     wrapper.getAttribute("xmlns") !== htmlNamespace ||
-    !/^display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:(?:\d+(?:\.\d+)?)px;line-height:normal;white-space:nowrap$/.test(wrapper.getAttribute("style") ?? "") ||
-    wrapper.childNodes.length !== 1 || !math
-  ) throw new Error("Unsupported diagram math container");
+    !/^display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:(?:\d+(?:\.\d+)?)px;line-height:normal;white-space:nowrap$/.test(
+      wrapper.getAttribute("style") ?? "",
+    ) ||
+    wrapper.childNodes.length !== 1 ||
+    !math
+  )
+    throw new Error("Unsupported diagram math container");
   const fontSize = /font-size:([\d.]+)px/.exec(wrapper.getAttribute("style")!)!;
   if (Number(fontSize[1]) <= 0 || Number(fontSize[1]) > 256) {
     throw new Error("Invalid diagram math font size");
   }
   validateDiagramMath(math);
 }
-

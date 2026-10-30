@@ -8,6 +8,19 @@ const maximumExpressionLength = 4096;
 const maximumExpressionOutput = 100_000;
 const maximumMathOutput = 1_000_000;
 
+async function settleFonts(): Promise<void> {
+  if (!document.fonts) return;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      document.fonts.ready,
+      new Promise<void>((resolve) => { timeout = setTimeout(resolve, 1000); }),
+    ]);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function withDiagramMath<T>(
   source: string,
   draw: (math?: MathResolver) => T,
@@ -18,7 +31,7 @@ export async function withDiagramMath<T>(
     katex = await import("katex");
     // MathML uses the browser's math font, without KaTeX's HTML/CSS fonts.
     // Let any pending page fonts settle before taking layout measurements.
-    await document.fonts?.ready;
+    await settleFonts();
   } catch {
     return draw();
   }

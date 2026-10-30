@@ -109,11 +109,16 @@ const attributes = new Set([
 export function safeDiagramSvg(svg: string): string {
   const document = new DOMParser().parseFromString(svg, "image/svg+xml");
   const root = document.documentElement;
-  if (root.localName !== "svg" || document.querySelector("parsererror")) {
+  if (root.localName !== "svg" || document.doctype || document.querySelector("parsererror")) {
     throw new Error("Invalid diagram SVG");
   }
   const mathNodes = new Set<Element>();
   for (const element of [root, ...root.querySelectorAll("*")]) {
+    // XML processing instructions/CDATA can change meaning when this string
+    // is later parsed as HTML. Pele needs only elements and ordinary text.
+    if ([...element.childNodes].some((node) => node.nodeType !== Node.ELEMENT_NODE && node.nodeType !== Node.TEXT_NODE)) {
+      throw new Error("Unsupported diagram node");
+    }
     if (mathNodes.has(element)) continue;
     if (element.namespaceURI === svgNamespace && element.localName === "foreignObject") {
       validateMathContainer(element);

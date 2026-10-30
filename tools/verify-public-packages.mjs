@@ -53,6 +53,8 @@ try {
         devDependencies: {
           typescript: lockedTypescriptVersion(),
           "@types/react": installedReactTypesVersion(),
+          katex: readJson(join(root, "packages/content-react/node_modules/katex/package.json")).version,
+          pele: readJson(join(root, "packages/content-react/node_modules/pele/package.json")).version,
         },
       },
       null,
@@ -134,6 +136,13 @@ try {
       stdio: "inherit",
       timeout: 60_000,
     },
+  );
+  const diagramMathFixture = join(consumer, "diagram-math-browser-consumer.mjs");
+  copyFileSync(join(root, "tools/diagram-math-browser-consumer.mjs"), diagramMathFixture);
+  execFileSync(
+    process.execPath,
+    [diagramMathFixture, rendererTestRequire.resolve("vite"), rendererTestRequire.resolve("playwright")],
+    { cwd: consumer, stdio: "inherit", timeout: 60_000 },
   );
   const contentManifest = readJson(join(modules, "@topik/content/package.json"));
   if (contentManifest.dependencies?.["linkify-it"]) {
@@ -746,3 +755,4 @@ function lockedTypescriptVersion() {
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
 }
+

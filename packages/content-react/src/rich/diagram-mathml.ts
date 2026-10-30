@@ -34,6 +34,9 @@ export function validateDiagramMath(math: Element): void {
   const nodes = [math, ...math.querySelectorAll("*")];
   if (nodes.length > 2048) throw new Error("Diagram math is too complex");
   for (const element of nodes) {
+    if ([...element.childNodes].some((node) => node.nodeType !== Node.ELEMENT_NODE && node.nodeType !== Node.TEXT_NODE)) {
+      throw new Error("Unsupported diagram math node");
+    }
     if (element.namespaceURI !== mathNamespace || !elements.has(element.localName)) {
       throw new Error("Unsupported diagram math element");
     }
@@ -67,7 +70,7 @@ export function parseDiagramMath(markup: string): Element {
   const wrapper = document.documentElement;
   const math = wrapper.firstElementChild;
   if (
-    document.querySelector("parsererror") || wrapper.localName !== "span" ||
+    document.doctype || document.querySelector("parsererror") || wrapper.localName !== "span" ||
     wrapper.namespaceURI !== null || wrapper.attributes.length !== 1 ||
     wrapper.getAttribute("class") !== "katex" || wrapper.childNodes.length !== 1 || !math
   ) throw new Error("Invalid KaTeX MathML");

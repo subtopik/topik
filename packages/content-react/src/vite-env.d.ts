@@ -3,7 +3,16 @@ declare module "*.css";
 declare module "katex" {
   export function renderToString(
     content: string,
-    options?: { displayMode?: boolean; throwOnError?: boolean },
+    options?: {
+      displayMode?: boolean;
+      throwOnError?: boolean;
+      output?: "html" | "mathml" | "htmlAndMathml";
+      trust?: boolean;
+      strict?: "error";
+      maxExpand?: number;
+      maxSize?: number;
+      macros?: Record<string, string>;
+    },
   ): string;
 }
 
@@ -21,3 +30,4 @@ declare module "shiki" {
     options: { lang: string; theme: string },
   ): Promise<string>;
 }
+

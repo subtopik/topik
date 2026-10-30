@@ -40,6 +40,10 @@
     overflow-x: auto;
   }
 
+  .topik-rich-mermaid math {
+    font-family: math;
+  }
+
   .topik-rich-mermaid[data-theme="light"] {
     --pele-bg: #fff;
     --pele-fg: #1f1f1f;
@@ -68,3 +72,4 @@
     min-height: 12rem;
   }
 }
+

@@ -116,13 +116,16 @@ describe("diagram math resolver", () => {
     expect(svg).not.toContain("$$good$$");
   });
 
-  it.each([0, NaN, Infinity, 4097])("keeps TeX when measurement is unusable (%s)", async (width) => {
-    vi.mocked(Element.prototype.getBoundingClientRect).mockReturnValue({
-      width,
-      height: 40,
-    } as DOMRect);
-    await withDiagramMath("$$x$$", (resolver) => expect(resolver?.("x", 16)).toBeNull());
-  });
+  it.each([0, NaN, Infinity, 4097])(
+    "keeps TeX when measurement is unusable (%s)",
+    async (width) => {
+      vi.mocked(Element.prototype.getBoundingClientRect).mockReturnValue({
+        width,
+        height: 40,
+      } as DOMRect);
+      await withDiagramMath("$$x$$", (resolver) => expect(resolver?.("x", 16)).toBeNull());
+    },
+  );
 
   it("rejects unsafe typesetter output before measuring it", async () => {
     typeset.mockReturnValue(

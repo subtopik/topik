@@ -41,7 +41,15 @@ const host = await createServer({
   configFile: false,
   server: { host: "127.0.0.1", port: 0 },
   optimizeDeps: {
-    include: ["react", "react-dom/client", "pele", "katex"],
+    include: [
+      "react",
+      "react/jsx-runtime",
+      "react/jsx-dev-runtime",
+      "react-dom",
+      "react-dom/client",
+      "pele",
+      "katex",
+    ],
     exclude: ["@topik/content-react/rich"],
   },
   logLevel: "error",

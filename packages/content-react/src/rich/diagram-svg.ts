@@ -177,7 +177,8 @@ function validateMathContainer(container: Element): void {
       }
       const number = Number(value);
       if (
-        ((name === "width" || name === "height") && (number <= 0 || number > maximumMathDimension)) ||
+        ((name === "width" || name === "height") &&
+          (number <= 0 || number > maximumMathDimension)) ||
         ((name === "x" || name === "y") && Math.abs(number) > 10_000_000) ||
         (name === "opacity" && (number < 0 || number > 1))
       )

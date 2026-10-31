@@ -19,7 +19,7 @@ catalog:
   "@vitest/coverage-v8": 5.0.5
   github-slugger: ^2.0.0
   json-schema-to-typescript: ^15.0.4
-  mdast-util-directive: ^3.1.0
+  mdast-util-directive: ^3.1.1
   mdast-util-from-markdown: ^2.1.0
   mdast-util-frontmatter: ^2.0.1
   mdast-util-gfm: ^3.1.0

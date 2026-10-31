@@ -9,8 +9,8 @@ allowBuilds:
 catalog:
   "@changesets/cli": 3.0.3
   "@drizzle-team/brocli": ^0.12.0
-  "@storybook/addon-a11y": 10.6.3
-  "@storybook/addon-vitest": 10.6.3
+  "@storybook/addon-a11y": 10.6.5
+  "@storybook/addon-vitest": 10.6.5
   "@types/bun": ^1.4.3
   "@types/mdast": ^4.0.4
   "@types/node": 22.20.4

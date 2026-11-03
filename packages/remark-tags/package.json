@@ -1,6 +1,6 @@
 {
   "name": "@topik/remark-tags",
-  "version": "0.1.0-alpha.6",
+  "version": "0.1.0-alpha.7",
   "description": "Markdoc-style declarative tag syntax for remark and mdast",
   "keywords": [
     "markdown",

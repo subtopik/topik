@@ -1,6 +1,6 @@
 {
   "name": "@topik/codemod",
-  "version": "0.1.0-alpha.6",
+  "version": "0.1.0-alpha.7",
   "description": "Codemods for migrating content to Topik",
   "license": "MIT",
   "repository": {

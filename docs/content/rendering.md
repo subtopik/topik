@@ -123,12 +123,12 @@ same `compileTopikContent` function for consumers with another rendering framewo
 `@topik/content-react/rich` adds Shiki syntax highlighting, KaTeX math, and Mermaid-syntax
 diagrams through Pele. Install the optional peers needed by your content:
 
-| Feature                | Peer dependency and supported range |
-| ---------------------- | ----------------------------------- |
-| Code highlighting      | `shiki@^4.0.0`                      |
-| Math                   | `katex@^0.18.2`                     |
-| Mermaid syntax (Pele)  | `pele@1.8.0`                        |
-| Math in diagram labels | `pele@1.8.0` and `katex@^0.18.2`    |
+| Feature                | Peer dependency and supported range            |
+| ---------------------- | ---------------------------------------------- |
+| Code highlighting      | `shiki@^4.0.0`                                 |
+| Math                   | `katex@^0.18.2` or `katex@^0.19.1`             |
+| Mermaid syntax (Pele)  | `pele@1.12.0`                                  |
+| Math in diagram labels | `pele@1.12.0` and either supported KaTeX range |
 
 Wrap the themed renderer with the rich provider:
 
@@ -158,7 +158,7 @@ Rich components load their peers in the browser. Server rendering emits the
 initial fallback or loading state; hydration completes the rich presentation.
 Code and math retain plain fallbacks if rendering fails. Mermaid displays a
 loading state and falls back to diagram source on failure. The authored `mermaid` fences and public `TopikMermaid` / `RichTopikMermaid`
-components are unchanged; replace the optional `mermaid` installation with `pele@1.8.0`.
+components are unchanged; replace the optional `mermaid` installation with `pele@1.12.0`.
 
 Pele uses its own layouts and CSS colors, so output differs from Mermaid.js.
 Provider themes are isolated per diagram. `accTitle` and `accDescr` retain unique

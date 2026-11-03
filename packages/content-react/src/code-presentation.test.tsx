@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { Blob } from "node:buffer";
 import { act, useLayoutEffect, type ComponentType, type ReactNode } from "react";
 import { createRoot, hydrateRoot, type Root } from "react-dom/client";
 import { renderToString } from "react-dom/server";
@@ -38,6 +39,7 @@ afterEach(() => {
   container?.remove();
   root = undefined;
   container = undefined;
+  vi.unstubAllGlobals();
 });
 
 async function mount(element: ReactNode): Promise<HTMLDivElement> {
@@ -367,6 +369,8 @@ describe("highlighting and groups", () => {
       "];",
     ].join("\n"),
   ])("keeps real Shiki highlighting for ordinary and presented snippet %j", async (payload) => {
+    // Shiki's compressed WASM uses Blob.stream(), which JSDOM's Blob does not implement.
+    vi.stubGlobal("Blob", Blob);
     const shiki = await vi.importActual<typeof import("shiki")>("shiki");
     const highlight = await shiki.codeToTokens(payload, { lang: "ts", theme: "github-light" });
     for (const presentation of [undefined, { lineNumbers: false, wrap: false }]) {

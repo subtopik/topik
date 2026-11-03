@@ -50,10 +50,13 @@ catalog:
 catalogMode: prefer
 
 minimumReleaseAgeExclude:
-  - astro@6.4.4
+  - astro@6.4.4 || 7.4.5
   - mdast-util-directive@3.2.0
 
 overrides:
+  # Storybook's docgen plugin still requests glob 13; scope the security fix to that development tool.
+  # Remove when the plugin supports glob >=14.0.2 (GHSA-3g3m-2fjr-6pw4, GHSA-g3hv-75wg-m249).
+  "@joshwooding/vite-plugin-react-docgen-typescript>glob": 14.0.3
   jsdom: 28.1.0
   vite@*: "catalog:"
   vitest@*: "catalog:"

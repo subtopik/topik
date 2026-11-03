@@ -7,7 +7,7 @@ import {
   sameDocumentMeaning,
   writeDocument,
 } from "./index.js";
-import { parse } from "./test-helpers.js";
+import { parse, withoutPositions } from "./test-helpers.js";
 import * as writer from "./writer.js";
 
 afterEach(() => vi.restoreAllMocks());
@@ -58,21 +58,32 @@ test("checks unselected branches without evaluating their conditions", () => {
   expect(formatTopikContent(source)).toMatchObject({ ok: false, source });
 });
 
-test("writing, formatting, and rewriting refuse unresolved delimiter ambiguity", () => {
+test("writing, formatting, and rewriting preserve adjacent nested emphasis", () => {
   const source = "***_a_****_a_***";
-  expect(() => writeDocument(parse(source))).toThrow(/meaning/);
-  for (const result of [
-    formatTopikContent(source),
-    formatDocument(source),
-    rewriteTopikAssetOccurrences(source, () => undefined),
-  ]) {
-    expect(result).toMatchObject({
-      ok: false,
-      source,
-      diagnostics: [{ id: "topik-write-failed" }],
-    });
-    expect(result).not.toHaveProperty("formatted");
-    expect(result).not.toHaveProperty("content");
+  const strong = {
+    type: "strong",
+    children: [{ type: "emphasis", children: [{ type: "text", value: "a" }] }],
+  };
+  const expected = [
+    { type: "paragraph", children: [{ type: "emphasis", children: [strong, strong] }] },
+  ];
+  const document = parse(source);
+  expect(withoutPositions(document.children)).toEqual(expected);
+  const outputs = [writeDocument(document)];
+  for (const result of [formatTopikContent(source), formatDocument(source)]) {
+    expect(result.ok).toBe(true);
+    if (!result.ok || typeof result.formatted !== "string")
+      throw new Error("Expected formatted content");
+    outputs.push(result.formatted);
+  }
+  const rewritten = rewriteTopikAssetOccurrences(source, () => undefined);
+  expect(rewritten.ok).toBe(true);
+  if (!rewritten.ok) throw new Error("Expected rewritten content");
+  outputs.push(rewritten.content);
+  for (const output of outputs) {
+    const reparsed = parse(output);
+    expect(withoutPositions(reparsed.children)).toEqual(expected);
+    expect(sameDocumentMeaning(document, reparsed)).toBe(true);
   }
 });
 

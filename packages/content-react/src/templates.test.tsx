@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { Blob } from "node:buffer";
 import { ContentTag, compileTopikContent, type RenderableTreeNode } from "@topik/content";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -240,6 +241,8 @@ describe("template reader boundaries", () => {
   });
 
   it("preserves rich SSR, highlighted text and clipboard content as the same raw code", async () => {
+    // Keep the real Web API needed by Shiki's compressed WASM in the JSDOM environment.
+    vi.stubGlobal("Blob", Blob);
     const element = (
       <RichTopikContentProvider>
         <TopikContent content={source} config={{ variables: { name: value } }} />

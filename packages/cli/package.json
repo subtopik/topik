@@ -45,10 +45,9 @@
     "@drizzle-team/brocli": "catalog:",
     "@topik/content": "workspace:*",
     "@topik/core": "workspace:*",
-    "yaml": "^2.9.1"
+    "yaml": "catalog:"
   },
   "devDependencies": {
-    "@types/bun": "catalog:",
     "@types/node": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",

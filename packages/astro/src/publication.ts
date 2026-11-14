@@ -21,6 +21,7 @@ const DIGEST_PATTERN = /^[0-9a-f]{64}$/u;
 const STAGE_PREFIX = ".topik-blobs-stage-";
 const PRIOR_PREFIX = ".topik-blobs-prior-";
 const TARGET = "blobs";
+const PUBLISHED_DIRECTORY_MODE = 0o755;
 
 export interface DigestSnapshotFile {
   bytes: Uint8Array;
@@ -169,6 +170,9 @@ async function createStage(
     }
     const tree = bindDigestTreeSync(handle);
     assertExpectedTree(tree, files);
+    // mkdtemp creates the stage as 0700; a published directory must be traversable
+    // by other users (for example a web server), like its 0444 files are readable.
+    await handle.chmod(PUBLISHED_DIRECTORY_MODE);
     return { files: tree, handle, name };
   } catch (error) {
     cleanupPartialStage(parent, handle, name);
@@ -365,14 +369,28 @@ async function openChildDirectory(
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
       throw publicationError("output contains a link or non-directory ancestor");
     }
-    await mkdir(path, { mode: 0o700 }).catch((mkdirError) => {
-      if ((mkdirError as NodeJS.ErrnoException).code !== "EEXIST") throw mkdirError;
-    });
+    const created = await mkdir(path, { mode: 0o700 }).then(
+      () => true,
+      (mkdirError) => {
+        if ((mkdirError as NodeJS.ErrnoException).code !== "EEXIST") throw mkdirError;
+        return false;
+      },
+    );
+    let handle: FileHandle;
     try {
-      return await open(path, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+      handle = await open(path, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
     } catch {
       throw publicationError("output directory could not be opened safely");
     }
+    if (created) {
+      try {
+        await handle.chmod(PUBLISHED_DIRECTORY_MODE);
+      } catch {
+        await handle.close().catch(() => undefined);
+        throw publicationError("output directory permissions could not be set");
+      }
+    }
+    return handle;
   }
 }
 

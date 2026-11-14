@@ -16,9 +16,13 @@ npm install @topik/content
 
 `compileTopikContent` validates source and produces a reader tree in one pipeline.
 It accepts canonical compiler-generated asset references as well as authored
-content. Parsing alone checks neither URL nor asset admission policies. Formatting
-validates input and output and checks that serialization preserves the authored
-content. Failures retain the exact input.
+content. Parsing alone checks neither URL nor asset admission policies, so admit
+untrusted source with `compileTopikContent` or `validateTopikContent`. As defence
+in depth, `transformTopikContent` omits link, image, card, and asset attribute
+URLs that fail the `validateTopikHref` scheme and shape policy (for example
+`javascript:` or `data:`); it does not apply the stricter asset admission rules.
+Formatting validates input and output and checks that serialization preserves the
+authored content. Failures retain the exact input.
 
 ```ts
 import { formatTopikContent, compileTopikContent } from "@topik/content";

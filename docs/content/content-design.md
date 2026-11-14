@@ -36,7 +36,9 @@ images, reference definitions, and tables with alignment. Leading YAML
 frontmatter is preserved when formatting and omitted from rendered content.
 
 Use `{% #stable-id %}` after a heading to set its anchor explicitly. Without an
-explicit ID, Topik generates an anchor from the authored heading text. All
+explicit ID, Topik generates an anchor from the authored heading text; a heading
+whose text yields no anchor characters, such as an empty or image-only heading,
+uses `section` with the usual `-1`, `-2` duplicate suffixes. All
 conditional branches reserve heading IDs before evaluation, so hiding a branch
 does not rename anchors in the remaining content. Explicit IDs are case-sensitive.
 

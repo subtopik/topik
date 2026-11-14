@@ -13,6 +13,16 @@ import {
   codePresentationRows,
 } from "./code-presentation.js";
 import { assertCodePresentationOutputLimit } from "./presentation-output.js";
+import { validateTopikHref, validateTopikNavigationHref } from "./links.js";
+
+/**
+ * Defence in depth for documents that never passed source admission, such as
+ * `parseDocument` output passed straight to `transformTopikContent`. Admitted
+ * source already satisfies these policies, so compiled output is unchanged.
+ */
+function admitsUrl(value: string, validate = validateTopikHref): boolean {
+  return validate(value).length === 0;
+}
 
 /** Framework-independent, serializable output. It contains no executable values. */
 export type RenderableTreeNode =
@@ -155,7 +165,7 @@ export function transformDocument(
         return tag(
           "TopikImage",
           {
-            src: node.url,
+            ...(admitsUrl(node.url) ? { src: node.url } : {}),
             alt: node.alt ?? "",
             ...(node.title != null ? { title: node.title } : {}),
           },
@@ -163,7 +173,7 @@ export function transformDocument(
         );
       case "link":
         return tag("TopikLink", {
-          href: node.url,
+          ...(admitsUrl(node.url) ? { href: node.url } : {}),
           ...(node.title != null ? { title: node.title } : {}),
         });
       case "yaml":
@@ -196,7 +206,19 @@ export function transformDocument(
         const definition = config.components[node.name];
         if (definition.render === false) return null;
         if (definition.render === true) return children();
-        return tag(definition.render, getEffectiveProps(node, config.components));
+        const props = getEffectiveProps(node, config.components);
+        for (const [name, attribute] of Object.entries(definition.attributes)) {
+          const navigation = node.name === "card" && name === "href";
+          const value = props[name];
+          if (
+            typeof value !== "string" ||
+            !(navigation || attribute.asset || attribute.assetReference)
+          )
+            continue;
+          if (!admitsUrl(value, navigation ? validateTopikNavigationHref : validateTopikHref))
+            delete props[name];
+        }
+        return tag(definition.render, props);
       }
       default:
         throw new Error(`Unsupported evaluated content node ${node.type}`);

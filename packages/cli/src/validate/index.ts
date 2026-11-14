@@ -1,9 +1,11 @@
+import type { Dirent } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
-import { extname, join, resolve } from "node:path";
+import { basename, extname, join, resolve } from "node:path";
 import { command, positional } from "@drizzle-team/brocli";
 import { validateResources } from "@topik/core";
 import { parseAllDocuments } from "yaml";
 import { PublicCliError } from "../errors";
+import { formatValidationFailure } from "../validation-output";
 
 function parseJson(content: string): unknown {
   try {
@@ -60,60 +62,114 @@ async function readResourceFile(path: string): Promise<unknown[]> {
   }
 }
 
-export async function loadResources(path: string): Promise<unknown[]> {
+const RESOURCE_EXTENSIONS = new Set([".json", ".jsonl", ".yaml", ".yml"]);
+
+/** A parsed resource and the target-relative file it was read from. */
+export interface LoadedResource {
+  file: string;
+  resource: unknown;
+}
+
+async function readLocatedResourceFile(path: string, file: string): Promise<LoadedResource[]> {
+  return (await readResourceFile(path)).map((resource) => ({ file, resource }));
+}
+
+async function readDirectoryEntries(path: string): Promise<Dirent[]> {
+  return readdir(path, { withFileTypes: true }).catch(() => {
+    throw new PublicCliError("resource-read-failed");
+  });
+}
+
+/**
+ * A `topik compile` output tree holds compilation descriptors (`materialization.json`,
+ * `semantic.json`) beside its `resources/` envelopes; only the envelopes are resources.
+ */
+function isCompilationOutputTree(entries: readonly Dirent[]): boolean {
+  const names = new Map(entries.map((entry) => [entry.name, entry]));
+  return (
+    names.get("materialization.json")?.isFile() === true &&
+    names.get("semantic.json")?.isFile() === true &&
+    names.get("resources")?.isDirectory() === true
+  );
+}
+
+/** Collect resource files below `root`, skipping `node_modules` and dot-directories. */
+async function collectResourceFiles(
+  root: string,
+  relativeDir: string,
+  entries: readonly Dirent[],
+  files: string[],
+): Promise<void> {
+  for (const entry of entries) {
+    const relativePath = relativeDir.length === 0 ? entry.name : `${relativeDir}/${entry.name}`;
+    if (entry.isDirectory()) {
+      if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+      const children = await readDirectoryEntries(join(root, relativePath));
+      await collectResourceFiles(root, relativePath, children, files);
+      continue;
+    }
+    if (entry.isFile() && RESOURCE_EXTENSIONS.has(extname(entry.name).toLowerCase())) {
+      files.push(relativePath);
+    }
+  }
+}
+
+/** Load resources from a file, a directory tree, or a `topik compile` output directory. */
+export async function loadLocatedResources(path: string): Promise<LoadedResource[]> {
   const info = await stat(path).catch(() => {
     throw new PublicCliError("resource-access-failed");
   });
 
   if (info.isFile()) {
-    return readResourceFile(path);
+    return readLocatedResourceFile(path, basename(path));
   }
 
-  const entries = await readdir(path, { withFileTypes: true, recursive: true }).catch(() => {
-    throw new PublicCliError("resource-read-failed");
-  });
-  const resourceFiles = entries.filter((entry) => {
-    if (!entry.isFile()) {
-      return false;
-    }
-
-    const extension = extname(entry.name).toLowerCase();
-    return (
-      extension === ".json" ||
-      extension === ".jsonl" ||
-      extension === ".yaml" ||
-      extension === ".yml"
-    );
-  });
+  const rootEntries = await readDirectoryEntries(path);
+  const files: string[] = [];
+  if (isCompilationOutputTree(rootEntries)) {
+    const resourceEntries = await readDirectoryEntries(join(path, "resources"));
+    await collectResourceFiles(path, "resources", resourceEntries, files);
+  } else {
+    await collectResourceFiles(path, "", rootEntries, files);
+  }
+  files.sort((left, right) => Buffer.compare(Buffer.from(left), Buffer.from(right)));
 
   const resources = await Promise.all(
-    resourceFiles.map((entry) => readResourceFile(join(entry.parentPath, entry.name))),
+    files.map((file) => readLocatedResourceFile(join(path, ...file.split("/")), file)),
   );
-
   return resources.flat();
+}
+
+export async function loadResources(path: string): Promise<unknown[]> {
+  return (await loadLocatedResources(path)).map(({ resource }) => resource);
 }
 
 export const validate = command({
   name: "validate",
-  desc: "Validate wiki resource files in JSON, JSONL, or YAML format against schemas",
+  desc: "Validate Topik resource files in JSON, JSONL, or YAML format against schemas",
   options: {
-    path: positional("path").desc("File or directory to validate").required(),
+    path: positional("path")
+      .desc("Resource file, directory, or compilation output to validate")
+      .required(),
   },
   handler: async (options) => {
     const target = resolve(options.path);
-    const resources = await loadResources(target);
+    const loaded = await loadLocatedResources(target);
 
-    if (resources.length === 0) {
+    if (loaded.length === 0) {
       console.log("No resource files found.");
       return;
     }
 
-    const { valid } = validateResources(resources);
+    const errors = loaded.flatMap(({ file, resource }) =>
+      validateResources([resource]).errors.map((error) => ({ ...error, file })),
+    );
 
-    if (valid) {
-      console.log(`Validated ${resources.length} resources`);
-    } else {
-      throw new PublicCliError("resource-validation-failed");
+    if (errors.length === 0) {
+      console.log(`Validated ${loaded.length} resources`);
+      return;
     }
+    console.error(formatValidationFailure(errors, loaded.length, "validating resources"));
+    throw new PublicCliError("resource-validation-failed");
   },
 });

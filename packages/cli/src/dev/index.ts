@@ -314,9 +314,14 @@ export async function startDevServer(options: {
 
   try {
     await new Promise<void>((resolveListening, rejectListening) => {
-      const onError = (error: Error) => {
+      const onError = (error: NodeJS.ErrnoException) => {
         server.off("listening", onListening);
-        rejectListening(error);
+        rejectListening(
+          new PublicCliError(
+            error.code === "EADDRINUSE" ? "dev-port-in-use" : "dev-server-listen-failed",
+            { cause: error },
+          ),
+        );
       };
       const onListening = () => {
         server.off("error", onError);
@@ -377,8 +382,8 @@ export const dev = command({
     ),
   },
   handler: async (options) => {
+    const port = parseDevPort(options.port);
     const dir = resolve(options.dir);
-    const port = parseInt(options.port, 10);
 
     const runningServer = await startDevServer({
       dir,
@@ -387,9 +392,40 @@ export const dev = command({
     });
     console.log(`Dev server listening on http://localhost:${runningServer.port}`);
 
-    process.once("SIGINT", async () => {
-      await runningServer.close();
-      process.exit(0);
-    });
+    installShutdownHandlers(runningServer);
   },
 });
+
+/** @internal Parse a `--port` value strictly: decimal digits only, 0 to 65535. */
+export function parseDevPort(value: string): number {
+  const port = /^\d{1,5}$/u.test(value) ? Number(value) : Number.NaN;
+  if (!Number.isInteger(port) || port > 65535) {
+    throw new PublicCliError("dev-port-invalid");
+  }
+  return port;
+}
+
+const SHUTDOWN_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
+
+/** @internal Close the server once on the first shutdown signal, then exit. */
+export function installShutdownHandlers(
+  runningServer: Pick<StartedDevServer, "close">,
+  exit: (code: number) => void = (code) => process.exit(code),
+): () => void {
+  let shuttingDown = false;
+  const shutdown = () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    runningServer.close().then(
+      () => exit(0),
+      (error: unknown) => {
+        console.error(formatPublicCliError(error));
+        exit(1);
+      },
+    );
+  };
+  for (const signal of SHUTDOWN_SIGNALS) process.once(signal, shutdown);
+  return () => {
+    for (const signal of SHUTDOWN_SIGNALS) process.off(signal, shutdown);
+  };
+}

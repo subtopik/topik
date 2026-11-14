@@ -115,10 +115,22 @@ describe("content resource boundaries", () => {
     ["nested emphasis", "*_".repeat(100_000) + "x" + "_*".repeat(100_000)],
     [
       "unmatched code runs",
-      // This still exceeds the weighted budget under coverage instrumentation;
-      // the packed consumer checks the original 1,000-run performance case.
-      Array.from({ length: 128 }, (_, index) => "`".repeat(index + 1) + "x").join(" "),
+      Array.from({ length: 1_000 }, (_, index) => "`".repeat(index + 1) + "x").join(" "),
     ],
+    [
+      "unmatched code runs before a long paragraph",
+      Array.from({ length: 85 }, (_, index) => "`".repeat(index + 1) + "x").join(" ") +
+        " word".repeat(50_000),
+    ],
+    ["closing delimiters after many lines", "a\n".repeat(100_000) + "a_ ".repeat(1_000)],
+    ["unmatched closing delimiters", "*a_ ".repeat(100_000)],
+    ["dense delimiters across paragraphs", ("*a_ ".repeat(250) + "\n\n").repeat(950)],
+    [
+      "emphasis before a multi-line code span",
+      "*a* ".repeat(300) + "`" + "a\n".repeat(100_000) + "`",
+    ],
+    ["unbalanced label ends", "[a ".repeat(4_000) + "] ".repeat(4_000)],
+    ["nested images", "![".repeat(100_000) + "a" + "](b)".repeat(100_000)],
     ["deep inline tags", "{% badge %}".repeat(8_000) + "x" + "{% /badge %}".repeat(8_000)],
   ])("bounds parser work before resolving %s", (_label, source) => {
     const started = performance.now();
@@ -140,6 +152,48 @@ describe("content resource boundaries", () => {
     ]) {
       expect(parseDocument(source).ok).toBe(true);
     }
+  });
+
+  const sentence =
+    "The **parser** turns `source` into a *tree*; see [the guide](https://example.com/guide), " +
+    "~~old~~ notes, my_var and __init__ when _needed_! Use `code` and **bold _nested_ text**.";
+  test.each([
+    ["exclamations", "Hello! ".repeat(5_000)],
+    ["intraword underscores", "my_var ".repeat(5_000)],
+    ["code spans", "`a` ".repeat(4_200)],
+    ["links", "[a](https://e.com) ".repeat(4_200)],
+    ["a dense paragraph", (sentence + " ").repeat(150)],
+    ["a reference page", (sentence + "\n\n").repeat(600)],
+    ["wrapped paragraphs", `${sentence}\n${sentence}\n${sentence}\n\n`.repeat(300)],
+    [
+      "a changelog",
+      Array.from(
+        { length: 20 },
+        (_, version) =>
+          `## v1.${version}\n\n` +
+          Array.from(
+            { length: 100 },
+            (_, item) =>
+              `- **Fix** issue \`${item}\` in [#${item}](https://e.com/${item}) ~~old~~ _x_\n`,
+          ).join("") +
+          "\n",
+      ).join(""),
+    ],
+    [
+      "a long tight list",
+      Array.from(
+        { length: 3_000 },
+        (_, item) => `- **Fix** issue \`${item}\` in [#${item}](https://e.com/${item})\n`,
+      ).join(""),
+    ],
+    [
+      "a long table",
+      "| a | b | c |\n| - | - | - |\n" +
+        Array.from({ length: 2_000 }, (_, row) => `| **${row}** | \`x\` | [l](u) *e* |\n`).join(""),
+    ],
+  ])("admits ordinary prose at scale: %s", (_label, source) => {
+    const result = parseDocument(source);
+    expect(result.ok ? [] : result.diagnostics).toEqual([]);
   });
 
   test("rejects excessive expression trees before recursive writing", () => {

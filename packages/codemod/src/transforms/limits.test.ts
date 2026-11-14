@@ -6,10 +6,12 @@ describe("codemod parser admission", () => {
   const unmatchedCode = Array.from({ length: 128 }, (_, index) => "`".repeat(index + 1) + " ").join(
     "",
   );
+  // Each distinct unmatched run rescans the rest of its long paragraph.
+  const expensiveCode = unmatchedCode + "word ".repeat(50_000);
 
   test.each([
     ["source length", "x".repeat(CONTENT_LIMITS.sourceLength + 1), "source length"],
-    ["unmatched code delimiters", unmatchedCode, "parser step"],
+    ["unmatched code delimiters", expensiveCode, "parser step"],
     ["nested quotes", "> ".repeat(CONTENT_LIMITS.treeDepth + 1) + "Text.", "tree depth"],
     ["nested emphasis", "*_".repeat(5_000) + "Text." + "_*".repeat(5_000), "parser step"],
     ["wide tree", "* * *\n\n".repeat(CONTENT_LIMITS.treeNodes + 1), "tree node"],
@@ -24,7 +26,7 @@ describe("codemod parser admission", () => {
   });
 
   test("weights delimiters at their original offsets after CRLF and frontmatter", () => {
-    const source = `\uFEFF---\r\ntitle: Example\r\n---\r\n\r\n<Note>\r\n${unmatchedCode}\r\n</Note>\r\n`;
+    const source = `\uFEFF---\r\ntitle: Example\r\n---\r\n\r\n<Note>\r\n${expensiveCode}\r\n</Note>\r\n`;
     expect(transformMintlify(source)).toEqual({
       content: source,
       changed: false,

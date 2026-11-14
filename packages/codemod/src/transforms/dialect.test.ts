@@ -40,7 +40,8 @@ describe("codemod literal ranges in the Topik Markdown dialect", () => {
         expect(result.changed).toBe(true);
         expect(result.content.startsWith(metadata)).toBe(true);
         expect(result.content).toContain(retained);
-        expect(result.content).toContain('variant="info" %}\nActual.\n{% /callout %}');
+        expect(result.content).toContain(`variant="info" %}${eol}Actual.${eol}{% /callout %}`);
+        if (eol === "\r\n") expect(result.content.replaceAll("\r\n", "")).not.toMatch(/[\r\n]/u);
         expect(validateTopikContent(result.content).valid).toBe(true);
       }
     }

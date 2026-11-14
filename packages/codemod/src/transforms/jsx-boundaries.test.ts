@@ -19,10 +19,6 @@ describe("Markdown contexts in JSX bodies", () => {
       "definition after opener",
       '<Note>\n[ref]: ./intro "![first"\nUse a ` as delimiter.\n</Note>\nlast](image.png)\n`example`\n',
     ],
-    [
-      "indented code after opener",
-      "<Note>\n    ![first\nUse a ` as delimiter.\n</Note>\nlast](image.png)\n`example`\n",
-    ],
     ["completed literal before opener", "`![first`\n<Note>\nActual.\n</Note>\nlast](image.png)\n"],
   ];
 
@@ -90,14 +86,38 @@ describe("Markdown contexts in JSX bodies", () => {
     });
   });
 
-  test("retains autolinks and opaque indented component examples", () => {
-    const body =
-      "<https://example.com> and <user@example.com>\n\n    <Note>\n    literal\n    </Note>\n";
+  test("retains autolinks inside bodies", () => {
+    const body = "<https://example.com> and <user@example.com>\n";
     expect(transformMintlify(`<Note>\n${body}</Note>\n`)).toEqual({
       content: `{% callout variant="info" %}\n${body}{% /callout %}\n`,
       changed: true,
       warnings: [],
     });
+  });
+
+  // MDX has no indented code: these lines are body text (or real JSX) in
+  // Mintlify, but Markdown would read them as code. Refuse instead of guessing.
+  test.each([
+    [
+      "indented text after opener",
+      "<Note>\n    ![first\nUse a ` as delimiter.\n</Note>\nlast](image.png)\n`example`\n",
+    ],
+    [
+      "indented component after unindented text",
+      "<Note>\n<https://example.com>\n\n    <Note>\n    literal\n    </Note>\n</Note>\n",
+    ],
+  ])("refuses %s that Markdown would read as code", (_name, body) => {
+    for (const eol of ["\n", "\r\n"]) {
+      const source = body.replaceAll("\n", eol);
+      const result = transformMintlify(source);
+      expect(result).toMatchObject({ content: source, changed: false });
+      expect(result.warnings).toEqual([
+        expect.objectContaining({
+          line: body.startsWith("<Note>\n<") ? 4 : 2,
+          message: expect.stringContaining("would become a code block"),
+        }),
+      ]);
+    }
   });
 
   test.each([1, 2, 3])("preserves literals after %i leading BOMs", (count) => {

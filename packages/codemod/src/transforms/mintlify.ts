@@ -7,6 +7,7 @@ import { frontmatter } from "micromark-extension-frontmatter";
 import {
   assertSourceLimit,
   assertTreeLimits,
+  CONTENT_LIMITS,
   ContentLimitError,
 } from "../../../content/src/limits.js";
 import { parserLimitSyntax } from "../../../content/src/parser-limits.js";
@@ -67,57 +68,135 @@ const BLOCK_COMPONENT_NAMES = new Set([...CALLOUT_VARIANTS.keys(), ...BLOCK_TAGS
 const TAG_NAME_RE = /[A-Z][A-Za-z0-9]*/;
 const ATTR_RE = /([A-Za-z_][A-Za-z0-9_-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|(\{[^}]*\}))/g;
 
-export function transformMintlify(source: string): TransformResult {
+export interface TransformOptions {
+  /** Treat the source as MDX: refuse MDX-only ESM and expressions Topik would render as prose. */
+  mdx?: boolean;
+}
+
+type SourceTree = ReturnType<typeof fromMarkdown>;
+
+export function transformMintlify(source: string, options: TransformOptions = {}): TransformResult {
   const warnings: TransformWarning[] = [];
   // Micromark drops exactly one initial BOM before assigning offsets. Align
   // budget lookups with those offsets, then restore original-source ranges.
   const bomLength = source.startsWith("\uFEFF") ? 1 : 0;
-  const parserSource = source.slice(bomLength);
-  let tree: ReturnType<typeof fromMarkdown>;
+  const bodyStart = frontmatterEnd(source);
+  const kept = (): TransformResult => ({ content: source, warnings, changed: false });
+  let mdxTree: SourceTree;
   try {
-    assertSourceLimit(source);
-    tree = fromMarkdown(source, {
-      // JSX wrappers must not become opaque HTML blocks: their Markdown children
-      // can contain fenced or inline code whose original source ranges we retain.
-      // Keep inline HTML tokenization so quoted attribute backticks stay in tags.
-      extensions: [
-        frontmatter(),
-        ...gfmSyntax(),
-        tagSyntax(
-          Object.fromEntries(
-            Object.entries(components).map(([name, { kind }]) => [name, { kind }]),
-          ),
-          tagOptions(components),
-        ),
-        headingIdSyntax(),
-        jsxBoundarySyntax(BLOCK_COMPONENT_NAMES),
-        { disable: { null: ["htmlFlow"] } },
-        parserLimitSyntax(parserSource),
-      ],
-      mdastExtensions: [
-        {
-          transforms: [
-            (root) => {
-              assertTreeLimits(root);
-              return root;
-            },
-          ],
-        },
-        ...gfmFromMarkdown(),
-        frontmatterFromMarkdown(),
-        protectedMarkersFromMarkdown(),
-      ],
-    });
-    assertTreeLimits(tree);
+    // MDX has no indented code: read component bodies the way Mintlify does.
+    mdxTree = parseSource(source, bomLength, true);
   } catch (error) {
     if (!(error instanceof ContentLimitError)) throw error;
     warn(warnings, source, 0, `${error.message}; source kept`);
-    return { content: source, warnings, changed: false };
+    return kept();
   }
+  if (options.mdx) {
+    for (const { offset, message } of findMdxOnlySyntax(source, mdxTree, bomLength, bodyStart))
+      warn(warnings, source, offset, message);
+    if (warnings.length > 0) return kept();
+  }
+
+  const dedent = dedentBodies(source, mdxTree, bomLength, bodyStart);
+  if ("warning" in dedent) {
+    warn(warnings, source, dedent.warning.offset, dedent.warning.message);
+    return kept();
+  }
+  // Dedenting removes leading whitespace only, so lines stay aligned with the
+  // source; columns are shifted back by each line's stripped width.
+  const text = dedent.source;
+  const toSource = (warning: TransformWarning): TransformWarning => ({
+    ...warning,
+    column: warning.column + (dedent.strips[warning.line - 1] ?? 0),
+  });
+  let tree: SourceTree;
+  try {
+    // Markdown (Topik) semantics, after dedenting, decide what is literal code.
+    tree = parseSource(text, bomLength, false);
+  } catch (error) {
+    if (!(error instanceof ContentLimitError)) throw error;
+    warn(warnings, source, 0, `${error.message}; source kept`);
+    return kept();
+  }
+  const result = convert(text, tree, bomLength, bodyStart, dedent.bodyLines);
+  warnings.push(...result.warnings.map(toSource));
+  if (!result.changed || warnings.length > 0) return kept();
+  return { content: result.content, warnings, changed: true };
+}
+
+function parseSource(source: string, bomLength: number, mdx: boolean): SourceTree {
+  assertSourceLimit(source);
+  const tree = fromMarkdown(source, {
+    // JSX wrappers must not become opaque HTML blocks: their Markdown children
+    // can contain fenced or inline code whose original source ranges we retain.
+    // Keep inline HTML tokenization so quoted attribute backticks stay in tags.
+    extensions: [
+      frontmatter(),
+      ...gfmSyntax(),
+      tagSyntax(
+        Object.fromEntries(Object.entries(components).map(([name, { kind }]) => [name, { kind }])),
+        tagOptions(components),
+      ),
+      headingIdSyntax(),
+      jsxBoundarySyntax(BLOCK_COMPONENT_NAMES),
+      { disable: { null: mdx ? ["htmlFlow", "codeIndented"] : ["htmlFlow"] } },
+      parserLimitSyntax(source.slice(bomLength)),
+    ],
+    mdastExtensions: [
+      {
+        transforms: [
+          (root) => {
+            assertTreeLimits(root);
+            return root;
+          },
+        ],
+      },
+      ...gfmFromMarkdown(),
+      frontmatterFromMarkdown(),
+      protectedMarkersFromMarkdown(),
+    ],
+  });
+  assertTreeLimits(tree);
+  return tree;
+}
+
+function convert(
+  source: string,
+  tree: SourceTree,
+  bomLength: number,
+  bodyStart: number,
+  bodyLines: ReadonlySet<number>,
+): TransformResult {
+  const warnings: TransformWarning[] = [];
+  const kept = (): TransformResult => ({ content: source, warnings, changed: false });
   const protectedRanges = collectProtectedRanges(tree, bomLength);
   const containerRanges = collectContainerRanges(tree, bomLength);
-  const bodyStart = frontmatterEnd(source);
-  let out = source.slice(0, bodyStart);
+  const lines = lineStarts(source);
+  const fallbackEol = /\r?\n/u.exec(source)?.[0] ?? "\n";
+  // Split lines keep the terminator style of the source line they came from.
+  const eolAt = (offset: number): string => {
+    const newline = source.indexOf("\n", offset);
+    if (newline < 0) return fallbackEol;
+    return source[newline - 1] === "\r" ? "\r\n" : "\n";
+  };
+  // One-based source line for each one-based output line, for diagnostics.
+  const outputLines: number[] = [];
+  let out = "";
+  const emit = (value: string, at: number, copied: boolean): void => {
+    if (outputLines.length === 0) outputLines.push(lineIndex(lines, at) + 1);
+    for (let i = value.indexOf("\n"); i >= 0; i = value.indexOf("\n", i + 1))
+      outputLines.push(lineIndex(lines, copied ? at + i + 1 : at) + 1);
+    out += value;
+  };
+  const copy = (start: number, end: number): void => emit(source.slice(start, end), start, true);
+  // Tags start their own lines: drop whitespace-only indentation before them.
+  const startLine = (at: number): void => {
+    const lineStart = out.lastIndexOf("\n") + 1;
+    if (!/\S/u.test(out.slice(lineStart))) out = out.slice(0, lineStart);
+    else emit(eolAt(at), at, false);
+  };
+
+  copy(0, bodyStart);
   let cursor = bodyStart;
   let changed = false;
   let firstTag = 0;
@@ -125,14 +204,14 @@ export function transformMintlify(source: string): TransformResult {
   while (cursor < source.length) {
     const next = findNextTag(source, cursor, protectedRanges);
     if (next == null) {
-      out += source.slice(cursor);
+      copy(cursor, source.length);
       break;
     }
 
-    out += source.slice(cursor, next.start);
+    copy(cursor, next.start);
     if (UNSUPPORTED_TAGS.has(next.name)) {
       warn(warnings, source, next.start, `<${next.name}> has no equivalent Topik component`);
-      out += source.slice(next.start, next.end);
+      copy(next.start, next.end);
       cursor = next.end;
       continue;
     }
@@ -145,7 +224,7 @@ export function transformMintlify(source: string): TransformResult {
         next.start,
         "JSX inside a Markdown list or blockquote cannot be converted safely; source kept",
       );
-      return { content: source, warnings, changed: false };
+      return kept();
     }
 
     if (!changed) firstTag = next.start;
@@ -154,35 +233,249 @@ export function transformMintlify(source: string): TransformResult {
     if (next.kind === "close") {
       if (next.rawAttrs.length > 0)
         warn(warnings, source, next.attrsStart, `Closing </${next.name}> has attributes`);
-      if (!out.endsWith("\n") && out.length > 0) out += "\n";
-      out += `{% /${name} %}`;
+      startLine(next.start);
+      emit(`{% /${name} %}`, next.start, false);
     } else {
       const attrs = parseAttrs(next, name, source, warnings);
       if (CALLOUT_VARIANTS.has(next.name))
         attrs.unshift(`variant=${JSON.stringify(CALLOUT_VARIANTS.get(next.name))}`);
-      if (out.length > 0 && !out.endsWith("\n") && /\S/u.test(out.slice(out.lastIndexOf("\n") + 1)))
-        out += "\n";
-      out += `{% ${name}${attrs.length ? ` ${attrs.join(" ")}` : ""}${next.kind === "selfclose" ? " /%}" : " %}"}`;
+      startLine(next.start);
+      emit(
+        `{% ${name}${attrs.length ? ` ${attrs.join(" ")}` : ""}${next.kind === "selfclose" ? " /%}" : " %}"}`,
+        next.start,
+        false,
+      );
     }
-    if (source[next.end] !== "\n") out += "\n";
+    if (!/^\r?\n/u.test(source.slice(next.end, next.end + 2)))
+      emit(eolAt(next.end), next.end, false);
     cursor = next.end;
   }
 
   // Conversion is transactional: never claim a partial or invalid migration.
-  if (warnings.length > 0) return { content: source, warnings, changed: false };
-  if (!validateTopikContent(out).valid) {
+  if (warnings.length > 0) return kept();
+  for (const code of indentedCodeIn(source, tree, bomLength, lines, bodyLines))
     warn(
       warnings,
       source,
-      firstTag,
-      changed
-        ? "Converted content is not valid Topik content; source kept"
-        : "Source is not valid Topik content; source kept",
+      code,
+      "Indented text inside a component body would become a code block (MDX reads it as text); source kept",
     );
-    return { content: source, warnings, changed: false };
+  if (warnings.length > 0) return kept();
+  const validation = validateTopikContent(out);
+  if (!validation.valid) {
+    const prefix = changed
+      ? "Converted content is not valid Topik content; source kept"
+      : "Source is not valid Topik content; source kept";
+    if (validation.errors.length === 0) warn(warnings, source, firstTag, prefix);
+    for (const diagnostic of validation.errors) {
+      const sourceLines = [
+        ...new Set(diagnostic.lines.map((line) => outputLines[line - 1] ?? line)),
+      ];
+      const position =
+        sourceLines.length > 0
+          ? { line: sourceLines[0], column: 1 }
+          : lineColumnAt(source, firstTag);
+      const where = sourceLines.length > 1 ? ` (lines ${sourceLines.join(", ")})` : "";
+      warnings.push({
+        ...position,
+        message: `${prefix}: ${diagnostic.message} [${diagnostic.id}]${where}`,
+      });
+    }
+    return kept();
   }
-  if (!changed) return { content: source, warnings, changed: false };
+  if (!changed) return kept();
   return { content: out, warnings, changed: true };
+}
+
+interface DedentResult {
+  source: string;
+  /** Leading characters removed from each zero-based line. */
+  strips: number[];
+  /** Zero-based lines that belong to a converted component body. */
+  bodyLines: Set<number>;
+}
+
+/**
+ * Mintlify bodies are usually indented under their tag. MDX ignores that
+ * indentation, but Markdown reads four or more spaces as code, so remove each
+ * body's common indentation (cumulatively for nested components). Relative
+ * indentation, such as nested lists and fenced code contents, is retained.
+ */
+function dedentBodies(
+  source: string,
+  tree: SourceTree,
+  bomLength: number,
+  bodyStart: number,
+): DedentResult | { warning: { offset: number; message: string } } {
+  const lines = lineStarts(source);
+  const unchanged: DedentResult = {
+    source,
+    strips: lines.map(() => 0),
+    bodyLines: new Set(),
+  };
+  const protectedRanges = collectProtectedRanges(tree, bomLength);
+  const containerRanges = collectContainerRanges(tree, bomLength);
+  // Pairs are recorded in opening order, so parents precede their children.
+  const pairs: Array<{ open: FoundTag; close?: FoundTag; parent: number }> = [];
+  const stack: number[] = [];
+  for (let cursor = bodyStart; ;) {
+    const tag = findNextTag(source, cursor, protectedRanges);
+    if (tag == null) break;
+    cursor = tag.end;
+    // Leave unsupported or container-nested source to the conversion's warnings.
+    if (UNSUPPORTED_TAGS.has(tag.name)) return unchanged;
+    const container = containerRanges[firstRangeAfter(containerRanges, tag.start)];
+    if (container && tag.start >= container.start) return unchanged;
+    if (tag.kind === "open") {
+      // Deeper nesting fails target validation; bound the per-line work here.
+      if (stack.length >= CONTENT_LIMITS.treeDepth) return unchanged;
+      pairs.push({ open: tag, parent: stack.at(-1) ?? -1 });
+      stack.push(pairs.length - 1);
+    } else if (tag.kind === "close") {
+      const top = stack.pop();
+      if (top === undefined || pairs[top].open.name !== tag.name) return unchanged;
+      pairs[top].close = tag;
+    }
+  }
+  if (stack.length > 0 || pairs.length === 0) return unchanged;
+
+  // Fenced code content keeps its own indentation rules: strip it "up to" the
+  // body indentation, as the fence itself would, without counting it.
+  const fenceLines = new Set<number>();
+  collectNodes(tree, (node) => {
+    if (node.type !== "code") return;
+    const start = node.position!.start.offset! + bomLength;
+    if (isIndentedCodeNode(source, start)) return;
+    const end = node.position!.end.offset! + bomLength;
+    for (let line = lineIndex(lines, start) + 1; line <= lineIndex(lines, end); line++)
+      fenceLines.add(line);
+  });
+
+  const strips = lines.map(() => 0);
+  const bodyLines = new Set<number>();
+  const skipped = new Set<number>();
+  const lineText = (line: number): string =>
+    source.slice(lines[line], line + 1 < lines.length ? lines[line + 1] : source.length);
+  const indentation = (line: number): string =>
+    /^[ \t]*/u.exec(lineText(line).slice(strips[line]))![0];
+  const blank = (line: number): boolean => !/\S/u.test(lineText(line));
+  for (const [index, pair] of pairs.entries()) {
+    const openLine = lineIndex(lines, pair.open.start);
+    if (
+      pair.parent >= 0
+        ? skipped.has(pair.parent)
+        : isIndentedCode(source, lines, openLine, pair.open.start)
+    ) {
+      // Markdown reads a top-level tag indented as code: it is not converted.
+      skipped.add(index);
+      continue;
+    }
+    const close = pair.close!;
+    const closeLine = lineIndex(lines, close.start);
+    const body: number[] = [];
+    for (let line = openLine + 1; line < closeLine; line++) body.push(line);
+    if (closeLine > openLine && /\S/u.test(source.slice(lines[closeLine], close.start)))
+      body.push(closeLine);
+    for (const line of body) bodyLines.add(line);
+    const counted = body.filter((line) => !blank(line) && !fenceLines.has(line));
+    if (counted.length === 0) continue;
+    const widths = counted.map((line) => indentation(line));
+    const prefix = widths.reduce((shortest, width) =>
+      width.length < shortest.length ? width : shortest,
+    );
+    for (const line of body) {
+      if (blank(line)) continue;
+      const width = indentation(line);
+      if (!width.startsWith(prefix) && !prefix.startsWith(width))
+        return {
+          warning: {
+            offset: lines[line],
+            message: `Indentation inside <${pair.open.name}> mixes tabs and spaces and cannot be removed safely; source kept`,
+          },
+        };
+    }
+    if (prefix.length === 0) continue;
+    for (const line of body) strips[line] += Math.min(prefix.length, indentation(line).length);
+  }
+  if (strips.every((strip) => strip === 0)) return { ...unchanged, bodyLines };
+  let dedented = "";
+  for (const [line, start] of lines.entries())
+    dedented += source.slice(
+      start + strips[line],
+      line + 1 < lines.length ? lines[line + 1] : source.length,
+    );
+  return { source: dedented, strips, bodyLines };
+}
+
+function isIndentedCode(source: string, lines: number[], line: number, tagStart: number): boolean {
+  const prefix = source.slice(lines[line], tagStart);
+  if (/\S/u.test(prefix)) return false;
+  let columns = 0;
+  for (const character of prefix)
+    columns = character === "\t" ? columns + 4 - (columns % 4) : columns + 1;
+  return columns >= 4;
+}
+
+function indentedCodeIn(
+  source: string,
+  tree: SourceTree,
+  bomLength: number,
+  lines: number[],
+  bodyLines: ReadonlySet<number>,
+): number[] {
+  const offsets: number[] = [];
+  collectNodes(tree, (node) => {
+    if (node.type !== "code") return;
+    const start = node.position!.start.offset! + bomLength;
+    // Indented code starts at its indentation; fenced code starts at its fence.
+    if (bodyLines.has(lineIndex(lines, start)) && isIndentedCodeNode(source, start))
+      offsets.push(start);
+  });
+  return offsets;
+}
+
+const MDX_ESM_RE = /^(?:import|export)(?=[\s{*])/u;
+
+/** MDX-only syntax that Topik would silently render as prose. */
+function findMdxOnlySyntax(
+  source: string,
+  tree: SourceTree,
+  bomLength: number,
+  bodyStart: number,
+): Array<{ offset: number; message: string }> {
+  const found: Array<{ offset: number; message: string }> = [];
+  const esm = new Set<unknown>();
+  for (const node of tree.children) {
+    if (node.type !== "paragraph") continue;
+    const start = node.position!.start.offset! + bomLength;
+    if (start < bodyStart || (start > 0 && source[start - 1] !== "\n")) continue;
+    if (!MDX_ESM_RE.test(source.slice(start, start + 7))) continue;
+    esm.add(node);
+    found.push({
+      offset: start,
+      message: "MDX import/export statements have no Topik equivalent; source kept",
+    });
+  }
+  const visit = (node: SourceNode): void => {
+    if (PROTECTED_NODE_TYPES.has(node.type) || esm.has(node)) return;
+    if (node.type === "text") {
+      const start = node.position!.start.offset! + bomLength;
+      const end = node.position!.end.offset! + bomLength;
+      for (let i = source.indexOf("{", start); i >= 0 && i < end; i = source.indexOf("{", i + 1)) {
+        let backslashes = 0;
+        for (let previous = i - 1; previous >= start && source[previous] === "\\"; previous--)
+          backslashes++;
+        if (backslashes % 2 === 0)
+          found.push({
+            offset: i,
+            message: "MDX expressions ({\u2026}) have no Topik equivalent; source kept",
+          });
+      }
+    }
+    node.children?.forEach(visit);
+  };
+  visit(tree as SourceNode);
+  return found.sort((a, b) => a.offset - b.offset);
 }
 
 interface FoundTag {
@@ -429,6 +722,36 @@ function collectContainerRanges(tree: SourceNode, offset: number): SourceRange[]
   }
   visit(tree);
   return ranges;
+}
+
+function isIndentedCodeNode(source: string, start: number): boolean {
+  return source[start] === " " || source[start] === "\t";
+}
+
+function collectNodes(tree: SourceTree, callback: (node: SourceNode) => void): void {
+  const visit = (node: SourceNode): void => {
+    callback(node);
+    node.children?.forEach(visit);
+  };
+  visit(tree as SourceNode);
+}
+
+function lineStarts(source: string): number[] {
+  const starts = [0];
+  for (let i = source.indexOf("\n"); i >= 0; i = source.indexOf("\n", i + 1)) starts.push(i + 1);
+  return starts;
+}
+
+/** Zero-based index of the line containing an offset. */
+function lineIndex(starts: readonly number[], offset: number): number {
+  let low = 0;
+  let high = starts.length - 1;
+  while (low < high) {
+    const middle = (low + high + 1) >>> 1;
+    if (starts[middle] <= offset) low = middle;
+    else high = middle - 1;
+  }
+  return low;
 }
 
 function firstRangeAfter(ranges: SourceRange[], offset: number): number {

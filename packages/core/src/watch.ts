@@ -30,6 +30,9 @@ export interface Watcher {
   close(): Promise<void>;
 }
 
+const IGNORED_SEGMENT =
+  /(^|[/\\])(?:node_modules|\.git|\.topik(?:-compilation-(?:generation|prior)-[^/\\]+)?)(?:[/\\]|$)/;
+
 function freeze<T>(value: T): T {
   if (value && typeof value === "object") {
     for (const child of Object.values(value)) freeze(child);
@@ -61,9 +64,30 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
   let running: Promise<void> | undefined;
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
+  // Public listeners are external code: a throwing listener must not change compile
+  // state, skip other listeners, or escape into the compile loop or chokidar.
+  function reportError(error: unknown, fallback: string) {
+    const reported = error instanceof Error ? error : new Error(fallback);
+    for (const listener of emitter.listeners("error")) {
+      try {
+        listener(reported);
+      } catch {
+        // An error listener has no further reporting channel; never recurse.
+      }
+    }
+  }
+  function dispatch(event: "preview-state" | "update", ...args: unknown[]) {
+    for (const listener of emitter.listeners(event)) {
+      try {
+        listener(...args);
+      } catch (error) {
+        reportError(error, "Watcher listener failed");
+      }
+    }
+  }
   function publish(patch: Partial<PreviewState>) {
     state = freeze({ ...state, ...patch, sequence: state.sequence + 1 });
-    emitter.emit("preview-state", state);
+    dispatch("preview-state", state);
   }
 
   async function drain() {
@@ -98,7 +122,7 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
           payloads: result.payloads.map(({ bytes: _bytes, ...descriptor }) => descriptor),
         });
         for (const resource of updates)
-          emitter.emit("update", `${resource.type}/${resource.name}`, resource);
+          dispatch("update", `${resource.type}/${resource.name}`, resource);
       } catch (error) {
         if (closed || watchFailed) return;
         if (revision !== requested) continue;
@@ -114,9 +138,8 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
             },
           ],
         });
-        // EventEmitter's unhandled error event throws; state-only consumers are supported.
-        if (emitter.listenerCount("error") > 0)
-          emitter.emit("error", error instanceof Error ? error : new Error("Compilation failed"));
+        // State-only consumers are supported: no error listener is not a crash.
+        reportError(error, "Compilation failed");
       }
       if (revision === requested) return;
     } while (!closed && !watchFailed);
@@ -140,21 +163,22 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
   }
   const fsWatcher = chokidarWatch(dir, {
     ignoreInitial: true,
-    ignored: [
-      /(^|[/\\])(?:\.git|\.topik(?:-compilation-(?:generation|prior)-[^/\\]+)?)(?:[/\\]|$)/,
-      (path) => /(^|[/\\])node_modules(?:[/\\]|$)/.test(relative(dir, path)),
-    ],
+    // Match only below the watched directory: an ancestor named like an ignored
+    // directory (for example a project inside `.topik/`) must not hide the project.
+    ignored: [(path) => IGNORED_SEGMENT.test(relative(dir, path))],
   });
   fsWatcher.on("add", scheduleRecompile);
   fsWatcher.on("addDir", scheduleRecompile);
   fsWatcher.on("change", scheduleRecompile);
   fsWatcher.on("unlink", scheduleRecompile);
   fsWatcher.on("unlinkDir", scheduleRecompile);
+  let fsClosing: Promise<void> | undefined;
+  const closeFsWatcher = () => (fsClosing ??= fsWatcher.close());
   const close = async () => {
     closed = true;
     if (debounceTimer) clearTimeout(debounceTimer);
     options.signal?.removeEventListener("abort", onAbort);
-    const closing = fsWatcher.close();
+    const closing = closeFsWatcher();
     // Chokidar removes listeners synchronously, but in-flight I/O can still emit errors.
     // Keep a sink even after close resolves, without accumulating it on repeated closes.
     if (fsWatcher.listenerCount("error") === 0) fsWatcher.on("error", () => {});
@@ -165,9 +189,16 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
   };
   // Lost watch coverage cannot be repaired by a successful compilation. Keep the
   // last good inventory, but require a new watcher before publishing ready again.
-  fsWatcher.on("error", (error) => {
+  const onWatchError = (error: unknown) => {
     if (closed) return;
-    watchFailed = true;
+    if (!watchFailed) {
+      watchFailed = true;
+      // No further notifications can be trusted, so release the OS watches now.
+      // Closing removes listeners synchronously; keep this handler as the sink for
+      // in-flight errors. close() awaits (and reports) the same close promise.
+      closeFsWatcher().catch(() => {});
+      fsWatcher.on("error", onWatchError);
+    }
     if (debounceTimer) clearTimeout(debounceTimer);
     publish({
       status: "error",
@@ -178,9 +209,9 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
         },
       ],
     });
-    if (emitter.listenerCount("error") > 0)
-      emitter.emit("error", error instanceof Error ? error : new Error("Source watching failed"));
-  });
+    reportError(error, "Source watching failed");
+  };
+  fsWatcher.on("error", onWatchError);
   try {
     await new Promise<void>((resolveReady, rejectReady) => {
       const cleanup = () => {

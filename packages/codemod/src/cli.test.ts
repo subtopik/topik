@@ -53,6 +53,10 @@ describe("codemod CLI file results", () => {
         "✗ blocked.mdx — Skipping rename: destination blocked.md already exists",
       );
       expect(console.error).toHaveBeenCalledWith("✗ 1 file(s) failed");
+      expect(console.log).toHaveBeenCalledWith("  skipped blocked.mdx (error)");
+      expect(console.log).toHaveBeenCalledWith(
+        `  ${dryRun ? "would convert" : "converted"} good.mdx → good.md`,
+      );
       expect(console.log).toHaveBeenCalledWith(
         `${dryRun ? "would convert" : "converted"} 1 file(s)`,
       );
@@ -74,11 +78,24 @@ describe("codemod CLI file results", () => {
   test("reports caught I/O errors and counts each failed file", async () => {
     vi.mocked(runMintlify).mockResolvedValueOnce({
       files: [
-        { relativePath: "read.mdx", changed: false, warnings: [], error: "Unable to read file" },
-        { relativePath: "write.mdx", changed: false, warnings: [], error: "Unable to write file" },
+        {
+          relativePath: "read.mdx",
+          changed: false,
+          contentChanged: false,
+          warnings: [],
+          error: "Unable to read file",
+        },
+        {
+          relativePath: "write.mdx",
+          changed: false,
+          contentChanged: false,
+          warnings: [],
+          error: "Unable to write file",
+        },
       ],
       filesChanged: 0,
       warnings: 0,
+      notices: [],
     });
 
     await runCli();
@@ -97,7 +114,38 @@ describe("codemod CLI file results", () => {
 
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining("unsupported.mdx:1:1"));
     expect(console.log).toHaveBeenCalledWith("✓ converted 1 file(s)");
-    expect(console.log).toHaveBeenCalledWith("⚠ 2 warning(s)");
+    expect(console.log).toHaveBeenCalledWith("⚠ 1 warning(s)");
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringMatching(/^ℹ Kept .mdx extensions on 1 file\(s\)/),
+    );
     expect(process.exitCode).toBeUndefined();
+  });
+
+  test.each([false, true])("lists each file's outcome (dry run: %s)", async (dryRun) => {
+    await writeFile(join(dir, "converted.mdx"), "<Note>Good.</Note>\n");
+    await writeFile(join(dir, "plain.mdx"), "# Plain\n");
+    await writeFile(join(dir, "kept.md"), "# Kept\n");
+    await writeFile(join(dir, "edited.md"), "<Tip>Edited.</Tip>\n");
+
+    await runCli(dryRun);
+
+    const lines = vi.mocked(console.log).mock.calls.map(([line]) => line);
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        `  ${dryRun ? "would convert" : "converted"} converted.mdx → converted.md`,
+        `  ${dryRun ? "would rename" : "renamed"} plain.mdx → plain.md`,
+        `  ${dryRun ? "would convert" : "converted"} edited.md`,
+        `✓ ${dryRun ? "would convert" : "converted"} 3 file(s)`,
+      ]),
+    );
+    expect(lines.some((line) => String(line).includes("kept.md"))).toBe(false);
+  });
+
+  test("lists skipped files with their warning count", async () => {
+    await writeFile(join(dir, "unsupported.md"), '<Icon icon="star" />\n');
+
+    await runCli(true);
+
+    expect(console.log).toHaveBeenCalledWith("  skipped unsupported.md (1 warning(s))");
   });
 });

@@ -1,4 +1,16 @@
-import { chmod, lstat, mkdtemp, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  copyFile,
+  link,
+  lstat,
+  mkdtemp,
+  readFile,
+  rename,
+  rm,
+  stat,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 export interface MigrationEdit {
@@ -7,6 +19,9 @@ export interface MigrationEdit {
   source: string;
   content: string;
 }
+
+/** Prefix of the hidden staging directories created next to each migrated file. */
+export const STAGING_PREFIX = ".topik-codemod-";
 
 export async function pathExists(path: string): Promise<boolean> {
   try {
@@ -19,7 +34,10 @@ export async function pathExists(path: string): Promise<boolean> {
 }
 
 /** Publish a planned migration with rollback for ordinary I/O failures.
- * Requires a serialized invocation; this is not a crash-atomic filesystem transaction.
+ * Requires a serialized invocation; this is not a crash-atomic filesystem transaction,
+ * but a source is never absent from the tree: in-place edits are a single atomic
+ * rename over the source, and a renamed file is published before its source is removed.
+ * An interrupted run can leave a staging directory and, for a rename, both names.
  */
 export async function publishMigration(edits: readonly MigrationEdit[]): Promise<string[]> {
   const staged: Array<
@@ -27,26 +45,31 @@ export async function publishMigration(edits: readonly MigrationEdit[]): Promise
       directory: string;
       candidate: string;
       backup: string;
-      moved: boolean;
       published: boolean;
+      removed: boolean;
     }
   > = [];
   try {
     // Prepare every replacement before changing any source or destination.
     for (const edit of edits) {
-      const directory = await mkdtemp(join(dirname(edit.path), ".topik-codemod-"));
+      const directory = await mkdtemp(join(dirname(edit.path), STAGING_PREFIX));
       const entry = {
         ...edit,
         directory,
         candidate: join(directory, "candidate"),
         backup: join(directory, "original"),
-        moved: false,
         published: false,
+        removed: false,
       };
       staged.push(entry);
       const mode = (await stat(edit.path)).mode & 0o777;
       await writeFile(entry.candidate, edit.content, { encoding: "utf8", mode });
       await chmod(entry.candidate, mode);
+      // The backup is the original inode where possible, so rollback restores it exactly.
+      await link(edit.path, entry.backup).catch(async () => {
+        await copyFile(edit.path, entry.backup);
+        await chmod(entry.backup, mode);
+      });
     }
     for (const edit of staged) {
       if ((await readFile(edit.path, "utf8")) !== edit.source)
@@ -55,17 +78,23 @@ export async function publishMigration(edits: readonly MigrationEdit[]): Promise
         throw new Error(`Destination already exists: ${edit.destination}`);
     }
     for (const entry of staged) {
-      await rename(entry.path, entry.backup);
-      entry.moved = true;
       await rename(entry.candidate, entry.destination);
       entry.published = true;
+      if (entry.destination !== entry.path) {
+        await unlink(entry.path);
+        entry.removed = true;
+      }
     }
   } catch (error) {
     const failures: string[] = [];
     for (const entry of [...staged].reverse()) {
       try {
-        if (entry.published) await rename(entry.destination, entry.candidate);
-        if (entry.moved) await rename(entry.backup, entry.path);
+        if (entry.destination === entry.path) {
+          if (entry.published) await rename(entry.backup, entry.path);
+        } else {
+          if (entry.removed) await rename(entry.backup, entry.path);
+          if (entry.published) await rename(entry.destination, entry.candidate);
+        }
       } catch (rollbackError) {
         failures.push(`${entry.directory}: ${String(rollbackError)}`);
       }

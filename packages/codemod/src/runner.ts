@@ -1,7 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { rewriteTopikNavigationReferences } from "@topik/content";
-import { pathExists, publishMigration, type MigrationEdit } from "./migration";
+import { pathExists, publishMigration, STAGING_PREFIX, type MigrationEdit } from "./migration";
 import { transformMintlify, type TransformWarning } from "./transforms/mintlify";
 
 export interface RunOptions {
@@ -14,7 +14,10 @@ export interface FileResult {
   relativePath: string;
   newRelativePath?: string;
   warnings: TransformWarning[];
+  /** The file is (or would be) rewritten or renamed. */
   changed: boolean;
+  /** The file's content is (or would be) rewritten, as opposed to only renamed. */
+  contentChanged: boolean;
   error?: string;
 }
 
@@ -22,6 +25,8 @@ export interface RunSummary {
   files: FileResult[];
   filesChanged: number;
   warnings: number;
+  /** Run-level messages that do not belong to a single file. */
+  notices: string[];
 }
 
 interface FilePlan extends MigrationEdit {
@@ -32,10 +37,17 @@ export async function runMintlify(options: RunOptions): Promise<RunSummary> {
   const root = resolve(options.dir);
   const files: FileResult[] = [];
   const plans: FilePlan[] = [];
+  const notices: string[] = [];
+  const staging: string[] = [];
   let opaqueSource = false;
-  for await (const path of walk(root)) {
+  for await (const path of walk(root, staging)) {
     if (!path.endsWith(".mdx") && !path.endsWith(".md")) continue;
-    const result: FileResult = { relativePath: relative(root, path), warnings: [], changed: false };
+    const result: FileResult = {
+      relativePath: relative(root, path),
+      warnings: [],
+      changed: false,
+      contentChanged: false,
+    };
     files.push(result);
     try {
       const bytes = await readFile(path);
@@ -49,7 +61,8 @@ export async function runMintlify(options: RunOptions): Promise<RunSummary> {
         opaqueSource = true;
         continue;
       }
-      const transformed = transformMintlify(source);
+      // MDX-only syntax (ESM, expressions) would render as prose once renamed to .md.
+      const transformed = transformMintlify(source, { mdx: path.endsWith(".mdx") });
       result.warnings = transformed.warnings;
       const plan: FilePlan = {
         path,
@@ -79,7 +92,9 @@ export async function runMintlify(options: RunOptions): Promise<RunSummary> {
     plans.filter((plan) => plan.path !== plan.destination).map((plan) => plan.path),
   );
   if (renames.size) {
-    let reason = opaqueSource ? "some source files could not be safely inspected" : undefined;
+    let reason = opaqueSource
+      ? "files kept unchanged with warnings or errors may link to renamed pages"
+      : undefined;
     const rewritten = new Map<FilePlan, string>();
     if (!reason) {
       for (const plan of plans) {
@@ -94,17 +109,18 @@ export async function runMintlify(options: RunOptions): Promise<RunSummary> {
       }
     }
     if (reason) {
-      // An untouched source may link to any candidate. Keep extensions across the
-      // run, while still applying independent, supported component conversions.
+      // An untouched source may link to any candidate, and its links cannot be
+      // rewritten, so renaming any page could break them. Keep extensions across
+      // the run, while still applying independent, supported component conversions.
+      let kept = 0;
       for (const plan of plans) {
         if (plan.destination === plan.path) continue;
         plan.destination = plan.path;
-        plan.result.warnings.push({
-          line: 1,
-          column: 1,
-          message: `Keeping .mdx extensions because ${reason}; fix the reported files and rerun`,
-        });
+        kept++;
       }
+      notices.push(
+        `Kept .mdx extensions on ${kept} file(s) because ${reason}; fix the reported files and rerun to rename them`,
+      );
     } else {
       for (const [plan, content] of rewritten) plan.content = content;
     }
@@ -115,6 +131,7 @@ export async function runMintlify(options: RunOptions): Promise<RunSummary> {
   );
   for (const plan of edits) {
     plan.result.changed = true;
+    plan.result.contentChanged = plan.source !== plan.content;
     if (plan.path !== plan.destination)
       plan.result.newRelativePath = relative(root, plan.destination);
   }
@@ -126,16 +143,25 @@ export async function runMintlify(options: RunOptions): Promise<RunSummary> {
     } catch (error) {
       for (const plan of edits) {
         plan.result.changed = false;
+        plan.result.contentChanged = false;
         delete plan.result.newRelativePath;
         const failure = `Migration failed: ${error instanceof Error ? error.message : String(error)}`;
         plan.result.error = plan.result.error ? `${plan.result.error}; ${failure}` : failure;
       }
     }
   }
+  // Walks skip hidden directories, including staging left by an interrupted run.
+  notices.unshift(
+    ...staging.map(
+      (directory) =>
+        `Found ${relative(root, directory)} from an interrupted or failed run. If a page next to it is missing or incomplete, restore it from "original" (the pre-migration source; "candidate" is the converted version), then delete the directory`,
+    ),
+  );
   return {
     files,
     filesChanged: files.filter((file) => file.changed).length,
     warnings: files.reduce((total, file) => total + file.warnings.length, 0),
+    notices,
   };
 }
 
@@ -164,12 +190,14 @@ function renamedHref(
   return pathname.replace(/(?:x|%78)((?:\/|%2[fF])*)$/, "$1") + (end < 0 ? "" : href.slice(end));
 }
 
-async function* walk(dir: string): AsyncGenerator<string> {
+async function* walk(dir: string, staging: string[]): AsyncGenerator<string> {
   const entries = await readdir(dir, { withFileTypes: true });
   for (const entry of entries) {
+    if (entry.isDirectory() && entry.name.startsWith(STAGING_PREFIX))
+      staging.push(join(dir, entry.name));
     if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
     const full = join(dir, entry.name);
-    if (entry.isDirectory()) yield* walk(full);
+    if (entry.isDirectory()) yield* walk(full, staging);
     else if (entry.isFile()) yield full;
   }
 }

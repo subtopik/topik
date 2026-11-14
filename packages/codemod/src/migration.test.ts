@@ -1,4 +1,15 @@
-import { chmod, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  link,
+  mkdtemp,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  stat,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
@@ -8,7 +19,9 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
   return {
     ...actual,
+    link: vi.fn(actual.link),
     rename: vi.fn(actual.rename),
+    unlink: vi.fn(actual.unlink),
     rm: vi.fn(actual.rm),
     writeFile: vi.fn(actual.writeFile),
   };
@@ -35,6 +48,9 @@ beforeEach(async () => {
   for (const edit of edits) await writeFile(edit.path, edit.source);
 });
 afterEach(async () => {
+  const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+  vi.mocked(link).mockReset().mockImplementation(actual.link);
+  vi.mocked(unlink).mockReset().mockImplementation(actual.unlink);
   vi.mocked(rename).mockReset();
   vi.mocked(rm).mockReset();
   vi.mocked(writeFile).mockReset();
@@ -125,4 +141,43 @@ test("publishes complete edits, cleans temporary files, and preserves file permi
   for (const edit of edits) expect(await readFile(edit.destination, "utf8")).toBe(edit.content);
   if (process.platform !== "win32")
     expect((await stat(edits[1].destination)).mode & 0o777).toBe(0o640);
+});
+
+test("keeps every source in the visible tree after each publication step", async () => {
+  // An interruption can happen between any two filesystem operations. Later runs
+  // skip hidden staging directories, so each source must stay visible throughout.
+  const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+  const snapshots: string[][] = [];
+  const visible = async () => {
+    const files = (await actual.readdir(dir)).filter((name) => !name.startsWith("."));
+    return Promise.all(files.map((name) => actual.readFile(join(dir, name), "utf8")));
+  };
+  vi.mocked(rename).mockImplementation(async (from, to) => {
+    await actual.rename(from, to);
+    snapshots.push(await visible());
+  });
+  vi.mocked(unlink).mockImplementation(async (path) => {
+    await actual.unlink(path);
+    snapshots.push(await visible());
+  });
+  expect(await publishMigration(edits)).toEqual([]);
+  expect(snapshots.length).toBeGreaterThan(0);
+  for (const contents of snapshots)
+    for (const edit of edits)
+      expect(contents.includes(edit.source) || contents.includes(edit.content)).toBe(true);
+});
+
+test("falls back to copied backups when hard links are unavailable", async () => {
+  const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+  vi.mocked(link).mockRejectedValue(Object.assign(new Error("EPERM"), { code: "EPERM" }));
+  vi.mocked(rename).mockImplementation(async (from, to) => {
+    if (basename(String(from)) === "candidate" && String(to) === edits[1].destination)
+      throw new Error("rename failed");
+    return actual.rename(from, to);
+  });
+  await expect(publishMigration(edits)).rejects.toThrow("rename failed");
+  await expectOriginalFiles();
+  vi.mocked(rename).mockImplementation(actual.rename);
+  expect(await publishMigration(edits)).toEqual([]);
+  expect((await readdir(dir)).sort()).toEqual(["next.md", "start.md"]);
 });

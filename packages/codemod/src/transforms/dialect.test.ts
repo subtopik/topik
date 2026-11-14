@@ -40,7 +40,8 @@ describe("codemod literal ranges in the Topik Markdown dialect", () => {
         expect(result.changed).toBe(true);
         expect(result.content.startsWith(metadata)).toBe(true);
         expect(result.content).toContain(retained);
-        expect(result.content).toContain('variant="info" %}\nActual.\n{% /callout %}');
+        expect(result.content).toContain(`variant="info" %}${eol}Actual.${eol}{% /callout %}`);
+        if (eol === "\r\n") expect(result.content.replaceAll("\r\n", "")).not.toMatch(/[\r\n]/u);
         expect(validateTopikContent(result.content).valid).toBe(true);
       }
     }
@@ -62,11 +63,10 @@ describe("codemod literal ranges in the Topik Markdown dialect", () => {
       "Text[^a]\n\n[^a]: `<Note>literal</Note>` and `<Icon />`\n\n<Note>Real.</Note>\n";
     const result = transformMintlify(source);
     expect(result).toMatchObject({ content: source, changed: false });
-    expect(result.warnings).toEqual([
-      expect.objectContaining({
-        message: expect.stringContaining("not valid Topik content; source kept"),
-      }),
-    ]);
+    // One warning per unsupported node: the footnote reference and its definition.
+    expect(result.warnings.map(({ line }) => line)).toEqual([1, 3]);
+    for (const warning of result.warnings)
+      expect(warning.message).toContain("not valid Topik content; source kept");
   });
 
   test("ends a JSX body before following inline code", () => {

@@ -27,6 +27,22 @@ const mintlify = command({
       keepExtension: options.keepExtension,
     });
 
+    const dry = options.dryRun;
+    for (const file of summary.files) {
+      const rename = file.newRelativePath ? ` → ${file.newRelativePath}` : "";
+      if (file.changed && file.contentChanged)
+        console.log(`  ${dry ? "would convert" : "converted"} ${file.relativePath}${rename}`);
+      else if (file.changed)
+        console.log(`  ${dry ? "would rename" : "renamed"} ${file.relativePath}${rename}`);
+      else if (file.error !== undefined || file.warnings.length > 0) {
+        const details = [
+          ...(file.error !== undefined ? ["error"] : []),
+          ...(file.warnings.length > 0 ? [`${file.warnings.length} warning(s)`] : []),
+        ];
+        console.log(`  skipped ${file.relativePath} (${details.join(", ")})`);
+      }
+    }
+
     let errors = 0;
     for (const file of summary.files) {
       if (file.error !== undefined) {
@@ -40,7 +56,9 @@ const mintlify = command({
       }
     }
 
-    const tense = options.dryRun ? "would convert" : "converted";
+    for (const notice of summary.notices) console.error(`ℹ ${notice}`);
+
+    const tense = dry ? "would convert" : "converted";
     console.log(`${errors === 0 ? "✓ " : ""}${tense} ${summary.filesChanged} file(s)`);
     if (summary.warnings > 0) {
       console.log(`⚠ ${summary.warnings} warning(s)`);

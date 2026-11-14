@@ -102,6 +102,21 @@ describe("runMintlify", () => {
     expect(await readdir(dir)).not.toContain("unsupported.md");
   });
 
+  test.each([
+    ["an expression in a link label", "[{1 + 1}](./page)\n"],
+    ["a default import after a BOM", "﻿import Thing from './thing.js'\n\n# Page\n"],
+    ["top-level indented prose", "    Plain prose.\n"],
+  ])("keeps an MDX file with %s and its extension unchanged", async (_name, source) => {
+    await writeFile(join(dir, "page.mdx"), source);
+
+    const summary = await runMintlify({ dir, dryRun: false, keepExtension: false });
+
+    expect(summary.filesChanged).toBe(0);
+    expect(summary.warnings).toBeGreaterThan(0);
+    expect(await readdir(dir)).toEqual(["page.mdx"]);
+    expect(await readFile(join(dir, "page.mdx"), "utf-8")).toBe(source);
+  });
+
   test("does not rename an untouched file containing unknown JSX", async () => {
     const source = '<CustomThing title="x" />\n';
     await writeFile(join(dir, "custom.mdx"), source);
@@ -193,12 +208,20 @@ describe("runMintlify", () => {
     const unsupported = "<CustomThing />\n\n[Good](./good.mdx)\n";
     await writeFile(join(dir, "unsupported.mdx"), unsupported);
     await writeFile(join(dir, "good.mdx"), "<Note>Good.</Note>\n");
+    await writeFile(join(dir, "other.mdx"), "# Other\n");
     const summary = await runMintlify({ dir, dryRun: false, keepExtension: false });
     expect(summary.filesChanged).toBe(1);
-    expect(
-      summary.files.find((file) => file.relativePath === "good.mdx")?.warnings[0]?.message,
-    ).toMatch(/Keeping .mdx extensions/);
-    expect(await readdir(dir)).toEqual(["good.mdx", "unsupported.mdx"]);
+    // One run-level notice, rather than a warning on every rename candidate.
+    expect(summary.notices).toEqual([
+      expect.stringMatching(/^Kept .mdx extensions on 2 file\(s\)/),
+    ]);
+    expect(summary.files.find((file) => file.relativePath === "good.mdx")?.warnings).toEqual([]);
+    expect(summary.files.find((file) => file.relativePath === "other.mdx")).toMatchObject({
+      changed: false,
+      warnings: [],
+    });
+    expect(summary.warnings).toBe(1);
+    expect((await readdir(dir)).sort()).toEqual(["good.mdx", "other.mdx", "unsupported.mdx"]);
     expect(await readFile(join(dir, "unsupported.mdx"), "utf8")).toBe(unsupported);
     expect(await readFile(join(dir, "good.mdx"), "utf8")).toContain("{% callout");
   });
@@ -209,7 +232,10 @@ describe("runMintlify", () => {
     await writeFile(join(dir, "next.mdx"), "# Next\n");
     const summary = await runMintlify({ dir, dryRun: false, keepExtension: false });
     expect(summary.filesChanged).toBe(0);
-    expect(summary.warnings).toBe(2);
+    expect(summary.warnings).toBe(0);
+    expect(summary.notices).toEqual([
+      expect.stringContaining("navigation in start.mdx could not be safely rewritten"),
+    ]);
     expect(await readFile(join(dir, "start.mdx"), "utf8")).toBe(source);
     expect(await readdir(dir)).toEqual(["next.mdx", "start.mdx"]);
   });
@@ -221,6 +247,55 @@ describe("runMintlify", () => {
     const summary = await runMintlify({ dir, dryRun: false, keepExtension: true });
     expect(summary).toMatchObject({ filesChanged: 0, warnings: 0 });
     expect(await readFile(join(dir, "start.mdx"), "utf8")).toBe(source);
+  });
+
+  test.each([
+    ["ESM", "import { Thing } from '/snippets/thing.mdx'\n\n# Page\n"],
+    ["an expression", "# Page\n\n{/* Mintlify comment */}\n"],
+  ])("keeps .mdx files that contain MDX-only %s", async (_name, source) => {
+    await writeFile(join(dir, "page.mdx"), source);
+    await writeFile(join(dir, "plain.md"), "Not MDX: {braces} stay text.\n");
+    const summary = await runMintlify({ dir, dryRun: false, keepExtension: false });
+    expect(summary.files.find((file) => file.relativePath === "page.mdx")).toMatchObject({
+      changed: false,
+      warnings: [{ message: expect.stringContaining("MDX") }],
+    });
+    expect(summary.files.find((file) => file.relativePath === "plain.md")?.warnings).toEqual([]);
+    expect((await readdir(dir)).sort()).toEqual(["page.mdx", "plain.md"]);
+    expect(await readFile(join(dir, "page.mdx"), "utf8")).toBe(source);
+  });
+
+  test("converts idiomatically indented bodies and reports content changes", async () => {
+    await writeFile(
+      join(dir, "steps.mdx"),
+      '<Steps>\n  <Step title="A">\n    Some text here\n  </Step>\n</Steps>\n',
+    );
+    await writeFile(join(dir, "plain.mdx"), "# Plain\n");
+    const summary = await runMintlify({ dir, dryRun: false, keepExtension: false });
+    expect(summary.files.find((file) => file.relativePath === "steps.mdx")).toMatchObject({
+      changed: true,
+      contentChanged: true,
+      newRelativePath: "steps.md",
+    });
+    expect(summary.files.find((file) => file.relativePath === "plain.mdx")).toMatchObject({
+      changed: true,
+      contentChanged: false,
+      newRelativePath: "plain.md",
+    });
+    expect(await readFile(join(dir, "steps.md"), "utf8")).toBe(
+      '{% steps %}\n{% step title="A" %}\nSome text here\n{% /step %}\n{% /steps %}\n',
+    );
+  });
+
+  test("reports staging directories left by an interrupted run", async () => {
+    await mkdir(join(dir, "guides", ".topik-codemod-abc123"), { recursive: true });
+    await writeFile(join(dir, "guides", ".topik-codemod-abc123", "original"), "# Lost\n");
+    await writeFile(join(dir, "guides", "page.mdx"), "# Page\n");
+    const summary = await runMintlify({ dir, dryRun: true, keepExtension: false });
+    expect(summary.notices).toEqual([
+      expect.stringMatching(/^Found guides[/\\].topik-codemod-abc123 from an interrupted/),
+    ]);
+    expect(summary.files.map((file) => file.relativePath)).toEqual([join("guides", "page.mdx")]);
   });
 
   test.skipIf(process.platform === "win32")(

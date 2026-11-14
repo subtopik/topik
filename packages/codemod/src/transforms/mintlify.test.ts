@@ -122,8 +122,9 @@ describe("Mintlify to Topik content", () => {
     const mixed = `${frontmatter}<Note>Body.</Note>${eol}`;
     const output = converted(mixed);
     expect(output.slice(0, frontmatter.length)).toBe(frontmatter);
-    expect(output.slice(frontmatter.length)).toContain('{% callout variant="info" %}\nBody.');
-    expect(output).toContain("{% /callout %}");
+    expect(output.slice(frontmatter.length)).toBe(
+      `{% callout variant="info" %}${eol}Body.${eol}{% /callout %}${eol}`,
+    );
   });
 
   test.each(["---\n---\n", "---\r\n---\r\n", '---\ntitle: "<Note>Metadata</Note>"\n---'])(
@@ -383,4 +384,237 @@ test("escaped unsupported components remain literal while genuine JSX migrates",
   expect(converted(source)).toBe(
     String.raw`\<Icon />` + '\n\n{% callout variant="info" %}\nActual.\n{% /callout %}\n',
   );
+});
+
+describe("indented Mintlify bodies", () => {
+  type Node = { type: string; name?: string; value?: string; children?: Node[] };
+  const shape = (node: Node): unknown =>
+    node.type === "topikComponent"
+      ? { [node.name!]: node.children!.map(shape) }
+      : node.type === "code"
+        ? { code: node.value }
+        : node.type === "list"
+          ? { list: node.children!.map((item) => item.children!.map(shape)) }
+          : node.type;
+  const tree = (output: string) => (parseTopikContent(output).children as Node[]).map(shape);
+
+  test.each(["  ", "    ", "\t"])("dedents nested component bodies indented by %j", (unit) => {
+    const indent = (depth: number) => unit.repeat(depth);
+    const source = [
+      "<Steps>",
+      `${indent(1)}<Step title="A">`,
+      `${indent(2)}Some text here`,
+      `${indent(2)}continued.`,
+      "",
+      `${indent(2)}<Note>`,
+      `${indent(3)}Nested.`,
+      `${indent(2)}</Note>`,
+      `${indent(1)}</Step>`,
+      "</Steps>",
+      "",
+    ].join("\n");
+    const output = converted(source);
+    expect(output).toBe(
+      [
+        "{% steps %}",
+        '{% step title="A" %}',
+        "Some text here",
+        "continued.",
+        "",
+        '{% callout variant="info" %}',
+        "Nested.",
+        "{% /callout %}",
+        "{% /step %}",
+        "{% /steps %}",
+        "",
+      ].join("\n"),
+    );
+    expect(tree(output)).toEqual([
+      { steps: [{ step: ["paragraph", { callout: ["paragraph"] }] }] },
+    ]);
+  });
+
+  test.each(["  ", "    "])("keeps indented fences inside tabs as fenced code (%j)", (unit) => {
+    const source = [
+      "<Tabs>",
+      `${unit}<Tab title="JS">`,
+      `${unit}${unit}\`\`\`js`,
+      `${unit}${unit}if (ok) {`,
+      `${unit}${unit}  run();`,
+      "}",
+      `${unit}${unit}\`\`\``,
+      `${unit}</Tab>`,
+      "</Tabs>",
+      "",
+    ].join("\n");
+    const output = converted(source);
+    expect(output).toContain(
+      '{% tab title="JS" %}\n```js\nif (ok) {\n  run();\n}\n```\n{% /tab %}',
+    );
+    expect(tree(output)).toEqual([{ tabs: [{ tab: [{ code: "if (ok) {\n  run();\n}" }] }] }]);
+  });
+
+  test("preserves relative indentation of lists inside components", () => {
+    const source = [
+      '<Accordion title="More">',
+      "    - First",
+      "        - Nested",
+      "",
+      "      Item paragraph.",
+      "    - Second",
+      "</Accordion>",
+      "",
+    ].join("\n");
+    const output = converted(source);
+    expect(output).toContain("- First\n    - Nested\n\n  Item paragraph.\n- Second\n");
+    expect(tree(output)).toEqual([
+      {
+        accordion: [
+          { list: [["paragraph", { list: [["paragraph"]] }, "paragraph"], ["paragraph"]] },
+        ],
+      },
+    ]);
+  });
+
+  test("dedents a same-line body and the text before a close tag", () => {
+    const output = converted("<Note>First line\n    second line\n    last.</Note>\n");
+    expect(output).toBe(
+      '{% callout variant="info" %}\nFirst line\nsecond line\nlast.\n{% /callout %}\n',
+    );
+  });
+
+  test("leaves indented top-level tags that Markdown reads as code untouched", () => {
+    const literal = "    <Note>\n      Example.\n    </Note>\n";
+    expect(transformMintlify(literal)).toEqual({ content: literal, warnings: [], changed: false });
+    expect(converted(`${literal}\n<Note>\n  Real.\n</Note>\n`)).toBe(
+      `${literal}\n{% callout variant="info" %}\nReal.\n{% /callout %}\n`,
+    );
+  });
+
+  test.each([
+    ["mixed line indentation", "<Note>\n\tTab line.\n    Space line.\n</Note>\n", 3],
+    ["mixed fence contents", "<Tab title='x'>\n    ```\n\tcode\n    ```\n</Tab>\n", 3],
+  ])("refuses ambiguous %s and reports its location", (_name, source, line) => {
+    const result = transformMintlify(source);
+    expect(result).toMatchObject({ content: source, changed: false });
+    expect(result.warnings).toEqual([
+      { line, column: 1, message: expect.stringContaining("mixes tabs and spaces") },
+    ]);
+  });
+
+  test("reports warnings inside dedented bodies at their source columns", () => {
+    const source = "<Note>\n    <Card title={x} />\n</Note>\n";
+    expect(transformMintlify(source).warnings).toEqual([
+      expect.objectContaining({ line: 2, column: 11, message: expect.stringContaining("Dynamic") }),
+    ]);
+  });
+});
+
+describe("line endings", () => {
+  test.each([
+    [
+      "<Note>\r\nHello\r\n</Note>\r\n",
+      '{% callout variant="info" %}\r\nHello\r\n{% /callout %}\r\n',
+    ],
+    ["<Note>Hello</Note>\r\n", '{% callout variant="info" %}\r\nHello\r\n{% /callout %}\r\n'],
+    [
+      '<Tabs>\r\n  <Tab title="A">\r\n    Body\r\n  </Tab>\r\n</Tabs>',
+      '{% tabs %}\r\n{% tab title="A" %}\r\nBody\r\n{% /tab %}\r\n{% /tabs %}\r\n',
+    ],
+  ])("keeps CRLF line endings consistent: %j", (source, expected) => {
+    expect(converted(source)).toBe(expected);
+  });
+});
+
+describe("validation failures", () => {
+  test("pass through target diagnostics at their source lines", () => {
+    const source = '# Title\n\n<Tab title="Orphan">\nBody\n</Tab>\n';
+    const result = transformMintlify(source);
+    expect(result).toMatchObject({ content: source, changed: false });
+    expect(result.warnings.length).toBeGreaterThan(0);
+    for (const warning of result.warnings) {
+      expect(warning.message).toMatch(
+        /^Converted content is not valid Topik content; source kept: .+ \[[a-z0-9-]+\]/u,
+      );
+      expect(warning.line).toBe(3);
+    }
+  });
+});
+
+describe("MDX-only syntax", () => {
+  test.each([
+    ["import", "import { Thing } from '/snippets/thing.mdx'\n\n# Title\n", 1, 1, "import/export"],
+    ["export", "# Title\n\nexport const name = 'x'\n", 3, 1, "import/export"],
+    ["flow expression", "# Title\n\n{/* comment */}\n", 3, 1, "expressions"],
+    ["inline expression", "Hello {user.name}!\n", 1, 7, "expressions"],
+    ["expression in a body", "<Note>\n  Value: {1 + 1}\n</Note>\n", 2, 10, "expressions"],
+    ["expression in a link label", "[{1 + 1}](./page)\n", 1, 2, "expressions"],
+    ["expression in a nested link label", "[See *{name}*](./page)\n", 1, 7, "expressions"],
+    [
+      "expression in a reference link label",
+      "[Total {n}][ref]\n\n[ref]: ./page\n",
+      1,
+      8,
+      "expressions",
+    ],
+    ["expression in image alt text", "![{alt}](./img.png)\n", 1, 3, "expressions"],
+    [
+      "expression in reference image alt",
+      "![Logo {x}][pic]\n\n[pic]: ./a.png\n",
+      1,
+      8,
+      "expressions",
+    ],
+    ["expression in a linked image alt", "[![{alt}](./img.png)](./page)\n", 1, 4, "expressions"],
+    [
+      "default import after a BOM",
+      "﻿import Thing from './thing.js'\n\n# Page\n",
+      1,
+      2,
+      "import/export",
+    ],
+    ["export after a BOM", "﻿export const title = 'x'\n\n# Page\n", 1, 2, "import/export"],
+  ])("refuses %s in MDX sources", (_name, source, line, column, kind) => {
+    const result = transformMintlify(source, { mdx: true });
+    expect(result).toMatchObject({ content: source, changed: false });
+    expect(result.warnings).toEqual([
+      { line, column, message: expect.stringContaining(`MDX ${kind}`) },
+    ]);
+    // Markdown sources are not MDX and keep their existing behavior.
+    expect(transformMintlify(source).warnings.some((w) => w.message.includes("MDX"))).toBe(false);
+  });
+
+  test.each([
+    "Escaped \\{braces\\} and `{code}` stay text.\n",
+    "```js\nimport x from 'y'\nconst a = {b};\n```\n",
+    "Text mentioning import and export.\nimport on a continuation line is prose.\n",
+    '{% callout title="x" %}\nBody.\n{% /callout %}\n',
+    // Destinations and titles are literal strings in MDX, not expressions.
+    '[Link](./page?q={x} "Title {y}")\n',
+    '![Alt](https://example.com/a.png?v={x} "Title {y}")\n',
+    "[Link `{code}`](./page)\n",
+    "![Alt `{code}` and \\{escaped\\}](https://example.com/a.png)\n",
+  ])("allows Markdown that only resembles MDX syntax: %j", (source) => {
+    expect(transformMintlify(source, { mdx: true }).warnings).toEqual([]);
+  });
+
+  // MDX has no indented code, so Markdown would turn this prose into code.
+  test.each([
+    ["top-level indented prose", "    Plain prose.\n", 1, 1],
+    ["indented prose after a BOM", "﻿    Plain prose.\n", 1, 2],
+    ["indented prose in a list item", "- Item\n\n      Continued prose.\n", 3, 3],
+    ["indented prose in a blockquote", "> Quote\n>\n>     Indented.\n", 3, 3],
+    ["an indented component", "    <Note>Example.</Note>\n", 1, 1],
+    ["indented prose after a component", "<Note>\n  Body.\n</Note>\n\n    Outside.\n", 5, 1],
+  ])("refuses %s in MDX sources", (_name, source, line, column) => {
+    const result = transformMintlify(source, { mdx: true });
+    expect(result).toMatchObject({ content: source, changed: false });
+    expect(result.warnings).toEqual([
+      { line, column, message: expect.stringContaining("code block") },
+    ]);
+    // In Markdown an indented block really is code.
+    expect(transformMintlify(source).warnings.some((w) => w.message.includes("code block"))).toBe(
+      false,
+    );
+  });
 });

@@ -255,8 +255,8 @@ catalogs:
       specifier: ^2.0.3
       version: 2.0.3
     pele:
-      specifier: 1.12.0
-      version: 1.12.0
+      specifier: 1.13.0
+      version: 1.13.0
     playwright:
       specifier: ^1.64.1
       version: 1.64.1
@@ -524,7 +524,7 @@ importers:
         version: 0.19.1
       pele:
         specifier: 'catalog:'
-        version: 1.12.0
+        version: 1.13.0
       playwright:
         specifier: 'catalog:'
         version: 1.64.1
@@ -3668,8 +3668,8 @@ packages:
     resolution: {integrity: sha512-//nshmD55c46FuFw26xV/xFAaB5HF9Xdap7HJBBnrKdAd6/GxDBaNA1870O79+9ueg61cZLSVc+OaFlfmObYVQ==}
     engines: {node: '>= 14.16'}
 
-  pele@1.12.0:
-    resolution: {integrity: sha512-3OdOK6rvkaTB569R4/I8U0H82MqPRxj7vfkbowa2rRhgSBPFhvWlfFy5eae0jP+2A6hE8abE17nsdyxJz2VBiQ==}
+  pele@1.13.0:
+    resolution: {integrity: sha512-Ie8UKY9x00MsuR3jO6AzUwzK2Z6MIV3Tf4EDdITiuk8Uaz8K7g0R082WqsqNaSU8DdgkrRvZThzhit83mi/uiw==}
     engines: {node: '>=20'}
 
   piccolore@0.1.3:
@@ -7112,7 +7112,7 @@ snapshots:
 
   pathval@2.0.1: {}
 
-  pele@1.12.0: {}
+  pele@1.13.0: {}
 
   piccolore@0.1.3: {}
 

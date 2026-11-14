@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+
 import { act, type ReactNode } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { mergeTopikContentConfig } from "@topik/content";

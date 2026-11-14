@@ -175,7 +175,7 @@ describe("content-react core", () => {
   it("returns a sanitized tree-free failure for missing or accessor-backed variables", () => {
     const read = vi.fn(() => "secret");
     for (const [variables, id] of [
-      [{}, "topik-transform-failed"],
+      [{}, "topik-variable-missing"],
       [Object.defineProperty({}, "name", { get: read }), "topik-config-invalid"],
     ] as const) {
       const result = compileTopikContent("Hello {% $name %}", { config: { variables } });

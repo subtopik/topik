@@ -60,9 +60,9 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "fence-tag-error": "A fenced tag is invalid.",
   "function-undefined": "A referenced function is not defined.",
   "heading-id-duplicate": "Explicit heading IDs must be unique within a document.",
-  "missing-closing": "Content has a missing closing delimiter.",
-  "missing-opening": "Content has a missing opening delimiter.",
-  "node-undefined": "A node is not supported.",
+  "missing-closing": "A tag has no matching closing tag.",
+  "missing-opening": "A closing tag has no matching opening tag.",
+  "node-undefined": "This Markdown construct is not supported, such as raw HTML or footnotes.",
   "no-inline-annotations": "Inline annotations are not supported in this location.",
   "parameter-missing-required": "A required function parameter is missing.",
   "parameter-type-invalid": "A function parameter has an invalid type.",
@@ -71,9 +71,15 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "slot-missing-required": "A required slot is missing.",
   "slot-undefined": "A slot is not supported.",
   "table-syntax": "Table syntax is invalid.",
-  "tag-placement-invalid": "A tag is not supported in this location.",
+  "attribute-syntax-invalid":
+    'Tag attributes must be written as name="value", a finite number, or a boolean.',
+  "tag-closing-invalid": "A closing tag cannot have attributes or be self-closing.",
+  "tag-name-invalid": "A tag requires a lowercase component name.",
+  "tag-placement-invalid":
+    "Block tags must be on their own lines; inline tags must appear within text.",
   "tag-selfclosing-has-children": "A self-closing tag cannot contain children.",
   "tag-undefined": "A tag is not supported.",
+  "tag-unterminated": "A tag is missing its closing %} delimiter.",
   "topik-accordion-children": "An accordion may contain only block content.",
   "topik-badge-children": "A badge requires inline content.",
   "topik-callout-children": "A callout may contain only block content.",
@@ -125,6 +131,14 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "topik-frontmatter-placement": "Frontmatter must be the first node in the document.",
   "topik-variable-path": "Variable paths must use supported property names.",
   "topik-variable-placement": "Variables must appear in inline content.",
+  "topik-variable-missing": "A variable is not defined.",
+  "topik-variable-type":
+    "Variables require data values; inserted text requires strings, finite numbers, booleans, or null.",
+  "topik-variable-control": "A variable value contains an unsupported control character.",
+  "topik-expression-type": "Conditional comparisons require scalar values.",
+  "topik-else-placement": "An else tag must appear once, directly inside an if block.",
+  "topik-else-syntax": "Write an alternative branch as {% else /%}.",
+  "topik-heading-id-placement": "An explicit heading ID must be at the end of a heading.",
   "topik-template-syntax": "Text templates require valid variable tokens or escaped openers.",
   "topik-template-location": "Text templates are not supported in this attribute.",
   "topik-code-template-structure":
@@ -171,13 +185,25 @@ export function topikLinkDiagnosticMessage(id: string): string | undefined {
     : undefined;
 }
 
+/** Custom component schema rules derive IDs from names; give each rule family fixed wording. */
+function componentDiagnosticMessage(id: string): string {
+  if (/^topik-[a-z0-9-]+$/.test(id)) {
+    if (id.endsWith("-children")) return "A component contains unsupported children.";
+    if (id.endsWith("-range")) return "A numeric attribute is outside its supported range.";
+    if (id.endsWith("-parent-required"))
+      return "A component must be nested inside its required parent component.";
+    if (id.includes("-requires-")) return "A component is missing a required child.";
+  }
+  return "Content validation failed.";
+}
+
 /** Re-apply fixed public messages and safe file labels when diagnostics cross package layers. */
 export function sanitizeTopikContentDiagnostic(
   diagnostic: TopikContentDiagnostic,
 ): TopikContentDiagnostic {
   const message = Object.hasOwn(TOPIK_CONTENT_DIAGNOSTIC_MESSAGES, diagnostic.id)
     ? TOPIK_CONTENT_DIAGNOSTIC_MESSAGES[diagnostic.id]
-    : "Content validation failed.";
+    : componentDiagnosticMessage(diagnostic.id);
   const file = sanitizeTopikDiagnosticFile(diagnostic.file);
   const {
     file: _untrustedFile,
@@ -188,8 +214,9 @@ export function sanitizeTopikContentDiagnostic(
     column,
     ...safe
   } = diagnostic;
+  // Template and body-variable diagnostics may carry bounded authored context.
   const template =
-    diagnostic.id.startsWith("topik-template-") || diagnostic.id === "topik-variable-path";
+    diagnostic.id.startsWith("topik-template-") || diagnostic.id.startsWith("topik-variable-");
   return {
     ...safe,
     message,

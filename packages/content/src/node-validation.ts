@@ -6,7 +6,7 @@ import { CONTENT_LIMITS } from "./limits.js";
 import {
   parentTypes as parents,
   inlineParentTypes as inlineParents,
-  isContentKind,
+  isMisplacedContent,
 } from "./node-grammar.js";
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -157,12 +157,16 @@ export function nodeShapeProblem(value: unknown, registry: Registry): string | u
     if (
       nodes.some(
         (child) =>
-          !(type === "root" && child.type === "yaml") && !isContentKind(child, "block", registry),
+          !(type === "root" && child.type === "yaml") &&
+          isMisplacedContent(child, "block", registry),
       )
     )
       return `${type} requires block children`;
   }
-  if (inlineParents.has(type) && nodes.some((child) => !isContentKind(child, "inline", registry)))
+  if (
+    inlineParents.has(type) &&
+    nodes.some((child) => isMisplacedContent(child, "inline", registry))
+  )
     return `${type} requires inline children`;
   if (
     inlineParents.has(type) &&

@@ -130,7 +130,10 @@ language (`topik-code-template-language`), missing variables
 (`topik-template-variable-missing`), incompatible values
 (`topik-template-variable-type`), and forbidden controls
 (`topik-template-control`). When available, diagnostics include bounded
-`attribute` and `variable` path context without exposing supplied values. Failed
+`attribute` and `variable` path context without exposing supplied values. Body
+variables and conditions outside templates report `topik-variable-missing`,
+`topik-variable-type`, and `topik-variable-control` with the same line and
+`variable` context. Failed
 operations retain original source and provide no usable partial output. Existing
 content/data/output limits also apply to templates and repeated substitutions.
 

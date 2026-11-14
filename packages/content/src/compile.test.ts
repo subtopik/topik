@@ -48,7 +48,7 @@ test("compiles scoped references, variables, and authored heading IDs into a sta
 
 test.each([
   ["{% unknown /%}", {}, "tag-undefined"],
-  ["{% $missing %}", {}, "topik-transform-failed"],
+  ["{% $missing %}", {}, "topik-variable-missing"],
   ["Hello", { partials: {} }, "topik-config-invalid"],
 ] as const)(
   "compilation reports a sanitized failure without a tree for %s",

@@ -133,8 +133,12 @@ if (writeDocument(evaluated) !== "Hello Ada.\n") throw new Error("Unexpected eva
 
 Expressions support scalar literals, variable paths, `equals`, `and`, `or`, and
 `not`. Only `false` and `null` are false; `and` and `or` short-circuit. Missing
-variables in evaluated paths throw `ContentEvaluationError`. Conditions control
-presentation and do not enforce authorization.
+variables in evaluated paths throw `ContentEvaluationError`. `compileTopikContent`
+reports body and condition variable failures as `topik-variable-missing`,
+`topik-variable-type`, or `topik-variable-control` (non-scalar `equals` operands
+as `topik-expression-type`), with the source line and bounded `variable` path but
+never the supplied value. Conditions control presentation and do not enforce
+authorization.
 
 Null and empty strings insert no text. Evaluation omits empty paragraphs, empty
 marks, and empty components that require inline children. It also removes terminal
@@ -238,6 +242,28 @@ const source = '{% notice title="Remember" %}\nKeep a backup.\n{% /notice %}';
 if (!validateTopikContent(source, { config }).valid) throw new Error("Invalid notice");
 transformTopikContent(parseTopikContent(source, { config }), config);
 ```
+
+`mergeTopikContentConfig` throws an error whose message names the invalid
+component, attribute, or field, for example
+`Content configuration is invalid: component "notice" attribute "title" required must be a boolean`.
+Names in `allowedParents` and `children.components` must be registered
+components. Source APIs report every configuration failure as the fixed
+`topik-config-invalid` diagnostic.
+
+## Diagnostics
+
+Source diagnostics have stable IDs with fixed messages. Tag syntax problems use
+`missing-closing`, `missing-opening`, `tag-unterminated`, `tag-name-invalid`,
+`attribute-syntax-invalid`, `duplicate-attribute`, `tag-closing-invalid`,
+`tag-placement-invalid`, `tag-undefined`, `topik-else-placement`, and
+`topik-else-syntax`. An unsupported condition expression reports one
+`topik-expression-invalid`. Unsupported Markdown, such as raw HTML, comments, and
+footnotes, reports `node-undefined` at the node's line with its Markdown node
+`type`; a heading ID that does not end its heading reports
+`topik-heading-id-placement`. Rules derived from custom schemas, such as
+`topik-<name>-children`, `topik-<name>-requires-<child>`,
+`topik-<parent>-parent-required`, and `topik-<attribute>-range`, use a fixed
+message for each rule family.
 
 ## Asset rewriting
 

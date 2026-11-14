@@ -90,6 +90,7 @@ declare module "mdast" {
   }
 }
 export interface TagDiagnostic {
+  /** Stable diagnostic identifier; parser diagnostics always set it. */
   id?: string;
   option?: string;
   message: string;

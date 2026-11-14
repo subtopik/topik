@@ -148,5 +148,86 @@ describe("HTML active content", () => {
     expect(sniffPortableMediaType(text("Logo:\n<svg viewBox='0 0 1 1'></svg>"))).toBe(
       "image/svg+xml",
     );
+    expect(sniffPortableMediaType(text("<svg xmlns='http://www.w3.org/2000/svg'/>"))).toBe(
+      "image/svg+xml",
+    );
+  });
+
+  test.each([
+    ["a comparison followed by an assignment", "if x < y then online = true\n"],
+    ["a loop that assigns a handler property", "for (i=0;i<n;i++){el.onclick=handler;}\n"],
+    ["an unclosed tag-like span", "if x <y then online = true\n"],
+    ["prose that names the SVG element", "Use the <svg> element to draw.\n"],
+    [
+      "an XML property list",
+      '<?xml version="1.0" encoding="UTF-8"?>\n' +
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" ' +
+        '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n' +
+        '<plist version="1.0">\n<dict><key>Name</key><string>x</string></dict>\n</plist>\n',
+    ],
+    ["an XML document without a doctype", '<?xml version="1.0"?>\n<project><a/></project>\n'],
+  ])("keeps %s downloadable", (_name, source) => {
+    expect(sniffPortableMediaType(text(source))).toBe("application/octet-stream");
+  });
+
+  test.each([
+    ["an event handler after a slash", "Notes <img/onerror=alert(1)>"],
+    ["an event handler after a quoted value", 'Notes <a href="x"onclick="alert(1)">x</a>'],
+    [
+      "XHTML declared as XML",
+      '<?xml version="1.0"?>\n<html xmlns="http://www.w3.org/1999/xhtml"/>',
+    ],
+    [
+      "XML that names the XHTML namespace",
+      '<?xml version="1.0"?>\n<x:a xmlns:x="http://www.w3.org/1999/xhtml"/>',
+    ],
+    ["XML with a stylesheet instruction", '<?xml-stylesheet href="a.xsl"?>\n<data/>'],
+    ["XML with an event handler", '<?xml version="1.0"?>\n<data><b onclick="x()"/></data>'],
+  ])("treats %s as active", (_name, source) => {
+    expect(sniffPortableMediaType(text(source))).toBe("text/html");
+  });
+
+  test("keeps an open tag in truncated text active", () => {
+    const source = `Notes <img src=x onerror=alert(1) ${"a".repeat(70 * 1024)}>`;
+    expect(sniffPortableMediaType(text(source))).toBe("text/html");
+  });
+
+  test.each([
+    ["repeated angle brackets", "<".repeat(64 * 1024)],
+    ["angle brackets separated by spaces", "< ".repeat(32 * 1024)],
+    ["unclosed start tags", "<a ".repeat(21 * 1024)],
+    ["unclosed handler-like spans", "<a o".repeat(16 * 1024)],
+  ])("inspects %s in linear time", (_name, source) => {
+    // The previous patterns backtracked quadratically and took seconds on these inputs; a linear
+    // scan takes milliseconds, so the bound tolerates slow machines without hiding a regression.
+    const started = performance.now();
+    sniffPortableMediaType(text(source));
+    expect(performance.now() - started).toBeLessThan(750);
+  });
+});
+
+describe("executable signatures", () => {
+  function portableExecutable(offset = 0x80): Uint8Array {
+    const bytes = new Uint8Array(offset + 24);
+    bytes.set(text("MZ"));
+    new DataView(bytes.buffer).setUint32(0x3c, offset, true);
+    bytes.set(text("PE\0\0"), offset);
+    return bytes;
+  }
+
+  test("accepts a PE header and an interpreter line", () => {
+    expect(sniffPortableMediaType(portableExecutable())).toBe("application/x-executable");
+    expect(sniffPortableMediaType(text("#!/bin/sh\necho hi\n"))).toBe("application/x-executable");
+    expect(sniffPortableMediaType(text("#! /usr/bin/env node\n"))).toBe("application/x-executable");
+  });
+
+  test.each([
+    ["a CSV that starts with MZ", text("MZ,Mozambique\nZA,South Africa\n")],
+    ["MZ bytes without a PE signature", portableExecutable().fill(0, 0x80)],
+    ["MZ bytes with an out-of-range PE offset", portableExecutable().slice(0, 0x60)],
+    ["a hash-bang heading typo", text("#! Heading typo\nBody\n")],
+    ["a hash-bang without a path", text("#!python\n")],
+  ])("keeps %s opaque", (_name, bytes) => {
+    expect(sniffPortableMediaType(bytes)).toBe("application/octet-stream");
   });
 });

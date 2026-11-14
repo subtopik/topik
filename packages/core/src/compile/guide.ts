@@ -28,6 +28,7 @@ import {
   type CompileResult,
 } from "./shared";
 import { compileResourceLinks, type CompileResourceReferenceTarget } from "./links";
+import { assertValidDocumentResource } from "./wiki";
 
 export interface CompileGuidesOptions {
   dir: string;
@@ -221,6 +222,7 @@ export async function discoverGuides(
       },
     };
 
+    assertValidDocumentResource(guide, file);
     resources.push(guide);
     sourcePathsByResource[`Guide/${guide.name}`] = file;
   }

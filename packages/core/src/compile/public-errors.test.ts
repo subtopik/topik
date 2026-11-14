@@ -41,9 +41,14 @@ describe("public compiler error safety", () => {
 
     await writeFile(
       join(root, "wiki.yaml"),
-      "id: docs\ntitle: Docs\nnavigation:\n  - private-value\n",
+      "id: docs\ntitle: Docs\nnavigation:\n  - guides/missing\n",
     );
-    await expectSafeFailure(() => compileWiki({ dir: root }), "wiki-page-not-found");
+    // The configured relative page path locates the failure, like a missing Course page.
+    await expectSafeFailure(
+      () => compileWiki({ dir: root }),
+      "wiki-page-not-found",
+      "guides/missing",
+    );
   });
 
   test("sanitizes outside-root and special-file failures without exposing causes", async () => {

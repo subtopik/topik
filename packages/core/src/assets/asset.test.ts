@@ -10,7 +10,7 @@ import {
   validateAssetValue,
   validateProjectNamespace,
 } from "./asset";
-import { parseStrictTopikJson, serializeTopikJson } from "./json";
+import { isTopikJsonDataValue, parseStrictTopikJson, serializeTopikJson } from "./json";
 import { sniffPortableMediaType, TOPIK_UNRESOLVED_ACTIVE_CONTENT_TYPE } from "./media";
 import { topikAssetDiagnostic } from "./diagnostics";
 import { TOPIK_ASSET_LIMITS } from "./constants";
@@ -56,6 +56,18 @@ describe("Asset/v1 strict JSON", () => {
       ok: false,
       diagnostics: [{ id: "TOPIK_ASSET_UNSUPPORTED_VERSION" }],
     });
+  });
+
+  test.each([
+    ["at the end", "x\ud83d"],
+    ["in the middle", "x\ud83dy"],
+    ["as a low half", "x\ude00"],
+  ])("rejects a lone surrogate %s of a string", (_name, value) => {
+    expect(isTopikJsonDataValue(value)).toBe(false);
+    expect(isTopikJsonDataValue({ [value]: 1 })).toBe(false);
+    expect(() => serializeTopikJson({ a: value })).toThrow(TypeError);
+    expect(() => parseStrictTopikJson(JSON.stringify(value))).toThrow(SyntaxError);
+    expect(isTopikJsonDataValue("x😀")).toBe(true);
   });
 
   test("accepts resource names, integrity algorithms, and URI forms", () => {
@@ -196,6 +208,13 @@ describe("automatic Asset identity", () => {
     expect(validateProjectNamespace("")).toMatchObject({ ok: false });
     expect(validateProjectNamespace("  ")).toMatchObject({ ok: false });
     expect(validateProjectNamespace("branch\u0000name")).toMatchObject({ ok: false });
+    for (const padded of [" a ", "a ", " a", "a\n", " a"]) {
+      expect(validateProjectNamespace(padded)).toMatchObject({
+        ok: false,
+        diagnostics: [{ id: "TOPIK_ASSET_PROJECT_NAMESPACE_INVALID" }],
+      });
+    }
+    expect(validateProjectNamespace("example/a b")).toMatchObject({ ok: true });
   });
 
   test("normalizes namespaces before validation, sizing, and hashing", () => {

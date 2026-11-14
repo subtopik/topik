@@ -337,14 +337,23 @@ export function verifySharedEdits(
         file.path,
       );
   }
+  // An admitted value also covers edits of its own items and nested fields.
+  const ancestor = (selector: string) => {
+    for (let end = selector.lastIndexOf("/"); end > 0; end = selector.lastIndexOf("/", end - 1)) {
+      const field = admitted.get(selector.slice(0, end));
+      if (field?.value) return field;
+    }
+    return undefined;
+  };
   for (const edit of edits) {
-    const fields = edit.selector
-      .split(",")
-      .map(
-        (selector) =>
-          admitted.get(selector) ??
-          admitted.get(`${selector.slice(0, selector.lastIndexOf("/") + 1)}+`),
-      );
+    const fields = edit.selector.split(",").map((selector) => {
+      const direct =
+        admitted.get(selector) ??
+        admitted.get(`${selector.slice(0, selector.lastIndexOf("/") + 1)}+`);
+      if (direct) return { field: direct, inherited: false };
+      const field = ancestor(selector);
+      return field ? { field, inherited: true } : undefined;
+    });
     if (fields.some((field) => !field))
       block(
         "shared-scope-denied",
@@ -352,8 +361,15 @@ export function verifySharedEdits(
         undefined,
         file.path,
       );
+    const resolved = fields.map((entry) => entry!);
     if (edit.start === edit.end) {
-      if (fields.some((field) => field!.insertion !== edit.start || field!.value))
+      if (
+        resolved.some(({ field, inherited }) =>
+          inherited
+            ? edit.start < field.value!.start || edit.start > field.value!.end
+            : field.insertion !== edit.start || field.value,
+        )
+      )
         block(
           "shared-scope-denied",
           "A configuration insertion needs its admitted empty-field anchor.",
@@ -361,8 +377,12 @@ export function verifySharedEdits(
           file.path,
         );
     } else {
-      const ranges = fields
-        .flatMap((field) => [field!.value, field!.entry].filter((range) => range !== undefined))
+      const ranges = resolved
+        .flatMap(({ field, inherited }) =>
+          (inherited ? [field.value] : [field.value, field.entry]).filter(
+            (range) => range !== undefined,
+          ),
+        )
         .sort((a, b) => a.start - b.start);
       let covered = edit.start;
       for (const range of ranges)
@@ -563,10 +583,20 @@ function writeMarkdown(
     );
   if (sections?.frontmatter !== undefined && sections.frontmatterRange) {
     const patched = patchFrontmatterFields(sections.frontmatter, updates, eol);
+    // Nonempty frontmatter text excludes the line break before its closing fence.
+    // An appended or removed final entry must not leave a blank line before it.
+    let frontmatter = patched.bytes;
+    const eolBytes = encodeSource(eol);
+    if (
+      sections.frontmatter &&
+      !/[\r\n]$/.test(sections.frontmatter) &&
+      Buffer.from(frontmatter.slice(-eolBytes.length)).equals(eolBytes)
+    )
+      frontmatter = frontmatter.slice(0, -eolBytes.length);
     return new Uint8Array(
       Buffer.concat([
         base!.bytes.slice(0, sections.frontmatterRange.start),
-        patched.bytes,
+        frontmatter,
         base!.bytes.slice(sections.frontmatterRange.end, sections.bodyRange.start),
         encodeSource(writtenBody),
       ]),
@@ -623,29 +653,93 @@ export function sourceNavigation(
   });
 }
 
+interface NavigationSequenceEdit {
+  additions: unknown[];
+  removals: string[];
+}
+
+/**
+ * Align a changed navigation list with its source items. Unchanged items keep
+ * their syntax; removed items are deleted in place and new items are appended.
+ * Returns undefined when the change needs a new item before a retained one.
+ */
+function alignNavigation(
+  previous: readonly unknown[],
+  desired: readonly unknown[],
+): { pairs: Array<[number, number]>; removals: number[]; additions: number[] } | undefined {
+  const before = previous.map((item) => serializeTopikJson(item ?? null));
+  const after = desired.map((item) => serializeTopikJson(item ?? null));
+  // Longest common subsequence of identical items anchors the retained entries.
+  const table = Array.from({ length: before.length + 1 }, () =>
+    Array<number>(after.length + 1).fill(0),
+  );
+  for (let i = before.length - 1; i >= 0; i--)
+    for (let j = after.length - 1; j >= 0; j--)
+      table[i][j] =
+        before[i] === after[j]
+          ? table[i + 1][j + 1] + 1
+          : Math.max(table[i + 1][j], table[i][j + 1]);
+  const anchors: Array<[number, number]> = [];
+  for (let i = 0, j = 0; i < before.length && j < after.length;)
+    if (before[i] === after[j]) anchors.push([i++, j++]);
+    else if (table[i + 1][j] >= table[i][j + 1]) i++;
+    else j++;
+  const pairs: Array<[number, number]> = [];
+  const removals: number[] = [];
+  const additions: number[] = [];
+  let i = 0;
+  let j = 0;
+  for (const [anchorBefore, anchorAfter] of [
+    ...anchors,
+    [before.length, after.length] as [number, number],
+  ]) {
+    const removed = anchorBefore - i;
+    const added = anchorAfter - j;
+    const last = anchorBefore === before.length;
+    if (removed === added || (last && added > removed)) {
+      // Equal gaps are edits of the same entries; a longer final gap appends.
+      for (let offset = 0; offset < removed; offset++) pairs.push([i + offset, j + offset]);
+      for (let offset = removed; offset < added; offset++) additions.push(j + offset);
+    } else if (added === 0) {
+      for (let offset = 0; offset < removed; offset++) removals.push(i + offset);
+    } else return undefined;
+    i = anchorBefore + 1;
+    j = anchorAfter + 1;
+  }
+  return { pairs, removals, additions };
+}
+
 function collectNavigationEdits(
   updates: Record<string, unknown>,
+  sequences: Map<string, NavigationSequenceEdit>,
   selector: string,
   raw: unknown,
   previous: unknown,
   desired: unknown,
 ): void {
   if (serializeTopikJson(previous ?? null) === serializeTopikJson(desired ?? null)) return;
-  if (
+  const alignment =
     Array.isArray(previous) &&
     Array.isArray(desired) &&
     Array.isArray(raw) &&
-    previous.length === desired.length &&
     raw.length === previous.length
-  ) {
-    for (let index = 0; index < desired.length; index++)
+      ? alignNavigation(previous, desired)
+      : undefined;
+  if (alignment && Array.isArray(previous) && Array.isArray(desired) && Array.isArray(raw)) {
+    for (const [before, after] of alignment.pairs)
       collectNavigationEdits(
         updates,
-        `${selector}/${index}`,
-        raw[index],
-        previous[index],
-        desired[index],
+        sequences,
+        `${selector}/${before}`,
+        raw[before],
+        previous[before],
+        desired[after],
       );
+    if (alignment.removals.length || alignment.additions.length)
+      sequences.set(selector, {
+        additions: alignment.additions.map((index) => desired[index]),
+        removals: alignment.removals.map((index) => `${selector}/${index}`),
+      });
   } else if (
     raw &&
     previous &&
@@ -662,6 +756,7 @@ function collectNavigationEdits(
     for (const field of new Set([...Object.keys(before), ...Object.keys(after)]))
       collectNavigationEdits(
         updates,
+        sequences,
         `${selector}/${encodeURIComponent(field)}`,
         (raw as Record<string, unknown>)[field],
         before[field],
@@ -773,6 +868,13 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
       const source = project.compilation.provenance.find((source) => source.config === config);
       if (!source)
         block("source-mapping-missing", "The operation needs its declared source.", op.resource);
+      // The requested path is caller text: name only the resource, never echo the path.
+      if (op.path !== undefined && !validateTopikPathSet([op.path]).ok)
+        block(
+          "source-path-invalid",
+          "The requested source path is not a portable project path.",
+          op.resource,
+        );
       const path =
         op.path ??
         allocateDocumentPath(
@@ -1577,10 +1679,14 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
     const oldPaths = new Map(
       project.documents.map((document) => [document.resource, document.path]),
     );
+    const navigationSequences = new Map<string, Map<string, NavigationSequenceEdit>>();
     for (const [config, { previous, desired: wiki, directory }] of navigationUpdates) {
       const updates = configUpdates.get(config)!;
+      const sequences = new Map<string, NavigationSequenceEdit>();
+      navigationSequences.set(config, sequences);
       collectNavigationEdits(
         updates,
+        sequences,
         "navigation",
         configs.get(config)!.navigation,
         sourceNavigation(previous.spec.navigation ?? [], previous, oldPaths, directory),
@@ -1606,6 +1712,15 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
               path.endsWith(".json"),
             )
           : []),
+        ...[...(navigationSequences.get(path) ?? [])].flatMap(([selector, sequence]) =>
+          patchSourceSequence(
+            decodeSource(file.bytes),
+            selector,
+            sequence.additions,
+            sequence.removals,
+            path.endsWith(".json"),
+          ),
+        ),
       ].sort(compareSharedEdits);
       if (!edits.length) continue;
       verifySharedEdits(
@@ -1614,7 +1729,15 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
         input.authority.shared.find((authority) => authority.path === path),
         edits,
       );
-      modified.set(path, replaySourceByteEdits(file.bytes, edits));
+      const replayed = replaySourceByteEdits(file.bytes, edits);
+      // Combined edits must still form one safe mapping. Invalid output is a writer
+      // failure, never a parse error attributed to the authored configuration.
+      try {
+        inspectSourceSyntax(decodeSource(replayed), path.endsWith(".json"));
+      } catch (cause) {
+        throw new TypeError("Source configuration edits produced invalid syntax", { cause });
+      }
+      modified.set(path, replayed);
       sharedEdits.set(path, edits);
     }
     const changes: SourceFileChange[] = [];

@@ -130,6 +130,24 @@ describe("diagnostic file sanitization", () => {
   );
 });
 
+test("tag diagnostics keep their source column", () => {
+  expect(validateTopikContent("Text {% badge label=x /%}\n\n{% /callout %}").errors).toEqual([
+    expect.objectContaining({ id: "attribute-syntax-invalid", lines: [1], column: 6 }),
+    expect.objectContaining({ id: "missing-opening", lines: [3], column: 1 }),
+  ]);
+  for (const column of [0, 1.5, 1_000_001, "2"])
+    expect(
+      sanitizeTopikContentDiagnostic({
+        id: "missing-opening",
+        type: "document",
+        level: "critical",
+        lines: [1],
+        message: "",
+        column: column as number,
+      }),
+    ).not.toHaveProperty("column");
+});
+
 test("collapse diagnostics retain only the recognized option and safe source position", () => {
   const result = validateTopikContent('~~~ts collapse="1-"\nx\n~~~');
   expect(result.valid).toBe(false);

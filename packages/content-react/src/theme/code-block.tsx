@@ -154,6 +154,8 @@ export function CodeBlockView({
     copied: false,
   });
   const [hydrated, setHydrated] = useState(false);
+  // Unknown until hydration, so server and first client renders agree.
+  const [canCopy, setCanCopy] = useState(true);
   const [view, setView] = useState(initialView);
   // Reset before committing new content/options, rather than briefly using old row ranges.
   const currentView = sameView(view, viewKey) ? view : initialView();
@@ -166,6 +168,8 @@ export function CodeBlockView({
 
   useEffect(() => {
     setHydrated(true);
+    // The Clipboard API is missing outside secure contexts, such as plain http previews.
+    setCanCopy(typeof navigator.clipboard?.writeText === "function");
     return () => clearTimeout(copyTimeout.current);
   }, []);
 
@@ -175,7 +179,7 @@ export function CodeBlockView({
   }, [payload, content, optionsKey]);
 
   async function copyCode() {
-    if (!navigator.clipboard) return;
+    if (typeof navigator.clipboard?.writeText !== "function") return;
     const sequence = ++copySequence.current;
     try {
       await navigator.clipboard.writeText(content);
@@ -316,14 +320,20 @@ export function CodeBlockView({
           >
             Wrap lines
           </button>
-          <button
-            className={rich ? "topik-rich-code-block__copy" : "topik-code-block__copy"}
-            disabled={!hydrated}
-            onClick={() => void copyCode()}
-            type="button"
-          >
-            {copied ? "Copied" : "Copy"}
-          </button>
+          {canCopy ? (
+            <button
+              className={rich ? "topik-rich-code-block__copy" : "topik-code-block__copy"}
+              disabled={!hydrated}
+              onClick={() => void copyCode()}
+              type="button"
+            >
+              {copied ? "Copied" : "Copy"}
+            </button>
+          ) : null}
+          {/* Announce the copy result; a changed button label alone is not announced. */}
+          <span className="topik-code-block__sr-only" role="status">
+            {copied ? "Code copied" : null}
+          </span>
         </div>
       </div>
       {hasDiff ? (

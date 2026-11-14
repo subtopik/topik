@@ -38,6 +38,7 @@ import {
   TopikTableHeader,
   TopikTableRow,
   TopikUnderline,
+  getDefaultTopikComponents,
 } from "./components";
 
 const contentReactRoot = existsSync(resolve(process.cwd(), "src/theme/styles.css"))
@@ -812,7 +813,12 @@ describe("default Topik theme components", () => {
         const explanationSelector =
           overrideSource === "default" ? ".topik-explanation" : ".custom-explanation";
         expect(inputs).toHaveLength(2);
-        expect(dom.textContent).toBe("YesNo");
+        expect(dom.querySelector("legend")?.textContent).toBe(
+          type === "multiple-choice" ? "Choose all answers that apply" : "Choose one answer",
+        );
+        expect(
+          [...dom.querySelectorAll(".topik-choice")].map((choice) => choice.textContent),
+        ).toEqual(["Yes", "No"]);
         expect(status?.textContent).toBe("");
         expect(dom.querySelector(explanationSelector)).toBeNull();
         if (overrideSource !== "default") {
@@ -931,7 +937,7 @@ describe("default Topik theme components", () => {
 
     act(() => inputs[2].click());
     expect(dom.querySelector(".topik-question")?.getAttribute("data-correct")).toBe("false");
-    expect(status?.textContent).toBe("Try again");
+    expect(status?.textContent).toBe("Try again (2 incorrect attempts)");
 
     act(() => {
       inputs[0].click();
@@ -941,5 +947,265 @@ describe("default Topik theme components", () => {
     expect(status?.textContent).toBe("");
     expect(dom.querySelector('[role="status"]')).toBe(status);
     expect(dom.querySelector(".topik-question")?.hasAttribute("data-correct")).toBe(false);
+  });
+});
+
+describe("theme component fallbacks, accessibility and right-to-left layout", () => {
+  const tabsContent = [
+    "{% tabs %}",
+    '{% tab title="First" %}',
+    "Alpha",
+    "{% /tab %}",
+    '{% tab title="Second" %}',
+    "Beta",
+    "{% /tab %}",
+    "{% /tabs %}",
+  ].join("\n");
+  const codeGroupContent = (title = "First") =>
+    [
+      "{% codeGroup %}",
+      `{% codeTab title="${title}" %}`,
+      "```text",
+      "alpha",
+      "```",
+      "{% /codeTab %}",
+      '{% codeTab title="Second" %}',
+      "```text",
+      "beta",
+      "```",
+      "{% /codeTab %}",
+      "{% /codeGroup %}",
+    ].join("\n");
+  const cssRules = () =>
+    [...themeStyles.matchAll(/([^{}]+)\{([^}]*)\}/gu)].map(([, selector, body]) => ({
+      selector: selector.trim(),
+      body,
+    }));
+  const bodiesFor = (selector: string) =>
+    cssRules()
+      .filter((rule) => rule.selector === selector)
+      .map((rule) => rule.body);
+
+  it("keeps themed components for explicitly undefined overrides", () => {
+    expect(getDefaultTopikComponents({ TopikTabs: undefined }).TopikTabs).toBe(TopikTabs);
+    const dom = mount(<TopikContent content={tabsContent} components={{ TopikTabs: undefined }} />);
+    expect(dom.querySelectorAll('[role="tablist"] [role="tab"]')).toHaveLength(2);
+    expect(dom.querySelectorAll('[role="tabpanel"]:not([hidden])')).toHaveLength(1);
+  });
+
+  it.each([
+    ["TopikTab", tabsContent],
+    ["TopikCodeTab", codeGroupContent()],
+  ])("renders %s overrides inside the themed panels", (name, content) => {
+    const Custom = ({ children }: React.PropsWithChildren) => (
+      <div className="custom-tab">{children}</div>
+    );
+    const dom = mount(<TopikContent content={content} components={{ [name]: Custom }} />);
+    const panels = dom.querySelectorAll('[role="tabpanel"]');
+    expect(panels).toHaveLength(2);
+    expect(panels[0].querySelector(".custom-tab")).not.toBeNull();
+    expect(panels[1].querySelector(".custom-tab")).not.toBeNull();
+    const tab = dom.querySelector('[role="tab"]');
+    expect(tab?.textContent).toBe("First");
+    expect(tab?.getAttribute("aria-controls")).toBe(panels[0].id);
+  });
+
+  it("keeps a figure's alt text and caption when its image cannot be resolved", () => {
+    const html = renderToStaticMarkup(
+      <TopikContent
+        content={`{% figure src="asset:auto-v1-${"a".repeat(52)}" alt="Alt text" caption="Important caption" /%}`}
+      />,
+    );
+    expect(html).toContain('<div class="topik-figure__fallback">Alt text</div>');
+    expect(html).toContain("<figcaption>Important caption</figcaption>");
+    expect(html).not.toContain("<img");
+    expect(renderToStaticMarkup(<TopikFigure caption="Only caption" />)).toBe(
+      '<figure class="topik-figure"><figcaption>Only caption</figcaption></figure>',
+    );
+    expect(renderToStaticMarkup(<TopikFigure />)).toBe("");
+  });
+
+  it.each(["auto", "", 1, "DARK"])(
+    "treats an unknown figure color scheme %j like no color scheme",
+    (colorScheme) => {
+      const html = renderToStaticMarkup(
+        <TopikFigure colorScheme={colorScheme} darkSrc="/dark.png" src="/light.png" />,
+      );
+      expect(html).toContain('media="(prefers-color-scheme: dark)"');
+      expect(html).toContain('src="/light.png"');
+    },
+  );
+
+  it.each([
+    ['<div class="topik-content" data-theme="dark">', true],
+    ['<div class="topik-content" data-theme="light">', true],
+    ['<div class="topik-content">', false],
+    ['<div class="dark"><div class="topik-content">', false],
+  ])("paints the canvas for %s: %s", (markup, painted) => {
+    const host = document.createElement("div");
+    host.innerHTML = markup;
+    const content = host.querySelector(".topik-content")!;
+    expect(
+      cssRules().some(
+        ({ selector, body }) =>
+          /(^|;)\s*background:\s*var\(--topik-color-canvas\)/u.test(body) &&
+          content.matches(selector),
+      ),
+    ).toBe(painted);
+  });
+
+  it("uses logical properties so steps, callouts and code tabs mirror in right-to-left text", () => {
+    for (const selector of [
+      ".topik-step",
+      ".topik-step::before",
+      ".topik-callout",
+      ".topik-code-group__tab",
+    ]) {
+      const bodies = bodiesFor(selector);
+      expect(bodies.length).toBeGreaterThan(0);
+      for (const body of bodies) expect(body).not.toMatch(/\b(left|right)\b/u);
+    }
+    // A four-value padding shorthand is physical; the step gutter must follow the inline start.
+    expect(bodiesFor(".topik-step").join("")).not.toMatch(/(^|;)\s*padding:/u);
+    expect(bodiesFor(".topik-step").join("")).toContain("border-inline-start:");
+    expect(bodiesFor(".topik-step::before").join("")).toContain("inset-inline-start:");
+  });
+
+  it("keeps code, math and diagram source left to right", () => {
+    const host = document.createElement("div");
+    host.dir = "rtl";
+    host.innerHTML =
+      '<div class="topik-code-block"><pre></pre></div><pre class="topik-math"></pre><pre class="topik-mermaid"></pre>';
+    const ltrRules = cssRules().filter(({ body }) => /direction:\s*ltr/u.test(body));
+    const pres = host.querySelectorAll("pre");
+    expect(pres).toHaveLength(3);
+    for (const element of pres) {
+      const rule = ltrRules.find(({ selector }) => element.matches(selector));
+      expect(rule?.body).toMatch(/text-align:\s*left/u);
+    }
+  });
+
+  it("mirrors tab arrow keys in right-to-left layouts", () => {
+    const dom = mount(
+      <div dir="rtl">
+        <TopikTabs>
+          <TopikTab title="First">Alpha</TopikTab>
+          <TopikTab title="Second">Beta</TopikTab>
+          <TopikTab title="Third">Gamma</TopikTab>
+        </TopikTabs>
+      </div>,
+    );
+    const tabs = dom.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+    const press = (tab: HTMLElement, key: string) =>
+      act(() => {
+        tab.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key }));
+      });
+    press(tabs[0], "ArrowLeft");
+    expect(document.activeElement).toBe(tabs[1]);
+    press(tabs[1], "ArrowRight");
+    expect(document.activeElement).toBe(tabs[0]);
+    press(tabs[0], "ArrowRight");
+    expect(document.activeElement).toBe(tabs[2]);
+    expect(tabs[2].getAttribute("aria-selected")).toBe("true");
+  });
+
+  it.each([
+    ["tabs", tabsContent, "Tabs"],
+    ["code groups", codeGroupContent(), "Code examples"],
+  ])("names %s tablists and makes panels focusable", (_name, content, label) => {
+    const dom = mount(<TopikContent content={content} />);
+    expect(dom.querySelector('[role="tablist"]')?.getAttribute("aria-label")).toBe(label);
+    const panels = dom.querySelectorAll<HTMLElement>('[role="tabpanel"]');
+    expect(panels).toHaveLength(2);
+    for (const panel of panels) expect(panel.tabIndex).toBe(0);
+  });
+
+  it("keeps panel state when a tab title changes", () => {
+    const dom = mount(<TopikContent content={codeGroupContent()} />);
+    const panel = dom.querySelector('[role="tabpanel"]');
+    const wrap = () =>
+      [...dom.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.textContent === "Wrap lines",
+      )!;
+    act(() => wrap().click());
+    expect(wrap().getAttribute("aria-pressed")).toBe("true");
+    act(() => root?.render(<TopikContent content={codeGroupContent("Renamed")} />));
+    expect(dom.querySelector('[role="tab"]')?.textContent).toBe("Renamed");
+    expect(dom.querySelector('[role="tabpanel"]')).toBe(panel);
+    expect(wrap().getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it.each([
+    ["single-choice", "radio", "Choose one answer"],
+    ["multiple-choice", "checkbox", "Choose all answers that apply"],
+  ])("groups %s choices under a named fieldset", (type, inputType, legend) => {
+    const dom = mount(
+      <TopikQuestion type={type}>
+        <TopikChoice correct>Alpha</TopikChoice>
+        <TopikChoice>Beta</TopikChoice>
+      </TopikQuestion>,
+    );
+    const fieldset = dom.querySelector("fieldset");
+    expect(fieldset?.querySelector(":scope > legend")?.textContent).toBe(legend);
+    expect(fieldset?.querySelectorAll(`input[type="${inputType}"]`)).toHaveLength(2);
+  });
+
+  it("changes the live feedback for each repeated wrong answer", () => {
+    const dom = mount(
+      <TopikQuestion>
+        <TopikChoice correct>Alpha</TopikChoice>
+        <TopikChoice>Beta</TopikChoice>
+        <TopikChoice>Gamma</TopikChoice>
+      </TopikQuestion>,
+    );
+    const inputs = dom.querySelectorAll<HTMLInputElement>("input");
+    const status = dom.querySelector('[role="status"]');
+    act(() => inputs[1].click());
+    expect(status?.textContent).toBe("Try again");
+    act(() => inputs[2].click());
+    expect(status?.textContent).toBe("Try again (2 incorrect attempts)");
+    act(() => inputs[1].click());
+    expect(status?.textContent).toBe("Try again (3 incorrect attempts)");
+    act(() => inputs[0].click());
+    expect(status?.textContent).toBe("Correct");
+  });
+
+  describe("code copy button", () => {
+    const copyButton = (dom: HTMLElement) =>
+      [...dom.querySelectorAll("button")].find((button) =>
+        /^Cop(y|ied)$/u.test(button.textContent ?? ""),
+      );
+
+    afterEach(() => {
+      Reflect.deleteProperty(navigator, "clipboard");
+    });
+
+    it("is removed after hydration when the Clipboard API is unavailable", () => {
+      Reflect.deleteProperty(navigator, "clipboard");
+      expect(navigator.clipboard).toBeUndefined();
+      const element = <TopikCodeBlock content={"const a = 1;\n"} />;
+      container = document.createElement("div");
+      container.innerHTML = renderToString(element);
+      document.body.append(container);
+      expect(copyButton(container)?.disabled).toBe(true);
+      const recoverableError = vi.fn();
+      act(() => {
+        root = hydrateRoot(container!, element, { onRecoverableError: recoverableError });
+      });
+      expect(recoverableError).not.toHaveBeenCalled();
+      expect(copyButton(container)).toBeUndefined();
+    });
+
+    it("announces a successful copy", async () => {
+      const writeText = vi.fn(async (_text: string) => undefined);
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+      const dom = mount(<TopikCodeBlock content={"const a = 1;\n"} />);
+      const status = dom.querySelector('.topik-code-block [role="status"]');
+      expect(status?.textContent).toBe("");
+      await act(async () => copyButton(dom)?.click());
+      expect(writeText).toHaveBeenCalledWith("const a = 1;\n");
+      expect(copyButton(dom)?.textContent).toBe("Copied");
+      expect(status?.textContent).toBe("Code copied");
+    });
   });
 });

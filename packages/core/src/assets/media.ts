@@ -2,6 +2,8 @@ const MARKUP_INSPECTION_LIMIT = 64 * 1024;
 /** Elements that execute, embed, load, or navigate when bytes are rendered as HTML. */
 const ACTIVE_HTML_ELEMENT =
   /<!doctype\s+html\b|<\/?(?:applet|base|body|embed|form|frame|frameset|head|html|iframe|link|meta|object|portal|script|style)(?:\s|>|\/)/iu;
+/** An `xmlns` or `xmlns:prefix` declaration whose value contains a character or entity reference. */
+const ENCODED_NAMESPACE_DECLARATION = /xmlns[^\s=<>"']*\s*=\s*(?:"[^"<]*&|'[^'<]*&)/u;
 export const TOPIK_UNRESOLVED_ACTIVE_CONTENT_TYPE = "application/x-topik-active-content" as const;
 
 /** Sniff exact bytes conservatively. Unknown safe bytes remain opaque downloads. */
@@ -24,13 +26,13 @@ export function sniffPortableMediaType(bytes: Uint8Array): string {
   if (hasId3Header(bytes) || isMpegAudioFrameSequence(bytes)) return "audio/mpeg";
   if (
     has(0x7f, 0x45, 0x4c, 0x46) ||
-    has(0x4d, 0x5a) ||
+    isPortableExecutable(bytes) ||
     has(0xfe, 0xed, 0xfa, 0xce) ||
     has(0xce, 0xfa, 0xed, 0xfe) ||
     has(0xfe, 0xed, 0xfa, 0xcf) ||
     has(0xcf, 0xfa, 0xed, 0xfe) ||
     has(0xca, 0xfe, 0xba, 0xbe) ||
-    has(0x23, 0x21)
+    hasInterpreterLine(bytes)
   ) {
     return "application/x-executable";
   }
@@ -84,6 +86,8 @@ function sniffPortableMarkupType(bytes: Uint8Array): string | undefined {
 
   let cursor = skipMarkupWhitespace(text, 0);
   let consumedPreamble = false;
+  let xmlDeclaration = false;
+  let otherProcessingInstruction = false;
   while (cursor < text.length) {
     if (text.startsWith("<!--", cursor)) {
       const end = text.indexOf("-->", cursor + 4);
@@ -95,6 +99,10 @@ function sniffPortableMarkupType(bytes: Uint8Array): string | undefined {
     if (text.startsWith("<?xml", cursor)) {
       const end = text.indexOf("?>", cursor + 5);
       if (end === -1) return TOPIK_UNRESOLVED_ACTIVE_CONTENT_TYPE;
+      // `<?xml ...?>` declares an XML document; `<?xml-stylesheet ...?>` and other
+      // processing instructions can transform it, so they keep the strict leading-tag rule.
+      if (/^<\?xml(?:\s|\?)/u.test(text.slice(cursor, cursor + 6))) xmlDeclaration = true;
+      else otherProcessingInstruction = true;
       consumedPreamble = true;
       cursor = skipMarkupWhitespace(text, end + 2);
       continue;
@@ -109,24 +117,130 @@ function sniffPortableMarkupType(bytes: Uint8Array): string | undefined {
   }
 
   const markup = text.slice(cursor);
-  if (/<!doctype\s+svg\b/u.test(markup) || /<svg\b/u.test(markup)) return "image/svg+xml";
+  const truncated = bytes.byteLength > inspectedEnd;
+  if (/<!doctype\s+svg\b/u.test(markup) || hasSvgElement(markup, truncated)) {
+    return "image/svg+xml";
+  }
+  // A document that declares itself XML and whose root is neither HTML nor SVG (a plist, a
+  // feed, a project file) is data, not a page, unless it names the XHTML or SVG namespace.
+  // In XML an element runs as script because of its namespace, whatever its prefix, so a
+  // namespace declaration that hides its value behind a character or entity reference is
+  // treated as naming one of them.
+  const xmlData =
+    xmlDeclaration &&
+    !otherProcessingInstruction &&
+    isNonHtmlXmlRoot(markup) &&
+    !ENCODED_NAMESPACE_DECLARATION.test(markup) &&
+    !markup.includes("http://www.w3.org/1999/xhtml") &&
+    !markup.includes("http://www.w3.org/2000/svg");
   if (
     // Any tag that opens the document (after whitespace, a BOM, comments, or an XML
     // declaration) is HTML, which is stricter than the WHATWG mimesniff HTML patterns. Later
     // in the text, only elements that can run, load, or navigate are active, so prose and code
     // such as `Array<string>` remain plain text.
-    /^<[a-z][a-z0-9:-]*(?:\s|>|\/)/u.test(markup) ||
+    (!xmlData && /^<[a-z][a-z0-9:-]*(?:\s|>|\/)/u.test(markup)) ||
     ACTIVE_HTML_ELEMENT.test(markup) ||
-    /<[^>]+\bon[a-z][a-z0-9_-]*\s*=/u.test(markup) ||
-    /<[^>]+(?:href|src)\s*=\s*["']?\s*javascript:/u.test(markup) ||
-    /<script\b/iu.test(markup)
+    /<script\b/iu.test(markup) ||
+    hasActiveAttribute(markup, truncated)
   ) {
     return "text/html";
   }
-  if (markup.startsWith("<") && (consumedPreamble || bytes.byteLength > inspectedEnd)) {
+  if (xmlData && !truncated) return undefined;
+  if (markup.startsWith("<") && (consumedPreamble || truncated)) {
     return TOPIK_UNRESOLVED_ACTIVE_CONTENT_TYPE;
   }
   return undefined;
+}
+
+/** An attribute that runs script when its tag is parsed: an event handler or a `javascript:` URL. */
+const EVENT_HANDLER_ATTRIBUTE = /[\s"'/]on[a-z][a-z0-9_-]*\s*=/u;
+const JAVASCRIPT_URL_ATTRIBUTE = /(?:href|src)\s*=\s*["']?\s*javascript:/u;
+
+/**
+ * Scan each start tag (`<` followed by a letter, up to the next `>`) once for active attributes,
+ * so the check is linear in the inspected text and only real attributes count: `x < y then on =`
+ * and `i<n;el.onclick=` are not tags. A tag left open at the end of complete text is discarded
+ * by HTML parsers; in truncated text it may close later and is inspected to the end.
+ */
+function hasActiveAttribute(markup: string, truncated: boolean): boolean {
+  let cursor = 0;
+  while (cursor < markup.length) {
+    const start = markup.indexOf("<", cursor);
+    if (start === -1) return false;
+    if (!isAsciiLetter(markup.charCodeAt(start + 1))) {
+      cursor = start + 1;
+      continue;
+    }
+    let end = markup.indexOf(">", start);
+    if (end === -1) {
+      if (!truncated) return false;
+      end = markup.length;
+    }
+    // A later `<` before this `>` starts a suffix of the same span, so one test covers both.
+    const tag = markup.slice(start, end);
+    if (EVENT_HANDLER_ATTRIBUTE.test(tag) || JAVASCRIPT_URL_ATTRIBUTE.test(tag)) return true;
+    cursor = end + 1;
+  }
+  return false;
+}
+
+/**
+ * SVG opens the document, or appears later as an element with its closing tag (or in truncated
+ * text, where the close may lie beyond the window). Prose that names `<svg>` stays text.
+ */
+function hasSvgElement(markup: string, truncated: boolean): boolean {
+  const element = /<svg(?:\s|>|\/)/u.exec(markup);
+  if (element === null) return false;
+  return element.index === 0 || truncated || markup.includes("</svg", element.index);
+}
+
+/** The root element after an optional non-HTML doctype and comments is not `html` or `svg`. */
+function isNonHtmlXmlRoot(markup: string): boolean {
+  let cursor = 0;
+  if (markup.startsWith("<!doctype")) {
+    if (/^<!doctype\s+(?:html|svg)\b/u.test(markup)) return false;
+    let end = markup.indexOf(">");
+    const subset = markup.indexOf("[");
+    if (subset !== -1 && subset < end) {
+      const close = markup.indexOf("]", subset);
+      end = close === -1 ? -1 : markup.indexOf(">", close);
+    }
+    if (end === -1) return false;
+    cursor = skipMarkupWhitespace(markup, end + 1);
+  }
+  while (markup.startsWith("<!--", cursor)) {
+    const end = markup.indexOf("-->", cursor + 4);
+    if (end === -1) return false;
+    cursor = skipMarkupWhitespace(markup, end + 3);
+  }
+  const root = /^<([a-z_][a-z0-9_.-]*)(?::([a-z_][a-z0-9_.-]*))?(?:\s|>|\/)/u.exec(
+    markup.slice(cursor, cursor + 256),
+  );
+  if (root === null) return false;
+  const localName = root[2] ?? root[1];
+  return localName !== "html" && localName !== "svg";
+}
+
+function isAsciiLetter(code: number): boolean {
+  return (code >= 0x61 && code <= 0x7a) || (code >= 0x41 && code <= 0x5a);
+}
+
+/** A PE image: "MZ" and an `e_lfanew` offset that points at a "PE\0\0" signature. */
+function isPortableExecutable(bytes: Uint8Array): boolean {
+  if (bytes.byteLength < 0x40 || bytes[0] !== 0x4d || bytes[1] !== 0x5a) return false;
+  const offset = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(
+    0x3c,
+    true,
+  );
+  return offset >= 2 && offset <= bytes.byteLength - 4 && ascii(bytes, offset, 4) === "PE\0\0";
+}
+
+/** An interpreter line names an absolute path: `#!/bin/sh` or `#! /usr/bin/env node`. */
+function hasInterpreterLine(bytes: Uint8Array): boolean {
+  if (bytes[0] !== 0x23 || bytes[1] !== 0x21) return false;
+  let offset = 2;
+  while (bytes[offset] === 0x20 || bytes[offset] === 0x09) offset++;
+  return bytes[offset] === 0x2f;
 }
 
 /** ID3v2 tag header: "ID3", a known major version, and a syncsafe size. */

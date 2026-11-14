@@ -136,12 +136,18 @@ describe.each([
   test("does not replace an invalid explicit empty frontmatter title with a heading", async () => {
     await writeFile(join(dir, "getting-started.md"), '---\ntitle: ""\n---\n# Actual title\n');
     await expect(compiler({ dir })).rejects.toMatchObject({
-      diagnostics: [
-        expect.objectContaining({
-          id: "TOPIK_ASSET_SCHEMA_INVALID",
-          location: { jsonPointer: "/spec/title" },
-        }),
-      ],
+      id: "frontmatter-invalid",
+      location: expect.stringMatching(/(?:^|\/)getting-started\.md$/u),
+      field: "title",
+    });
+  });
+
+  test("refuses an oversized heading title at its source file", async () => {
+    await writeFile(join(dir, "getting-started.md"), `# ${"x".repeat(5000)}\n`);
+    await expect(compiler({ dir })).rejects.toMatchObject({
+      id: "frontmatter-invalid",
+      location: expect.stringMatching(/(?:^|\/)getting-started\.md$/u),
+      field: "title",
     });
   });
 });

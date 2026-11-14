@@ -12,6 +12,7 @@ import type { WikiPage } from "@topik/schema/wiki-page/v1";
 import type { SourceResource } from "../resource";
 import { parseWikiConfig, WIKI_PAGE_NAME_HASH_LENGTH, type WikiNavNode } from "../config/wiki";
 import { parsePageMetadata } from "../config/source-version";
+import { validateResources } from "../validate";
 import { compileAssetResources, type AssetCompilationOptions } from "./assets";
 import type { CompileResourceDiscovery } from "./guide";
 import {
@@ -162,6 +163,7 @@ export async function discoverWiki(
       },
     };
 
+    assertValidDocumentResource(pageResource, sourcePath);
     resources.push(pageResource);
     sourcePathsByResource[`WikiPage/${pageResource.name}`] = sourcePath;
   }
@@ -205,9 +207,35 @@ export async function discoverWiki(
   };
 }
 
-// Keep compiled WikiPage spec.description within the WikiPage/v1 schema's 1024-character limit.
+const WIKI_PAGE_DESCRIPTION_MAX_LENGTH = 1024;
+
+/**
+ * Keep an unversioned WikiPage spec.description within the WikiPage/v1 schema's 1024-character
+ * limit. The cut never splits a surrogate pair, so the result stays well-formed text.
+ */
 function normalizeWikiPageDescription(description: unknown): string | undefined {
-  return typeof description === "string" ? description.slice(0, 1024) : undefined;
+  if (typeof description !== "string") return undefined;
+  if (description.length <= WIKI_PAGE_DESCRIPTION_MAX_LENGTH) return description;
+  const last = description.charCodeAt(WIKI_PAGE_DESCRIPTION_MAX_LENGTH - 1);
+  const end =
+    last >= 0xd800 && last <= 0xdbff
+      ? WIKI_PAGE_DESCRIPTION_MAX_LENGTH - 1
+      : WIKI_PAGE_DESCRIPTION_MAX_LENGTH;
+  return description.slice(0, end);
+}
+
+/**
+ * @internal Check a document resource against its public schema where it is built, so a
+ * frontmatter or heading value that the schema refuses fails at its source file with the field
+ * name rather than later as an unlocated invalid resource.
+ */
+export function assertValidDocumentResource(resource: SourceResource, location: string): void {
+  const validation = validateResources([resource]);
+  if (validation.valid) return;
+  const [, section, field] = validation.errors[0].path.split("/");
+  throw new PublicCompileError("frontmatter-invalid", location, {
+    field: section === "labels" ? "labels" : section === "spec" ? field : undefined,
+  });
 }
 
 function collectPages(nodes: WikiNavNode[], prefix = ""): { sourcePath: string; route: string }[] {
@@ -245,11 +273,14 @@ async function readPageFile(
     }
     const raw = decodeUtf8Document(bytes, pagePath + ext);
     if (!requireUnique) return { filePath, raw };
-    if (found) throw new PublicCompileError("wiki-page-ambiguous");
+    if (found)
+      throw new PublicCompileError("wiki-page-ambiguous", pagePath + ext, {
+        relatedLocation: `${pagePath}${found.filePath.endsWith(".mdx") ? ".mdx" : ".md"}`,
+      });
     found = { filePath, raw };
   }
   if (found) return found;
-  throw new PublicCompileError("wiki-page-not-found");
+  throw new PublicCompileError("wiki-page-not-found", pagePath);
 }
 
 function pagePathToSlug(pagePath: string): string {

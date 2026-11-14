@@ -222,6 +222,9 @@ describe("dev command", () => {
     vi.spyOn(console, "log").mockImplementation((...values) => {
       logs.push(values.map(String).join(" "));
     });
+    vi.spyOn(console, "error").mockImplementation((...values) => {
+      logs.push(values.map(String).join(" "));
+    });
 
     const port = await start();
     const response = await fetch(`http://127.0.0.1:${port}/resources`);
@@ -535,6 +538,49 @@ describe("dev command", () => {
 
     const health = await fetch(`http://127.0.0.1:${port}/health`);
     expect(health.status).toBe(200);
+  });
+
+  test("prints located compile diagnostics locally but keeps them out of the preview", async () => {
+    await writeFile(join(dir, "intro.md"), "# Intro\n\n[Missing](#missing)\n");
+    const errors: string[] = [];
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.spyOn(console, "error").mockImplementation((...values) => {
+      errors.push(values.map(String).join(" "));
+    });
+
+    const port = await start();
+
+    expect(errors).toEqual([
+      "Compile error:",
+      expect.stringMatching(/^intro\.md:3 error [a-z-]+: /u),
+    ]);
+    const state = await (await fetch(`http://127.0.0.1:${port}/resources`)).json();
+    expect(state).toMatchObject({ status: "error", resources: [] });
+    expect(JSON.stringify(state)).not.toContain("intro.md");
+  });
+
+  test("applies the --links policy to preview compilations", async () => {
+    await writeFile(join(dir, "intro.md"), "# Intro\n\n[Missing](#missing)\n");
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    runningServer = await startDevServer({ dir, port: 0, links: "warning" });
+
+    expect(runningServer.watcher.state.status).toBe("ready");
+    expect(runningServer.watcher.resources.size).toBe(1);
+  });
+
+  test("fails fast when the source directory does not exist", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const failure = await startDevServer({ dir: join(dir, "missing"), port: 0 }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect(failure).toMatchObject({ id: "dev-source-access-failed" });
+    expect(formatPublicCliError(failure)).toBe(
+      "Dev server source directory does not exist or could not be accessed.",
+    );
+    expect(log).not.toHaveBeenCalled();
   });
 });
 

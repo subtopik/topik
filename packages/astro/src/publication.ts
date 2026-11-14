@@ -14,7 +14,7 @@ import {
 import type { BigIntStats } from "node:fs";
 import { lstat, mkdir, mkdtemp, open } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
-import { basename, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/u;
@@ -56,6 +56,11 @@ export async function publishDigestSnapshot(
 ): Promise<void> {
   const snapshots = snapshotFiles(files);
   const outputPath = resolve(fileURLToPath(outputDirectory));
+  if (!hasDescriptorAnchoredContainment()) {
+    // Nothing to publish and nothing to replace: a build without Assets stays portable.
+    if (snapshots.length === 0 && (await targetAbsent(outputPath))) return;
+    throw unsupportedPlatformError();
+  }
   const parent = await openAnchoredDirectory(outputPath, true);
   if (parent === undefined) throw publicationError("output parent could not be created safely");
 
@@ -113,6 +118,10 @@ export async function publishDigestSnapshot(
 
 export async function removeDigestSnapshot(outputDirectory: URL): Promise<void> {
   const outputPath = resolve(fileURLToPath(outputDirectory));
+  if (!hasDescriptorAnchoredContainment()) {
+    if (await targetAbsent(outputPath)) return;
+    throw unsupportedPlatformError();
+  }
   const parent = await openAnchoredDirectory(outputPath, false);
   if (parent === undefined) return;
   let prior: OwnedDigestDirectory | undefined;
@@ -320,17 +329,37 @@ function assertPathAbsent(path: string): void {
   throw publicationError("replacement storage is already occupied");
 }
 
+function hasDescriptorAnchoredContainment(): boolean {
+  return (
+    process.platform === "linux" &&
+    typeof constants.O_NOFOLLOW === "number" &&
+    typeof constants.O_DIRECTORY === "number"
+  );
+}
+
+/** Path-based absence probe used only where nothing will be written or removed. */
+async function targetAbsent(outputPath: string): Promise<boolean> {
+  try {
+    await lstat(join(outputPath, TARGET));
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") return true;
+    throw publicationError("output target could not be inspected safely");
+  }
+  return false;
+}
+
+function unsupportedPlatformError(): TypeError {
+  return publicationError(
+    "publication requires Linux: this platform cannot provide descriptor-anchored output containment",
+  );
+}
+
 async function openAnchoredDirectory(
   absolutePath: string,
   create: boolean,
 ): Promise<AnchoredDirectory | undefined> {
-  if (
-    process.platform !== "linux" ||
-    typeof constants.O_NOFOLLOW !== "number" ||
-    typeof constants.O_DIRECTORY !== "number"
-  ) {
-    throw publicationError("platform cannot provide descriptor-anchored output containment");
-  }
+  if (!hasDescriptorAnchoredContainment()) throw unsupportedPlatformError();
   const normalized = resolve(absolutePath);
   if (normalized === "/") throw publicationError("output parent cannot be the filesystem root");
   const components = normalized.split("/").filter(Boolean);

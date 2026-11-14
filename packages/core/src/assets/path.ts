@@ -190,6 +190,7 @@ export function validateTopikPathSet(
 ): TopikAssetResult<Map<string, string>> {
   const byCollision = new Map<string, string>();
   const diagnostics: TopikAssetDiagnostic[] = [];
+  const reportedCollisions = new Set<string>();
   for (const path of paths) {
     const result = validateTopikPath(path, options);
     if (!result.ok) {
@@ -198,6 +199,9 @@ export function validateTopikPathSet(
     }
     const existing = byCollision.get(result.value.collisionKey);
     if (existing !== undefined && existing !== path) {
+      // A repeated spelling of an already reported conflict is the same conflict.
+      if (reportedCollisions.has(path)) continue;
+      reportedCollisions.add(path);
       diagnostics.push(
         topikAssetDiagnostic("TOPIK_ASSET_PATH_COLLISION", "Paths have the same collision key", {
           descriptorVersion: TOPIK_PATH_VERSION,

@@ -122,6 +122,11 @@ describe("topik-path-v1 boundaries", () => {
       diagnostics: [{ id: "TOPIK_ASSET_PATH_COLLISION" }],
     });
     expect(validateTopikPathSet(["a", "a/b"])).toMatchObject({ ok: false });
+    const repeated = validateTopikPathSet(["A.txt", "a.txt", "a.txt"]);
+    expect(repeated.ok).toBe(false);
+    expect(repeated.diagnostics).toEqual([
+      expect.objectContaining({ id: "TOPIK_ASSET_PATH_COLLISION", location: { path: "a.txt" } }),
+    ]);
   });
 
   test.each([

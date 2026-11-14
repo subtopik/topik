@@ -236,8 +236,7 @@ export function sanitizeTopikContentDiagnostic(
     ].includes(option)
       ? { option }
       : {}),
-    ...(diagnostic.id.startsWith("topik-code-presentation-") &&
-    typeof column === "number" &&
+    ...(typeof column === "number" &&
     Number.isSafeInteger(column) &&
     column > 0 &&
     column <= 1_000_000

@@ -25,6 +25,7 @@
     "dist"
   ],
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": "./dist/index.mjs",
     "./course-navigation": "./dist/course-navigation.mjs",
@@ -45,10 +46,10 @@
   "dependencies": {
     "@topik/content": "workspace:*",
     "@topik/schema": "workspace:*",
-    "ajv": "^8.20.0",
-    "ajv-formats": "^3.0.1",
+    "ajv": "catalog:",
+    "ajv-formats": "catalog:",
     "chokidar": "^6.0.0",
-    "yaml": "^2.9.1",
+    "yaml": "catalog:",
     "zod": "^4.6.7"
   },
   "devDependencies": {

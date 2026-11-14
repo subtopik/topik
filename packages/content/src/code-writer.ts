@@ -183,6 +183,13 @@ export function codeWriterExtension(): NonNullable<Options["extensions"]>[number
             escaped[0] === input[0]
           )
             escaped = `&#${input.charCodeAt(0)};${escaped.slice(1)}`;
+          // The separator after the language absorbs literal leading metadata
+          // whitespace, so a decoded leading space or tab stays a reference.
+          if (
+            state.stack.at(-1)?.startsWith("codeFencedMeta") &&
+            (escaped[0] === " " || escaped[0] === "\t")
+          )
+            escaped = `&#x${escaped.charCodeAt(0).toString(16)};${escaped.slice(1)}`;
           if (escaped.length > remaining) overflow();
           remaining -= escaped.length;
           return escaped;

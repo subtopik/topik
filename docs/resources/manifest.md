@@ -24,7 +24,7 @@ describes the separately selected `sourceVersion: 1` grammar and project-writing
 
 `namespace` is required, even for projects without local assets. Choose a stable value such as `example/documentation`. Use the same value across checkouts and copies of one project; choose a different value for an independent project. Namespaces are not registered or checked for global uniqueness.
 
-The namespace is nonblank portable text, normalized to Unicode NFC, with a maximum of 1,024 UTF-8 bytes. Topik uses it together with each asset's **manifest-relative path** to generate the asset's identity. Changing the namespace changes every generated asset ID. Changing a Git remote or checkout location does not. See [Assets](./assets.md#generated-identity) for the exact identity rules.
+The namespace is nonblank portable text without leading or trailing whitespace, normalized to Unicode NFC, with a maximum of 1,024 UTF-8 bytes. Topik uses it together with each asset's **manifest-relative path** to generate the asset's identity. Changing the namespace changes every generated asset ID. Changing a Git remote or checkout location does not. See [Assets](./assets.md#generated-identity) for the exact identity rules.
 
 Project compilation uses the namespace declared in the manifest.
 

@@ -24,10 +24,12 @@ export function referenceWriterExtension(): NonNullable<Options["extensions"]>[n
     labelExit();
     const label = referenceLabel(node);
     exit();
+    // A bracket or parenthesis after a shortcut would extend it into a full
+    // reference or a resource, so such a shortcut is written collapsed.
     const suffix =
       node.referenceType === "full" || !text || text !== label
         ? `[${label}]`
-        : node.referenceType === "collapsed"
+        : node.referenceType === "collapsed" || info.after === "[" || info.after === "("
           ? "[]"
           : "";
     return `${prefix}${text}]${suffix}`;

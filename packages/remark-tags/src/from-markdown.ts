@@ -32,6 +32,8 @@ interface Frame {
   marker: Marker;
   name: string;
   target: TreeNode[];
+  /** Scope of an opening marker that already reported a diagnostic. */
+  failed?: true;
 }
 interface CodeTemplateFrame extends TreeNode {
   type: "tagCodeTemplateFrame";
@@ -102,6 +104,8 @@ function convert(
     }
 
     function close(name: string, marker: Marker): void {
+      // A failed opening may have had no closer: it never hides an outer one.
+      while (stack.at(-1)?.failed && stack.at(-1)!.name !== name) stack.pop();
       const current = stack.at(-1);
       if (!current || current.name !== name) {
         errors.push(
@@ -190,12 +194,28 @@ function convert(
         errors.push(location(error.message, child, error.id));
         continue;
       }
-      if (tag.kind === "error") {
-        errors.push(location(tag.message, child, tag.id));
-        continue;
-      }
       // The tokenizer knows the context, including inside foreign node types.
       const phrasing = child.kind === "inline";
+      if (tag.kind === "error") {
+        errors.push(location(tag.message, child, tag.id));
+        // Keep a declared tag's scope open so its valid closer is not reported too.
+        const name = tag.opening;
+        if (
+          name !== undefined &&
+          Object.hasOwn(declarations, name) &&
+          (declarations[name].kind === "inline") === phrasing
+        ) {
+          const node: TagTextNode | TagContainerNode = {
+            type: phrasing ? "tagText" : "tagContainer",
+            name,
+            attributes: {},
+            children: [],
+            position: child.position,
+          };
+          open({ node, marker: child, name, target: node.children, failed: true });
+        }
+        continue;
+      }
       switch (tag.kind) {
         case "codeTemplate": {
           if (phrasing) {
@@ -329,15 +349,16 @@ function convert(
       }
     }
     for (const current of stack)
-      errors.push(
-        location(
-          `Unclosed tag ${current.name}`,
-          current.marker,
-          current.node.type === "tagCodeTemplateFrame"
-            ? "topik-code-template-structure"
-            : "missing-closing",
-        ),
-      );
+      if (!current.failed)
+        errors.push(
+          location(
+            `Unclosed tag ${current.name}`,
+            current.marker,
+            current.node.type === "tagCodeTemplateFrame"
+              ? "topik-code-template-structure"
+              : "missing-closing",
+          ),
+        );
     // Markdown saw separate markers and body blocks. Once grouped, only gaps
     // between the item's direct children count toward its spread flag.
     if (

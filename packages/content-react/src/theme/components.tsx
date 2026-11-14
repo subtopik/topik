@@ -9,7 +9,6 @@ import {
   isValidElement,
   useContext,
   useId,
-  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -156,9 +155,15 @@ function useRovingTabs(tabCount: number) {
 
   function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
     let nextIndex: number;
+    const previous = index > 0 ? index - 1 : tabCount - 1;
+    const next = index < tabCount - 1 ? index + 1 : 0;
+    // Arrow keys follow the visual order, which is mirrored in right-to-left layouts.
+    const rightToLeft =
+      (event.key === "ArrowLeft" || event.key === "ArrowRight") &&
+      isRightToLeft(event.currentTarget);
 
-    if (event.key === "ArrowLeft") nextIndex = index > 0 ? index - 1 : tabCount - 1;
-    else if (event.key === "ArrowRight") nextIndex = index < tabCount - 1 ? index + 1 : 0;
+    if (event.key === "ArrowLeft") nextIndex = rightToLeft ? next : previous;
+    else if (event.key === "ArrowRight") nextIndex = rightToLeft ? previous : next;
     else if (event.key === "Home") nextIndex = 0;
     else if (event.key === "End") nextIndex = tabCount - 1;
     else return;
@@ -168,6 +173,17 @@ function useRovingTabs(tabCount: number) {
   }
 
   return { handleKeyDown, selectTab, selected, tabRefs };
+}
+
+function isRightToLeft(element: HTMLElement): boolean {
+  const direction = element.ownerDocument.defaultView?.getComputedStyle(element).direction;
+  if (direction === "rtl" || direction === "ltr") return direction === "rtl";
+  // Without computed styles, fall back to the dir attribute (older engines lack :dir()).
+  try {
+    return element.matches(":dir(rtl)");
+  } catch {
+    return element.closest("[dir]")?.getAttribute("dir")?.toLowerCase() === "rtl";
+  }
 }
 
 export function TopikCallout({ children, title, variant = "info" }: TopikComponentProps) {
@@ -286,7 +302,7 @@ export function TopikCodeGroup({ children }: TopikComponentProps) {
 
   return (
     <div className="topik-code-group">
-      <div className="topik-code-group__tabs" role="tablist">
+      <div aria-label="Code examples" className="topik-code-group__tabs" role="tablist">
         {tabs.map((tab, index) => {
           const active = index === selected;
           const label = stringAttribute(tab.props.title) ?? `Code ${index + 1}`;
@@ -296,7 +312,7 @@ export function TopikCodeGroup({ children }: TopikComponentProps) {
               aria-selected={active}
               className="topik-code-group__tab"
               id={`${id}-code-tab-${index}`}
-              key={`${label}-${index}`}
+              key={index}
               onClick={() => selectTab(index)}
               onKeyDown={(event) => handleKeyDown(event, index)}
               ref={(element) => {
@@ -320,10 +336,11 @@ export function TopikCodeGroup({ children }: TopikComponentProps) {
           className="topik-code-group__panel"
           hidden={index !== selected}
           id={`${id}-code-panel-${index}`}
-          key={`${stringAttribute(tab.props.title) ?? "code"}-${index}`}
+          key={index}
           role="tabpanel"
+          tabIndex={0}
         >
-          {tab.props.children}
+          {tab}
         </div>
       ))}
     </div>
@@ -350,7 +367,7 @@ export function TopikTabs({ children }: TopikComponentProps) {
 
   return (
     <div className="topik-tabs">
-      <div className="topik-tabs__list" role="tablist">
+      <div aria-label="Tabs" className="topik-tabs__list" role="tablist">
         {tabs.map((tab, index) => {
           const active = index === selected;
           return (
@@ -359,7 +376,7 @@ export function TopikTabs({ children }: TopikComponentProps) {
               aria-selected={active}
               className="topik-tabs__tab"
               id={`${id}-tab-${index}`}
-              key={`${stringAttribute(tab.props.title) ?? "tab"}-${index}`}
+              key={index}
               onClick={() => selectTab(index)}
               onKeyDown={(event) => handleKeyDown(event, index)}
               ref={(element) => {
@@ -380,10 +397,11 @@ export function TopikTabs({ children }: TopikComponentProps) {
           className="topik-tabs__panel"
           hidden={index !== selected}
           id={`${id}-panel-${index}`}
-          key={`${stringAttribute(tab.props.title) ?? "panel"}-${index}`}
+          key={index}
           role="tabpanel"
+          tabIndex={0}
         >
-          {tab.props.children}
+          {tab}
         </div>
       ))}
     </div>
@@ -407,21 +425,36 @@ export function TopikStep({ children, title }: TopikComponentProps) {
   );
 }
 
+function colorSchemeAttribute(value: unknown): TopikColorScheme | undefined {
+  return value === "light" || value === "dark" ? value : undefined;
+}
+
 export function TopikFigure({ alt, caption, colorScheme, darkSrc, src }: TopikComponentProps) {
   const lightSource = stringAttribute(src);
   const darkSource = stringAttribute(darkSrc);
-  const explicitColorScheme = colorScheme as TopikColorScheme | undefined;
+  const explicitColorScheme = colorSchemeAttribute(colorScheme);
   const imageSource = explicitColorScheme === "dark" ? (darkSource ?? lightSource) : lightSource;
-  if (imageSource === undefined) return null;
+  const altText = stringAttribute(alt);
+  const captionText = stringAttribute(caption);
+  if (imageSource === undefined) {
+    // Keep the text alternative and caption readable when the image cannot be resolved.
+    if (!altText && !captionText) return null;
+    return (
+      <figure className="topik-figure">
+        {altText ? <div className="topik-figure__fallback">{altText}</div> : null}
+        {captionText ? <figcaption>{captionText}</figcaption> : null}
+      </figure>
+    );
+  }
   return (
     <figure className="topik-figure">
       <picture>
         {explicitColorScheme === undefined && darkSource ? (
           <source media="(prefers-color-scheme: dark)" srcSet={singleImageCandidate(darkSource)} />
         ) : null}
-        <img alt={stringAttribute(alt) ?? ""} src={imageSource} />
+        <img alt={altText ?? ""} src={imageSource} />
       </picture>
-      {caption ? <figcaption>{stringAttribute(caption)}</figcaption> : null}
+      {captionText ? <figcaption>{captionText}</figcaption> : null}
     </figure>
   );
 }
@@ -512,32 +545,50 @@ export function TopikQuestion({ children, type = "single-choice" }: TopikCompone
   const childrenArray = Children.toArray(children);
   const choices = childrenArray.filter(isChoiceElement);
   const explanation = childrenArray.filter(isExplanationElement);
-  const [selected, setSelected] = useState<Set<number>>(() => new Set());
+  const [answer, setAnswer] = useState<QuestionAnswer>(() => ({
+    selected: new Set(),
+    incorrectAttempts: 0,
+  }));
+  const { selected, incorrectAttempts } = answer;
   const multiple = type === "multiple-choice";
   const answered = selected.size > 0;
-  const correctIndexes = useMemo(
-    () =>
-      new Set(choices.flatMap((choice, index) => (choice.props.correct === true ? [index] : []))),
-    [choices],
+  const correctIndexes = new Set(
+    choices.flatMap((choice, index) => (choice.props.correct === true ? [index] : [])),
   );
-  const isCorrect =
-    answered &&
-    selected.size === correctIndexes.size &&
-    [...selected].every((index) => correctIndexes.has(index));
+  const isCorrect = isCorrectAnswer(selected, correctIndexes);
 
   function toggle(index: number) {
-    setSelected((current) => {
-      if (!multiple) return new Set([index]);
-      const next = new Set(current);
-      if (next.has(index)) next.delete(index);
-      else next.add(index);
-      return next;
+    setAnswer((current) => {
+      let next: Set<number>;
+      if (!multiple) next = new Set([index]);
+      else {
+        next = new Set(current.selected);
+        if (next.has(index)) next.delete(index);
+        else next.add(index);
+      }
+      const incorrect = next.size > 0 && !isCorrectAnswer(next, correctIndexes);
+      return {
+        selected: next,
+        incorrectAttempts: current.incorrectAttempts + (incorrect ? 1 : 0),
+      };
     });
   }
 
+  // Repeated wrong answers change the text so the live region announces each attempt.
+  const feedback = !answered
+    ? null
+    : isCorrect
+      ? "Correct"
+      : incorrectAttempts > 1
+        ? `Try again (${incorrectAttempts} incorrect attempts)`
+        : "Try again";
+
   return (
     <section className="topik-question" data-correct={answered ? isCorrect : undefined}>
-      <div className="topik-question__choices">
+      <fieldset className="topik-question__choices">
+        <legend className="topik-question__legend">
+          {multiple ? "Choose all answers that apply" : "Choose one answer"}
+        </legend>
         {choices.map((choice, index) => (
           <label className="topik-choice" key={index}>
             <input
@@ -549,13 +600,26 @@ export function TopikQuestion({ children, type = "single-choice" }: TopikCompone
             <span>{choice}</span>
           </label>
         ))}
-      </div>
+      </fieldset>
       {/* Keep the live region mounted before its first feedback update. */}
       <div className="topik-question__result" role="status" aria-atomic="true">
-        {answered ? (isCorrect ? "Correct" : "Try again") : null}
+        {feedback}
       </div>
       {answered && explanation.length > 0 ? explanation : null}
     </section>
+  );
+}
+
+interface QuestionAnswer {
+  selected: Set<number>;
+  incorrectAttempts: number;
+}
+
+function isCorrectAnswer(selected: Set<number>, correctIndexes: Set<number>): boolean {
+  return (
+    selected.size > 0 &&
+    selected.size === correctIndexes.size &&
+    [...selected].every((index) => correctIndexes.has(index))
   );
 }
 
@@ -732,9 +796,13 @@ function slot(kind: TopikSlotKind, Component: TopikComponent): TopikComponent {
 export function getDefaultTopikComponents(
   overrides: Partial<TopikComponentMap> = {},
 ): TopikComponentMap {
+  // An explicit undefined override keeps the themed component, like the slotted ones below.
+  const defined = Object.fromEntries(
+    Object.entries(overrides).filter(([, component]) => component !== undefined),
+  ) as Partial<TopikComponentMap>;
   return {
     ...defaultTopikComponents,
-    ...overrides,
+    ...defined,
     TopikCard: slot("card", overrides.TopikCard ?? TopikCard),
     TopikChoice: slot("choice", overrides.TopikChoice ?? TopikChoice),
     TopikExplanation: slot("explanation", overrides.TopikExplanation ?? TopikExplanation),

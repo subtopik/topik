@@ -24,6 +24,7 @@
     "dist"
   ],
   "type": "module",
+  "sideEffects": false,
   "exports": {
     "./package.json": "./package.json",
     "./*.json": "./dist/*.json",
@@ -46,13 +47,13 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
-    "ajv": "^8.20.0",
-    "ajv-formats": "^3.0.1",
+    "ajv": "catalog:",
+    "ajv-formats": "catalog:",
     "json-schema-to-typescript": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",
     "vite-plus": "catalog:",
-    "yaml": "^2.9.1"
+    "yaml": "catalog:"
   },
   "engines": {
     "node": ">=22.22.0"

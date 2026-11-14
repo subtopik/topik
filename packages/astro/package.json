@@ -17,9 +17,6 @@
     ".": "./dist/index.mjs",
     "./package.json": "./package.json"
   },
-  "publishConfig": {
-    "access": "public"
-  },
   "scripts": {
     "build": "vp pack",
     "dev": "vp pack --watch",

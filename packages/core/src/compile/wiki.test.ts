@@ -505,6 +505,36 @@ navigation:
     expect(page!.spec.description).toBe("a".repeat(1024));
   });
 
+  test("truncates overlong descriptions without splitting a surrogate pair", async () => {
+    await writeWikiConfig("id: test\ntitle: Wiki\nnavigation:\n  - page\n");
+    await writeFile(
+      join(dir, "page.md"),
+      `---\ndescription: ${"a".repeat(1023)}\u{1f600}b\n---\n\n# Page\n`,
+    );
+
+    const result = await compileWiki({ dir });
+    const page = result.resources.find((r) => r.type === "WikiPage");
+    expect(page!.spec.description).toBe("a".repeat(1023));
+  });
+
+  test("refuses schema-invalid unversioned page titles at the page file", async () => {
+    await writeWikiConfig("id: test\ntitle: Wiki\nnavigation:\n  - guides/page\n");
+    await mkdir(join(dir, "guides"), { recursive: true });
+    await writeFile(join(dir, "guides/page.md"), '---\ntitle: ""\n---\n\n# Page\n');
+    await expect(compileWiki({ dir })).rejects.toMatchObject({
+      id: "frontmatter-invalid",
+      location: "guides/page.md",
+      field: "title",
+    });
+
+    await writeFile(join(dir, "guides/page.md"), `# ${"x".repeat(5000)}\n`);
+    await expect(compileWiki({ dir })).rejects.toMatchObject({
+      id: "frontmatter-invalid",
+      location: "guides/page.md",
+      field: "title",
+    });
+  });
+
   test("includes description from wiki config", async () => {
     await writeWikiConfig("id: test\ntitle: Wiki\ndescription: Documentation for Topik.\n");
 
@@ -771,7 +801,10 @@ navigation:
   - nonexistent
 `);
 
-    await expect(compileWiki({ dir })).rejects.toMatchObject({ id: "wiki-page-not-found" });
+    await expect(compileWiki({ dir })).rejects.toMatchObject({
+      id: "wiki-page-not-found",
+      location: "nonexistent",
+    });
   });
 
   test("returns no resources when the wiki config is missing", async () => {

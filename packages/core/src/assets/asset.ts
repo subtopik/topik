@@ -253,6 +253,8 @@ export function validateProjectNamespace(value: string): TopikAssetResult<string
   const bytes = encoder.encode(normalized);
   if (
     normalized.trim().length === 0 ||
+    // Surrounding whitespace would make " a " and "a" distinct identities.
+    normalized.trim() !== normalized ||
     bytes.byteLength < 1 ||
     bytes.byteLength > 1024 ||
     containsForbiddenPortableText(normalized)

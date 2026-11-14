@@ -20,6 +20,24 @@ export interface TopikOptions {
 
 const PAYLOAD_PATH_PATTERN = /^\/blobs\/[0-9a-f]{64}$/u;
 const PAYLOAD_RELATIVE_PATTERN = /^blobs\/[0-9a-f]{64}$/u;
+/**
+ * Media types a browser may render or execute from the site origin. Mirrors the
+ * `topik dev` server so a download Asset is never displayed inline.
+ */
+const DOWNLOAD_MEDIA_TYPES: readonly string[] = [
+  "application/octet-stream",
+  "text/html",
+  "image/svg+xml",
+  "application/javascript",
+  "text/javascript",
+  "application/x-executable",
+  "application/wasm",
+  "application/x-topik-active-content",
+];
+/** Development snapshots change between compilations; revalidate every request. */
+const DEVELOPMENT_CACHE_CONTROL = "no-cache";
+/** Production blob paths are content-addressed (`blobs/<sha256>`), so bytes never change. */
+const PRODUCTION_CACHE_CONTROL = "public, max-age=31536000, immutable";
 const VIRTUAL_SNAPSHOT_ID = "virtual:@topik/astro/asset-snapshot";
 const RESOLVED_VIRTUAL_SNAPSHOT_ID = `\0${VIRTUAL_SNAPSHOT_ID}`;
 
@@ -70,13 +88,25 @@ export function topik(options: TopikOptions): AstroIntegration {
 
           const payload = findTopikAssetPayload(loaders, pathname.slice(1));
           if (payload === undefined) return next();
-          res.setHeader("Content-Type", payload.mediaType);
-          res.setHeader("Content-Length", String(payload.size));
-          res.setHeader("X-Content-Type-Options", "nosniff");
+          for (const [name, value] of Object.entries(
+            assetHeaders(payload.mediaType, payload.size, DEVELOPMENT_CACHE_CONTROL),
+          )) {
+            res.setHeader(name, value);
+          }
           res.end(req.method === "HEAD" ? undefined : Buffer.from(payload.bytes));
         });
       },
     },
+  };
+}
+
+function assetHeaders(mediaType: string, size: number, cacheControl: string) {
+  return {
+    "Cache-Control": cacheControl,
+    "Content-Length": String(size),
+    "Content-Type": mediaType,
+    "X-Content-Type-Options": "nosniff",
+    ...(DOWNLOAD_MEDIA_TYPES.includes(mediaType) ? { "Content-Disposition": "attachment" } : {}),
   };
 }
 
@@ -104,6 +134,7 @@ function productionMiddlewareSource(base: string): string {
   return `import { topikAssetPayloads, topikAssetUrls } from ${JSON.stringify(VIRTUAL_SNAPSHOT_ID)};
 globalThis[Symbol.for("@topik/astro/runtime-asset-urls")] = topikAssetUrls;
 const pattern = /^\\/blobs\\/[0-9a-f]{64}$/u;
+const downloadMediaTypes = new Set(${JSON.stringify(DOWNLOAD_MEDIA_TYPES)});
 export async function onRequest(context, next) {
   const request = context.request;
   if (request.method !== "GET" && request.method !== "HEAD") return next();
@@ -114,9 +145,11 @@ export async function onRequest(context, next) {
   if (payload === undefined) return next();
   return new Response(request.method === "HEAD" ? null : payload.bytes, {
     headers: {
+      "Cache-Control": ${JSON.stringify(PRODUCTION_CACHE_CONTROL)},
       "Content-Length": String(payload.size),
       "Content-Type": payload.mediaType,
       "X-Content-Type-Options": "nosniff",
+      ...(downloadMediaTypes.has(payload.mediaType) ? { "Content-Disposition": "attachment" } : {}),
     },
   });
 }

@@ -2,6 +2,7 @@
 
 import { resolve } from "node:path";
 import { boolean, command, positional, run } from "@drizzle-team/brocli";
+import { version } from "../package.json";
 import { isDirectory, runMintlify } from "./runner";
 
 const mintlify = command({
@@ -73,4 +74,5 @@ const mintlify = command({
 await run([mintlify], {
   name: "topik-codemod",
   description: "Codemods for migrating content to Topik",
+  version,
 });

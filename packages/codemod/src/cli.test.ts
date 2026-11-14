@@ -1,8 +1,16 @@
+import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
+import packageJson from "../package.json";
 import { runMintlify } from "./runner";
+
+const execFileAsync = promisify(execFile);
+const builtCli = fileURLToPath(new URL("../dist/cli.mjs", import.meta.url));
 
 const runMock = vi.hoisted(() => vi.fn());
 vi.mock("@drizzle-team/brocli", async (importOriginal) => ({
@@ -141,11 +149,26 @@ describe("codemod CLI file results", () => {
     expect(lines.some((line) => String(line).includes("kept.md"))).toBe(false);
   });
 
+  test("passes the package version to brocli", async () => {
+    await runCli(true);
+    expect(runMock).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({ name: "topik-codemod", version: packageJson.version }),
+    );
+  });
+
   test("lists skipped files with their warning count", async () => {
     await writeFile(join(dir, "unsupported.md"), '<Icon icon="star" />\n');
 
     await runCli(true);
 
     expect(console.log).toHaveBeenCalledWith("  skipped unsupported.md (1 warning(s))");
+  });
+});
+
+describe.skipIf(!existsSync(builtCli))("built topik-codemod binary", () => {
+  test.each([["--version"], ["-v"]])("prints the package version for %s", async (flag) => {
+    const { stdout } = await execFileAsync(process.execPath, [builtCli, flag]);
+    expect(stdout).toBe(`${packageJson.version}\n`);
   });
 });

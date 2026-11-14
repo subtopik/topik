@@ -10,7 +10,13 @@ import wikiPageV1Schema from "@topik/schema/wiki-page/v1.json" with { type: "jso
 import { validateAssetValue } from "./assets/asset";
 import type { TopikAssetDiagnosticId } from "./assets/diagnostics";
 
-const ajv = new Ajv2020({ strict: true, discriminator: true, ownProperties: true });
+// Report every schema violation in a resource, not only the first one.
+const ajv = new Ajv2020({
+  strict: true,
+  discriminator: true,
+  ownProperties: true,
+  allErrors: true,
+});
 addFormats(ajv);
 
 const validators = new Map<string, ReturnType<typeof ajv.compile>>([
@@ -62,6 +68,7 @@ export function validateResources(resources: readonly unknown[]): ValidationResu
   for (const resource of resources) {
     if (!isRecord(resource)) {
       errors.push({
+        id: "resource-invalid",
         resource: "unknown/unknown",
         path: "/",
         message: "Resource must be an object",
@@ -71,6 +78,7 @@ export function validateResources(resources: readonly unknown[]): ValidationResu
 
     if (!Object.hasOwn(resource, "type") || typeof resource.type !== "string") {
       errors.push({
+        id: "resource-invalid",
         resource: getResourceLabel(resource),
         path: "/type",
         message: "Resource type must be a string",
@@ -90,6 +98,7 @@ export function validateResources(resources: readonly unknown[]): ValidationResu
     ].includes(resource.type);
     if (!supportedType) {
       errors.push({
+        id: "resource-unsupported-type",
         resource: getResourceLabel(resource),
         path: "/type",
         message: `Unsupported resource type: ${resource.type}`,
@@ -99,6 +108,7 @@ export function validateResources(resources: readonly unknown[]): ValidationResu
 
     if (!Object.hasOwn(resource, "apiVersion") || typeof resource.apiVersion !== "string") {
       errors.push({
+        id: "resource-invalid",
         resource: getResourceLabel(resource),
         path: "/apiVersion",
         message: "Resource apiVersion must be a string",
@@ -135,6 +145,7 @@ export function validateResources(resources: readonly unknown[]): ValidationResu
     if (!validate(resource)) {
       for (const err of validate.errors ?? []) {
         errors.push({
+          id: "resource-invalid",
           resource: getResourceLabel(resource),
           path: err.instancePath || "/",
           message: err.message ?? "Unknown error",

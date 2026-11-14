@@ -235,10 +235,13 @@ export const MissingAsset: Story = {
     resolveAsset: () => undefined,
     onAssetDiagnostic: fn(),
   },
-  play: async ({ args }) => {
+  play: async ({ args, canvas }) => {
     await expect(args.onAssetDiagnostic).toHaveBeenCalledWith(
       expect.objectContaining({ id: "TOPIK_ASSET_REFERENCE_MISSING" }),
     );
+    // The text alternative and caption stay readable without the image.
+    await expect(canvas.getByText("Unavailable image")).toBeVisible();
+    await expect(canvas.getByText("The host could not resolve this asset.")).toBeVisible();
   },
 };
 
@@ -257,6 +260,92 @@ Rendered with a custom callout.
 
 export const DarkTheme: Story = {
   globals: { theme: "dark" },
+};
+
+/** An explicit scheme paints its own canvas, so dark content stays readable on a light page. */
+export const ExplicitDarkOnLightPage: Story = {
+  args: { colorScheme: "dark" },
+  globals: { theme: "light" },
+  play: async ({ canvasElement }) => {
+    const content = canvasElement.querySelector<HTMLElement>('.topik-content[data-theme="dark"]');
+    await expect(content).not.toBeNull();
+    await expect(getComputedStyle(content!).backgroundColor).toBe("rgb(16, 24, 40)");
+  },
+};
+
+const rightToLeftPage = `
+{% callout variant="tip" title="تلميح" %}
+يكتب المؤلفون المحتوى ويعرضه التطبيق.
+{% /callout %}
+
+{% steps %}
+{% step title="التثبيت" %}
+شغّل أمر الإعداد.
+{% /step %}
+{% step title="الكتابة" %}
+أنشئ أول درس.
+{% /step %}
+{% /steps %}
+
+{% tabs %}
+{% tab title="اقرأ" %}
+اقرأ الشرح القصير.
+{% /tab %}
+{% tab title="جرّب" %}
+أكمل التمرين.
+{% /tab %}
+{% /tabs %}
+
+{% codeGroup %}
+{% codeTab title="pnpm" %}
+\`\`\`sh
+pnpm add @topik/content-react
+\`\`\`
+{% /codeTab %}
+{% codeTab title="npm" %}
+\`\`\`sh
+npm install @topik/content-react
+\`\`\`
+{% /codeTab %}
+{% /codeGroup %}
+
+{% math content="E = mc^2" /%}
+`;
+
+/** Layout mirrors in right-to-left text while code and math source stay left to right. */
+export const RightToLeft: Story = {
+  args: { content: rightToLeftPage },
+  decorators: [
+    (Story) => (
+      <div dir="rtl" lang="ar">
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const step = canvasElement.querySelector<HTMLElement>(".topik-step")!;
+    const stepStyle = getComputedStyle(step);
+    await expect(stepStyle.borderRightWidth).toBe("2px");
+    await expect(stepStyle.borderLeftWidth).toBe("0px");
+    await expect(stepStyle.paddingLeft).toBe("0px");
+    await expect(parseFloat(stepStyle.paddingRight)).toBeGreaterThan(0);
+    // The number badge sits over the rail on the inline-start (right) edge.
+    const badge = getComputedStyle(step, "::before");
+    await expect(parseFloat(badge.right)).toBeLessThan(0);
+    await expect(parseFloat(badge.left)).toBeGreaterThan(0);
+    const callout = getComputedStyle(canvasElement.querySelector(".topik-callout")!);
+    await expect(callout.borderRightWidth).toBe("3px");
+    for (const pre of canvasElement.querySelectorAll("pre")) {
+      await expect(getComputedStyle(pre).direction).toBe("ltr");
+      await expect(getComputedStyle(pre).textAlign).toBe("left");
+    }
+    // ArrowLeft moves to the next tab, which sits to the left in right-to-left layouts.
+    await userEvent.click(canvas.getByRole("tab", { name: "اقرأ" }));
+    await userEvent.keyboard("{ArrowLeft}");
+    await expect(canvas.getByRole("tab", { name: "جرّب" })).toHaveFocus();
+    await userEvent.keyboard("{ArrowRight}");
+    await expect(canvas.getByRole("tab", { name: "اقرأ" })).toHaveFocus();
+  },
 };
 
 export const MobilePage: Story = {

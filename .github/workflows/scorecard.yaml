@@ -13,6 +13,7 @@ jobs:
   analysis:
     name: Scorecard analysis
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: github.event.repository.default_branch == github.ref_name
     permissions:
       security-events: write

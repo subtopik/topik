@@ -46,6 +46,23 @@ export function ArticleWithComponents() {
 }
 ```
 
+### Color scheme
+
+Pass `colorScheme="light"` or `colorScheme="dark"` to `TopikContent`, or to
+`TopikContentProvider`, to choose the scheme for all content. The content root
+then carries a matching `data-theme` attribute: the stylesheet uses its colors,
+figures show `src` or `darkSrc`, and `RichTopikContentProvider` uses the same
+scheme for code highlighting and diagrams unless its own `theme` is set. An
+explicit `colorScheme` overrides a `.dark` class on an ancestor in both
+directions.
+
+Without `colorScheme`, the root has no `data-theme`. The stylesheet then uses
+dark colors only inside a `.dark` ancestor, and figures with `darkSrc` follow the
+reader's operating-system preference through `prefers-color-scheme`, because the
+renderer cannot observe the application's theme class. Applications with a theme
+switch should pass the selected scheme as `colorScheme` so that text, panels,
+figures and rich output always agree.
+
 ## Variables
 
 Supply reader values through `config.variables`:

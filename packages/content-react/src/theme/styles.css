@@ -14,8 +14,9 @@
     line-height: 1.65;
   }
 
+  /* An explicit content theme overrides a .dark ancestor in both directions. */
   .topik-content[data-theme="dark"],
-  .dark .topik-content {
+  .dark .topik-content:not([data-theme="light"]) {
     --topik-color-canvas: #101828;
     --topik-color-text: #f2f4f7;
     --topik-color-muted: #98a2b3;
@@ -83,7 +84,7 @@
   }
 
   .topik-content[data-theme="dark"] .topik-callout,
-  .dark .topik-content .topik-callout {
+  .dark .topik-content:not([data-theme="light"]) .topik-callout {
     --topik-callout-heading: var(--topik-color-text);
   }
 

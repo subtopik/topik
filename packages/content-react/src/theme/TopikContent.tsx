@@ -161,7 +161,7 @@ export function TopikContent(props: TopikContentProps) {
   const classes = ["topik-content", className].filter(Boolean).join(" ");
 
   return (
-    <div className={classes}>
+    <div className={classes} data-theme={effectiveColorScheme}>
       <TopikSlotOptionsProvider value={slotOptions}>{rendered.node}</TopikSlotOptionsProvider>
     </div>
   );

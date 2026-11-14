@@ -175,6 +175,28 @@ describe("TopikContent", () => {
     expect(html).not.toContain("prefers-color-scheme");
   });
 
+  it.each([
+    [undefined, undefined, undefined],
+    ["dark", undefined, "dark"],
+    ["light", undefined, "light"],
+    [undefined, "dark", "dark"],
+    ["light", "dark", "light"],
+  ] as const)(
+    "marks the content root with color scheme %s (provider %s)",
+    (colorScheme, providerScheme, expected) => {
+      const html = renderToStaticMarkup(
+        <TopikContentProvider colorScheme={providerScheme}>
+          <TopikContent colorScheme={colorScheme} content="Text" />
+        </TopikContentProvider>,
+      );
+      expect(
+        html.startsWith(
+          `<div class="topik-content"${expected ? ` data-theme="${expected}"` : ""}>`,
+        ),
+      ).toBe(true);
+    },
+  );
+
   it("inherits an explicit color scheme from the provider", () => {
     const html = renderToStaticMarkup(
       <TopikContentProvider colorScheme="dark">

@@ -1,5 +1,6 @@
 [
   {
+    "id": "attribute-syntax-invalid",
     "message": "Attribute label must be quoted or a finite number/boolean",
     "line": 1,
     "column": 1

@@ -17,7 +17,7 @@ export class ContentEvaluationError extends Error {
   }
 }
 
-/** @internal Expected template failures retain their public diagnostic identity. */
+/** @internal Expected evaluation failures retain their public diagnostic identity. */
 export class TemplateEvaluationError extends ContentEvaluationError {
   readonly lines: number[];
   readonly type: string;
@@ -87,29 +87,56 @@ function hasControl(value: string): boolean {
   return false;
 }
 
-function evaluate(expression: Expression, context: Record<string, unknown>): unknown {
+/** Bound public source context before joining a potentially long path. */
+function variableLabel(path: string[]): string | undefined {
+  const pathLength = path.reduce((length, part) => length + part.length + 1, -1);
+  return pathLength <= 256 ? path.join(".") : undefined;
+}
+
+/** Body and condition lookups report the authored node and path, never the supplied value. */
+function lookupAt(context: Record<string, unknown>, path: string[], node: TreeNode): unknown {
+  return lookup(context, path, (kind, message) => {
+    throw new TemplateEvaluationError(
+      kind === "path" ? "topik-variable-path" : `topik-variable-${kind}`,
+      node,
+      message,
+      undefined,
+      variableLabel(path),
+    );
+  });
+}
+
+function evaluate(
+  expression: Expression,
+  context: Record<string, unknown>,
+  node: TreeNode,
+): unknown {
   if (expression.type === "literal") return expression.value;
-  if (expression.type === "variable") return lookup(context, expression.path);
+  if (expression.type === "variable") return lookupAt(context, expression.path, node);
   const [left, right] = expression.args;
   switch (expression.name) {
     case "not":
-      return !truthy(evaluate(left, context));
+      return !truthy(evaluate(left, context, node));
     case "and": {
-      const first = evaluate(left, context);
-      return truthy(first) && truthy(evaluate(right, context));
+      const first = evaluate(left, context, node);
+      return truthy(first) && truthy(evaluate(right, context, node));
     }
     case "or": {
-      const first = evaluate(left, context);
-      return truthy(first) || truthy(evaluate(right, context));
+      const first = evaluate(left, context, node);
+      return truthy(first) || truthy(evaluate(right, context, node));
     }
     case "equals": {
-      const first = evaluate(left, context);
-      const second = evaluate(right, context);
+      const first = evaluate(left, context, node);
+      const second = evaluate(right, context, node);
       if (
         (first !== null && typeof first === "object") ||
         (second !== null && typeof second === "object")
       )
-        throw new ContentEvaluationError("equals accepts only scalar values");
+        throw new TemplateEvaluationError(
+          "topik-expression-type",
+          node,
+          "equals accepts only scalar values",
+        );
       return first === second;
     }
   }
@@ -194,9 +221,7 @@ function resolveDocument(
       let text: string;
       if (segment.type === "literal") text = segment.value;
       else {
-        // Bound public source context before joining a potentially long path.
-        const pathLength = segment.path.reduce((length, part) => length + part.length + 1, -1);
-        const variable = pathLength <= 256 ? segment.path.join(".") : undefined;
+        const variable = variableLabel(segment.path);
         const value = lookup(context, segment.path, (kind) => {
           throw new TemplateEvaluationError(
             kind === "path" ? "topik-variable-path" : `topik-template-variable-${kind}`,
@@ -271,17 +296,22 @@ function resolveDocument(
     for (const original of children) {
       if (original.type === "topikConditional") {
         const [first, alternate] = original.children!;
-        const selected = truthy(evaluate(first.condition as Expression, context))
+        const selected = truthy(evaluate(first.condition as Expression, context, original))
           ? first
           : alternate;
         if (selected) for (const child of resolveChildren(selected.children ?? [])) append(child);
         continue;
       }
       if (original.type === "topikVariable") {
-        const value = lookup(context, original.path as string[]);
+        const path = original.path as string[];
+        const value = lookupAt(context, path, original);
         if (value !== null && typeof value === "object")
-          throw new ContentEvaluationError(
-            `Cannot interpolate object $${(original.path as string[]).join(".")}`,
+          throw new TemplateEvaluationError(
+            "topik-variable-type",
+            original,
+            `Cannot interpolate object $${path.join(".")}`,
+            undefined,
+            variableLabel(path),
           );
         if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
           const text = String(value);
@@ -296,8 +326,12 @@ function resolveDocument(
             throw new ContentEvaluationError("Interpolated content exceeds the data string limit");
           }
           if (typeof value === "string" && hasControl(value))
-            throw new ContentEvaluationError(
+            throw new TemplateEvaluationError(
+              "topik-variable-control",
+              original,
               "Interpolated text must be single-line without controls",
+              undefined,
+              variableLabel(path),
             );
           if (text) {
             const node = { type: "text", value: "" };

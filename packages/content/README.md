@@ -5,7 +5,7 @@ package provides an mdast authoring tree, validation, lossless source operations
 and a framework-independent render tree. React rendering lives in
 `@topik/content-react`; applications own editing, storage, and synchronization.
 
-The package is ESM and requires Node.js 22.12 or later. Install it with your
+The package is ESM and requires Node.js 22.22 or later. Install it with your
 package manager:
 
 ```sh
@@ -45,6 +45,16 @@ ignores source positions, cosmetic spelling and derived metadata while retaining
 explicit heading IDs, reference bindings, ordered content and every conditional
 branch. It does not validate arbitrary trees or treat application editor defaults
 as authored defaults.
+
+Inline marks compare as a set on each piece of content, as rich-text editors
+store them: `**[a](u)**` equals `[**a**](u)`, `***a***` equals `**_a_**`, and
+`**a****b**` equals `**ab**`. Text, link identity, and which spaces are marked
+still count, so `**a** **b**` differs from `**a b**`, and one link differs from
+two adjacent links. `writeDocument` and formatting emit one canonical nesting for
+each such set; see
+[inline mark nesting](https://github.com/subtopik/topik/blob/main/docs/content/content-design.md#inline-mark-nesting).
+Parsing keeps the authored nesting, and asset and navigation rewrites keep it too,
+so tree positions of unchanged content stay stable.
 
 ## Markdown and components
 
@@ -123,8 +133,12 @@ if (writeDocument(evaluated) !== "Hello Ada.\n") throw new Error("Unexpected eva
 
 Expressions support scalar literals, variable paths, `equals`, `and`, `or`, and
 `not`. Only `false` and `null` are false; `and` and `or` short-circuit. Missing
-variables in evaluated paths throw `ContentEvaluationError`. Conditions control
-presentation and do not enforce authorization.
+variables in evaluated paths throw `ContentEvaluationError`. `compileTopikContent`
+reports body and condition variable failures as `topik-variable-missing`,
+`topik-variable-type`, or `topik-variable-control` (non-scalar `equals` operands
+as `topik-expression-type`), with the source line and bounded `variable` path but
+never the supplied value. Conditions control presentation and do not enforce
+authorization.
 
 Null and empty strings insert no text. Evaluation omits empty paragraphs, empty
 marks, and empty components that require inline children. It also removes terminal
@@ -228,6 +242,28 @@ const source = '{% notice title="Remember" %}\nKeep a backup.\n{% /notice %}';
 if (!validateTopikContent(source, { config }).valid) throw new Error("Invalid notice");
 transformTopikContent(parseTopikContent(source, { config }), config);
 ```
+
+`mergeTopikContentConfig` throws an error whose message names the invalid
+component, attribute, or field, for example
+`Content configuration is invalid: component "notice" attribute "title" required must be a boolean`.
+Names in `allowedParents` and `children.components` must be registered
+components. Source APIs report every configuration failure as the fixed
+`topik-config-invalid` diagnostic.
+
+## Diagnostics
+
+Source diagnostics have stable IDs with fixed messages. Tag syntax problems use
+`missing-closing`, `missing-opening`, `tag-unterminated`, `tag-name-invalid`,
+`attribute-syntax-invalid`, `duplicate-attribute`, `tag-closing-invalid`,
+`tag-placement-invalid`, `tag-undefined`, `topik-else-placement`, and
+`topik-else-syntax`. An unsupported condition expression reports one
+`topik-expression-invalid`. Unsupported Markdown, such as raw HTML, comments, and
+footnotes, reports `node-undefined` at the node's line with its Markdown node
+`type`; a heading ID that does not end its heading reports
+`topik-heading-id-placement`. Rules derived from custom schemas, such as
+`topik-<name>-children`, `topik-<name>-requires-<child>`,
+`topik-<parent>-parent-required`, and `topik-<attribute>-range`, use a fixed
+message for each rule family.
 
 ## Asset rewriting
 

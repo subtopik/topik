@@ -172,13 +172,13 @@ test.each(["failure", "abort", "close"] as const)(
     const state = watcher?.state;
     // Real Chokidar close removes listeners synchronously, before its promise settles.
     expect(fs().listenerCount("change")).toBe(0);
-    expect(() => fs()._handleError(new Error("in-flight filesystem failure"))).not.toThrow();
+    expect(() => fs().handleError(new Error("in-flight filesystem failure"))).not.toThrow();
     finishClose();
     await closing;
     const result = await outcome;
     if (reason === "failure") expect(result).toEqual({ error: originalError });
     else if ("value" in result) watcher = result.value;
-    expect(() => fs()._handleError(new Error("error after close resolved"))).not.toThrow();
+    expect(() => fs().handleError(new Error("error after close resolved"))).not.toThrow();
     if (state) expect(watcher?.state).toBe(state);
     else expect(control.compile).not.toHaveBeenCalled();
     if (watcher) {
@@ -188,3 +188,102 @@ test.each(["failure", "abort", "close"] as const)(
     }
   },
 );
+
+async function recompile(result: CompileResult | Error) {
+  if (result instanceof Error) control.compile.mockRejectedValueOnce(result);
+  else control.compile.mockResolvedValueOnce(result);
+  const calls = control.compile.mock.calls.length;
+  fs().emit("change", "page.md");
+  await vi.waitFor(() => expect(control.compile).toHaveBeenCalledTimes(calls + 1));
+  await vi.waitFor(() => expect(watcher?.state.status).not.toBe("compiling"));
+}
+
+test("a throwing update listener cannot fail a published generation", async () => {
+  const fixtureData = await fixture();
+  watcher = await watch({ dir: fixtureData.dir });
+  const listenerError = new Error("update listener failed");
+  const errors: Error[] = [];
+  const updates: string[] = [];
+  watcher.on("error", (error) => errors.push(error));
+  watcher.on("update", () => {
+    throw listenerError;
+  });
+  watcher.on("update", (key) => updates.push(key));
+  const resource = {
+    type: "Guide",
+    name: "listener-guide",
+  } as unknown as CompileResult["resources"][number];
+  await recompile({ ...fixtureData.result, resources: [resource] });
+  expect(watcher.state).toMatchObject({ status: "ready", generation: 2, diagnostics: [] });
+  expect(watcher.resources.get("Guide/listener-guide")).toBe(resource);
+  expect(updates).toEqual(["Guide/listener-guide"]);
+  expect(errors).toEqual([listenerError]);
+});
+
+test.each(["resolve", "reject"] as const)(
+  "throwing preview-state and error listeners stay isolated when compilation %ss",
+  async (completion) => {
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    try {
+      const fixtureData = await fixture();
+      watcher = await watch({ dir: fixtureData.dir });
+      const listenerError = new Error("preview-state listener failed");
+      const compileError = new Error("Compilation failed privately");
+      const errors: Error[] = [];
+      const states: string[] = [];
+      // Throws for every publication: compiling, ready and the catch-path error.
+      watcher.on("preview-state", () => {
+        throw listenerError;
+      });
+      watcher.on("preview-state", (state) => states.push(state.status));
+      watcher.on("error", () => {
+        throw new Error("error listener failed");
+      });
+      watcher.on("error", (error) => errors.push(error));
+      await recompile(completion === "resolve" ? fixtureData.result : compileError);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(unhandled).not.toHaveBeenCalled();
+      if (completion === "resolve") {
+        expect(watcher.state).toMatchObject({ status: "ready", generation: 2 });
+        expect(states).toEqual(["compiling", "ready"]);
+        expect(errors).toEqual([listenerError, listenerError]);
+      } else {
+        expect(watcher.state).toMatchObject({
+          status: "error",
+          generation: 1,
+          diagnostics: [{ id: "compilation-failed" }],
+        });
+        expect(states).toEqual(["compiling", "error"]);
+        expect(errors).toEqual([listenerError, listenerError, compileError]);
+      }
+      // The watcher keeps working after listener failures.
+      await recompile(fixtureData.result);
+      expect(watcher.state.status).toBe("ready");
+      expect(watcher.state.generation).toBe(completion === "resolve" ? 3 : 2);
+    } finally {
+      process.off("unhandledRejection", unhandled);
+    }
+  },
+);
+
+test("a filesystem watcher failure closes the underlying watcher immediately", async () => {
+  const fixtureData = await fixture();
+  watcher = await watch({ dir: fixtureData.dir });
+  const errors: Error[] = [];
+  watcher.on("preview-state", () => {
+    throw new Error("listener failed during watch failure");
+  });
+  watcher.on("error", (error) => errors.push(error));
+  const error = new Error("ENOSPC");
+  expect(() => fs().emit("error", error)).not.toThrow();
+  expect(control.close).toHaveBeenCalledTimes(1);
+  expect(fs().listenerCount("change")).toBe(0);
+  expect(watcher.state.diagnostics).toEqual([expect.objectContaining({ id: "watch-failed" })]);
+  expect(errors).toEqual([
+    expect.objectContaining({ message: "listener failed during watch failure" }),
+    error,
+  ]);
+  await watcher.close();
+  expect(control.close).toHaveBeenCalledTimes(1);
+});

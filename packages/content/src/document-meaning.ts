@@ -1,4 +1,5 @@
 import type { ContentDocument, TextTemplate, TreeNode } from "./model.js";
+import { canonicalizeInlineMarks } from "./inline-marks.js";
 import { referenceIdentifier } from "./document-index.js";
 import {
   codePresentationChildRows,
@@ -7,10 +8,15 @@ import {
 
 /** Compare admitted authoring trees, retaining explicit heading IDs and every authored branch.
  * Source positions, cosmetic spelling and derived metadata do not affect equality.
+ * Inline marks compare as the set applied to each leaf, so their nesting order
+ * does not matter; both sides are compared in the writer's canonical form.
  * This compares meaning; it does not validate arbitrary caller-constructed trees.
  */
 export function sameDocumentMeaning(left: ContentDocument, right: ContentDocument): boolean {
-  return equal(meaning(left as TreeNode), meaning(right as TreeNode));
+  return equal(
+    meaning(canonicalizeInlineMarks(left) as TreeNode),
+    meaning(canonicalizeInlineMarks(right) as TreeNode),
+  );
 }
 
 function meaning(node: TreeNode): Record<string, unknown> {

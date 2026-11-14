@@ -105,7 +105,11 @@ Hello {% $student.name %}.
 Expressions support scalar literals, variable paths, `equals`, `and`, `or`, and
 `not`. Only `false` and `null` are false; `0` and an empty string are true.
 `and` and `or` short-circuit. A missing variable raises an evaluation error when
-its reference is evaluated.
+its reference is evaluated. Compilation reports it as `topik-variable-missing`
+with the reference's line and its `variable` path; incompatible values report
+`topik-variable-type`, forbidden controls `topik-variable-control`, and
+non-scalar `equals` operands `topik-expression-type`. Supplied values are never
+included.
 
 Evaluation selects a branch and inserts values as literal text. A value such as
 `**Ada**` stays literal text rather than becoming Markdown emphasis. Null and
@@ -155,11 +159,63 @@ if (result.ok) {
 }
 ```
 
-Formatting can change wrapping, indentation, list markers, and other equivalent
-Markdown spelling. It preserves text, marks, structure, properties, code and
-formula payloads, destinations, reference bindings, and every conditional branch.
+Each diagnostic has a stable `id`, a fixed `message` for that id, a `level`, and
+one-based `lines` when the source location is known. Messages never repeat
+authored text. Common source problems include:
+
+| ID                                                | Problem                                                       |
+| ------------------------------------------------- | ------------------------------------------------------------- |
+| `missing-closing`, `missing-opening`              | A tag has no matching closing tag, or a closing tag no opener |
+| `tag-unterminated`, `tag-name-invalid`            | A tag lacks `%}`, or has no valid lowercase name              |
+| `attribute-syntax-invalid`, `duplicate-attribute` | Malformed attribute syntax, or an attribute set twice         |
+| `tag-closing-invalid`, `tag-placement-invalid`    | Attributes on a closing tag; block or inline tag misplaced    |
+| `tag-undefined`                                   | An unknown component                                          |
+| `topik-else-placement`, `topik-else-syntax`       | An `else` outside `if`, repeated, or not `{% else /%}`        |
+| `topik-expression-invalid`                        | An unsupported condition expression                           |
+| `node-undefined`                                  | Unsupported Markdown such as raw HTML, comments, or footnotes |
+| `topik-heading-id-placement`                      | A `{% #id %}` that does not end its heading                   |
+| `topik-variable-missing`, `topik-variable-type`   | A missing or incompatible variable during compilation         |
+
+`node-undefined` diagnostics set `type` to the Markdown node type, such as
+`html` or `footnoteDefinition`. Variable diagnostics set `variable` to the
+bounded authored path.
+
+Formatting can change wrapping, indentation, list markers, inline mark nesting,
+and other equivalent Markdown spelling. It preserves text, marks, structure,
+properties, code and formula payloads, destinations, reference bindings, and
+every conditional branch.
 Successful output is validated and reparsed before it is returned. Repeated
 formatting is stable for the same format version and configuration.
+
+### Inline mark nesting
+
+Emphasis, strong, and strikethrough are a set of marks on each piece of inline
+content: text, inline code, images, hard breaks, variables, and inline
+components. Their nesting order and repeated marks of one kind carry no meaning,
+so `***a***`, `**_a_**`, and `_**a**_` are the same document, as are `*a *b* c*`
+and `*a b c*`. A link carries a mark when all of its content does, so
+`**[a](u)**` and `[**a**](u)` are equal too. Links keep their identity: one link
+never becomes two, and adjacent links to the same destination stay separate.
+Which characters carry which marks still matters, so `**a** **b**` differs from
+`**a b**`. Component children, conditional branches, and block structure are
+compared separately; marks outside an inline component do not combine with
+marks inside it.
+
+Formatting and `writeDocument` write one canonical nesting for each paragraph,
+heading, table cell, and inline component:
+
+1. Adjacent text with the same marks is merged.
+2. At each position, the mark whose run of consecutive marked content reaches
+   farthest opens first and covers that whole run. Ties prefer emphasis, then
+   strong, then strikethrough, so bold italics are written as one `***a***`
+   delimiter run.
+3. Marks that cover exactly one link are written outside it, as in
+   `**[a](u)**`. They move inside, as in `[**a**](u)s`, when a letter or other
+   non-punctuation character of unmarked neighboring text would otherwise touch a
+   delimiter, unless the link content starts or ends with whitespace or a hard
+   break.
+
+Formatting the canonical output again returns it unchanged.
 
 If serialization would change the document's meaning, formatting fails with the
 original source. `writeDocument` likewise throws rather than returning lossy

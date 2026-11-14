@@ -103,6 +103,23 @@ describe("opt-in expression tags", () => {
   });
 
   test.each([
+    ["{% else /%}", "topik-else-placement"],
+    ["{% if $flag %}\n\nYes.\n\n{% else %}\n\nNo.\n\n{% /if %}", "topik-else-syntax"],
+    ["{% if %}\n\nYes.\n\n{% /if %}", "topik-expression-invalid"],
+    ["Text {% if $flag %} more", "topik-conditional-placement"],
+    ["Hello {% $1name %}", "topik-variable-path"],
+  ])("identifies expression tag failures with stable IDs: %s", (source, id) => {
+    let thrown: unknown;
+    try {
+      parse(source);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(TagSyntaxError);
+    expect((thrown as TagSyntaxError).diagnostics).toContainEqual(expect.objectContaining({ id }));
+  });
+
+  test.each([
     "{% if $flag %}\n<div>first</div>\n\n{% /if %}",
     "{% if $flag %}\n<div>first</div>\n\n{% else /%}\nSecond.\n{% /if %}",
     "{% if $flag %}\nFirst.\n{% else /%}\n<widget>\nsecond\n</widget>\n\n{% /if %}",

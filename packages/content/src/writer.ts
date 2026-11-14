@@ -11,6 +11,7 @@ import { FORMAT_VERSION, parseDocumentTree } from "./parser.js";
 import { sameDocumentMeaning } from "./document-meaning.js";
 import { gfmToMarkdown } from "./gfm.js";
 import { markWriterExtension } from "./markdown-marks.js";
+import { canonicalizeInlineMarks } from "./inline-marks.js";
 import { headingIdToMarkdown } from "./heading-ids.js";
 import { resourceWriterExtension } from "./resource-writer.js";
 import { referenceWriterExtension } from "./reference-writer.js";
@@ -302,25 +303,37 @@ export function writeDocument(
   return written;
 }
 
+export interface SerializeDocumentOptions {
+  /**
+   * Keep the authored inline mark nesting instead of the canonical one. Targeted
+   * rewrites use this so tree positions of unchanged content stay stable.
+   */
+  preserveMarkNesting?: boolean;
+}
+
 /** @internal Source operations reuse their output admission parse for the meaning check. */
 export function serializeDocument(
   document: ContentDocument,
   registry: Registry = components,
   formatVersion = FORMAT_VERSION,
+  options: SerializeDocumentOptions = {},
 ): string {
   if (formatVersion !== FORMAT_VERSION)
     throw new Error(`Unsupported format version ${formatVersion}`);
   const errors = validateDocument(document, registry);
   if (errors.length) throw new Error(errors.map((error) => error.message).join("; "));
-  const expansion = sourceExpansion(document, registry);
-  const baseline = writeMarkdown(asTags(document, registry, true), registry);
+  // One spelling per meaning: inline mark nesting is written in canonical order.
+  // Measure the tree that is written, so the estimate covers its delimiters.
+  const tree = options.preserveMarkNesting ? document : canonicalizeInlineMarks(document);
+  const expansion = sourceExpansion(tree, registry);
+  const baseline = writeMarkdown(asTags(tree, registry, true), registry);
   assertSourceLimit(baseline);
   if (expansion === 0) return baseline;
   if (baseline.length + expansion > CONTENT_LIMITS.sourceLength)
     throw new ContentLimitError(
       `Content exceeds the source length limit of ${CONTENT_LIMITS.sourceLength}`,
     );
-  const written = writeMarkdown(asTags(document, registry), registry);
+  const written = writeMarkdown(asTags(tree, registry), registry);
   assertSourceLimit(written);
   return written;
 }

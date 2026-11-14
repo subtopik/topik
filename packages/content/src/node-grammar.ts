@@ -52,6 +52,11 @@ export const parentTypes = new Set([
 ]);
 export const nodeTypes = new Set([...parentTypes, ...blockTypes, ...inlineTypes, "yaml"]);
 
+/** Parsed Markdown that Topik does not model, reported by the node itself rather than its parent. */
+export function isUnsupportedNode(node: TreeNode): boolean {
+  return typeof node.type === "string" && !nodeTypes.has(node.type);
+}
+
 export function isContentKind(
   node: TreeNode,
   kind: "inline" | "block",
@@ -64,6 +69,15 @@ export function isContentKind(
     Object.hasOwn(registry, node.name) &&
     registry[node.name].kind === kind
   );
+}
+
+/** A supported node of the wrong kind; unsupported nodes are reported at their own position. */
+export function isMisplacedContent(
+  node: TreeNode,
+  kind: "inline" | "block",
+  registry: Registry,
+): boolean {
+  return !isUnsupportedNode(node) && !isContentKind(node, kind, registry);
 }
 
 export function isInlineParent(node: TreeNode, registry: Registry): boolean {

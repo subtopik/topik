@@ -238,6 +238,56 @@ describe.each([
     },
   );
 
+  it.each([
+    ["past the last row", [[2, 10]], [[2, 3]]],
+    ["entirely after the block", [[7, 9]], []],
+    ["inverted", [[3, 1]], []],
+    ["before the first row", [[0, 1]], [[1, 1]]],
+    [
+      "unsorted and overlapping",
+      [
+        [2, 2],
+        [1, 3],
+      ],
+      [[1, 3]],
+    ],
+    ["malformed", [5, [1], ["1", 2], null], []],
+    ["not a list", "2-3", []],
+  ])("clamps collapse ranges %s instead of crashing", async (_kind, collapse, regions) => {
+    const dom = await mount(
+      <Code
+        payload={"one\ntwo\nthree"}
+        content={"one\ntwo\nthree\n"}
+        presentation={{
+          lineNumbers: true,
+          wrap: false,
+          collapse,
+          highlight: collapse,
+          focus: collapse,
+          added: collapse,
+          removed: collapse,
+        }}
+      />,
+    );
+    expect(
+      [...dom.querySelectorAll<HTMLElement>("[data-line]")].map((row) => row.dataset.line),
+    ).toEqual(["1", "2", "3"]);
+    expect(
+      [...dom.querySelectorAll<HTMLElement>(".topik-code-block__fold-toggle")].map((control) => [
+        Number(control.dataset.collapseStart),
+        Number(control.dataset.collapseEnd),
+      ]),
+    ).toEqual(regions);
+    expect(dom.querySelector("pre code")?.textContent).toContain("one");
+  });
+
+  it.each([null, "lines", 3])("ignores a non-object presentation %j", async (presentation) => {
+    const dom = await mount(
+      <Code payload={"one\ntwo"} content={"one\ntwo\n"} presentation={presentation} />,
+    );
+    expect(dom.querySelector("pre code")?.textContent).toBe("one\ntwo\n");
+  });
+
   it("folds a one-row entire block while keeping its control available", async () => {
     const dom = await mount(
       <Code

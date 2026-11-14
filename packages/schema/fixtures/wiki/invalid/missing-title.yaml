@@ -1,4 +1,6 @@
+# expect: /spec required title
 apiVersion: v1
 type: Wiki
 name: test-wiki
 spec:
+  description: A wiki without a title

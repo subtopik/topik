@@ -1,3 +1,5 @@
+# expect: /spec/navigation/0 oneOf via pageNode
+# expect: /spec/navigation/0 required slug
 apiVersion: v1
 type: Wiki
 name: vulpo-docs

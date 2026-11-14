@@ -1,10 +1,10 @@
+# expect: /spec/wiki pattern
 apiVersion: v1
 type: WikiPage
 name: introduction
 spec:
   wiki: Vulpo-Docs
   title: Introduction
-  slug: introduction
   content:
     format: topik
     value: "# Introduction"

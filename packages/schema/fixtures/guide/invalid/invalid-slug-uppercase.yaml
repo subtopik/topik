@@ -1,3 +1,4 @@
+# expect: /spec/slug pattern
 {
   apiVersion: v1,
   type: Guide,

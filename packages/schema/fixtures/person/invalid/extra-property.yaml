@@ -1,1 +1,2 @@
+# expect: (root) additionalProperties unknown
 { apiVersion: v1, type: Person, name: john-doe, unknown: field, spec: { name: John Doe } }

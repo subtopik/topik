@@ -1,1 +1,2 @@
+# expect: (root) required apiVersion
 { type: Person, name: john-doe, spec: { name: John Doe } }

@@ -1,3 +1,4 @@
+# expect: /spec/description maxLength
 apiVersion: v1
 type: WikiPage
 name: introduction

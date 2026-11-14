@@ -1,3 +1,4 @@
+# expect: /spec/title minLength
 apiVersion: v1
 type: Guide
 name: test-guide

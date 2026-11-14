@@ -1,1 +1,2 @@
+# expect: /name pattern
 { apiVersion: v1, type: Person, name: john_doe, spec: { name: John Doe } }

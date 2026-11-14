@@ -172,13 +172,13 @@ test.each(["failure", "abort", "close"] as const)(
     const state = watcher?.state;
     // Real Chokidar close removes listeners synchronously, before its promise settles.
     expect(fs().listenerCount("change")).toBe(0);
-    expect(() => fs()._handleError(new Error("in-flight filesystem failure"))).not.toThrow();
+    expect(() => fs().handleError(new Error("in-flight filesystem failure"))).not.toThrow();
     finishClose();
     await closing;
     const result = await outcome;
     if (reason === "failure") expect(result).toEqual({ error: originalError });
     else if ("value" in result) watcher = result.value;
-    expect(() => fs()._handleError(new Error("error after close resolved"))).not.toThrow();
+    expect(() => fs().handleError(new Error("error after close resolved"))).not.toThrow();
     if (state) expect(watcher?.state).toBe(state);
     else expect(control.compile).not.toHaveBeenCalled();
     if (watcher) {

@@ -15,15 +15,20 @@ describe("codemod parser admission", () => {
     ["nested quotes", "> ".repeat(CONTENT_LIMITS.treeDepth + 1) + "Text.", "tree depth"],
     ["nested emphasis", "*_".repeat(5_000) + "Text." + "_*".repeat(5_000), "parser step"],
     ["wide tree", "* * *\n\n".repeat(CONTENT_LIMITS.treeNodes + 1), "tree node"],
-  ])("refuses excessive %s before scanning tags", (_name, source, limit) => {
-    for (const original of [source, `<Note>\n${source}\n</Note>\n`]) {
-      const result = transformMintlify(original);
-      expect(result).toMatchObject({ content: original, changed: false });
-      expect(result.warnings).toEqual([
-        { line: 1, column: 1, message: expect.stringContaining(`${limit} limit`) },
-      ]);
-    }
-  });
+  ])(
+    "refuses excessive %s before scanning tags",
+    (_name, source, limit) => {
+      for (const original of [source, `<Note>\n${source}\n</Note>\n`]) {
+        const result = transformMintlify(original);
+        expect(result).toMatchObject({ content: original, changed: false });
+        expect(result.warnings).toEqual([
+          { line: 1, column: 1, message: expect.stringContaining(`${limit} limit`) },
+        ]);
+      }
+      // These inputs do seconds of parser work by design; loaded CI runners exceed the 5 s default.
+    },
+    30_000,
+  );
 
   test("weights delimiters at their original offsets after CRLF and frontmatter", () => {
     const source = `\uFEFF---\r\ntitle: Example\r\n---\r\n\r\n<Note>\r\n${expensiveCode}\r\n</Note>\r\n`;

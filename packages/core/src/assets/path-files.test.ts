@@ -6,7 +6,9 @@ import {
   mkdtemp,
   rename,
   rm,
+  stat,
   symlink,
+  truncate,
   utimes,
   writeFile,
 } from "node:fs/promises";
@@ -193,6 +195,51 @@ describe("portable file descriptor boundaries", () => {
       ok: false,
     });
   });
+
+  const oid = `oid sha256:${"4d7a".repeat(16)}`;
+  test.each([
+    ["a current pointer", `version https://git-lfs.github.com/spec/v1\n${oid}\nsize 12345\n`],
+    ["a CRLF pointer", `version https://git-lfs.github.com/spec/v1\r\n${oid}\r\nsize 1\r\n`],
+    ["a legacy hawser pointer", `version https://hawser.github.com/spec/v1\n${oid}\nsize 1\n`],
+    ["a legacy git-media pointer", `version http://git-media.io/v/2\n${oid}\nsize 1\n`],
+    [
+      "a pointer with extensions",
+      `version https://git-lfs.github.com/spec/v1\next-0-foo sha256:${"0".repeat(64)}\n${oid}\nsize 1\n`,
+    ],
+    ["a truncated pointer", "version https://git-lfs.github.com/spec/v1\noid sha256:4d7a"],
+    [
+      "a pointer with surrounding whitespace",
+      `\n version https://git-lfs.github.com/spec/v1 \n${oid}\n`,
+    ],
+  ])("rejects %s", (_name, source) => {
+    expect(
+      validatePortableAssetFile(file({ bytes: new TextEncoder().encode(source) })),
+    ).toMatchObject({
+      ok: false,
+      diagnostics: [
+        {
+          id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED",
+          message: "Git LFS pointers and near-miss signatures are not portable bytes",
+        },
+      ],
+    });
+  });
+
+  test.each([
+    ["a namespace mentioning git-lfs", "version: 1\nnamespace: acme/git-lfs-docs\n"],
+    ["prose about git-lfs", "Install git-lfs first, then run git lfs pull.\n"],
+    ["prose about git-media", "git-media was the predecessor of Git LFS.\n"],
+    ["a quoted pointer", `Example:\nversion https://git-lfs.github.com/spec/v1\n${oid}\nsize 1\n`],
+    ["an oid line in a checksum list", `${oid}\nsize 1\n`],
+    [
+      "a large document that starts like a pointer",
+      `version https://git-lfs.github.com/spec/v1\n${oid}\nsize 1\n${"#".repeat(1024)}`,
+    ],
+  ])("accepts %s", (_name, source) => {
+    expect(
+      validatePortableAssetFile(file({ bytes: new TextEncoder().encode(source) })),
+    ).toMatchObject({ ok: true });
+  });
 });
 
 describe("descriptor-anchored filesystem reads", () => {
@@ -226,6 +273,45 @@ describe("descriptor-anchored filesystem reads", () => {
     expect(
       await readPortableAssetFile({ root: join(parent, "root-link"), path: "assets/hero.png" }),
     ).toMatchObject({ ok: false });
+  });
+
+  test("explains each unsafe filesystem file condition separately", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topik-file-reasons-"));
+    roots.push(root);
+    const reason = async (path: string, maxBytes?: number) => {
+      const result = await readPortableAssetFile({ root, path, maxBytes });
+      expect(result).toMatchObject({
+        ok: false,
+        diagnostics: [{ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" }],
+      });
+      return result.diagnostics[0]?.message;
+    };
+
+    await writeFile(join(root, "source.bin"), "bytes\n");
+    await link(join(root, "source.bin"), join(root, "linked.bin"));
+    expect(await reason("linked.bin")).toBe(
+      "Hard-linked files cannot be read; replace the link with a copy",
+    );
+    await writeFile(join(root, "tool"), "#!/bin/sh\n", { mode: 0o755 });
+    expect(await reason("tool")).toBe(
+      "Executable files cannot be read; clear the executable permission bits",
+    );
+    await writeFile(join(root, "large.bin"), "0123456789");
+    expect(await reason("large.bin", 4)).toBe("File exceeds the read size limit");
+    if (process.platform !== "win32") {
+      await promisify(execFile)("mkfifo", [join(root, "pipe")]);
+      expect(await reason("pipe")).toBe(
+        "Only regular files can be read; found a special filesystem entry",
+      );
+    }
+    await writeFile(join(root, "sparse.bin"), "");
+    await truncate(join(root, "sparse.bin"), 1024 * 1024);
+    const sparse = await stat(join(root, "sparse.bin"));
+    if (sparse.blocks * 512 < sparse.size) {
+      expect(await reason("sparse.bin")).toBe(
+        "Sparse or filesystem-compressed files cannot be read; rewrite the file without holes",
+      );
+    }
   });
 
   test("rejects a real Gitlink index ancestor without relying on nested descriptor type", async () => {

@@ -5,7 +5,7 @@ package provides an mdast authoring tree, validation, lossless source operations
 and a framework-independent render tree. React rendering lives in
 `@topik/content-react`; applications own editing, storage, and synchronization.
 
-The package is ESM and requires Node.js 22.12 or later. Install it with your
+The package is ESM and requires Node.js 22.22 or later. Install it with your
 package manager:
 
 ```sh

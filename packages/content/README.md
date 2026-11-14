@@ -46,6 +46,16 @@ explicit heading IDs, reference bindings, ordered content and every conditional
 branch. It does not validate arbitrary trees or treat application editor defaults
 as authored defaults.
 
+Inline marks compare as a set on each piece of content, as rich-text editors
+store them: `**[a](u)**` equals `[**a**](u)`, `***a***` equals `**_a_**`, and
+`**a****b**` equals `**ab**`. Text, link identity, and which spaces are marked
+still count, so `**a** **b**` differs from `**a b**`, and one link differs from
+two adjacent links. `writeDocument` and formatting emit one canonical nesting for
+each such set; see
+[inline mark nesting](https://github.com/subtopik/topik/blob/main/docs/content/content-design.md#inline-mark-nesting).
+Parsing keeps the authored nesting, and asset and navigation rewrites keep it too,
+so tree positions of unchanged content stay stable.
+
 ## Markdown and components
 
 Supported Markdown includes headings, emphasis, strong and strikethrough marks,

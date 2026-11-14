@@ -18,7 +18,7 @@ import {
 import { codeTemplateProblem, nodeShapeProblem, textTemplateProblem } from "./node-validation.js";
 import { codePresentationProblem } from "./code-presentation.js";
 import { assertCodePresentationOutputLimit } from "./presentation-output.js";
-import { nodeTypes as allowed, isContentKind, isInlineParent } from "./node-grammar.js";
+import { isInlineParent, isMisplacedContent, isUnsupportedNode } from "./node-grammar.js";
 import {
   indexDocument,
   isReference,
@@ -166,18 +166,18 @@ function validateChildren(component: Component, registry: Registry): ValidationI
       ? [issue(`topik-${kebab(name)}-children`, `${name} cannot contain children`)]
       : [];
   if (constraint === "blocks")
-    return children.some((child) => !isContentKind(child, "block", registry))
+    return children.some((child) => isMisplacedContent(child, "block", registry))
       ? [issue(`topik-${kebab(name)}-children`, `${name} may contain only block children`)]
       : [];
   if (constraint === "inline") {
     if (!children.length)
       return [issue(`topik-${kebab(name)}-children`, `${name} requires inline children`)];
-    return children.some((child) => !isContentKind(child, "inline", registry))
+    return children.some((child) => isMisplacedContent(child, "inline", registry))
       ? [issue(`topik-${kebab(name)}-children`, `${name} may contain only inline children`)]
       : [];
   }
   const errors: ValidationIssue[] = [];
-  if (children.some((child) => !matchesConstraint(child, constraint)))
+  if (children.some((child) => !isUnsupportedNode(child) && !matchesConstraint(child, constraint)))
     errors.push(
       issue(
         `topik-${kebab(name)}-children`,
@@ -277,13 +277,27 @@ export function validateDocumentWithIndex(
     },
   ): void {
     if (parent) parents.set(node, parent);
-    const shapeProblem = nodeShapeProblem(node, registry);
+    const unsupported = node !== null && typeof node === "object" && isUnsupportedNode(node);
+    // Unsupported nodes are not descended into; only their common fields are checked.
+    const shapeProblem = nodeShapeProblem(
+      unsupported ? { ...node, children: undefined } : node,
+      registry,
+    );
     if (shapeProblem) {
       add(shapeProblem, node, "topik-node-invalid");
       return;
     }
-    if (!allowed.has(node.type))
-      add(`Unsupported Markdown node ${node.type}`, node, "node-undefined");
+    if (unsupported) {
+      if (node.type === "topikHeadingId")
+        add("Explicit heading IDs must end a heading", node, "topik-heading-id-placement");
+      else
+        errors.push({
+          ...diagnostic(`Unsupported Markdown node ${node.type}`, node, "node-undefined"),
+          // Parser node types are fixed identifiers; bound caller-built trees.
+          ...(/^[A-Za-z][A-Za-z0-9]{0,63}$/.test(node.type) ? { type: node.type } : {}),
+        });
+      return;
+    }
     if (node.type === "emphasis" || node.type === "strong" || node.type === "delete")
       marks = { ...marks, [node.type]: marks[node.type] + 1 };
     // Deeper repeated marks can be parsed, but their delimiters cannot reliably
@@ -358,7 +372,7 @@ export function validateDocumentWithIndex(
           );
         }
       }
-      if ((node.children ?? []).some((child) => !isContentKind(child, "block", registry)))
+      if ((node.children ?? []).some((child) => isMisplacedContent(child, "block", registry)))
         add(
           "Conditional branches may contain only block children",
           node,

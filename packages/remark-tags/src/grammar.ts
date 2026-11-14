@@ -1,5 +1,5 @@
 import type { TagAttributeValue, TagDeclarations, TagSyntaxOptions } from "./types.js";
-import { parseTextTemplate, TemplateSyntaxError } from "./templates.js";
+import { parseTextTemplate } from "./templates.js";
 
 export function validateDeclarations(
   declarations: TagDeclarations,
@@ -73,42 +73,52 @@ export function validConditionSource(source: string): boolean {
   return Boolean(source.trim()) && !quote;
 }
 
-export function parseTag(raw: string, options: TagSyntaxOptions): ParsedTag | string {
-  if (!raw.startsWith("{%") || !raw.trimEnd().endsWith("%}")) return "Unterminated tag";
+/** A tag that cannot be parsed, with a stable diagnostic identifier. */
+export interface TagParseFailure {
+  kind: "error";
+  id: string;
+  message: string;
+}
+
+function failure(message: string, id: string): TagParseFailure {
+  return { kind: "error", id, message };
+}
+
+export function parseTag(raw: string, options: TagSyntaxOptions): ParsedTag | TagParseFailure {
+  if (!raw.startsWith("{%") || !raw.trimEnd().endsWith("%}"))
+    return failure("Unterminated tag", "tag-unterminated");
   const inner = raw.trim().slice(2, -2).trim();
   if (options.expressions) {
     if (/^\/?template[ \t]+code$/.test(inner))
       return { kind: "codeTemplate", close: inner.startsWith("/") };
     if (/^\/?template[ \t]+code(?:[ \t]|\/|$)/.test(inner))
-      throw new TemplateSyntaxError(
-        "Invalid code template scope marker",
-        "topik-code-template-structure",
-      );
+      return failure("Invalid code template scope marker", "topik-code-template-structure");
     if (inner.startsWith("$"))
       return variablePath.test(inner.slice(1))
         ? { kind: "variable", path: inner.slice(1) }
-        : "Invalid variable path";
+        : failure("Invalid variable path", "topik-variable-path");
     if (inner === "/if") return { kind: "if", close: true };
     if (/^else\s+\/$/.test(inner)) return { kind: "else" };
-    if (/^else(?:\s|$)/.test(inner)) return "Unsupported else syntax";
+    if (/^else(?:\s|$)/.test(inner)) return failure("Unsupported else syntax", "topik-else-syntax");
     if (/^if(?:\s|$)/.test(inner)) {
       const expression = inner.slice(2).trim();
       return validConditionSource(expression)
         ? { kind: "if", close: false, expression }
-        : "Invalid if expression source";
+        : failure("Invalid if expression source", "topik-expression-invalid");
     }
   }
   let index = 0;
   const close = inner.startsWith("/");
   if (close) index++;
   const nameMatch = /^[a-z][A-Za-z0-9-]*/.exec(inner.slice(index));
-  if (!nameMatch) return "Invalid or unsupported tag";
+  if (!nameMatch) return failure("Invalid or unsupported tag", "tag-name-invalid");
   const name = nameMatch[0];
   index += name.length;
   const attributes: Record<string, TagAttributeValue> = Object.create(null);
   let selfClosing = false;
   while (index < inner.length) {
-    if (!/\s/.test(inner[index])) return `Invalid attributes on ${name}`;
+    if (!/\s/.test(inner[index]))
+      return failure(`Invalid attributes on ${name}`, "attribute-syntax-invalid");
     while (/\s/.test(inner[index] ?? "")) index++;
     if (index === inner.length) break;
     if (inner[index] === "/" && index === inner.length - 1) {
@@ -116,10 +126,11 @@ export function parseTag(raw: string, options: TagSyntaxOptions): ParsedTag | st
       break;
     }
     const keyMatch = /^[a-z][A-Za-z0-9-]*/.exec(inner.slice(index));
-    if (!keyMatch) return `Invalid attribute on ${name}`;
+    if (!keyMatch) return failure(`Invalid attribute on ${name}`, "attribute-syntax-invalid");
     const key = keyMatch[0];
     index += key.length;
-    if (inner[index++] !== "=") return `Attribute ${key} requires a value`;
+    if (inner[index++] !== "=")
+      return failure(`Attribute ${key} requires a value`, "attribute-syntax-invalid");
     let value: TagAttributeValue;
     const template = options.expressions && inner[index] === "t" && inner[index + 1] === '"';
     const escapedWhitespace =
@@ -131,7 +142,8 @@ export function parseTag(raw: string, options: TagSyntaxOptions): ParsedTag | st
       let ended = false;
       while (index < inner.length) {
         const char = inner[index++];
-        if (!template && hasControlCharacter(char)) return `Control character in ${key}`;
+        if (!template && hasControlCharacter(char))
+          return failure(`Control character in ${key}`, "attribute-value-invalid");
         if (char === '"') {
           ended = true;
           break;
@@ -149,28 +161,33 @@ export function parseTag(raw: string, options: TagSyntaxOptions): ParsedTag | st
             escaped !== "[" &&
             escaped !== "]"
           )
-            return `Invalid escape in ${key}`;
+            return failure(`Invalid escape in ${key}`, "attribute-syntax-invalid");
           literal += escaped;
         } else literal += char;
       }
-      if (!ended) return `Unterminated attribute ${key}`;
+      if (!ended) return failure(`Unterminated attribute ${key}`, "attribute-syntax-invalid");
       if (!template && hasControlCharacter(literal, escapedWhitespace))
-        return `Control character in ${key}`;
+        return failure(`Control character in ${key}`, "attribute-value-invalid");
       value = template ? parseTextTemplate(literal) : literal;
     } else {
       const match = /^(?:true|false|[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)/.exec(
         inner.slice(index),
       );
-      if (!match) return `Attribute ${key} must be quoted or a finite number/boolean`;
+      if (!match)
+        return failure(
+          `Attribute ${key} must be quoted or a finite number/boolean`,
+          "attribute-syntax-invalid",
+        );
       index += match[0].length;
       value = match[0] === "true" ? true : match[0] === "false" ? false : Number(match[0]);
       if (typeof value === "number" && !Number.isFinite(value))
-        return `Attribute ${key} must be finite`;
+        return failure(`Attribute ${key} must be finite`, "attribute-syntax-invalid");
     }
-    if (Object.hasOwn(attributes, key)) return `Duplicate attribute ${key}`;
+    if (Object.hasOwn(attributes, key))
+      return failure(`Duplicate attribute ${key}`, "duplicate-attribute");
     attributes[key] = value;
   }
   if (close && (selfClosing || Object.keys(attributes).length))
-    return `Invalid closing tag ${name}`;
+    return failure(`Invalid closing tag ${name}`, "tag-closing-invalid");
   return { kind: "component", name, close, selfClosing, attributes };
 }

@@ -62,7 +62,7 @@ export function convertTags(
             child.condition = parseExpression(child.condition);
           } catch (error) {
             if (error instanceof ContentLimitError) throw error;
-            errors.push(diagnostic((error as Error).message, child));
+            errors.push(diagnostic((error as Error).message, child, "topik-expression-invalid"));
           }
         }
         return { ...child, type: "topikBranch" };
@@ -131,7 +131,13 @@ export function convertTags(
       const invalid = validateTag(tag, registry);
       if (invalid) errors.push(diagnostic(invalid, child));
       if (child.type === "tagLeaf" && child.children?.length)
-        errors.push(diagnostic(`Leaf component ${child.name} cannot contain children`, child));
+        errors.push(
+          diagnostic(
+            `Leaf component ${child.name} cannot contain children`,
+            child,
+            "tag-selfclosing-has-children",
+          ),
+        );
       return {
         type: "topikComponent",
         name: child.name,
@@ -224,7 +230,14 @@ export function parseDocumentTree(
     const tagErrors = convertTags(tree as TreeNode, registry, rawHeaders);
     normalizeTables(tree as TreeNode, CONTENT_LIMITS.treeNodes - nodeCount);
     const validated = validateDocumentWithIndex(tree, registry);
-    const errors = tagErrors.concat(validated.diagnostics);
+    // A condition that failed to parse remains invalid for validation too;
+    // report each authored problem once, with the more specific parse message.
+    const reported = new Set(tagErrors.map(diagnosticKey));
+    const errors = tagErrors.concat(
+      validated.diagnostics.filter(
+        (item) => item.id !== "topik-expression-invalid" || !reported.has(diagnosticKey(item)),
+      ),
+    );
     return { document: tree, index: validated.index, diagnostics: errors, source };
   } catch (error) {
     if (error instanceof ContentLimitError)
@@ -233,14 +246,20 @@ export function parseDocumentTree(
       return {
         diagnostics: error.diagnostics.map((item) => ({
           ...item,
-          ...("id" in item && item.id === "tag-content-limit" ? { id: "topik-content-limit" } : {}),
-          ...(item.message.startsWith("Unknown tag ") ? { id: "tag-undefined" } : {}),
-          message: item.message.replace(/^Unknown tag /, "Unknown component "),
+          ...(item.id === "tag-content-limit" ? { id: "topik-content-limit" } : {}),
+          message:
+            item.id === "tag-undefined"
+              ? item.message.replace(/^Unknown tag /, "Unknown component ")
+              : item.message,
         })),
         source,
       };
     throw error;
   }
+}
+
+function diagnosticKey(item: Diagnostic): string {
+  return `${item.id}\0${item.line}\0${item.column}`;
 }
 
 /** GFM missing cells mean empty cells; overflow is retained for an explicit diagnostic. */

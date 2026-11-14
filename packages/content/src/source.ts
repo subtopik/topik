@@ -75,6 +75,17 @@ export function prepareSource(
           "node-undefined",
           "parse-error",
           "topik-extension-failed",
+          // Tag syntax failures keep the severity they had as generic parse errors.
+          "missing-closing",
+          "missing-opening",
+          "duplicate-attribute",
+          "attribute-syntax-invalid",
+          "tag-closing-invalid",
+          "tag-name-invalid",
+          "tag-placement-invalid",
+          "tag-unterminated",
+          "topik-else-placement",
+          "topik-else-syntax",
         ].includes(id)
           ? "critical"
           : "error",

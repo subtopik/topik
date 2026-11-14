@@ -105,7 +105,11 @@ Hello {% $student.name %}.
 Expressions support scalar literals, variable paths, `equals`, `and`, `or`, and
 `not`. Only `false` and `null` are false; `0` and an empty string are true.
 `and` and `or` short-circuit. A missing variable raises an evaluation error when
-its reference is evaluated.
+its reference is evaluated. Compilation reports it as `topik-variable-missing`
+with the reference's line and its `variable` path; incompatible values report
+`topik-variable-type`, forbidden controls `topik-variable-control`, and
+non-scalar `equals` operands `topik-expression-type`. Supplied values are never
+included.
 
 Evaluation selects a branch and inserts values as literal text. A value such as
 `**Ada**` stays literal text rather than becoming Markdown emphasis. Null and
@@ -154,6 +158,27 @@ if (result.ok) {
   // Retain result.source for correction.
 }
 ```
+
+Each diagnostic has a stable `id`, a fixed `message` for that id, a `level`, and
+one-based `lines` when the source location is known. Messages never repeat
+authored text. Common source problems include:
+
+| ID                                                | Problem                                                       |
+| ------------------------------------------------- | ------------------------------------------------------------- |
+| `missing-closing`, `missing-opening`              | A tag has no matching closing tag, or a closing tag no opener |
+| `tag-unterminated`, `tag-name-invalid`            | A tag lacks `%}`, or has no valid lowercase name              |
+| `attribute-syntax-invalid`, `duplicate-attribute` | Malformed attribute syntax, or an attribute set twice         |
+| `tag-closing-invalid`, `tag-placement-invalid`    | Attributes on a closing tag; block or inline tag misplaced    |
+| `tag-undefined`                                   | An unknown component                                          |
+| `topik-else-placement`, `topik-else-syntax`       | An `else` outside `if`, repeated, or not `{% else /%}`        |
+| `topik-expression-invalid`                        | An unsupported condition expression                           |
+| `node-undefined`                                  | Unsupported Markdown such as raw HTML, comments, or footnotes |
+| `topik-heading-id-placement`                      | A `{% #id %}` that does not end its heading                   |
+| `topik-variable-missing`, `topik-variable-type`   | A missing or incompatible variable during compilation         |
+
+`node-undefined` diagnostics set `type` to the Markdown node type, such as
+`html` or `footnoteDefinition`. Variable diagnostics set `variable` to the
+bounded authored path.
 
 Formatting can change wrapping, indentation, list markers, and other equivalent
 Markdown spelling. It preserves text, marks, structure, properties, code and

@@ -56,8 +56,17 @@ failure, not an empty project. The initial failure does not terminate the server
 
 A filesystem watcher failure publishes `error` with diagnostic ID `watch-failed`.
 The last successful generation remains available, but updates stop because watch
-coverage is no longer reliable. Restart the preview after resolving the filesystem
-error; editing source alone does not recover this watcher.
+coverage is no longer reliable. The underlying filesystem watcher is released
+immediately; `close()` is still required. Restart the preview after resolving the
+filesystem error; editing source alone does not recover this watcher.
+
+Directories named `node_modules`, `.git`, `.topik` and
+`.topik-compilation-{generation,prior}-*` are ignored only below the watched
+directory, so a project may itself live inside such a directory.
+
+Listener exceptions are isolated: a throwing `preview-state` or `update` listener
+does not change compile state or skip other listeners, and its error is passed to
+`error` listeners (exceptions thrown by `error` listeners are dropped).
 
 Compilations are serialized and filesystem notifications coalesced. A candidate
 invalidated by a notification during compilation is discarded before publication.

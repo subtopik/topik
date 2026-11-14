@@ -1,6 +1,7 @@
 import { indexDocument, isReference } from "./document-index.js";
 import { prepareSource, writeFailure } from "./source.js";
 import { serializeDocument } from "./writer.js";
+import { FORMAT_VERSION } from "./parser.js";
 import { sameDocumentMeaning } from "./document-meaning.js";
 import type { TreeNode } from "./model.js";
 import type { ValidateTopikContentOptions } from "./validate.js";
@@ -67,7 +68,10 @@ export function rewriteTopikNavigationReferences(
   }
   let content: string;
   try {
-    content = serializeDocument(prepared.document, prepared.config.components);
+    // Unchanged content keeps its authored spelling and therefore its tree positions.
+    content = serializeDocument(prepared.document, prepared.config.components, FORMAT_VERSION, {
+      preserveMarkNesting: true,
+    });
   } catch {
     return writeFailure(source, options.file);
   }

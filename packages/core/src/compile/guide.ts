@@ -134,7 +134,11 @@ export async function discoverGuides(
         });
         continue;
       }
-      if (error instanceof FileNotRegularError) {
+      // A listed entry that vanished before it could be read is equally not a regular file.
+      if (
+        error instanceof FileNotRegularError ||
+        (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT"
+      ) {
         diagnostics.push({
           id: "guide-not-regular-file",
           type: "Guide",

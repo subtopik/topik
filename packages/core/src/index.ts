@@ -57,6 +57,7 @@ export {
   type CompiledResourceReference,
   type CompileResourceReferenceTarget,
   type PublicCompileErrorId,
+  type PublicCompileErrorReason,
   type LinkValidationPolicy,
   type LintResult,
   AssetCompilationError,

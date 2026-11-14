@@ -36,9 +36,44 @@ const PUBLIC_COMPILE_ERROR_MESSAGES = {
 
 export type PublicCompileErrorId = keyof typeof PUBLIC_COMPILE_ERROR_MESSAGES;
 
-export function publicCompileErrorMessage(id: unknown): string | undefined {
-  return typeof id === "string" && Object.hasOwn(PUBLIC_COMPILE_ERROR_MESSAGES, id)
-    ? PUBLIC_COMPILE_ERROR_MESSAGES[id as PublicCompileErrorId]
+/** Fixed explanations appended to a public message when a read failure has a known cause. */
+const PUBLIC_COMPILE_ERROR_REASONS = {
+  "symbolic-link":
+    "The file, the selected source directory, or a directory between them is a symbolic link; use the real file or directory instead.",
+  "hard-linked": "The file is hard-linked; replace the link with an independent copy.",
+  executable: "The file has executable permission bits; clear them, for example with chmod a-x.",
+  "special-file": "The path is not a regular file.",
+  "too-large": "The file exceeds the size limit for this kind of input.",
+  "git-lfs-pointer": "The file is a Git LFS pointer; run git lfs pull to fetch its content.",
+  "git-filtered":
+    "Git applies a content filter (such as Git LFS) or working-tree encoding to the file, or a .gitattributes rule that may apply to it cannot be evaluated; remove that attribute for the file.",
+  "git-submodule":
+    "The file is inside a Git submodule or nested Git worktree; compile that checkout separately.",
+  "git-evidence-unavailable":
+    "The file is inside a Git worktree, but Git could not confirm it is a plain unfiltered file; check that git is installed in /usr/bin, /bin or /usr/local/bin and that the worktree is intact.",
+  "git-repository-untrusted":
+    "The file is inside a Git worktree owned by another user, which Git refuses to inspect; compile as the owner of the worktree or add it to Git's safe.directory setting.",
+  "platform-unsupported":
+    "This platform cannot prove descriptor-anchored no-follow reads; manifest, configuration and asset reads currently require Linux.",
+  "changed-during-read":
+    "The file or its Git evidence changed while it was read; retry once the source tree is stable.",
+} as const;
+
+/** Stable, sanitized cause category of a public read failure. */
+export type PublicCompileErrorReason = keyof typeof PUBLIC_COMPILE_ERROR_REASONS;
+
+export function publicCompileErrorMessage(id: unknown, reason?: unknown): string | undefined {
+  if (typeof id !== "string" || !Object.hasOwn(PUBLIC_COMPILE_ERROR_MESSAGES, id)) return undefined;
+  const message = PUBLIC_COMPILE_ERROR_MESSAGES[id as PublicCompileErrorId];
+  const explanation = sanitizeCompileReason(reason);
+  return explanation === undefined
+    ? message
+    : `${message} ${PUBLIC_COMPILE_ERROR_REASONS[explanation]}`;
+}
+
+function sanitizeCompileReason(value: unknown): PublicCompileErrorReason | undefined {
+  return typeof value === "string" && Object.hasOwn(PUBLIC_COMPILE_ERROR_REASONS, value)
+    ? (value as PublicCompileErrorReason)
     : undefined;
 }
 
@@ -47,6 +82,8 @@ export interface PublicCompileErrorOptions extends ErrorOptions {
   field?: string;
   /** Another safe relative location involved in the failure, such as a conflicting file. */
   relatedLocation?: string;
+  /** Known cause of a read failure; adds a fixed explanation to the message. */
+  reason?: PublicCompileErrorReason;
 }
 
 /**
@@ -60,10 +97,11 @@ export class PublicCompileError extends Error {
   // Declared only, so absent details are not own properties.
   declare public readonly field?: string;
   declare public readonly relatedLocation?: string;
+  declare public readonly reason?: PublicCompileErrorReason;
 
   constructor(id: PublicCompileErrorId, location?: string, options?: PublicCompileErrorOptions) {
     super(
-      publicCompileErrorMessage(id) ?? "Compilation failed.",
+      publicCompileErrorMessage(id, options?.reason) ?? "Compilation failed.",
       options?.cause === undefined ? undefined : { cause: options.cause },
     );
     this.name = "PublicCompileError";
@@ -74,6 +112,8 @@ export class PublicCompileError extends Error {
     if (safeField !== undefined) this.field = safeField;
     const safeRelated = sanitizeCompileLocation(options?.relatedLocation);
     if (safeRelated !== undefined) this.relatedLocation = safeRelated;
+    const safeReason = sanitizeCompileReason(options?.reason);
+    if (safeReason !== undefined) this.reason = safeReason;
   }
 }
 

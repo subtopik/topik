@@ -13,7 +13,12 @@ import {
   validateTopikAssetReference,
 } from "@topik/content";
 import { posix } from "node:path";
-import { classifyPortableNavigationPath, readPortableAssetFile } from "../assets/files";
+import {
+  classifyPortableNavigationPath,
+  createPortableReadSession,
+  readPortableAssetFileInSession,
+  type PortableReadSession,
+} from "../assets/files";
 import { resolveSourceReferencePath } from "../reference-paths";
 import { folderLandingCandidates, isFolderHref, resolveDeclaredPublicRoute } from "../folder-links";
 import {
@@ -69,6 +74,18 @@ type ReferenceResource = DocumentResource;
 
 /** Resolve document identity after all declared sources have been discovered, before Assets. */
 export async function compileResourceLinks(input: CompileResourceLinksInput): Promise<{
+  resources: SourceResource[];
+  diagnostics: TopikContentDiagnostic[];
+  references: CompiledResourceReference[];
+}> {
+  return compileResourceLinksInSession(createPortableReadSession(), input);
+}
+
+/** @internal Link compilation sharing repository evidence with the rest of a build. */
+export async function compileResourceLinksInSession(
+  session: PortableReadSession,
+  input: CompileResourceLinksInput,
+): Promise<{
   resources: SourceResource[];
   diagnostics: TopikContentDiagnostic[];
   references: CompiledResourceReference[];
@@ -165,7 +182,7 @@ export async function compileResourceLinks(input: CompileResourceLinksInput): Pr
     let exists = existingPaths.get(path);
     if (exists === undefined) {
       if (await isDirectory(path)) return false;
-      const proof = await readPortableAssetFile({ root: input.rootDir, path });
+      const proof = await readPortableAssetFileInSession(session, { root: input.rootDir, path });
       exists =
         proof?.ok === true ||
         proof?.diagnostics.some((diagnostic) => diagnostic.id !== "TOPIK_ASSET_FILE_MISSING") ===

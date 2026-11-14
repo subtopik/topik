@@ -59,7 +59,7 @@ export function formatPublicCliError(error: unknown): string {
     return publicCliErrorMessage(error.id) ?? "Topik command failed.";
   }
   if (error instanceof ManifestSourceError) {
-    const message = publicCompileErrorMessage(error.id) ?? "Topik command failed.";
+    const message = publicCompileErrorMessage(error.id, error.reason) ?? "Topik command failed.";
     // Re-sanitize mutable error properties at the presentation boundary.
     const safe = resanitize(error);
     const index =
@@ -73,7 +73,7 @@ export function formatPublicCliError(error: unknown): string {
     return `.topik.yaml ${index}${kind}${safe.location ? ` ${safe.location}` : ""}${details(safe)}: ${message}`;
   }
   if (error instanceof PublicCompileError) {
-    return publicCompileErrorMessage(error.id) ?? "Topik command failed.";
+    return publicCompileErrorMessage(error.id, error.reason) ?? "Topik command failed.";
   }
   return "Topik command failed.";
 }

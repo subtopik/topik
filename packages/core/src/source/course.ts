@@ -216,6 +216,8 @@ export function sourceCourseModules(
   paths: ReadonlyMap<string, string>,
   directory: string,
   preferred: readonly { id: string; pages: readonly string[] }[] = [],
+  /** Page identity of each preferred source path, when the paths predate a move. */
+  preferredPages?: ReadonlyMap<string, string>,
 ): Array<Record<string, unknown> & { id: string; pages: string[] }> {
   const context = sourceCourseContext(resources, course, paths, directory);
   const modules = resources.filter(
@@ -231,10 +233,19 @@ export function sourceCourseModules(
   return ordered.map((module) => {
     const pages = context.pages.filter((page) => page.module === module.name);
     const previous = preferred.find((item) => item.id === module.name)?.pages ?? [];
-    const orderedPaths = [
-      ...previous.filter((path) => pages.some((page) => page.sourcePath === path)),
-      ...pages.map((page) => page.sourcePath).filter((path) => !previous.includes(path)),
-    ];
+    // Declaration position belongs to the page identity, so a moved file keeps its place.
+    const retained = new Set(
+      previous
+        .map((path) =>
+          preferredPages
+            ? pages.find((page) => page.name === preferredPages.get(path))
+            : pages.find((page) => page.sourcePath === path),
+        )
+        .filter((page) => page !== undefined),
+    );
+    const orderedPaths = [...retained, ...pages.filter((page) => !retained.has(page))].map(
+      (page) => page.sourcePath,
+    );
     return {
       id: module.name,
       title: module.spec.title,
@@ -262,6 +273,14 @@ export function planCourseConfiguration(input: {
   raw: string;
   json: boolean;
 }): { updates: Record<string, unknown>; edits: SourceByteEdit[]; membershipResources: string[] } {
+  const pageNames = (context: CourseReferenceContext) =>
+    new Map(context.pages.map((page) => [page.sourcePath, page.name]));
+  const beforeNames = pageNames(
+    sourceCourseContext(input.before, input.originalCourse, input.originalPaths, input.directory),
+  );
+  const afterNames = pageNames(
+    sourceCourseContext(input.desired, input.course, input.paths, input.directory),
+  );
   const before = sourceCourseModules(
     input.before,
     input.originalCourse,
@@ -275,6 +294,7 @@ export function planCourseConfiguration(input: {
     input.paths,
     input.directory,
     input.modules,
+    beforeNames,
   );
   const updates: Record<string, unknown> = {};
   const edits: SourceByteEdit[] = [];
@@ -285,10 +305,21 @@ export function planCourseConfiguration(input: {
     const selector = `modules/${encodeURIComponent(module.id)}`;
     for (const field of ["title", "slug", "order", "description", "labels"])
       collectMetadataEdits(updates, `${selector}/${field}`, module[field], next[field]);
-    const removals = module.pages.filter((path) => !next.pages.includes(path));
-    const additions = next.pages.filter((path) => !module.pages.includes(path));
+    // A retained page whose file moved keeps its entry; only the path value changes.
+    const nextPaths = new Map(next.pages.map((path) => [afterNames.get(path), path]));
+    const previousNames = new Set(module.pages.map((path) => beforeNames.get(path)));
+    let moved = false;
+    for (const path of module.pages) {
+      const replacement = nextPaths.get(beforeNames.get(path));
+      if (replacement === undefined || replacement === path) continue;
+      updates[`${selector}/pages/${encodeURIComponent(path)}`] = replacement;
+      moved = true;
+    }
+    const removals = module.pages.filter((path) => !nextPaths.has(beforeNames.get(path)));
+    const additions = next.pages.filter((path) => !previousNames.has(afterNames.get(path)));
+    if (moved) membershipResources.push(`CourseModule/${module.id}`);
     if (removals.length || additions.length) {
-      membershipResources.push(`CourseModule/${module.id}`);
+      if (!moved) membershipResources.push(`CourseModule/${module.id}`);
       edits.push(
         ...patchSourceSequence(
           input.raw,

@@ -185,7 +185,9 @@ export function resolveWikiContentHref(
   if (!currentPage) return null;
 
   if (href.startsWith("#")) {
-    return { page: currentPage, route: currentPage.route, hash: href.slice(1), search: "" };
+    // Fragments use the URL-encoded spelling of every other href form.
+    const hash = new URL(href, `${INTERNAL_WIKI_ORIGIN}/`).hash.replace(/^#/, "");
+    return { page: currentPage, route: currentPage.route, hash, search: "" };
   }
 
   let url: URL;

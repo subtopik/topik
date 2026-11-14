@@ -59,6 +59,7 @@ import {
   encodeSource,
   decodeSource,
   sourceHash,
+  inspectSourceSyntax,
   patchSourceSequence,
   replaySourceByteEdits,
   type SourceByteEdit,
@@ -440,6 +441,11 @@ async function buildSource(
           "A Wiki initializes exactly one Wiki and its pages/media.",
         );
       const wiki = wikis[0];
+      if (wiki.spec.title !== source.title)
+        return failure(
+          "source-intent-mismatch",
+          "The initialization intent title differs from the selected Wiki title.",
+        );
       const originalWiki = structuredClone(wiki);
       wiki.spec.sourceVersion = 1;
       const navigation = resolveWikiNavigation(wiki.spec.navigation ?? [], { sourceVersion: 1 });
@@ -568,6 +574,11 @@ async function buildSource(
           "A Course initializes exactly one Course, its modules/pages, Persons and media.",
         );
       const course = courses[0];
+      if (course.spec.title !== source.title)
+        return failure(
+          "source-intent-mismatch",
+          "The initialization intent title differs from the selected Course title.",
+        );
       const modules = expected.filter(
         (resource): resource is CourseModule => resource.type === "CourseModule",
       );
@@ -698,11 +709,14 @@ async function buildSource(
         existing.authority,
         rootEdits,
       );
-      generatedFiles.push({
-        path: root.path,
-        mode: root.mode,
-        bytes: replaySourceByteEdits(root.bytes, rootEdits),
-      });
+      const bytes = replaySourceByteEdits(root.bytes, rootEdits);
+      // Invalid output is a writer failure, not a parse error in the existing manifest.
+      try {
+        inspectSourceSyntax(decodeSource(bytes));
+      } catch (cause) {
+        throw new TypeError("Manifest edits produced invalid syntax", { cause });
+      }
+      generatedFiles.push({ path: root.path, mode: root.mode, bytes });
     } else
       add(
         ".topik.yaml",

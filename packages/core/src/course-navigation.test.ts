@@ -135,3 +135,12 @@ test("Course reference context refuses duplicate identity, membership, routes an
   ];
   for (const value of invalid) expect(() => resolveCourseNavigation(value)).toThrow();
 });
+
+test("Course fragments use one encoded spelling for same-page and source-relative links", () => {
+  const resolved = resolveCourseNavigation(context);
+  const local = resolveCourseContentHref("#héllo wörld", "target", resolved);
+  const relative = resolveCourseContentHref("./target.md#héllo wörld", "target", resolved);
+  expect(local).toMatchObject({ page: { page: "target" }, hash: "h%C3%A9llo%20w%C3%B6rld" });
+  expect(relative?.hash).toBe(local?.hash);
+  expect(resolveCourseContentHref("#", "target", resolved)?.hash).toBe("");
+});

@@ -139,8 +139,11 @@ export function resolveCourseContentHref(
   }
   const current = resolved.pageByName.get(currentPageName);
   if (!current || /^asset:/i.test(href)) return null;
-  if (href.startsWith("#"))
-    return { page: current, route: current.route, hash: href.slice(1), search: "" };
+  if (href.startsWith("#")) {
+    // Fragments use the URL-encoded spelling of every other href form.
+    const hash = new URL(href, `${INTERNAL_COURSE_ORIGIN}/`).hash.replace(/^#/, "");
+    return { page: current, route: current.route, hash, search: "" };
+  }
   let url: URL;
   try {
     const sourcePath = current.sourcePath.split("/").map(encodeURIComponent).join("/");

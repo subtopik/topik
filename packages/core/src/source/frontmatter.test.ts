@@ -78,7 +78,9 @@ test.each(emptyHeaders.flatMap((header) => ["\n", "\r\n"].map((eol) => ({ header
     const written = result.plan.candidate.tree.find((entry) => entry.path === "post.md")!.bytes;
     const sections = sourceMarkdownSections(written);
     expect(sections.body).toBe(sourceMarkdownSections(encodeSource(raw)).body);
-    expect(decodeSource(written)).toContain('"title": "Edited"');
+    expect(decodeSource(written)).toContain('title: "Edited"');
+    // The inserted key adds no blank line before the closing fence.
+    if (!header.includes("\n\n---")) expect(decodeSource(written)).not.toMatch(/\r?\n\r?\n---/u);
     const priorSections = sourceMarkdownSections(encodeSource(raw));
     expect(sections.frontmatter).toContain(priorSections.frontmatter!);
     expect(project.documents[0].fields).toContainEqual({
@@ -119,7 +121,7 @@ test.each(["\n", "\r\n"])("empty metadata insertion replays exact UTF-8 ranges w
     { start: encodeSource(raw).length, end: encodeSource(raw).length },
   ]);
   expect(replaySourceByteEdits(encodeSource(raw), result.edits)).toEqual(result.bytes);
-  expect(decodeSource(result.bytes)).toBe(`${raw}${eol}"title": "Edited"${eol}`);
+  expect(decodeSource(result.bytes)).toBe(`${raw}${eol}title: "Edited"${eol}`);
   expect(patchFrontmatterFields(raw, { description: undefined }, eol)).toEqual({
     bytes: encodeSource(raw),
     edits: [],
@@ -291,7 +293,7 @@ test.each(
     if (!result.ok) return;
     const written = decodeSource(result.plan.changes[0].candidate!.bytes);
     expect(written).toBe(
-      `${prefix}---\r\n${change === "insert" ? 'id: home\r\ntitle: "Edited"' : "{}"}\r\n\r\n---\r\n# Home\r\n`,
+      `${prefix}---\r\n${change === "insert" ? 'id: home\r\ntitle: "Edited"' : "{}"}\r\n---\r\n# Home\r\n`,
     );
   },
 );

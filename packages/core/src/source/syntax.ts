@@ -109,7 +109,7 @@ export function patchFrontmatterFields(
   const text = `${raw && !raw.endsWith("\n") ? eol : ""}${entries
     .map(
       ([selector, value]) =>
-        `${JSON.stringify(decodeURIComponent(selector))}: ${JSON.stringify(value)}${eol}`,
+        `${yamlKey(decodeURIComponent(selector))}: ${JSON.stringify(value)}${eol}`,
     )
     .join("")}`;
   const edits = [
@@ -366,6 +366,22 @@ function removeFlowEntries(
   return edits;
 }
 
+/**
+ * A value on the line after its key must be indented beyond a block-map key.
+ * Block sequences may share the key's column, but flow and scalar values may not.
+ */
+function minimumValueIndent(maps: ReadonlyMap<string, YAMLMap>, selector: string): number {
+  const token = maps.get(selector.slice(0, selector.lastIndexOf("/") + 1))?.srcToken;
+  return token?.type === "block-map" ? token.indent + 2 : 0;
+}
+
+/** Plain keys where YAML reads them as the same string; otherwise a JSON-quoted key. */
+function yamlKey(key: string): string {
+  return /^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(key) && !/^(?:true|false|null)$/i.test(key)
+    ? key
+    : JSON.stringify(key);
+}
+
 /** Stable record edits keep every unselected sequence item and surrounding syntax. */
 export function patchSourceSequence(
   raw: string,
@@ -402,15 +418,21 @@ export function patchSourceSequence(
         selectors.push(entries[++index].selector);
       const start = entries[first].entry!.start;
       const end = entries[index].entry!.end;
+      let replacement: Uint8Array = new Uint8Array();
+      if (first === 0 && index === entries.length - 1 && !additions.length) {
+        // A block sequence may sit at its parent key's column. Its replacement
+        // stays inside the removed items, so indent the empty flow value instead.
+        const itemIndent = decodeSource(base.slice(start)).match(/^ */)![0].length;
+        replacement = encodeSource(
+          `${" ".repeat(Math.max(itemIndent, minimumValueIndent(syntax.maps, selector)))}[]${eol}`,
+        );
+      }
       edits.push({
         start,
         end,
         selector: selectors.join(","),
         oldSha256: sourceHash(base.slice(start, end)),
-        replacement:
-          first === 0 && index === entries.length - 1 && !additions.length
-            ? encodeSource(`${decodeSource(base.slice(start)).match(/^ */)![0]}[]${eol}`)
-            : new Uint8Array(),
+        replacement,
       });
     }
   if (additions.length) {
@@ -466,10 +488,23 @@ export function patchSourceFields(
       // A compact mapping starts after a sequence dash owned by its parent.
       // Retain a line break so the next sibling keeps its original indentation.
       const lineStart = span.start === 0 ? 0 : base.lastIndexOf(10, span.start - 1) + 1;
+      const linePrefix = decodeSource(base.slice(lineStart, span.start));
       const keepItemLine =
-        value === undefined &&
-        base[span.end - 1] === 10 &&
-        /^[ \t]*(?:-[ \t]+)+$/.test(decodeSource(base.slice(lineStart, span.start)));
+        value === undefined && base[span.end - 1] === 10 && /^[ \t]*(?:-[ \t]+)+$/.test(linePrefix);
+      let lead = "";
+      let trail = "";
+      if (value !== undefined && !json) {
+        if (span.start === span.end) {
+          // An empty value has no bytes of its own. Separate the new value from
+          // its key indicator and from a following comment.
+          if (span.start > 0 && ![9, 10, 13, 32].includes(base[span.start - 1])) lead = " ";
+          if (base[span.end] === 0x23) trail = " ";
+        } else if (/^[ \t]*$/.test(linePrefix)) {
+          // A block sequence may start at its key's column; a flow value may not.
+          const minimum = minimumValueIndent(syntax.maps, selector);
+          if (linePrefix.length < minimum) lead = " ".repeat(minimum - linePrefix.length);
+        }
+      }
       edits.push({
         ...span,
         selector,
@@ -479,7 +514,7 @@ export function patchSourceFields(
             ? keepItemLine
               ? encodeSource(eol)
               : new Uint8Array()
-            : encodeSource(JSON.stringify(value) + trailingNewline),
+            : encodeSource(lead + JSON.stringify(value) + trail + trailingNewline),
       });
     } else if (value !== undefined) {
       const prefix = selector.slice(0, selector.lastIndexOf("/") + 1);
@@ -533,11 +568,7 @@ export function patchSourceFields(
       text = `${offset > 0 && base[offset - 1] !== 10 ? eol : ""}${entries
         .map(([selector, value]) => {
           const key = decodeURIComponent(selector.slice(prefix.length));
-          const spelling =
-            /^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(key) && !/^(?:true|false|null)$/i.test(key)
-              ? key
-              : JSON.stringify(key);
-          return `${indent}${spelling}: ${JSON.stringify(value)}${eol}`;
+          return `${indent}${yamlKey(key)}: ${JSON.stringify(value)}${eol}`;
         })
         .join("")}`;
     }

@@ -213,12 +213,30 @@ not deletion. `authority.resources` admits every resource affected by authored
 changes or shared-reference changes. Existing Markdown needs exact exclusive-file authority; new paths
 need admitted absence. Configurations and the root manifest use independently
 admitted field ranges and insertion anchors against their exact base bytes and
-mode. A proposed selector cannot grant its own authority. In an isolated runner
-integration, the trusted coordinator must independently admit the scope and
-replay shared byte edits, checking that all bytes outside it remain identical.
+mode. A proposed selector cannot grant its own authority. Admitting a field's
+value also admits edits of its own items and nested fields inside that value, so
+admitting `navigation` covers page additions and removals in the list. In an
+isolated runner integration, the trusted coordinator must independently admit the
+scope and replay shared byte edits, checking that all bytes outside it remain
+identical. `@topik/core` exports `verifySharedEdits` and `replaySourceByteEdits`
+for this, and `SourcePlanningError` and `SourceTreeError` for their failures.
 
 Unchanged files remain byte-for-byte identical. Metadata edits retain the exact
-body, unrelated keys, comments, newline spelling and mode. Body edits use the
+body, unrelated keys, comments, newline spelling and mode. A changed value is
+written as JSON-compatible YAML in place of the old value, so a block list becomes
+an indented flow list such as `tags:` followed by `  ["a"]`; an empty value such as
+`description:` takes its new value after the colon. Removing every item of a list
+leaves an empty `[]` list rather than deleting its key.
+
+List edits keep the entries they do not change. Person, module and Course page
+records are added or removed individually, and a moved Course page keeps its
+position in its module's `pages` list, so equal `order` values keep their
+declaration order. Wiki navigation edits work the same way at every nesting
+level: removed entries are deleted in place, changed entries are edited in place
+and new entries are appended to the end of their list as flow mappings. A change
+that needs a new entry before an existing one, or that combines additions and
+removals between the same retained entries, rewrites that one list as a single
+flow value, which drops the comments and shorthand spellings inside it. Body edits use the
 public content writer with semantic checks, so equivalent inline mark nestings
 from an editor are written in one
 [canonical spelling](../content/content-design.md#inline-mark-nesting). A move persists stable identity,
@@ -237,7 +255,9 @@ a target from a newer navigation snapshot.
 
 Browser readers can import the same resolver from `@topik/core/wiki-navigation`
 without loading compiler or filesystem modules. Query strings, fragments, hidden
-targets and source-versus-route semantics follow the same contract.
+targets and source-versus-route semantics follow the same contract. Resolved
+fragments use their URL-encoded spelling for every href form, including
+same-page `#fragment` links.
 `resolveWikiContentReference` classifies an already-admitted compiled href as a
 page, external URL, Asset, or unresolved reference. Readers can refuse unresolved
 references without hiding failures behind the nullable `resolveWikiContentHref` API.
@@ -284,14 +304,19 @@ exception details remain private. A generic fallback diagnostic keeps the
 original exception only as a non-enumerable `cause` for in-process debugging,
 so serialized diagnostics never include it. Planning, initialization and source
 addition return `source-tree-invalid` for a tree over the source project limits
-or with duplicate, unsafe or colliding paths. A stale pinned tree returns `source-base-changed` from
-both planning and source addition.
+or with duplicate, unsafe or colliding paths. An explicit create or move `path`
+that is not a portable project path returns `source-path-invalid` for its resource.
+A writer edit that would produce invalid configuration syntax fails as
+`source-validation-failed`, not as a parse error in the authored file. A stale
+pinned tree returns `source-base-changed` from both planning and source addition.
 
 ## Initialize or add a declaration
 
 `initializeSourceProject` requires explicit initialization intent, a chosen
 namespace, a complete occupied-path inventory proving project absence, and
-admitted create paths. An existing empty manifest is a project; an invalid
+admitted create paths. For a Wiki or Course, the intent's source `id` and `title`
+must match the initialized resource; a different title returns
+`source-intent-mismatch`. An existing empty manifest is a project; an invalid
 manifest or unresolved source configuration cannot be treated as absence.
 Any YAML or JSON file that parses with the strict configuration parsers and has
 `sourceVersion`, or string `id` and `title` values, blocks initialization as a

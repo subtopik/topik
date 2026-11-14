@@ -1,5 +1,5 @@
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
-import { join, posix } from "node:path";
+import { dirname, join, posix } from "node:path";
 import { tmpdir } from "node:os";
 import {
   compileManifest,
@@ -28,6 +28,7 @@ import {
   type CourseReferenceContext,
 } from "../course-navigation";
 import { sourceCourseContext } from "./course";
+import { SourceTreeError } from "./diagnostics";
 import { isSourceNonPageReference, sourcePathInventory } from "../reference-paths";
 import { parseMarkdownFrontmatter } from "../compile/shared";
 import { markdownFrontmatter } from "../compile/frontmatter";
@@ -131,7 +132,7 @@ export interface SourceProject {
 /** A normalized complete tree is required; omitted paths never imply ownership or absence. */
 export function snapshotSourceTree(input: readonly SourceTreeFile[]): SourceTreeFile[] {
   if (input.length > SOURCE_PROJECT_LIMITS.maxFiles)
-    throw new TypeError("Source tree exceeds file limit");
+    throw new SourceTreeError("Source tree exceeds file limit");
   const seen = new Set<string>();
   let bytes = 0;
   for (const file of input) {
@@ -141,14 +142,14 @@ export function snapshotSourceTree(input: readonly SourceTreeFile[]): SourceTree
       !(file.bytes instanceof Uint8Array) ||
       file.bytes.length > SOURCE_PROJECT_LIMITS.maxFileBytes
     )
-      throw new TypeError("Source tree requires unique regular files with bounded bytes");
+      throw new SourceTreeError("Source tree requires unique regular files with bounded bytes");
     seen.add(file.path);
     bytes += file.bytes.length;
     if (bytes > SOURCE_PROJECT_LIMITS.maxTreeBytes)
-      throw new TypeError("Source tree exceeds its aggregate byte limit");
+      throw new SourceTreeError("Source tree exceeds its aggregate byte limit");
   }
   if (!validateTopikPathSet(input.map((file) => file.path)).ok)
-    throw new TypeError("Source tree exceeds limits or contains unsafe/colliding paths");
+    throw new SourceTreeError("Source tree exceeds limits or contains unsafe/colliding paths");
   const tree = input.map((file) => ({
     path: file.path,
     mode: file.mode,
@@ -191,7 +192,8 @@ export async function withSourceScratch<T>(
   try {
     for (const file of snapshot) {
       const target = join(dir, file.path);
-      await mkdir(posix.dirname(target), { recursive: true });
+      // `target` uses platform separators; posix.dirname would yield "." on Windows.
+      await mkdir(dirname(target), { recursive: true });
       await writeFile(target, file.bytes, {
         flag: "wx",
         mode: file.mode === "100755" ? 0o755 : 0o644,

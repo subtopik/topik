@@ -460,6 +460,129 @@ test("escaped configuration keys still block new-project initialization", async 
   ).toMatchObject({ ok: false, diagnostics: [{ code: "initialization-unproven" }] });
 });
 
+test.each([
+  ["tsconfig.json", '{\n  // comment\n  "compilerOptions": { "strict": true, },\n}\n'],
+  [
+    "docker-compose.yml",
+    "x-common: &common\n  restart: always\nservices:\n  web:\n    <<: *common\n    image: nginx\n",
+  ],
+  ["pnpm-lock.yaml", `lockfileVersion: '9.0'\npackages:\n${"  a@1.0.0: {}\n".repeat(90_000)}`],
+  ["deploy/values.yaml", "id: !!binary aGVsbG8=\ntitle: Values\n"],
+  ["fixtures/item.json", '{"id": 7, "title": "Fixture"}\n'],
+  ["data/record.yaml", "id: record\ntitle: [not, a, title]\n"],
+])(
+  "unrelated %s that cannot be a Topik configuration does not block initialization",
+  async (path, text) => {
+    const tree = [...occupied, { path, mode: "100644" as const, bytes: encodeSource(text) }];
+    const result = await initializeSourceProject({
+      tree,
+      expectedTreeDigest: digestSourceTree(tree),
+      packageCohort: cohort,
+      intent,
+      resources: [guide],
+      createPaths: [".topik.yaml", "content/custom.yml", "content/guide.md"],
+    });
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+  },
+);
+
+test.each([
+  ["docs/wiki.yaml", "x: &anchor 1\ny: *anchor\nid: docs\ntitle: Docs\n"],
+  ["collection.json", '{ // legacy\n "id": "blog", "title": "Blog" }\n'],
+  ["lessons/course.yml", "id: !custom lessons\n"],
+  ["old/custom.yaml", "id: existing\ntitle: Existing\n"],
+  ["old/versioned.json", '{"sourceVersion": 1}\n'],
+])("possible Topik configuration %s blocks initialization and is named", async (path, text) => {
+  const tree = [...occupied, { path, mode: "100644" as const, bytes: encodeSource(text) }];
+  const result = await initializeSourceProject({
+    tree,
+    expectedTreeDigest: digestSourceTree(tree),
+    packageCohort: cohort,
+    intent,
+    resources: [guide],
+    createPaths: [".topik.yaml", "content/custom.yml", "content/guide.md"],
+  });
+  expect(result).toMatchObject({
+    ok: false,
+    diagnostics: [{ code: "initialization-unproven", path }],
+  });
+  if (!result.ok) expect(result.diagnostics[0].message).toContain(path);
+});
+
+test("initialized changes use bytewise path order independent of locale collation", async () => {
+  const guides: Guide[] = ["upper", "lower", "accent"].map((name) => ({
+    ...guide,
+    name,
+    spec: { ...guide.spec, slug: name },
+  }));
+  const documentPaths = {
+    "Guide/upper": "content/Zeta.md",
+    "Guide/lower": "content/alpha.md",
+    "Guide/accent": "content/éclair.md",
+  };
+  const result = await initializeSourceProject({
+    tree: [],
+    expectedTreeDigest: digestSourceTree([]),
+    packageCohort: cohort,
+    intent,
+    resources: guides,
+    documentPaths,
+    createPaths: [".topik.yaml", "content/custom.yml", ...Object.values(documentPaths)],
+  });
+  expect(result.ok, JSON.stringify(result)).toBe(true);
+  if (!result.ok) return;
+  expect(result.plan.changes.map((change) => change.path)).toEqual([
+    ".topik.yaml",
+    "content/Zeta.md",
+    "content/alpha.md",
+    "content/custom.yml",
+    "content/éclair.md",
+  ]);
+});
+
+test("a stale existing project base reports source-base-changed when adding a source", async () => {
+  const project = await readSourceProject({
+    tree: [
+      ...occupied,
+      file(".topik.yaml", "version: 1\nnamespace: examples/existing\nsources: []\n"),
+    ],
+  });
+  const manifest = project.configurations.find((config) => config.path === ".topik.yaml")!;
+  expect(
+    await addSourceToProject({
+      project,
+      expectedTreeDigest: digestSourceTree(occupied),
+      packageCohort: cohort,
+      source: intent.source,
+      resources: [guide],
+      createPaths: ["content/custom.yml", "content/guide.md"],
+      manifestAuthority: {
+        ...manifest,
+        fields: manifest.fields.filter((field) => field.selector === "sources/+"),
+      },
+    }),
+  ).toMatchObject({ ok: false, diagnostics: [{ code: "source-base-changed" }] });
+});
+
+test("source tree limits return a coded diagnostic", async () => {
+  const tree = [occupied[0], occupied[0]];
+  const result = await initializeSourceProject({
+    tree,
+    expectedTreeDigest: "0".repeat(64),
+    packageCohort: cohort,
+    intent,
+    resources: [guide],
+    createPaths: [".topik.yaml", "content/custom.yml", "content/guide.md"],
+  });
+  expect(result).toMatchObject({ ok: false, diagnostics: [{ code: "source-tree-invalid" }] });
+});
+
+const file = (path: string, text: string): SourceTreeFile => ({
+  path,
+  mode: "100644",
+  bytes: encodeSource(text),
+});
+
 test("Wiki initialization preserves resolved targets when enabling source link semantics", async () => {
   const wiki: Wiki = {
     apiVersion: "v1",

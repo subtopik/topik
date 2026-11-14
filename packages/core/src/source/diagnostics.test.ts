@@ -1,7 +1,7 @@
 import { expect, test } from "vite-plus/test";
 import { CompileError } from "../compile/shared";
 import { ManifestSourceError } from "../compile/manifest";
-import { sourcePlanDiagnostics } from "./diagnostics";
+import { sourcePlanDiagnostics, SourceTreeError } from "./diagnostics";
 
 const fallback = { code: "source-validation-failed", message: "Source validation failed." };
 
@@ -43,4 +43,21 @@ test("manifest failures retain declaration context while unknown exceptions keep
     },
   ]);
   expect(sourcePlanDiagnostics(new Error("private runtime detail"), fallback)).toEqual([fallback]);
+});
+
+test("unknown exceptions stay attached to the fallback only as a non-enumerable cause", () => {
+  const error = new Error("private runtime detail");
+  const [diagnostic] = sourcePlanDiagnostics(error, fallback);
+  expect(diagnostic.cause).toBe(error);
+  expect(Object.keys(diagnostic)).toEqual(["code", "message"]);
+  expect(JSON.stringify(diagnostic)).not.toContain("private");
+  expect(fallback).not.toHaveProperty("cause");
+});
+
+test("source tree limit failures keep their TypeError class and gain a stable code", () => {
+  const error = new SourceTreeError("Source tree exceeds file limit");
+  expect(error).toBeInstanceOf(TypeError);
+  expect(sourcePlanDiagnostics(error, fallback)).toEqual([
+    { code: "source-tree-invalid", message: "Source tree exceeds file limit" },
+  ]);
 });

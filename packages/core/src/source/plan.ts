@@ -839,7 +839,18 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
       )) {
         const frontmatter = sourceMarkdownSections(files.get(document.path)!.bytes).frontmatter;
         if (frontmatter) {
-          const values = inspectFrontmatterSyntax(frontmatter).value;
+          let values: Record<string, unknown>;
+          try {
+            values = inspectFrontmatterSyntax(frontmatter).value;
+          } catch {
+            // Inspection tolerates opaque legacy frontmatter; opt-in cannot prove it.
+            block(
+              "source-version-collision",
+              "Resolve opaque legacy frontmatter in Git before opting in.",
+              document.resource,
+              document.path,
+            );
+          }
           if (["id", "slug", "labels", "inheritTags"].some((field) => Object.hasOwn(values, field)))
             block(
               "source-version-collision",
@@ -1061,11 +1072,18 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
     }
     for (const resource of desired.values()) {
       if (resource.type !== "Wiki") continue;
-      const config = project.documents.find(
+      const document = project.documents.find(
         (document) => document.resource === resourceKey(resource),
-      )!.config;
+      );
+      const previous = base.get(resourceKey(resource));
+      if (!document || previous?.type !== "Wiki")
+        block(
+          "source-creation-required",
+          "Wiki creation needs explicit declaration initialization.",
+          resourceKey(resource),
+        );
+      const config = document.config;
       const source = project.compilation.provenance.find((source) => source.config === config)!;
-      const previous = base.get(resourceKey(resource)) as Wiki;
       const version =
         configUpdates.get(config)?.sourceVersion ?? configs.get(config)!.sourceVersion;
       if (version === 1) resource.spec.sourceVersion = 1;

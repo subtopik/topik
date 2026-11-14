@@ -3,6 +3,7 @@ import {
   formatDocument,
   formatTopikContent,
   parseDocument,
+  sameDocumentMeaning,
   validateDocument,
   writeDocument,
   type ContentDocument,
@@ -11,21 +12,33 @@ import type { PhrasingContent } from "mdast";
 import { parse, withoutPositions } from "./test-helpers.js";
 
 test.each([
-  "*first*_second_",
-  "**first**__second__",
-  "**_first_**_second_",
-  "***_first_** **_second_***",
-  "__*first*__middle__*last*__",
+  ["*first*_second_", "*firstsecond*\n"],
+  ["**first**__second__", "**firstsecond**\n"],
+  ["**_first_**_second_", "***first**second*\n"],
+  ["***_first_** **_second_***", "***first** **second***\n"],
+  ["__*first*__middle__*last*__", "***first*middle*last***\n"],
+  ["~~*first*_second_~~", "*~~firstsecond~~*\n"],
+  ["{% badge %}*first*_second_{% /badge %}", "{% badge %}*firstsecond*{% /badge %}\n"],
+  ["| *first*_second_ |\n| --- |", "| *firstsecond* |\n| ------------- |\n"],
+])("writes adjacent marks as one canonical span: %s", (source, expected) => {
+  const document = parse(source);
+  const written = writeDocument(document);
+  expect(written).toBe(expected);
+  expect(sameDocumentMeaning(parse(written), document)).toBe(true);
+  expect(writeDocument(parse(written))).toBe(written);
+  expect(formatTopikContent(source)).toMatchObject({ ok: true, formatted: written });
+});
+
+test.each([
+  "*first* *second*",
+  "**first** __second__",
+  "*first*~~second~~",
   "_first_**second**_third_",
-  "~~*first*_second_~~",
-  "{% badge %}*first*_second_{% /badge %}",
-  "| *first*_second_ |\n| --- |",
-])("preserves adjacent mark boundaries: %s", (source) => {
+])("preserves mark boundaries that differ in their marks: %s", (source) => {
   const document = parse(source);
   const written = writeDocument(document);
   expect(withoutPositions(parse(written))).toEqual(withoutPositions(document));
   expect(writeDocument(parse(written))).toBe(written);
-  expect(formatTopikContent(source)).toMatchObject({ ok: true, formatted: written });
 });
 
 test.each(["*hello*", "**hello**"])(
@@ -48,7 +61,7 @@ test.each([
   const document = parse(source);
   const written = writeDocument(document);
   const reopened = parse(written);
-  expect(withoutPositions(reopened)).toEqual(withoutPositions(document));
+  expect(sameDocumentMeaning(reopened, document)).toBe(true);
   expect(writeDocument(reopened)).toBe(written);
 });
 
@@ -69,12 +82,37 @@ function nestedMarks(kind: "emphasis" | "strong" | "delete", depth: number): Con
 }
 
 test.each(["emphasis", "strong"] as const)(
-  "preserves two caller-created %s levels around a link",
+  "collapses two caller-created %s levels around a link into one mark",
   (kind) => {
     const document = nestedMarks(kind, 2);
+    const original = structuredClone(document);
     const written = writeDocument(document);
+    expect(document).toEqual(original);
     const reopened = parse(written);
-    expect(withoutPositions(reopened)).toEqual(document);
+    expect(withoutPositions(reopened)).toEqual({
+      type: "root",
+      children: [
+        {
+          type: "paragraph",
+          children: [
+            { type: "text", value: "**" },
+            {
+              type: kind,
+              children: [
+                {
+                  type: "link",
+                  url: "https://example.test",
+                  title: null,
+                  children: [{ type: "text", value: "Example" }],
+                },
+                { type: "text", value: "xx" },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    expect(sameDocumentMeaning(reopened, document)).toBe(true);
     expect(writeDocument(reopened)).toBe(written);
   },
 );

@@ -33,6 +33,7 @@ import { formatValidationFailure } from "../validation-output";
 const COMPILATION_GENERATION_PREFIX = ".topik-compilation-generation-";
 const COMPILATION_PRIOR_PREFIX = ".topik-compilation-prior-";
 const COMPILATION_DIRECTORIES = ["blobs", "resources"] as const;
+const PUBLISHED_DIRECTORY_MODE = 0o755;
 const ownedDescriptorDecoder = new TextDecoder("utf-8", { fatal: true });
 const ownedDescriptorEncoder = new TextEncoder();
 
@@ -70,9 +71,10 @@ export const compile = command({
     if (options.validate) {
       const { valid, errors } = validateResources(resources);
       if (!valid) {
-        throw new CliError(
+        console.error(
           formatValidationFailure(errors, resources.length, "validating compiled output"),
         );
+        throw new PublicCliError("compilation-validation-failed");
       }
     }
 
@@ -146,6 +148,8 @@ export async function replaceCompilationTree(
     }
     generation.tree = bindCompleteCompilationTreeSync(generation.handle);
     assertExpectedStagedTree(generation.tree, stagedFiles);
+    // mkdtemp creates the staging root as 0700; widen it only once fully staged.
+    await generation.handle.chmod(PUBLISHED_DIRECTORY_MODE);
 
     if (existing !== undefined) {
       const priorName = `${COMPILATION_PRIOR_PREFIX}${randomUUID()}`;
@@ -240,7 +244,7 @@ async function openOwnedCompilationOutput(
   }
 
   if (!stat.isDirectory()) {
-    throw new CliError("Compilation output contains a link or non-directory collision");
+    throw new PublicCliError("compilation-output-collision");
   }
   const directory = await openAnchoredChildDirectory(parent, target, false);
   if (directory === undefined) {
@@ -248,6 +252,13 @@ async function openOwnedCompilationOutput(
   }
   try {
     const tree = bindCompleteCompilationTreeSync(directory);
+    if (tree.entries.length === 1 && tree.entries[0]?.path === "") {
+      // An empty directory (for example a pre-created CI cache or volume path) holds
+      // nothing to preserve. Publication renames over it, and rename(2) refuses
+      // the replacement if anything appears in it meanwhile.
+      await directory.close();
+      return undefined;
+    }
     assertOwnedCompilationTree(directory, tree);
     return { handle: directory, name: target, path: targetPath, tree };
   } catch (error) {
@@ -292,11 +303,11 @@ async function assertCompilationOutputScope(sourceDir: string, outDir: string): 
   try {
     canonicalSource = await realpath(sourceDir);
   } catch {
-    throw new CliError("Compilation source scope could not be proven safely");
+    throw new PublicCliError("compilation-source-access-failed");
   }
   const relation = relative(canonicalOutput, canonicalSource);
   if (relation === "" || (!relation.startsWith("..") && !isAbsolute(relation))) {
-    throw new CliError("Compilation output cannot equal or contain the source directory");
+    throw new PublicCliError("compilation-output-contains-source");
   }
 }
 
@@ -321,7 +332,7 @@ function assertOwnedCompilationTree(directory: FileHandle, tree: BoundCompilatio
     if (!closure.ok) throw new TypeError("Compilation identity records do not close");
     assertBoundTreeMatchesInventory(tree, closure.value);
   } catch {
-    throw new CliError("Existing compilation output is populated but is not recognized as owned");
+    throw new PublicCliError("compilation-output-not-owned");
   }
 }
 
@@ -437,7 +448,7 @@ async function openAnchoredOutputDirectory(
     typeof constants.O_NOFOLLOW !== "number" ||
     typeof constants.O_DIRECTORY !== "number"
   ) {
-    throw new CliError("This platform cannot prove descriptor-anchored output containment");
+    throw new PublicCliError("compilation-output-platform-unsupported");
   }
   const normalized = resolve(absolutePath);
   if (normalized === "/")
@@ -458,7 +469,7 @@ async function openAnchoredOutputDirectory(
   } catch (error) {
     await current.close().catch(() => undefined);
     if (error instanceof CliError) throw error;
-    throw new CliError("Compilation output has an unsafe or unresolvable ancestor");
+    throw new PublicCliError("compilation-output-ancestor-unsafe");
   }
 }
 
@@ -699,16 +710,32 @@ async function openAnchoredChildDirectory(
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT" || !create) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-      throw new CliError("Compilation output contains a link or non-directory collision");
+      throw new PublicCliError("compilation-output-collision");
     }
-    await mkdir(path, { mode: 0o700 }).catch((mkdirError) => {
-      if ((mkdirError as NodeJS.ErrnoException).code !== "EEXIST") throw mkdirError;
-    });
+    const created = await mkdir(path, { mode: 0o700 }).then(
+      () => true,
+      (mkdirError) => {
+        if ((mkdirError as NodeJS.ErrnoException).code !== "EEXIST") throw mkdirError;
+        return false;
+      },
+    );
+    let handle: FileHandle;
     try {
-      return await open(path, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+      handle = await open(path, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
     } catch {
       throw new CliError("Compilation output directory identity could not be proven");
     }
+    if (created) {
+      try {
+        // Published directories must be traversable by other users (for example a
+        // web server), matching the world-readable mode of published files.
+        await handle.chmod(PUBLISHED_DIRECTORY_MODE);
+      } catch {
+        await handle.close().catch(() => undefined);
+        throw new CliError("Compilation output directory permissions could not be set");
+      }
+    }
+    return handle;
   }
 }
 

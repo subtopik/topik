@@ -5,7 +5,14 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
-import { startDevServer, type StartedDevServer } from "./index";
+import { createServer } from "node:net";
+import { formatPublicCliError } from "../errors";
+import {
+  installShutdownHandlers,
+  parseDevPort,
+  startDevServer,
+  type StartedDevServer,
+} from "./index";
 
 const WRITE_ORIGIN = "https://write.subtopik.com";
 const PNG_BYTES = Buffer.from(
@@ -172,6 +179,23 @@ describe("dev command", () => {
       headers: { Origin: WRITE_ORIGIN },
     });
     expect(defaultOrigin.status).toBe(403);
+  });
+
+  test("maps an occupied port to a public error without the system message", async () => {
+    const blocker = createServer();
+    await new Promise<void>((resolveListening) => blocker.listen(0, "127.0.0.1", resolveListening));
+    const { port } = blocker.address() as AddressInfo;
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    try {
+      const failure = await startDevServer({ dir, port }).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(failure).toMatchObject({ id: "dev-port-in-use" });
+      expect(formatPublicCliError(failure)).not.toContain("EADDRINUSE");
+    } finally {
+      await new Promise((resolveClosed) => blocker.close(resolveClosed));
+    }
   });
 
   test("rejects invalid browser origin configuration", async () => {
@@ -567,4 +591,67 @@ test("HTTP and SSE share complete state; reconnect receives existing failure; he
     await running.close();
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+describe("parseDevPort", () => {
+  test.each([
+    ["0", 0],
+    ["50001", 50001],
+    ["65535", 65535],
+  ])("accepts %s", (value, port) => {
+    expect(parseDevPort(value)).toBe(port);
+  });
+
+  test.each(["", "abc", "50001abc", "1e3", "-1", "+80", " 80", "0x50", "65536", "123456"])(
+    "rejects %j",
+    (value) => {
+      expect(() => parseDevPort(value)).toThrow(
+        expect.objectContaining({ id: "dev-port-invalid" }),
+      );
+    },
+  );
+});
+
+describe("installShutdownHandlers", () => {
+  test.each(["SIGINT", "SIGTERM", "SIGHUP"] as const)(
+    "closes the server once and exits 0 on %s",
+    async (signal) => {
+      const close = vi.fn(() => Promise.resolve());
+      const exited = new Promise<number>((resolveExit) => {
+        const uninstall = installShutdownHandlers({ close }, (code) => {
+          uninstall();
+          resolveExit(code);
+        });
+      });
+
+      process.emit(signal, signal);
+      expect(await exited).toBe(0);
+      expect(close).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  test("reports a rejected close as a public error and exits 1", async () => {
+    const sentinel = "PRIVATE_VALUE";
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    try {
+      const close = vi.fn(() => Promise.reject(new Error(`close failed at /tmp/${sentinel}`)));
+      const exited = new Promise<number>((resolveExit) => {
+        const uninstall = installShutdownHandlers({ close }, (code) => {
+          uninstall();
+          resolveExit(code);
+        });
+      });
+
+      process.emit("SIGTERM", "SIGTERM");
+      expect(await exited).toBe(1);
+      await new Promise((resolveTick) => setImmediate(resolveTick));
+      expect(error).toHaveBeenCalledWith("Topik command failed.");
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off("unhandledRejection", unhandled);
+      vi.restoreAllMocks();
+    }
+  });
 });

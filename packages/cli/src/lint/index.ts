@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import { command, positional, string } from "@drizzle-team/brocli";
 import { isErrorDiagnostic, lint as lintContent, type LinkValidationPolicy } from "@topik/core";
 import { printDiagnostics } from "../diagnostics";
-import { CliError } from "../errors";
+import { PublicCliError } from "../errors";
 
 export const lint = command({
   name: "lint",
@@ -24,7 +24,8 @@ export const lint = command({
 
     const errors = diagnostics.filter(isErrorDiagnostic);
     if (errors.length > 0) {
-      throw new CliError(`${errors.length} lint error(s)`);
+      console.error(`${errors.length} lint error(s)`);
+      throw new PublicCliError("lint-failed");
     }
 
     const warnings = diagnostics.filter((diagnostic) => diagnostic.level === "warning").length;

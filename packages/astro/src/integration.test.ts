@@ -220,6 +220,45 @@ describe("topik integration", () => {
     }
   });
 
+  test("delivers opaque download payloads as attachments and renderable ones inline", async () => {
+    await writeFile(join(dir, "collection.yaml"), "id: guides\ntitle: Guides\n");
+    await writeFile(join(dir, "manual.pdf"), PDF_BYTES);
+    await writeFile(join(dir, "notes.txt"), "plain notes\n");
+    await writeFile(
+      join(dir, "intro.md"),
+      "# Intro\n\n[Manual](manual.pdf)\n\n[Notes](notes.txt)\n",
+    );
+    const loader = topikGuidesLoader({
+      dir,
+      name: "astro-guide-headers",
+      assets: {
+        generateName: createProjectAssetNameGenerator({
+          projectRoot: dir,
+          projectNamespace: "astro-guide-headers",
+        }),
+      },
+    });
+    await loader.load(createMockContext());
+    const middleware = createMiddleware([loader]);
+
+    const mediaTypes = loader.getAssets().map((asset) => asset.spec.mediaType);
+    expect(mediaTypes.toSorted()).toEqual(["application/octet-stream", "application/pdf"]);
+    for (const asset of loader.getAssets()) {
+      const delivered = await dispatch(middleware, `/${asset.spec.uri}`);
+      const headers = Object.fromEntries(
+        delivered.response.setHeader.mock.calls as [string, string][],
+      );
+      expect(headers).toMatchObject({
+        "Cache-Control": "no-cache",
+        "Content-Type": asset.spec.mediaType,
+        "X-Content-Type-Options": "nosniff",
+      });
+      expect(headers["Content-Disposition"]).toBe(
+        asset.spec.mediaType === "application/pdf" ? undefined : "attachment",
+      );
+    }
+  });
+
   test("shares snapshots only between logically identical loaders", async () => {
     await writeFile(join(dir, "collection.yaml"), "id: guides\ntitle: Guides\n");
     await writeFile(join(dir, "wiki.yaml"), "id: docs\ntitle: Docs\nnavigation:\n  - intro\n");

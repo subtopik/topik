@@ -1,0 +1,2 @@
+# expect: /spec/name minLength
+{ apiVersion: v1, type: Person, name: john-doe, spec: { name: "" } }

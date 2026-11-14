@@ -1,3 +1,5 @@
+"use client";
+
 import { createElement, useEffect, useLayoutEffect, useState, useRef, type ReactNode } from "react";
 import type { TopikComponent, TopikComponentProps } from "./components";
 import { getPreviewAssetToken } from "./preview-assets";
@@ -29,10 +31,13 @@ export function PreviewMedia({
   component,
   attributes: renderedAttributes,
   children,
+  source,
 }: {
   component: TopikComponent;
   attributes: TopikComponentProps;
   children: ReactNode;
+  /** Serialized resolved element, so re-resolving identical content keeps a pending download. */
+  source: string;
 }) {
   // Media state keys on the tokens' stable targets rather than on attribute object identity.
   const [attributes, setAttributes] = useState(renderedAttributes);
@@ -48,11 +53,11 @@ export function PreviewMedia({
   const mounted = useRef(true);
   const currentAttributes = useRef(media);
   // Downloads act for the exact committed content, including changed link text.
-  const currentRender = useRef(renderedAttributes);
+  const currentSource = useRef(source);
   useLayoutEffect(() => {
     currentAttributes.current = media;
-    currentRender.current = renderedAttributes;
-  }, [media, renderedAttributes]);
+    currentSource.current = source;
+  }, [media, source]);
   useLayoutEffect(() => {
     mounted.current = true;
     return () => {
@@ -98,19 +103,23 @@ export function PreviewMedia({
       <button
         type="button"
         onClick={() => {
-          const clicked = renderedAttributes;
+          const clicked = media;
+          const clickedSource = source;
+          const current = () =>
+            mounted.current &&
+            currentAttributes.current === clicked &&
+            currentSource.current === clickedSource &&
+            download.state.active();
           void download.state.load(download.name, download.slot).then(
             (url) => {
-              if (!mounted.current || currentRender.current !== clicked || !download.state.active())
-                return;
+              if (!current()) return;
               const anchor = document.createElement("a");
               anchor.href = url;
               anchor.download = download.name;
               anchor.click();
             },
             () => {
-              if (mounted.current && currentRender.current === clicked && download.state.active())
-                setFailed(media);
+              if (current()) setFailed(media);
             },
           );
         }}

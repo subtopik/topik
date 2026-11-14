@@ -140,7 +140,7 @@ test.each(["success", "failure"] as const)(
   },
 );
 
-test.each(["unchanged", "suspended", "replaced", "unmounted"] as const)(
+test.each(["unchanged", "suspended", "rerendered", "replaced", "unmounted"] as const)(
   "a delayed download respects committed content: %s",
   async (lifecycle) => {
     setup();
@@ -163,12 +163,15 @@ test.each(["unchanged", "suspended", "replaced", "unmounted"] as const)(
       }
       return null;
     }
-    function Page({ replacement = false, block = false }) {
+    function Page({ replacement = false, block = false, className = "" }) {
       return (
         <Suspense fallback="Waiting">
           <TopikContent
+            className={className}
             content={`[${replacement ? "Changed page" : "Download"}](asset:${name})`}
             previewAssets={adapter}
+            // An inline resolver re-resolves the same document on every parent render.
+            resolveAsset={() => undefined}
           />
           <Block block={block} />
         </Suspense>
@@ -185,7 +188,10 @@ test.each(["unchanged", "suspended", "replaced", "unmounted"] as const)(
       expect(container.textContent).not.toContain("Waiting");
     }
     await act(async () => container.querySelector("button")!.click());
-    if (lifecycle === "replaced") {
+    if (lifecycle === "rerendered") {
+      await act(async () => root.render(<Page className="updated" />));
+      expect(container.querySelector("button")?.textContent).toBe("Download");
+    } else if (lifecycle === "replaced") {
       await act(async () => root.render(<Page replacement />));
       expect(container.querySelector("button")?.textContent).toBe("Changed page");
     } else if (lifecycle === "unmounted") {
@@ -197,7 +203,7 @@ test.each(["unchanged", "suspended", "replaced", "unmounted"] as const)(
       await vi.waitFor(() => expect(objectUrl).toHaveBeenCalledTimes(1));
     });
     expect(click).toHaveBeenCalledTimes(
-      lifecycle === "unchanged" || lifecycle === "suspended" ? 1 : 0,
+      lifecycle === "unchanged" || lifecycle === "suspended" || lifecycle === "rerendered" ? 1 : 0,
     );
   },
 );

@@ -113,6 +113,14 @@ try {
         timeout: 30_000,
       },
     );
+  const serverComponentFixture = join(consumer, "react-server-consumer.mjs");
+  copyFileSync(join(root, "tools/react-server-consumer.mjs"), serverComponentFixture);
+  for (const runtime of runtimeNodes)
+    execFileSync(runtime, ["--conditions=react-server", serverComponentFixture], {
+      cwd: consumer,
+      stdio: "inherit",
+      timeout: 30_000,
+    });
   const previewFixture = join(consumer, "preview-browser-consumer.mjs");
   const figureFixture = join(consumer, "figure-browser-consumer.mjs");
   copyFileSync(join(root, "tools/figure-browser-consumer.mjs"), figureFixture);

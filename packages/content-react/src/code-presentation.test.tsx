@@ -382,6 +382,15 @@ describe.each([
   ["plain", TopikCodeBlock],
   ["rich", RichTopikCodeBlock],
 ] satisfies [string, ComponentType<TopikComponentProps>][])("%s ordinary code", (_name, Code) => {
+  it("renders string children when no payload or content is given", () => {
+    const html = renderToString(
+      <Code>
+        hello <span>world</span>
+      </Code>,
+    );
+    expect(html).toContain("<code>hello world</code>");
+  });
+
   it("server-renders large ordinary fences without allocating physical row elements", () => {
     const payload = "\n".repeat(99_999);
     const html = renderToString(

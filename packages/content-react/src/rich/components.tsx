@@ -1,5 +1,7 @@
 import {
+  Children,
   createContext,
+  isValidElement,
   useContext,
   useEffect,
   useId,
@@ -8,11 +10,16 @@ import {
   type DependencyList,
   type ReactNode,
 } from "react";
+import { useTopikColorScheme } from "../core/context";
 import { safeDiagramSvg } from "./diagram-svg";
 import { withDiagramMath } from "./diagram-math";
 import { pageMathOptions } from "./page-math";
 import { TopikMath, TopikMathInline, TopikMermaid } from "../theme/components";
-import type { TopikComponentMap, TopikComponentProps } from "../core/components";
+import {
+  mergeTopikComponentOverrides,
+  type TopikComponentMap,
+  type TopikComponentProps,
+} from "../core/components";
 import { CodeBlockView, type CodeHighlight } from "../theme/code-block";
 import {
   CODE_PRESENTATION_LIMITS,
@@ -29,7 +36,8 @@ interface HtmlState {
 
 const emptyTopikComponents: Partial<TopikComponentMap> = {};
 const defaultRichTopikTheme: RichTopikTheme = "light";
-const RichTopikThemeContext = createContext<RichTopikTheme>(defaultRichTopikTheme);
+// Undefined follows the content color scheme; an explicit theme always wins.
+const RichTopikThemeContext = createContext<RichTopikTheme | undefined>(undefined);
 const shikiThemes = {
   light: "github-light",
   dark: "github-dark",
@@ -38,20 +46,39 @@ const minimumMermaidLoadingDurationMs = 300;
 
 export function RichTopikThemeProvider({
   children,
-  theme = defaultRichTopikTheme,
+  theme,
 }: {
   children: ReactNode;
   theme?: RichTopikTheme;
 }) {
-  return <RichTopikThemeContext.Provider value={theme}>{children}</RichTopikThemeContext.Provider>;
+  const inherited = useContext(RichTopikThemeContext);
+  return (
+    <RichTopikThemeContext.Provider value={theme ?? inherited}>
+      {children}
+    </RichTopikThemeContext.Provider>
+  );
 }
 
 function useRichTopikTheme(): RichTopikTheme {
-  return useContext(RichTopikThemeContext);
+  const explicit = useContext(RichTopikThemeContext);
+  const colorScheme = useTopikColorScheme();
+  return explicit ?? colorScheme ?? defaultRichTopikTheme;
 }
 
 function stringAttribute(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+/** Plain text of authored children, matching the themed code block's fallback. */
+function stringChildren(children: ReactNode): string {
+  return Children.toArray(children)
+    .map((child) => {
+      if (typeof child === "string" || typeof child === "number") return String(child);
+      if (isValidElement<{ children?: ReactNode }>(child))
+        return stringChildren(child.props.children);
+      return "";
+    })
+    .join("");
 }
 
 function escapedCodeLength(value: string): number {
@@ -120,7 +147,7 @@ function useRenderedHtml(load: () => Promise<string>, deps: DependencyList): Htm
 export function RichTopikCodeBlock(props: TopikComponentProps) {
   const code =
     stringAttribute(props.content) ??
-    (typeof props.payload === "string" ? `${props.payload}\n` : "");
+    (typeof props.payload === "string" ? `${props.payload}\n` : stringChildren(props.children));
   const payload =
     stringAttribute(props.payload) ?? (code.endsWith("\n") ? code.slice(0, -1) : code);
   const language = stringAttribute(props.language) ?? "text";
@@ -283,11 +310,9 @@ export function RichTopikMermaid(props: TopikComponentProps) {
 
   if (rendered.status === "loading") {
     return (
-      <div
-        aria-label="Rendering diagram"
-        aria-live="polite"
-        className="topik-rich-mermaid topik-rich-mermaid--loading"
-      />
+      <div className="topik-rich-mermaid topik-rich-mermaid--loading" role="status">
+        <span className="topik-rich-mermaid__status">Rendering diagram…</span>
+      </div>
     );
   }
   if (rendered.status === "error") return <TopikMermaid {...props} />;
@@ -310,5 +335,5 @@ export const richTopikComponents = {
 export function useRichTopikComponents(
   overrides: Partial<TopikComponentMap> = emptyTopikComponents,
 ): Partial<TopikComponentMap> {
-  return useMemo(() => ({ ...richTopikComponents, ...overrides }), [overrides]);
+  return useMemo(() => mergeTopikComponentOverrides(richTopikComponents, overrides), [overrides]);
 }

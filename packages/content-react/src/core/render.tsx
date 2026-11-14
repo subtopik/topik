@@ -144,14 +144,34 @@ export function renderTrustedTopikTree(
           key={elementKey}
           component={component as import("./components").TopikComponent}
           attributes={node.attributes}
+          // Tokens serialize as empty objects, so this keys on authored content alone.
+          source={JSON.stringify(node)}
         >
           {children}
         </PreviewMedia>
       );
     }
-    return React.createElement(component, { ...node.attributes, key: elementKey }, ...children);
+    return React.createElement(
+      component,
+      { ...node.attributes, ...taskMarkerLabel(node), key: elementKey },
+      ...children,
+    );
   }
   return render(resolved);
+}
+
+/** Task-list markers are read-only checkboxes; name them by their state for assistive technology. */
+function taskMarkerLabel(node: ContentTag): { "aria-label"?: string } {
+  const { attributes } = node;
+  if (
+    node.name !== "input" ||
+    attributes.type !== "checkbox" ||
+    attributes.disabled !== true ||
+    Object.hasOwn(attributes, "aria-label") ||
+    Object.hasOwn(attributes, "aria-labelledby")
+  )
+    return {};
+  return { "aria-label": attributes.checked === true ? "Completed" : "Not completed" };
 }
 
 function renderInvalidTopikContent(Placeholder: React.ComponentType | undefined): React.ReactNode {

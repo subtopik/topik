@@ -98,6 +98,20 @@ const fallbackTopikComponents = {
   TopikUnderline: MissingTopikComponent,
 } satisfies TopikComponentMap;
 
+/** @internal Merge override maps in order; an explicit `undefined` keeps the earlier component. */
+export function mergeTopikComponentOverrides(
+  ...maps: (TopikComponentOverrides | undefined)[]
+): TopikComponentOverrides {
+  const merged: Record<string, TopikComponent> = {};
+  for (const map of maps) {
+    if (!map) continue;
+    for (const [name, component] of Object.entries(map)) {
+      if (component !== undefined) merged[name] = component;
+    }
+  }
+  return merged;
+}
+
 export function getTopikComponents(overrides: TopikComponentOverrides = {}): TopikComponentMap {
   return {
     TopikAccordion: overrides.TopikAccordion ?? fallbackTopikComponents.TopikAccordion,

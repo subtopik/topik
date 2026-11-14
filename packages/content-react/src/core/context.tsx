@@ -1,3 +1,5 @@
+"use client";
+
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import {
   getTopikComponents,
@@ -81,4 +83,16 @@ export function useTopikLinkRenderer(): TopikLinkRenderer | undefined {
 
 export function useTopikContentContextValue(): TopikContentContextValue | undefined {
   return useContext(TopikContentContext);
+}
+
+const TopikRenderedColorSchemeContext = createContext<TopikColorScheme | undefined>(undefined);
+
+/** @internal The scheme a `TopikContent` root renders with, for components inside that root. */
+export const TopikRenderedColorSchemeProvider = TopikRenderedColorSchemeContext.Provider;
+
+/** @internal The enclosing content root's scheme, else the provider's, else undefined. */
+export function useTopikColorScheme(): TopikColorScheme | undefined {
+  const rendered = useContext(TopikRenderedColorSchemeContext);
+  const provided = useContext(TopikContentContext)?.colorScheme;
+  return rendered ?? provided;
 }

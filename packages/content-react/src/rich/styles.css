@@ -71,4 +71,13 @@
     border-radius: var(--topik-radius, 8px);
     min-height: 12rem;
   }
+
+  .topik-rich-mermaid__status {
+    clip-path: inset(50%);
+    height: 1px;
+    overflow: hidden;
+    position: absolute;
+    white-space: nowrap;
+    width: 1px;
+  }
 }

@@ -26,6 +26,16 @@ describe("assignTopikHeadingIds", () => {
     ]);
   });
 
+  test("gives headings without sluggable text a deduplicated fallback ID", () => {
+    const source =
+      "#\n\n# \n\n# ![](https://e.com/a.png)\n\n## !!!\n\n## Section\n\n## Taken {% #section-5 %}";
+    const expected = ["section", "section-1", "section-2", "section-3", "section-4", "section-5"];
+    expect(analyzeTopikContent(source).headings.map(({ id }) => id)).toEqual(expected);
+    const tree = transformTopikContent(parseTopikContent(source));
+    if (!isContentTag(tree)) throw new Error("Expected article");
+    expect(tree.children.filter(isContentTag).map((node) => node.attributes.id)).toEqual(expected);
+  });
+
   test("preserves and reserves explicit authored IDs", () => {
     const ast = parseTopikContent("## Introduction {% #start-here %}\n\n## Start Here");
 

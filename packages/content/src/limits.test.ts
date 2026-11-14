@@ -130,6 +130,13 @@ describe("content resource boundaries", () => {
       "*a* ".repeat(300) + "`" + "a\n".repeat(100_000) + "`",
     ],
     ["unbalanced label ends", "[a ".repeat(4_000) + "] ".repeat(4_000)],
+    // Each `]` makes the footnote tokenizer walk back to the latest label.
+    ["label ends without a label start", "a] ".repeat(17_000)],
+    ["label ends after escaped brackets", "\\[a]".repeat(17_000)],
+    ["label ends after a balanced image start", "![" + "a]".repeat(16_000)],
+    // Unmatched brackets split text into data runs merged by splicing.
+    ["undefined full references", "[a][b]".repeat(16_666)],
+    ["unclosed resources", "[a](".repeat(25_000)],
     ["nested images", "![".repeat(100_000) + "a" + "](b)".repeat(100_000)],
     ["deep inline tags", "{% badge %}".repeat(8_000) + "x" + "{% /badge %}".repeat(8_000)],
   ])("bounds parser work before resolving %s", (_label, source) => {
@@ -162,6 +169,10 @@ describe("content resource boundaries", () => {
     ["intraword underscores", "my_var ".repeat(5_000)],
     ["code spans", "`a` ".repeat(4_200)],
     ["links", "[a](https://e.com) ".repeat(4_200)],
+    ["bracketed text", "see [1] and [2], or (0, 1]. ".repeat(1_000)],
+    ["bracketed paragraphs", "see [1] and [2], or (0, 1] and \\[x].\n\n".repeat(5_000)],
+    ["references", "[r]: /u\n\n" + "[r] and [text][r] ![image][r] ".repeat(2_000)],
+    ["images", "![a long alternative text for the image](i.png) ".repeat(2_000)],
     ["a dense paragraph", (sentence + " ").repeat(150)],
     ["a reference page", (sentence + "\n\n").repeat(600)],
     ["wrapped paragraphs", `${sentence}\n${sentence}\n${sentence}\n\n`.repeat(300)],

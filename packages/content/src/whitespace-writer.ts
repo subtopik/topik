@@ -1,4 +1,5 @@
 import { defaultHandlers, type State, type Info } from "mdast-util-to-markdown";
+import { decodeString } from "micromark-util-decode-string";
 
 export function boundaryWhitespaceWriterExtension() {
   return {
@@ -19,13 +20,18 @@ export function boundaryWhitespaceWriterExtension() {
         const blankLines = /\n[ \t]*\n/.test(node.value);
         if (first === 0 && last === characters.length && !blankLines)
           return defaultHandlers.text(node as never, parent as never, state, info);
-        const entity = (character: string) => `&#x${character.codePointAt(0)!.toString(16)};`;
+        // CommonMark decodes a reference to a control character such as U+000B
+        // as U+FFFD. Markdown never trims those characters, so they stay literal.
+        const entity = (character: string) => {
+          const reference = `&#x${character.codePointAt(0)!.toString(16)};`;
+          return decodeString(reference) === character ? reference : character;
+        };
         const before = characters.slice(0, first).map(entity).join("");
         const after = characters.slice(last).map(entity).join("");
         const middleInfo = {
           ...info,
-          before: before ? ";" : info.before,
-          after: after ? "&" : info.after,
+          before: before ? before.at(-1)! : info.before,
+          after: after ? after[0] : info.after,
         };
         const value = characters.slice(first, last).join("");
         // Text can contain literal line feeds decoded from character references.

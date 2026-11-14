@@ -87,9 +87,29 @@ describe("ordinary code writer", () => {
         lang: index % 2 ? "text" : header,
         meta: index % 2 ? header : undefined,
       };
-      expect(serialize(code, true, fence)).toBe(serialize(code, false, fence));
+      const baseline = serialize(code, false, fence);
+      // The baseline writes leading metadata whitespace into the separator.
+      const expected = /^[ \t]/.test(code.meta ?? "")
+        ? baseline.replace(
+            /^([`~]{3,}text )([ \t])/,
+            (_, head: string, space: string) => `${head}&#x${space.charCodeAt(0).toString(16)};`,
+          )
+        : baseline;
+      expect(serialize(code, true, fence)).toBe(expected);
     }
   });
+
+  it.each([" ", "\t", " x", "  x", "\tx "])(
+    "keeps leading metadata whitespace %j a character reference",
+    (meta) => {
+      const code: Code = { type: "code", value: "x", lang: "js", meta };
+      const written = serialize(code);
+      expect(written.startsWith(`\`\`\`js &#x${meta.charCodeAt(0).toString(16)};`)).toBe(true);
+      const parsed = parseDocument(written);
+      if (!parsed.ok) throw new Error(JSON.stringify(parsed.diagnostics));
+      expect(parsed.document.children[0]).toMatchObject(code);
+    },
+  );
 
   it.each(["payload", "metadata"])("bounds work for long backtick %s", (location) => {
     const size = 20_000;

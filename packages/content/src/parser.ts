@@ -226,6 +226,7 @@ export function parseDocumentTree(
       ],
     }) as ContentDocument;
     const nodeCount = assertTreeLimits(tree as TreeNode);
+    listSpacing(tree as TreeNode);
     normalized.restorePositions(tree as TreeNode);
     const tagErrors = convertTags(tree as TreeNode, registry, rawHeaders);
     normalizeTables(tree as TreeNode, CONTENT_LIMITS.treeNodes - nodeCount);
@@ -255,6 +256,47 @@ export function parseDocumentTree(
         source,
       };
     throw error;
+  }
+}
+
+/** The last source line with content: a list keeps trailing blank lines inside. */
+function contentEnd(node: TreeNode): number | undefined {
+  const last = node.children?.at(-1);
+  if (node.type === "list" || node.type === "listItem")
+    return last ? contentEnd(last) : node.position?.start.line;
+  return node.position?.end.line;
+}
+
+/** Whether a blank line separates any two consecutive blocks, if positions tell. */
+function blankBetween(nodes: readonly TreeNode[]): boolean | undefined {
+  let previous: number | undefined;
+  for (const [index, node] of nodes.entries()) {
+    const start = node.position?.start.line;
+    if (start === undefined) return undefined;
+    if (index && start > previous! + 1) return true;
+    previous = contentEnd(node);
+    if (previous === undefined) return undefined;
+  }
+  return false;
+}
+
+/**
+ * Inside a block quote, micromark keeps the blank lines that end a list or a
+ * nested list in that list, so it can mark a list loose for blank lines after
+ * its last item and an item tight although a blank line separates its blocks.
+ * Derive both flags from content lines as CommonMark defines them: a list is
+ * loose between items, an item between its own blocks.
+ */
+function listSpacing(root: TreeNode): void {
+  const pending = [root];
+  while (pending.length) {
+    const node = pending.pop()!;
+    const children = node.children ?? [];
+    if (node.type === "list" || (node.type === "listItem" && children.length)) {
+      const spread = blankBetween(children);
+      if (spread !== undefined) (node as TreeNode & { spread?: boolean }).spread = spread;
+    }
+    for (const child of children) pending.push(child);
   }
 }
 

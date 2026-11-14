@@ -101,6 +101,27 @@ The placeholder has alert semantics and does not expose the source or diagnostic
 text. Retain the source separately for correction. Use `onDiagnostic` to collect
 sanitized compilation diagnostics when the application needs them.
 
+In the browser, `TopikContent` reports `onDiagnostic`, `onAssetDiagnostic`,
+`onLinkDiagnostic` and `onNavigationDiagnostic` after the content commits, once
+for each compiled document. The callbacks may therefore update application state,
+and inline callbacks are safe: their identity never causes recompilation, and the
+latest callback receives the report. Resolving the same document again, for
+example with a new `resolveLink` function, reports only when the resulting
+diagnostics differ. During server rendering, where no commit follows, the
+callbacks run while rendering. When content cannot be admitted and no placeholder
+is requested, `onDiagnostic` runs before `InvalidTopikContentError` is thrown.
+The lower-level `renderTopikMarkdown` and `renderTopikContent` functions call
+their callbacks synchronously, as they have no component lifecycle.
+
+`TopikContent` compiles again only when `content`, `file` or the value of `config`
+changes; an inline `config` object with equal contents reuses the compiled
+document. New `onNavigateLink`, `renderLink`, `resolveLink`, `resolveAsset` or
+inline `components` objects with the same component functions update the rendered
+content in place, so interactive state such as quiz answers, selected tabs and
+expanded code regions is kept. Pass component functions that are defined once,
+outside render: a new component function is a different component to React and
+remounts its content.
+
 To inspect a result before rendering, compile explicitly:
 
 ```tsx

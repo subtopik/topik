@@ -149,6 +149,13 @@ describe("root manifest compilation", () => {
     await expect(compile({ dir })).rejects.toMatchObject({ id: "manifest-invalid" });
   });
 
+  test("reads a manifest whose namespace mentions git-lfs", async () => {
+    const dir = await fixture({
+      ".topik.yaml": "version: 1\nnamespace: acme/git-lfs-docs\nsources: []\n",
+    });
+    await expect(loadTopikManifest(dir)).resolves.toMatchObject({ namespace: "acme/git-lfs-docs" });
+  });
+
   test("empty manifest ignores conventional files, and explicit missing manifest fails", async () => {
     const dir = await fixture({ ".topik.yaml": sources([]), "wiki.yaml": "invalid" });
     expect((await compile({ dir })).resources).toEqual([]);

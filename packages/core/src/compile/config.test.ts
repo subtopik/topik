@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/tes
 import {
   findConfigFile,
   readConfigFile,
+  readExactConfigFile,
   readOptionalConfigFile,
   readOptionalConfigFileWithPath,
 } from "./config";
@@ -150,6 +151,23 @@ describe("compile config helpers", () => {
     expect(error).not.toHaveProperty("cause");
     expect(`${String(error)}\n${JSON.stringify(error)}`).not.toContain(dir);
   }
+
+  test("reads exact config text that mentions Git LFS and rejects a pointer", async () => {
+    await writeFile(join(dir, "wiki.yaml"), "id: git-lfs-docs\ntitle: Install git-lfs first\n");
+    await expect(readExactConfigFile(dir, "wiki.yaml")).resolves.toEqual({
+      path: "wiki.yaml",
+      value: { id: "git-lfs-docs", title: "Install git-lfs first" },
+    });
+
+    await writeFile(
+      join(dir, "wiki.yml"),
+      `version https://git-lfs.github.com/spec/v1\noid sha256:${"a".repeat(64)}\nsize 1\n`,
+    );
+    await expect(readExactConfigFile(dir, "wiki.yml")).rejects.toMatchObject({
+      id: "config-read-failed",
+      location: "wiki.yml",
+    });
+  });
 
   test("surfaces parse failures with file context", async () => {
     await writeFile(join(dir, "wiki.yaml"), "id: docs\ntitle: [broken\n");

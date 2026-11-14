@@ -1146,6 +1146,31 @@ describe("compilation-wide automatic Assets", () => {
   });
 
   test.each([
+    ["Git LFS prose", "Install git-lfs first, then run git lfs pull.\n"],
+    ["TypeScript generics", "Return Array<string> from the loader.\n"],
+    ["UTF-16LE text", "﻿Notes"],
+  ])("compiles a text download containing %s", async (_name, content) => {
+    await writeFile(
+      join(dir, "notes.txt"),
+      content.startsWith("﻿") ? Buffer.from(content, "utf16le") : content,
+    );
+    await writeFile(join(dir, "guide.md"), "source\n");
+    const result = await compileAssetResources({
+      rootDir: dir,
+      resources: [guide("guide", "[Notes](notes.txt)\n")],
+      sourcePathsByResource: { "Guide/guide": "guide.md" },
+      generateName: createProjectAssetNameGenerator({
+        projectRoot: dir,
+        projectNamespace: "text-downloads",
+      }),
+    });
+
+    expect(result.resources.find((resource) => resource.type === "Asset")).toMatchObject({
+      spec: { mediaType: "application/octet-stream" },
+    });
+  });
+
+  test.each([
     ["image", "![Nested](vendor/module/hero.png)"],
     ["proven download", "[Nested](vendor/module/hero.png)"],
   ])("rejects a real checked-out Git submodule %s target", async (_kind, content) => {

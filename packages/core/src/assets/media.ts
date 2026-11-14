@@ -1,7 +1,7 @@
 const MARKUP_INSPECTION_LIMIT = 64 * 1024;
 /** Elements that execute, embed, load, or navigate when bytes are rendered as HTML. */
 const ACTIVE_HTML_ELEMENT =
-  /<!doctype\s+html\b|<\/?(?:applet|base|body|embed|form|frame|frameset|head|html|iframe|link|meta|object|portal|script|style)(?:\s|>|\/)/u;
+  /<!doctype\s+html\b|<\/?(?:applet|base|body|embed|form|frame|frameset|head|html|iframe|link|meta|object|portal|script|style)(?:\s|>|\/)/iu;
 export const TOPIK_UNRESOLVED_ACTIVE_CONTENT_TYPE = "application/x-topik-active-content" as const;
 
 /** Sniff exact bytes conservatively. Unknown safe bytes remain opaque downloads. */
@@ -119,7 +119,7 @@ function sniffPortableMarkupType(bytes: Uint8Array): string | undefined {
     ACTIVE_HTML_ELEMENT.test(markup) ||
     /<[^>]+\bon[a-z][a-z0-9_-]*\s*=/u.test(markup) ||
     /<[^>]+(?:href|src)\s*=\s*["']?\s*javascript:/u.test(markup) ||
-    /<script\b/u.test(markup)
+    /<script\b/iu.test(markup)
   ) {
     return "text/html";
   }

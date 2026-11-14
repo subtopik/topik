@@ -181,6 +181,14 @@ describe("HTML active content", () => {
       "XML that names the XHTML namespace",
       '<?xml version="1.0"?>\n<x:a xmlns:x="http://www.w3.org/1999/xhtml"/>',
     ],
+    [
+      "XML whose namespace is spelled with a character reference",
+      '<?xml version="1.0"?>\n<data><x:script xmlns:x="http://www.w3.org/1999/xhtm&#108;">x()</x:script></data>',
+    ],
+    [
+      "XML whose SVG namespace is spelled with a character reference",
+      "<?xml version=\"1.0\"?>\n<data><s:svg xmlns:s='http://www.w3.org/2000/sv&#x67;'/></data>",
+    ],
     ["XML with a stylesheet instruction", '<?xml-stylesheet href="a.xsl"?>\n<data/>'],
     ["XML with an event handler", '<?xml version="1.0"?>\n<data><b onclick="x()"/></data>'],
   ])("treats %s as active", (_name, source) => {

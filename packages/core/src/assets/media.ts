@@ -2,6 +2,8 @@ const MARKUP_INSPECTION_LIMIT = 64 * 1024;
 /** Elements that execute, embed, load, or navigate when bytes are rendered as HTML. */
 const ACTIVE_HTML_ELEMENT =
   /<!doctype\s+html\b|<\/?(?:applet|base|body|embed|form|frame|frameset|head|html|iframe|link|meta|object|portal|script|style)(?:\s|>|\/)/iu;
+/** An `xmlns` or `xmlns:prefix` declaration whose value contains a character or entity reference. */
+const ENCODED_NAMESPACE_DECLARATION = /xmlns[^\s=<>"']*\s*=\s*(?:"[^"<]*&|'[^'<]*&)/u;
 export const TOPIK_UNRESOLVED_ACTIVE_CONTENT_TYPE = "application/x-topik-active-content" as const;
 
 /** Sniff exact bytes conservatively. Unknown safe bytes remain opaque downloads. */
@@ -121,10 +123,14 @@ function sniffPortableMarkupType(bytes: Uint8Array): string | undefined {
   }
   // A document that declares itself XML and whose root is neither HTML nor SVG (a plist, a
   // feed, a project file) is data, not a page, unless it names the XHTML or SVG namespace.
+  // In XML an element runs as script because of its namespace, whatever its prefix, so a
+  // namespace declaration that hides its value behind a character or entity reference is
+  // treated as naming one of them.
   const xmlData =
     xmlDeclaration &&
     !otherProcessingInstruction &&
     isNonHtmlXmlRoot(markup) &&
+    !ENCODED_NAMESPACE_DECLARATION.test(markup) &&
     !markup.includes("http://www.w3.org/1999/xhtml") &&
     !markup.includes("http://www.w3.org/2000/svg");
   if (

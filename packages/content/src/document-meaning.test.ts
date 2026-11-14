@@ -58,33 +58,49 @@ test("checks unselected branches without evaluating their conditions", () => {
   expect(formatTopikContent(source)).toMatchObject({ ok: false, source });
 });
 
-test("writing, formatting, and rewriting preserve adjacent nested emphasis", () => {
+test("writing and formatting merge adjacent nested emphasis; rewriting keeps it", () => {
   const source = "***_a_****_a_***";
   const strong = {
     type: "strong",
     children: [{ type: "emphasis", children: [{ type: "text", value: "a" }] }],
   };
-  const expected = [
+  // Parsing keeps the authored nesting; both letters carry emphasis and strong.
+  const authored = [
     { type: "paragraph", children: [{ type: "emphasis", children: [strong, strong] }] },
   ];
+  const expected = [
+    {
+      type: "paragraph",
+      children: [
+        {
+          type: "emphasis",
+          children: [{ type: "strong", children: [{ type: "text", value: "aa" }] }],
+        },
+      ],
+    },
+  ];
   const document = parse(source);
-  expect(withoutPositions(document.children)).toEqual(expected);
+  expect(withoutPositions(document.children)).toEqual(authored);
   const outputs = [writeDocument(document)];
+  expect(outputs[0]).toBe("***aa***\n");
   for (const result of [formatTopikContent(source), formatDocument(source)]) {
     expect(result.ok).toBe(true);
     if (!result.ok || typeof result.formatted !== "string")
       throw new Error("Expected formatted content");
     outputs.push(result.formatted);
   }
-  const rewritten = rewriteTopikAssetOccurrences(source, () => undefined);
-  expect(rewritten.ok).toBe(true);
-  if (!rewritten.ok) throw new Error("Expected rewritten content");
-  outputs.push(rewritten.content);
   for (const output of outputs) {
     const reparsed = parse(output);
     expect(withoutPositions(reparsed.children)).toEqual(expected);
     expect(sameDocumentMeaning(document, reparsed)).toBe(true);
   }
+  // Targeted rewrites keep the authored nesting, so tree positions stay stable.
+  const rewritten = rewriteTopikAssetOccurrences(source, () => undefined);
+  expect(rewritten.ok).toBe(true);
+  if (!rewritten.ok) throw new Error("Expected rewritten content");
+  const reparsed = parse(rewritten.content);
+  expect(withoutPositions(reparsed.children)).toEqual(authored);
+  expect(sameDocumentMeaning(document, reparsed)).toBe(true);
 });
 
 test("merges adjacent text nodes while retaining an explicit empty title", () => {

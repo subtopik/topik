@@ -343,10 +343,13 @@ assert.equal(plainReopened.document.children[0].children[0].type, "text");
 assert.equal(plainReopened.document.children[0].children[0].value, plainDocument.children[0].children[0].value);
 const nestedMarks = parseDocument("****https://example.test/a*b*c");
 assert.equal(nestedMarks.ok, true);
-const nestedReopened = parseDocument(writeDocument(nestedMarks.document));
+const nestedWritten = writeDocument(nestedMarks.document);
+const nestedReopened = parseDocument(nestedWritten);
 assert.equal(nestedReopened.ok, true);
 const withoutPositions = (key, value) => key === "position" ? undefined : value;
-assert.deepEqual(JSON.parse(JSON.stringify(nestedReopened.document, withoutPositions)), JSON.parse(JSON.stringify(nestedMarks.document, withoutPositions)));
+// Adjacent emphasis is written as one canonical span with the same meaning.
+assert.equal(sameDocumentMeaning(nestedReopened.document, nestedMarks.document), true);
+assert.equal(writeDocument(nestedReopened.document), nestedWritten);
 const unsupportedMarks = "****https://example.test/a*b*c*";
 const marksRefused = parseDocument(unsupportedMarks);
 assert.equal(marksRefused.ok, false);

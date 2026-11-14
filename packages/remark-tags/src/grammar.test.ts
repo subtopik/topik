@@ -42,6 +42,34 @@ describe("tag grammar boundaries", () => {
     expect(() => parse(source)).toThrow(message);
   });
 
+  test.each([
+    ["{% %}", ["tag-name-invalid"]],
+    ["{% badge/%}", ["attribute-syntax-invalid"]],
+    ["{% badge label /%}", ["attribute-syntax-invalid"]],
+    ["{% badge label=plain /%}", ["attribute-syntax-invalid"]],
+    [String.raw`{% badge label="bad\q" /%}`, ["attribute-syntax-invalid"]],
+    ['{% badge label="never closes %}', ["attribute-syntax-invalid"]],
+    ['{% badge label="\u0007" /%}', ["attribute-value-invalid"]],
+    ['{% badge label="a" label="b" /%}', ["duplicate-attribute"]],
+    ['{% /badge label="x" %}', ["tag-closing-invalid"]],
+    ["{% /badge %}", ["missing-opening"]],
+    ["{% constructor /%}", ["tag-undefined"]],
+    ["{% hint %}open", ["missing-closing"]],
+    ["{% panel %}\n\nText", ["missing-closing"]],
+    ["{% panel %}\n\nText\n\n{% /media %}", ["missing-opening", "missing-closing"]],
+    ["{%", ["tag-unterminated"]],
+    ["{% panel /%} trailing", ["tag-placement-invalid"]],
+  ])("identifies %s with stable diagnostic IDs", (source, ids) => {
+    let thrown: unknown;
+    try {
+      parse(source);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(TagSyntaxError);
+    expect((thrown as TagSyntaxError).diagnostics.map(({ id }) => id)).toEqual(ids);
+  });
+
   test("preserves camelCase names and distinct literal scalar types", () => {
     const declarations = { cardGrid: { kind: "block" } } as const;
     const source = '{% cardGrid columns=3 open=true darkSrc="3" %}\nBody.\n{% /cardGrid %}';

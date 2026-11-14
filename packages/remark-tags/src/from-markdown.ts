@@ -42,12 +42,12 @@ function isMarker(node: TreeNode): node is Marker {
   return node.type === "topikTagMarker";
 }
 
-function location(message: string, node: Node): TagDiagnostic {
-  return { message, line: node.position?.start.line, column: node.position?.start.column };
+function location(message: string, node: Node, id: string): TagDiagnostic {
+  return { id, message, line: node.position?.start.line, column: node.position?.start.column };
 }
 
 function limitError(message: string, node: Node): never {
-  throw new TagSyntaxError([{ ...location(message, node), id: "tag-content-limit" }]);
+  throw new TagSyntaxError([location(message, node, "tag-content-limit")]);
 }
 
 /** Bound the tree iteratively before entering the recursive conversion walk. */
@@ -104,12 +104,15 @@ function convert(
     function close(name: string, marker: Marker): void {
       const current = stack.at(-1);
       if (!current || current.name !== name) {
-        errors.push({
-          ...location(`Mismatched closing tag ${name}`, marker),
-          ...(name === "template code" || current?.node.type === "tagCodeTemplateFrame"
-            ? { id: "topik-code-template-structure" }
-            : {}),
-        });
+        errors.push(
+          location(
+            `Mismatched closing tag ${name}`,
+            marker,
+            name === "template code" || current?.node.type === "tagCodeTemplateFrame"
+              ? "topik-code-template-structure"
+              : "missing-opening",
+          ),
+        );
         return;
       }
       current.node.position =
@@ -120,23 +123,29 @@ function convert(
         const node = current.node;
         const code = node.children[0] as Code | undefined;
         if (node.children.length !== 1 || code?.type !== "code" || !closedFences.has(code)) {
-          errors.push({
-            ...location(
+          errors.push(
+            location(
               "Code template scope requires exactly one closed fenced code block",
               current.marker,
+              "topik-code-template-structure",
             ),
-            id: "topik-code-template-structure",
-          });
+          );
         } else if (!rawHeaders && invalidCodeTemplateHeader(code.lang, code.meta)) {
-          errors.push({
-            ...location("Code template language and metadata must fit one fence header", code),
-            id: "topik-code-template-structure",
-          });
+          errors.push(
+            location(
+              "Code template language and metadata must fit one fence header",
+              code,
+              "topik-code-template-structure",
+            ),
+          );
         } else if (code.lang === "mermaid") {
-          errors.push({
-            ...location("Code templates cannot use the interpreted mermaid language", code),
-            id: "topik-code-template-language",
-          });
+          errors.push(
+            location(
+              "Code templates cannot use the interpreted mermaid language",
+              code,
+              "topik-code-template-language",
+            ),
+          );
         } else {
           try {
             const template = parseTextTemplate(
@@ -154,7 +163,7 @@ function convert(
             delete (node as TreeNode).children;
           } catch (error) {
             if (!(error instanceof TemplateSyntaxError)) throw error;
-            errors.push({ ...location(error.message, code), id: error.id });
+            errors.push(location(error.message, code, error.id));
           }
         }
       }
@@ -178,11 +187,11 @@ function convert(
         tag = parseTag(child.value, options);
       } catch (error) {
         if (!(error instanceof TemplateSyntaxError)) throw error;
-        errors.push({ ...location(error.message, child), id: error.id });
+        errors.push(location(error.message, child, error.id));
         continue;
       }
-      if (typeof tag === "string") {
-        errors.push(location(tag, child));
+      if (tag.kind === "error") {
+        errors.push(location(tag.message, child, tag.id));
         continue;
       }
       // The tokenizer knows the context, including inside foreign node types.
@@ -190,18 +199,24 @@ function convert(
       switch (tag.kind) {
         case "codeTemplate": {
           if (phrasing) {
-            errors.push({
-              ...location("Code template markers require their own block lines", child),
-              id: "topik-code-template-structure",
-            });
+            errors.push(
+              location(
+                "Code template markers require their own block lines",
+                child,
+                "topik-code-template-structure",
+              ),
+            );
           } else if (tag.close) {
             close("template code", child);
           } else {
             if (stack.some((frame) => frame.node.type === "tagCodeTemplateFrame"))
-              errors.push({
-                ...location("Code template scopes cannot nest", child),
-                id: "topik-code-template-structure",
-              });
+              errors.push(
+                location(
+                  "Code template scopes cannot nest",
+                  child,
+                  "topik-code-template-structure",
+                ),
+              );
             const node: CodeTemplateFrame = {
               type: "tagCodeTemplateFrame",
               children: [],
@@ -212,7 +227,10 @@ function convert(
           break;
         }
         case "variable":
-          if (!phrasing) errors.push(location("Variable tag is not valid here", child));
+          if (!phrasing)
+            errors.push(
+              location("Variable tag is not valid here", child, "topik-variable-placement"),
+            );
           else
             append({
               type: "tagVariable",
@@ -228,12 +246,15 @@ function convert(
             current.node.type !== "tagConditional" ||
             current.node.children.length > 1
           ) {
-            errors.push({
-              ...location("Misplaced else tag", child),
-              ...(current?.node.type === "tagCodeTemplateFrame"
-                ? { id: "topik-code-template-structure" }
-                : {}),
-            });
+            errors.push(
+              location(
+                "Misplaced else tag",
+                child,
+                current?.node.type === "tagCodeTemplateFrame"
+                  ? "topik-code-template-structure"
+                  : "topik-else-placement",
+              ),
+            );
           } else {
             const branch: TagBranchNode = {
               type: "tagBranch",
@@ -248,7 +269,9 @@ function convert(
         }
         case "if": {
           if (phrasing) {
-            errors.push(location("Block if tag is not valid here", child));
+            errors.push(
+              location("Block if tag is not valid here", child, "topik-conditional-placement"),
+            );
           } else if (tag.close) {
             close("if", child);
           } else {
@@ -269,7 +292,7 @@ function convert(
         }
         case "component": {
           if (!Object.hasOwn(declarations, tag.name)) {
-            errors.push(location(`Unknown tag ${tag.name}`, child));
+            errors.push(location(`Unknown tag ${tag.name}`, child, "tag-undefined"));
             break;
           }
           const { kind } = declarations[tag.name];
@@ -278,6 +301,7 @@ function convert(
               location(
                 `${kind === "block" ? "Block" : "Inline"} tag ${tag.name} is not valid here`,
                 child,
+                "tag-placement-invalid",
               ),
             );
           } else if (tag.close) {
@@ -305,12 +329,15 @@ function convert(
       }
     }
     for (const current of stack)
-      errors.push({
-        ...location(`Unclosed tag ${current.name}`, current.marker),
-        ...(current.node.type === "tagCodeTemplateFrame"
-          ? { id: "topik-code-template-structure" }
-          : {}),
-      });
+      errors.push(
+        location(
+          `Unclosed tag ${current.name}`,
+          current.marker,
+          current.node.type === "tagCodeTemplateFrame"
+            ? "topik-code-template-structure"
+            : "missing-closing",
+        ),
+      );
     // Markdown saw separate markers and body blocks. Once grouped, only gaps
     // between the item's direct children count toward its spread flag.
     if (

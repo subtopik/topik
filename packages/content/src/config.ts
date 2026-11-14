@@ -1,9 +1,4 @@
-import {
-  components,
-  type AttributeDefinition,
-  type ComponentSchema,
-  type Registry,
-} from "./registry.js";
+import { components, type ComponentSchema, type Registry } from "./registry.js";
 import { assertDataLimits } from "./limits.js";
 
 export interface TopikContentConfig {
@@ -26,18 +21,28 @@ function plainObject(value: unknown): value is Record<string, unknown> {
   );
 }
 
-function ownEntries(value: Record<string, unknown>): Array<[string, unknown]> {
+/** Configuration is developer-supplied; describe the failing field, never its value. */
+function invalid(detail: string, cause?: unknown): Error {
+  const bounded = detail.length > 300 ? `${detail.slice(0, 300)}...` : detail;
+  return new Error(
+    `Content configuration is invalid: ${bounded}`,
+    cause === undefined ? undefined : { cause },
+  );
+}
+
+/** Quote a configuration key for an error message, bounded for oversized input. */
+function label(name: string): string {
+  return JSON.stringify(name.length > 64 ? `${name.slice(0, 64)}...` : name);
+}
+
+function ownEntries(value: Record<string, unknown>, path: string): Array<[string, unknown]> {
   const descriptors = Object.getOwnPropertyDescriptors(value);
   if (Reflect.ownKeys(descriptors).some((key) => typeof key === "symbol"))
-    throw new Error("Content configuration is invalid");
+    throw invalid(`${path} must not have symbol keys`);
   return Object.entries(descriptors).map(([key, descriptor]) => {
-    if (
-      !("value" in descriptor) ||
-      key === "__proto__" ||
-      key === "constructor" ||
-      key === "prototype"
-    )
-      throw new Error("Content configuration is invalid");
+    if (!("value" in descriptor)) throw invalid(`${path}.${key} must be a data property`);
+    if (key === "__proto__" || key === "constructor" || key === "prototype")
+      throw invalid(`${path} must not use the reserved key ${label(key)}`);
     return [key, descriptor.value];
   });
 }
@@ -46,154 +51,201 @@ function validName(name: string): boolean {
   return /^[a-z][A-Za-z0-9-]*$/.test(name);
 }
 
-function allowedFields(value: Record<string, unknown>, fields: readonly string[]): boolean {
-  return Object.keys(value).every((field) => fields.includes(field));
+function unknownField(
+  value: Record<string, unknown>,
+  fields: readonly string[],
+): string | undefined {
+  return Object.keys(value).find((field) => !fields.includes(field));
 }
 
-function validAttribute(attribute: unknown): attribute is AttributeDefinition {
+function attributeProblem(attribute: unknown): string | undefined {
+  if (!plainObject(attribute)) return "must be an object";
   // Template eligibility is owned by the canonical catalog, never custom schemas.
-  if (plainObject(attribute) && Object.hasOwn(attribute, "interpolation")) return false;
-  if (
-    !plainObject(attribute) ||
-    !allowedFields(attribute, [
-      "type",
-      "required",
-      "default",
-      "description",
-      "values",
-      "min",
-      "max",
-      "integer",
-      "asset",
-      "assetReference",
-      "escapedWhitespace",
-    ])
-  )
-    return false;
-  if (attribute.required !== undefined && typeof attribute.required !== "boolean") return false;
+  if (Object.hasOwn(attribute, "interpolation"))
+    return "cannot declare interpolation; text templates are limited to canonical attributes";
+  const unknown = unknownField(attribute, [
+    "type",
+    "required",
+    "default",
+    "description",
+    "values",
+    "min",
+    "max",
+    "integer",
+    "asset",
+    "assetReference",
+    "escapedWhitespace",
+  ]);
+  if (unknown !== undefined) return `has unsupported field ${label(unknown)}`;
+  if (attribute.required !== undefined && typeof attribute.required !== "boolean")
+    return "required must be a boolean";
   if (attribute.description !== undefined && typeof attribute.description !== "string")
-    return false;
-  if (attribute.asset !== undefined && typeof attribute.asset !== "boolean") return false;
+    return "description must be a string";
+  if (attribute.asset !== undefined && typeof attribute.asset !== "boolean")
+    return "asset must be a boolean";
   if (
     attribute.escapedWhitespace !== undefined &&
     (attribute.type !== "string" || typeof attribute.escapedWhitespace !== "boolean")
   )
-    return false;
+    return "escapedWhitespace must be a boolean on a string attribute";
   if (
     (attribute.asset || attribute.assetReference !== undefined) &&
     attribute.type !== "string" &&
     attribute.type !== "enum"
   )
-    return false;
+    return "asset attributes must have type string or enum";
   if (attribute.assetReference !== undefined) {
     const reference = attribute.assetReference;
     if (
       !plainObject(reference) ||
-      !allowedFields(reference, ["slot", "role", "conditional"]) ||
+      unknownField(reference, ["slot", "role", "conditional"]) !== undefined ||
       typeof reference.slot !== "string" ||
       !["image", "image-light", "image-dark", "media", "download"].includes(
         String(reference.role),
       ) ||
       (reference.conditional !== undefined && reference.conditional !== "proven-download")
     )
-      return false;
+      return "assetReference requires a string slot, a supported role and an optional proven-download condition";
   }
+  const constraints = (allowed: readonly string[]): string | undefined => {
+    const field = ["values", "min", "max", "integer"].find(
+      (name) => !allowed.includes(name) && attribute[name] !== undefined,
+    );
+    return field === undefined
+      ? undefined
+      : `${field} is not supported on ${String(attribute.type)} attributes`;
+  };
   if (attribute.type === "string")
     return (
-      attribute.values === undefined &&
-      attribute.min === undefined &&
-      attribute.max === undefined &&
-      attribute.integer === undefined &&
-      (attribute.default === undefined || typeof attribute.default === "string")
+      constraints([]) ??
+      (attribute.default === undefined || typeof attribute.default === "string"
+        ? undefined
+        : "default must be a string")
     );
-  if (attribute.type === "enum")
+  if (attribute.type === "enum") {
+    if (
+      !Array.isArray(attribute.values) ||
+      attribute.values.length === 0 ||
+      !attribute.values.every((value) => typeof value === "string")
+    )
+      return "values must be a nonempty array of strings";
     return (
-      Array.isArray(attribute.values) &&
-      attribute.values.length > 0 &&
-      attribute.values.every((value) => typeof value === "string") &&
-      attribute.min === undefined &&
-      attribute.max === undefined &&
-      attribute.integer === undefined &&
+      constraints(["values"]) ??
       (attribute.default === undefined ||
-        (typeof attribute.default === "string" && attribute.values.includes(attribute.default)))
+      (typeof attribute.default === "string" && attribute.values.includes(attribute.default))
+        ? undefined
+        : "default must be one of values")
     );
+  }
   if (attribute.type === "boolean")
     return (
-      attribute.values === undefined &&
-      attribute.min === undefined &&
-      attribute.max === undefined &&
-      attribute.integer === undefined &&
-      (attribute.default === undefined || typeof attribute.default === "boolean")
+      constraints([]) ??
+      (attribute.default === undefined || typeof attribute.default === "boolean"
+        ? undefined
+        : "default must be a boolean")
     );
-  if (attribute.type === "number")
-    return (
-      attribute.values === undefined &&
-      (attribute.min === undefined ||
-        (typeof attribute.min === "number" && Number.isFinite(attribute.min))) &&
-      (attribute.max === undefined ||
-        (typeof attribute.max === "number" && Number.isFinite(attribute.max))) &&
-      (attribute.integer === undefined || typeof attribute.integer === "boolean") &&
-      (attribute.default === undefined ||
-        (typeof attribute.default === "number" &&
-          Number.isFinite(attribute.default) &&
-          (attribute.min === undefined || attribute.default >= attribute.min) &&
-          (attribute.max === undefined || attribute.default <= attribute.max) &&
-          (!attribute.integer || Number.isInteger(attribute.default)))) &&
-      (attribute.min === undefined || attribute.max === undefined || attribute.min <= attribute.max)
-    );
-  return false;
+  if (attribute.type === "number") {
+    const unsupported = constraints(["min", "max", "integer"]);
+    if (unsupported) return unsupported;
+    if (
+      attribute.min !== undefined &&
+      !(typeof attribute.min === "number" && Number.isFinite(attribute.min))
+    )
+      return "min must be a finite number";
+    if (
+      attribute.max !== undefined &&
+      !(typeof attribute.max === "number" && Number.isFinite(attribute.max))
+    )
+      return "max must be a finite number";
+    if (attribute.integer !== undefined && typeof attribute.integer !== "boolean")
+      return "integer must be a boolean";
+    if (
+      attribute.min !== undefined &&
+      attribute.max !== undefined &&
+      (attribute.min as number) > (attribute.max as number)
+    )
+      return "min must not exceed max";
+    if (
+      attribute.default !== undefined &&
+      !(
+        typeof attribute.default === "number" &&
+        Number.isFinite(attribute.default) &&
+        (attribute.min === undefined || attribute.default >= (attribute.min as number)) &&
+        (attribute.max === undefined || attribute.default <= (attribute.max as number)) &&
+        (!attribute.integer || Number.isInteger(attribute.default))
+      )
+    )
+      return "default must be a finite number within min, max and integer constraints";
+    return;
+  }
+  return "type must be string, number, boolean or enum";
 }
 
-function validDefinition(definition: unknown): definition is ComponentSchema {
-  if (
-    !plainObject(definition) ||
-    !allowedFields(definition, [
-      "kind",
-      "render",
-      "description",
-      "attributes",
-      "children",
-      "selfClosing",
-      "allowedParents",
-    ])
-  )
-    return false;
-  if (
-    (definition.kind !== "block" && definition.kind !== "inline") ||
-    (typeof definition.render !== "string" && typeof definition.render !== "boolean") ||
-    (definition.description !== undefined && typeof definition.description !== "string") ||
-    (definition.selfClosing !== undefined && typeof definition.selfClosing !== "boolean") ||
-    !plainObject(definition.attributes)
-  )
-    return false;
-  if (
-    Object.entries(definition.attributes).some(
-      ([name, attribute]) => !validName(name) || !validAttribute(attribute),
-    )
-  )
-    return false;
+function definitionProblem(definition: unknown): string | undefined {
+  if (!plainObject(definition)) return "must be an object";
+  const unknown = unknownField(definition, [
+    "kind",
+    "render",
+    "description",
+    "attributes",
+    "children",
+    "selfClosing",
+    "allowedParents",
+  ]);
+  if (unknown !== undefined) return `has unsupported field ${label(unknown)}`;
+  if (definition.kind !== "block" && definition.kind !== "inline")
+    return 'kind must be "block" or "inline"';
+  if (typeof definition.render !== "string" && typeof definition.render !== "boolean")
+    return "render must be a string or boolean";
+  if (definition.description !== undefined && typeof definition.description !== "string")
+    return "description must be a string";
+  if (definition.selfClosing !== undefined && typeof definition.selfClosing !== "boolean")
+    return "selfClosing must be a boolean";
+  if (!plainObject(definition.attributes)) return "attributes must be an object";
+  for (const [name, attribute] of Object.entries(definition.attributes)) {
+    if (!validName(name)) return `attribute ${label(name)} has an invalid name`;
+    const problem = attributeProblem(attribute);
+    if (problem) return `attribute ${label(name)} ${problem}`;
+  }
   if (
     definition.allowedParents !== undefined &&
     (!Array.isArray(definition.allowedParents) ||
       !definition.allowedParents.every((name) => typeof name === "string" && validName(name)))
   )
-    return false;
+    return "allowedParents must be an array of component names";
   const children = definition.children;
-  if (children === "blocks" || children === "inline" || children === "none") return true;
-  if (!plainObject(children) || !allowedFields(children, ["components", "nodes", "min"]))
-    return false;
+  if (children === "blocks" || children === "inline" || children === "none") return;
+  if (!plainObject(children))
+    return 'children must be "blocks", "inline", "none" or a child constraint object';
+  const unknownChild = unknownField(children, ["components", "nodes", "min"]);
+  if (unknownChild !== undefined) return `children has unsupported field ${label(unknownChild)}`;
   const names = children.components ?? children.nodes;
-  return (
-    (children.components === undefined) !== (children.nodes === undefined) &&
-    Array.isArray(names) &&
-    names.length > 0 &&
-    names.every((name) => typeof name === "string" && validName(name)) &&
-    (children.min === undefined ||
-      (typeof children.min === "number" && Number.isInteger(children.min) && children.min >= 0))
-  );
+  if (
+    (children.components === undefined) === (children.nodes === undefined) ||
+    !Array.isArray(names) ||
+    names.length === 0 ||
+    !names.every((name) => typeof name === "string" && validName(name))
+  )
+    return "children requires exactly one nonempty components or nodes name array";
+  if (
+    children.min !== undefined &&
+    !(typeof children.min === "number" && Number.isInteger(children.min) && children.min >= 0)
+  )
+    return "children.min must be a nonnegative integer";
 }
 
-function cloneSchema(value: unknown, active = new Set<object>()): unknown {
+/** Component references must name registered components, or the component is unplaceable. */
+function referenceProblem(definition: ComponentSchema, registry: Registry): string | undefined {
+  const parent = definition.allowedParents?.find((name) => !Object.hasOwn(registry, name));
+  if (parent !== undefined) return `allowedParents names unknown component ${label(parent)}`;
+  const constraint = definition.children;
+  if (typeof constraint === "object" && "components" in constraint) {
+    const child = constraint.components.find((name) => !Object.hasOwn(registry, name));
+    if (child !== undefined) return `children.components names unknown component ${label(child)}`;
+  }
+}
+
+function cloneSchema(value: unknown, path: string, active = new Set<object>()): unknown {
   if (
     value === null ||
     typeof value === "string" ||
@@ -201,22 +253,31 @@ function cloneSchema(value: unknown, active = new Set<object>()): unknown {
     (typeof value === "number" && Number.isFinite(value))
   )
     return value;
-  if (typeof value !== "object") throw new Error("Content configuration is invalid");
-  if (active.has(value) || (!Array.isArray(value) && !plainObject(value)))
-    throw new Error("Content configuration is invalid");
+  if (typeof value !== "object")
+    throw invalid(
+      `${path} must contain only strings, finite numbers, booleans, null, arrays or plain objects`,
+    );
+  if (active.has(value)) throw invalid(`${path} must not be cyclic`);
+  if (!Array.isArray(value) && !plainObject(value))
+    throw invalid(`${path} must contain only arrays and plain objects`);
   active.add(value);
   let cloned: unknown;
   if (Array.isArray(value)) {
-    const entries = ownEntries(value as unknown as Record<string, unknown>);
+    const entries = ownEntries(value as unknown as Record<string, unknown>, path);
     if (
       entries.length !== value.length + 1 ||
       entries.some(([key], index) => index < value.length && key !== String(index))
     )
-      throw new Error("Content configuration is invalid");
-    cloned = entries.slice(0, -1).map(([, entry]) => cloneSchema(entry, active));
+      throw invalid(`${path} must be a dense array without extra properties`);
+    cloned = entries
+      .slice(0, -1)
+      .map(([key, entry]) => cloneSchema(entry, `${path}[${key}]`, active));
   } else {
     cloned = Object.fromEntries(
-      ownEntries(value).map(([key, entry]) => [key, cloneSchema(entry, active)]),
+      ownEntries(value, path).map(([key, entry]) => [
+        key,
+        cloneSchema(entry, `${path}.${key}`, active),
+      ]),
     );
   }
   active.delete(value);
@@ -229,27 +290,39 @@ export function mergeTopikContentConfig(
 ): ResolvedTopikContentConfig {
   try {
     assertDataLimits(extension);
-  } catch {
-    throw new Error("Content configuration is invalid");
+  } catch (error) {
+    throw invalid("it exceeds the supported data limits", error);
   }
-  if (!plainObject(extension)) throw new Error("Content configuration is invalid");
-  const fields = Object.fromEntries(ownEntries(extension));
-  if (Object.keys(fields).some((key) => key !== "components" && key !== "variables"))
-    throw new Error("Content configuration is invalid");
+  if (!plainObject(extension)) throw invalid("it must be a plain object");
+  const fields = Object.fromEntries(ownEntries(extension, "config"));
+  const unknown = Object.keys(fields).find((key) => key !== "components" && key !== "variables");
+  if (unknown !== undefined) throw invalid(`unsupported field ${label(unknown)}`);
   const additional = fields.components ?? {};
   const variables = fields.variables ?? {};
-  if (!plainObject(additional) || !plainObject(variables))
-    throw new Error("Content configuration is invalid");
+  if (!plainObject(additional)) throw invalid("components must be a plain object");
+  if (!plainObject(variables)) throw invalid("variables must be a plain object");
   const registry: Registry = { ...components };
-  for (const [name, schema] of ownEntries(additional)) {
+  const custom: string[] = [];
+  for (const [name, schema] of ownEntries(additional, "components")) {
     // A previously resolved config may be passed back in. Always reapply the
     // canonical definitions instead of trusting caller modifications to them.
     if (Object.hasOwn(components, name)) continue;
-    if (!validName(name) || name === "if" || name === "else" || !plainObject(schema))
-      throw new Error("Content configuration is invalid");
-    const definition = cloneSchema(schema);
-    if (!validDefinition(definition)) throw new Error("Content configuration is invalid");
-    registry[name] = definition;
+    if (!validName(name)) throw invalid(`component ${label(name)} has an invalid name`);
+    if (name === "if" || name === "else")
+      throw invalid(`component ${label(name)} uses a reserved name`);
+    if (!plainObject(schema)) throw invalid(`component ${label(name)} must be a plain object`);
+    const definition = cloneSchema(schema, `components.${name}`);
+    const problem = definitionProblem(definition);
+    if (problem) throw invalid(`component ${label(name)} ${problem}`);
+    registry[name] = definition as ComponentSchema;
+    custom.push(name);
   }
-  return { components: registry, variables: cloneSchema(variables) as Record<string, unknown> };
+  for (const name of custom) {
+    const problem = referenceProblem(registry[name], registry);
+    if (problem) throw invalid(`component ${label(name)} ${problem}`);
+  }
+  return {
+    components: registry,
+    variables: cloneSchema(variables, "variables") as Record<string, unknown>,
+  };
 }

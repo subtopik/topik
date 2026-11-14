@@ -191,9 +191,25 @@ this package preserves the authored structure without evaluating it.
 ## Diagnostics and limits
 
 Malformed source throws `TagSyntaxError`. Its `diagnostics` array contains a
-`message` and, when available, one-based `line` and `column`. Structural limit
-errors also have `id: "tag-content-limit"`. Invalid declarations and unsupported
-writer inputs throw ordinary errors.
+`message`, a stable `id`, and, when available, one-based `line` and `column`.
+Invalid declarations and unsupported writer inputs throw ordinary errors.
+
+| ID                                                        | Problem                                                 |
+| --------------------------------------------------------- | ------------------------------------------------------- |
+| `missing-closing`                                         | An opened tag is never closed                           |
+| `missing-opening`                                         | A closing tag does not match the innermost open tag     |
+| `tag-unterminated`                                        | A tag marker lacks its closing `%}`                     |
+| `tag-name-invalid`                                        | A tag has no valid lowercase name                       |
+| `attribute-syntax-invalid`                                | Malformed attribute syntax, escape, or unquoted value   |
+| `attribute-value-invalid`                                 | A literal attribute contains a control character        |
+| `duplicate-attribute`                                     | An attribute appears more than once                     |
+| `tag-closing-invalid`                                     | A closing tag has attributes or a self-closing slash    |
+| `tag-undefined`                                           | A tag name is not declared                              |
+| `tag-placement-invalid`                                   | A block tag appears inline, or an inline tag as a block |
+| `tag-content-limit`                                       | A structural limit is exceeded                          |
+| `topik-else-placement`, `topik-else-syntax`               | A misplaced or repeated `else`, or not `{% else /%}`    |
+| `topik-expression-invalid`, `topik-conditional-placement` | Invalid `if` source, or a block `if` inside text        |
+| `topik-variable-path`, `topik-variable-placement`         | An invalid variable path, or a variable outside text    |
 
 Template syntax uses stable `topik-template-syntax`, `topik-variable-path`,
 `topik-template-control`, `topik-code-template-structure`, and

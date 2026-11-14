@@ -28,7 +28,11 @@ import {
   applySourceAssetReferenceContexts,
   type SourceAssetReferenceContexts,
 } from "./asset-context";
-import { parseTopikManifest, type TopikManifestSource } from "../config/manifest";
+import {
+  parseTopikManifest,
+  TOPIK_MANIFEST_LIMITS,
+  type TopikManifestSource,
+} from "../config/manifest";
 import { parseWikiConfig } from "../config/wiki";
 import { parseCollectionConfig } from "../config/collection";
 import { parseCourseConfig } from "../config/course";
@@ -99,6 +103,13 @@ export interface InitializeSourceProjectInput {
   createPaths: readonly string[];
 }
 
+/** Configuration names a source compiler discovers without an explicit manifest path. */
+const LEGACY_CONFIGURATION_NAMES = new Set(
+  ["wiki", "collection", "course"].flatMap((name) =>
+    ["yaml", "yml", "json"].map((extension) => `${name}.${extension}`),
+  ),
+);
+
 /** Initialization is distinct from adding a source to a valid existing manifest. */
 export async function initializeSourceProject(
   input: InitializeSourceProjectInput,
@@ -135,7 +146,10 @@ export async function addSourceToProject(
           "The saved source grammar or writer has changed. Reinspect the source project before retrying.",
       });
     if (digestSourceTree(input.project.tree) !== input.expectedTreeDigest)
-      throw new TypeError("Stale source base");
+      throw new SourcePlanningError({
+        code: "source-base-changed",
+        message: "Source bytes no longer match the pinned tree.",
+      });
     const project = await readSourceProject({ tree: input.project.tree });
     return buildSource(
       {
@@ -216,30 +230,40 @@ async function buildSource(
       ? []
       : occupied.filter((file) => /\.(?:ya?ml|json)$/.test(file.path))) {
       // A config-like file cannot be silently ignored when proving project absence.
-      const raw = decodeSource(file.bytes);
-      {
-        let parsed: unknown;
-        try {
-          parsed = file.path.endsWith(".json")
-            ? parseStrictTopikJson(raw.replace(/^\uFEFF/u, ""), 32)
-            : parseSafeConfigurationYaml(raw);
-        } catch {
-          return failure(
-            "initialization-unproven",
-            "Resolve an existing configuration before initializing a source project.",
-          );
-        }
-        if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) continue;
-        const value = parsed as Record<string, unknown>;
-        if (
-          Object.hasOwn(value, "sourceVersion") ||
-          (Object.hasOwn(value, "id") && Object.hasOwn(value, "title"))
-        )
-          return failure(
-            "initialization-unproven",
-            "Existing source configuration must be resolved before project initialization.",
-          );
+      // Any such path may be declared as configuration, but a declared configuration
+      // must pass the compiler's strict bounded parsers. A file they reject cannot be
+      // one, except at a legacy discovery name, which is read leniently and stays unproven.
+      const legacy = LEGACY_CONFIGURATION_NAMES.has(posix.basename(file.path));
+      const unproven = (message: string): SourcePlanResult => ({
+        ok: false,
+        diagnostics: [{ code: "initialization-unproven", message, path: file.path }],
+      });
+      if (!legacy && file.bytes.length > TOPIK_MANIFEST_LIMITS.maxBytes) continue;
+      let parsed: unknown;
+      try {
+        const raw = decodeSource(file.bytes);
+        parsed = file.path.endsWith(".json")
+          ? parseStrictTopikJson(raw.replace(/^\uFEFF/u, ""), TOPIK_MANIFEST_LIMITS.maxDepth)
+          : parseSafeConfigurationYaml(raw);
+      } catch {
+        if (!legacy) continue;
+        return unproven(
+          `Resolve the existing configuration ${file.path} before initializing a source project.`,
+        );
       }
+      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) continue;
+      const value = parsed as Record<string, unknown>;
+      // Every source configuration schema requires string `id` and `title` values; a
+      // legacy discovery name stays unproven with either field present in any form.
+      if (
+        Object.hasOwn(value, "sourceVersion") ||
+        (legacy
+          ? Object.hasOwn(value, "id") && Object.hasOwn(value, "title")
+          : typeof value.id === "string" && typeof value.title === "string")
+      )
+        return unproven(
+          `Existing source configuration ${file.path} must be resolved before project initialization.`,
+        );
     }
     if (
       !validateResources(input.resources).valid ||
@@ -778,7 +802,8 @@ async function buildSource(
         "The initialized source project does not reproduce the complete desired graph.",
       );
     const changes: SourceFileChange[] = generatedFiles
-      .sort((a, b) => a.path.localeCompare(b.path, "en"))
+      // Bytewise like snapshotSourceTree: locale collation can vary between ICU builds.
+      .sort((a, b) => Buffer.compare(encodeSource(a.path), encodeSource(b.path)))
       .map((file) => ({
         kind: existing && file.path === ".topik.yaml" ? "update" : "create",
         path: file.path,

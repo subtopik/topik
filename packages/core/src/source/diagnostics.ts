@@ -13,6 +13,11 @@ export interface SourcePlanDiagnostic {
   sourceIndex?: number;
   kind?: "wiki" | "collection" | "course";
   config?: string;
+  /**
+   * Original unexpected exception behind a generic fallback, for in-process debugging only.
+   * It is non-enumerable, so serialized diagnostics never carry its private details.
+   */
+  readonly cause?: unknown;
 }
 
 export class SourcePlanningError extends Error {
@@ -22,12 +27,23 @@ export class SourcePlanningError extends Error {
   }
 }
 
+/** A complete source tree exceeded its bounds or held unsafe, duplicate or colliding paths. */
+export class SourceTreeError extends TypeError {
+  readonly diagnostic: SourcePlanDiagnostic;
+  constructor(message: string) {
+    super(message);
+    this.name = "SourceTreeError";
+    this.diagnostic = { code: "source-tree-invalid", message };
+  }
+}
+
 /** Retain known safe compiler failures; arbitrary exception text never crosses the API. */
 export function sourcePlanDiagnostics(
   error: unknown,
   fallback: SourcePlanDiagnostic,
 ): readonly SourcePlanDiagnostic[] {
-  if (error instanceof SourcePlanningError) return [error.diagnostic];
+  if (error instanceof SourcePlanningError || error instanceof SourceTreeError)
+    return [error.diagnostic];
   if (error instanceof CompileError && error.diagnostics.length) {
     return error.diagnostics.slice(0, 64).map((diagnostic) => {
       const safe = sanitizeTopikContentDiagnostic(diagnostic);
@@ -56,5 +72,5 @@ export function sourcePlanDiagnostics(
       },
     ];
   }
-  return [fallback];
+  return [Object.defineProperty({ ...fallback }, "cause", { value: error, enumerable: false })];
 }

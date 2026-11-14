@@ -278,7 +278,12 @@ remain independently admitted and are preserved.
 Known compiler failures retain their code, safe path, and available line or source
 declaration context. Content diagnostic lines refer to the body after frontmatter.
 Diagnostic output is bounded to 64 entries and 8 lines per entry; unexpected
-exception details remain private.
+exception details remain private. A generic fallback diagnostic keeps the
+original exception only as a non-enumerable `cause` for in-process debugging,
+so serialized diagnostics never include it. Planning, initialization and source
+addition return `source-tree-invalid` for a tree over the source project limits
+or with duplicate, unsafe or colliding paths. A stale pinned tree returns `source-base-changed` from
+both planning and source addition.
 
 ## Initialize or add a declaration
 
@@ -286,6 +291,13 @@ exception details remain private.
 namespace, a complete occupied-path inventory proving project absence, and
 admitted create paths. An existing empty manifest is a project; an invalid
 manifest or unresolved source configuration cannot be treated as absence.
+Any YAML or JSON file that parses with the strict configuration parsers and has
+`sourceVersion`, or string `id` and `title` values, blocks initialization as a
+possible existing configuration. Files those parsers reject, such as JSON with
+comments, YAML with anchors or files over 1 MiB, cannot be declared as
+configuration and do not block, except at the legacy discovery names
+`wiki`, `collection` and `course` with a `.yaml`, `.yml` or `.json` extension.
+These diagnostics name the blocking file in `path`.
 Unrelated files are preserved and every generated path uses no-overwrite rules.
 Optional `documentPaths` assigns explicitly admitted Guide filenames separately
 from their public slugs, including safe names for reserved or long slug spellings.

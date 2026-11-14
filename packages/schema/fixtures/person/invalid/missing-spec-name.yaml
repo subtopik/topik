@@ -1,1 +1,2 @@
+# expect: /spec required name
 { apiVersion: v1, type: Person, name: john-doe, spec: { email: john@example.com } }

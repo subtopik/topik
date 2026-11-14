@@ -1,3 +1,4 @@
+# expect: /spec/content/format enum
 apiVersion: v1
 type: CoursePage
 name: variables-and-types

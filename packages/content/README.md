@@ -16,9 +16,13 @@ npm install @topik/content
 
 `compileTopikContent` validates source and produces a reader tree in one pipeline.
 It accepts canonical compiler-generated asset references as well as authored
-content. Parsing alone checks neither URL nor asset admission policies. Formatting
-validates input and output and checks that serialization preserves the authored
-content. Failures retain the exact input.
+content. Parsing alone checks neither URL nor asset admission policies, so admit
+untrusted source with `compileTopikContent` or `validateTopikContent`. As defence
+in depth, `transformTopikContent` omits link, image, card, and asset attribute
+URLs that fail the `validateTopikHref` scheme and shape policy (for example
+`javascript:` or `data:`); it does not apply the stricter asset admission rules.
+Formatting validates input and output and checks that serialization preserves the
+authored content. Failures retain the exact input.
 
 ```ts
 import { formatTopikContent, compileTopikContent } from "@topik/content";
@@ -289,6 +293,34 @@ output; source admission requires `allowCompiledAssetReferences: true` to accept
 them. Generic download links require explicit candidate selection or proven file
 paths. Custom asset attributes share validation policies but do not extend the
 compiler's closed asset-occurrence protocol.
+
+## Content limits
+
+Admission refuses oversized or pathological input with a `topik-content-limit`
+diagnostic and retains the exact source. The fixed values are exported as
+`CONTENT_LIMITS`; lengths are measured in UTF-16 code units.
+
+| Limit                      | Value        | Bounds                                                          |
+| -------------------------- | ------------ | --------------------------------------------------------------- |
+| `sourceLength`             | 1,000,000    | Source length                                                   |
+| `parserSteps`              | 67,108,864   | Superlinear inline parser work per document (see below)         |
+| `treeDepth`                | 64           | Nesting of blocks, lists, quotes, components and inline nodes   |
+| `treeNodes`                | 50,000       | Authoring tree nodes, including template segments               |
+| `dataDepth`, `dataEntries` | 160, 500,000 | Nesting and values in trees, metadata and variable data         |
+| `dataStringLength`         | 1,000,000    | Total string length in trees and data, including interpolations |
+| `expressionLength`         | 16,384       | Characters in one expression                                    |
+| `expressionDepth`          | 32           | Expression nesting                                              |
+| `expressionNodes`          | 256          | Nodes in one expression                                         |
+| `presentationOutputLength` | 8,000,000    | Escaped code-presentation output                                |
+
+Ordinary prose, intraword underscores, matched code spans and links cost no
+parser work, so long reference pages and changelogs are limited by source and
+tree size rather than by markup density. The parser budget charges only syntax
+whose resolution can grow faster than its paragraph: every possible closing
+emphasis or strikethrough delimiter costs the number of parser events in its
+paragraph, unmatched code-span attempts cost the text they rescan, and label
+ends cost the label text they reread. In practice a single paragraph can hold a
+few thousand emphasis delimiters; split denser text into separate paragraphs.
 
 ## Further documentation
 

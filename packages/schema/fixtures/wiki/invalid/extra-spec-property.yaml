@@ -1,6 +1,7 @@
+# expect: /spec additionalProperties draft
 apiVersion: v1
 type: Wiki
 name: test-wiki
 spec:
   title: Test Wiki
-  theme: dark
+  draft: true

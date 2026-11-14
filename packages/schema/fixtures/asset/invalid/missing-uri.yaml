@@ -1,3 +1,4 @@
+# expect: /spec required uri
 apiVersion: v1
 type: Asset
 name: missing-uri

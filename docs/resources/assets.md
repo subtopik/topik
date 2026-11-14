@@ -263,6 +263,13 @@ compiler inputs, unsupported media, active content, and files that change during
 inspection. An image needs meaningful alternative text; a download needs a
 meaningful label.
 
+The compiler detects media types from file bytes, not extensions. Text that
+starts with an HTML tag, or that contains a script, frame, embed, form, meta,
+link, base, style, or document element, an event-handler attribute, or a
+`javascript:` URL, counts as active content; other text, such as code with
+`Array<string>`, remains a download. Git LFS pointer files (small files whose first
+line is a Git LFS `version` line) are refused; run `git lfs pull` first.
+
 The CLI stages a complete output generation before replacing the previous one.
 Callers must serialize writes to the same output directory. This replacement is
 not a cross-process locking, rollback, or crash-recovery mechanism; applications

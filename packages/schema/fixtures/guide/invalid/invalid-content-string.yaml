@@ -1,3 +1,4 @@
+# expect: /spec/content type
 {
   apiVersion: v1,
   type: Guide,

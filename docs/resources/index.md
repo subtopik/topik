@@ -84,18 +84,23 @@ Then install and run the CLI:
 ```sh
 npm install @topik/cli
 npx topik compile ./handbook --validate
-npx topik validate ./handbook/.topik/resources
+npx topik validate ./handbook/.topik
 ```
 
 `--validate` checks the generated resource envelopes. `topik validate` accepts
-resource files or directories containing JSON, JSONL, or YAML. Point it at the
-`resources/` directory, which contains the resource envelopes, rather than the
-compilation inventories.
+resource files or directories containing JSON, JSONL, or YAML, and reports each
+failing file, resource, and JSON pointer. When walking a directory it skips
+`node_modules` and dot-directories, unless one is the path you pass. Given a
+compilation output directory, it validates the envelopes under `resources/` and
+skips the `materialization.json` and `semantic.json` inventories.
 
 Compilation validates source and unresolved internal wiki links by default.
 `--dry-run` lists output paths without writing files; `--out-dir` chooses a
-separate output directory. Writing compilation output with the current CLI
-requires Linux.
+separate output directory, which may already exist if it is empty. A non-empty
+directory is replaced only when it holds a previous compilation. Published
+directories are mode `0755` and files `0644`, so another user, such as a web
+server, can read them. Writing compilation output with the current CLI requires
+Linux.
 
 Use [Navigation](./navigation.md) to add folders, groups, page links, and routes.
 If the source includes local assets, see [Assets](./assets.md) for project
@@ -124,6 +129,20 @@ Run `topik compile` on the manifest directory. Each filename supplies a guide sl
 the collection ID and slug. A frontmatter `title` overrides the first heading as
 the displayed title. The compiler can process a wiki and collection together
 when both configurations are listed in the manifest.
+
+Filename-derived slugs must use lowercase letters, digits and single hyphens,
+such as `getting-started.md`, and the collection ID, a hyphen and the slug must
+fit in 63 characters. Other filenames fail with `guide-name-invalid` at that
+file, unless `sourceVersion: 1` frontmatter supplies both `id` and `slug`. Two
+files that produce the same Guide identity, such as `intro.md` and `intro.mdx`,
+fail with `guide-duplicate`, which names both files.
+
+Markdown inputs must be valid UTF-8; invalid bytes fail with
+`document-encoding-invalid` at that file rather than being replaced. Unknown
+configuration keys are retained for source tools, but a top-level key that looks
+like a misspelling of a known key, such as `navigaton` or `Title`, fails with
+`config-field-unknown`. Configuration and frontmatter failures report the
+offending field, such as `navigation[2].title`, when one can be identified.
 
 ## Use the compiler as a library
 

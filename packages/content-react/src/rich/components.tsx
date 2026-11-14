@@ -10,6 +10,7 @@ import {
 } from "react";
 import { safeDiagramSvg } from "./diagram-svg";
 import { withDiagramMath } from "./diagram-math";
+import { pageMathOptions } from "./page-math";
 import { TopikMath, TopikMathInline, TopikMermaid } from "../theme/components";
 import type { TopikComponentMap, TopikComponentProps } from "../core/components";
 import { CodeBlockView, type CodeHighlight } from "../theme/code-block";
@@ -234,7 +235,7 @@ export function RichTopikMath(props: TopikComponentProps) {
   const content = stringAttribute(props.content) ?? "";
   const rendered = useRenderedHtml(async () => {
     const katex = await import("katex");
-    return katex.renderToString(content, { displayMode: true, throwOnError: false });
+    return katex.renderToString(content, pageMathOptions(true));
   }, [content]);
 
   if (!rendered.html) return <TopikMath {...props} />;
@@ -245,7 +246,7 @@ export function RichTopikMathInline(props: TopikComponentProps) {
   const content = stringAttribute(props.content) ?? "";
   const rendered = useRenderedHtml(async () => {
     const katex = await import("katex");
-    return katex.renderToString(content, { displayMode: false, throwOnError: false });
+    return katex.renderToString(content, pageMathOptions(false));
   }, [content]);
 
   if (!rendered.html) return <TopikMathInline {...props} />;

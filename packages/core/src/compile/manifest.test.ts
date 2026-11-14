@@ -149,6 +149,13 @@ describe("root manifest compilation", () => {
     await expect(compile({ dir })).rejects.toMatchObject({ id: "manifest-invalid" });
   });
 
+  test("reads a manifest whose namespace mentions git-lfs", async () => {
+    const dir = await fixture({
+      ".topik.yaml": "version: 1\nnamespace: acme/git-lfs-docs\nsources: []\n",
+    });
+    await expect(loadTopikManifest(dir)).resolves.toMatchObject({ namespace: "acme/git-lfs-docs" });
+  });
+
   test("empty manifest ignores conventional files, and explicit missing manifest fails", async () => {
     const dir = await fixture({ ".topik.yaml": sources([]), "wiki.yaml": "invalid" });
     expect((await compile({ dir })).resources).toEqual([]);
@@ -265,6 +272,42 @@ describe("root manifest compilation", () => {
       });
     },
   );
+
+  test("source failures keep their own root-relative location, field and cause", async () => {
+    const dir = await fixture({
+      ".topik.yaml": sources([{ kind: "wiki", config: "docs/wiki.yaml" }]),
+      "docs/wiki.yaml": "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation: [index]\n",
+      "docs/index.md": "---\nid: Not_Valid\n---\n# Docs\n",
+    });
+    const error = await compile({ dir }).catch((failure: unknown) => failure);
+    expect(error).toMatchObject({
+      name: "ManifestSourceError",
+      id: "frontmatter-invalid",
+      sourceIndex: 0,
+      kind: "wiki",
+      location: "docs/index.md",
+      field: "id",
+    });
+    expect((error as Error).cause).toMatchObject({
+      id: "frontmatter-invalid",
+      location: "index.md",
+    });
+    expect(Object.keys(error as object)).not.toContain("cause");
+  });
+
+  test("duplicate Guide files are reported as such, not as a manifest conflict", async () => {
+    const dir = await fixture({
+      ".topik.yaml": sources([{ kind: "collection", config: "guides/collection.yaml" }]),
+      "guides/collection.yaml": "id: blog\ntitle: Blog\n",
+      "guides/foo.md": "# Markdown\n",
+      "guides/foo.mdx": "# MDX\n",
+    });
+    await expect(compile({ dir })).rejects.toMatchObject({
+      id: "guide-duplicate",
+      location: "guides/foo.mdx",
+      relatedLocation: "guides/foo.md",
+    });
+  });
 
   test("rejects duplicate authored resource keys before evidence maps are merged", async () => {
     const dir = await fixture({

@@ -2,6 +2,18 @@
   "name": "@topik/schema",
   "version": "0.1.0-alpha.7",
   "description": "JSON Schema definitions for Topik resources",
+  "keywords": [
+    "course",
+    "json-schema",
+    "schema",
+    "topik",
+    "typescript",
+    "wiki"
+  ],
+  "homepage": "https://github.com/subtopik/topik/tree/main/packages/schema#readme",
+  "bugs": {
+    "url": "https://github.com/subtopik/topik/issues"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -41,5 +53,8 @@
     "vite": "catalog:",
     "vite-plus": "catalog:",
     "yaml": "^2.9.1"
+  },
+  "engines": {
+    "node": ">=22.22.0"
   }
 }

@@ -4,7 +4,7 @@ import rawAssetV1Schema from "./v1.json" with { type: "json" };
 
 const ajv = createValidator();
 const validateAsset = ajv.compile(rawAssetV1Schema);
-testSchema("asset", validateAsset);
+testSchema("asset", rawAssetV1Schema);
 
 describe("Asset/v1 schema", () => {
   test("has the canonical versioned schema identifier", () => {

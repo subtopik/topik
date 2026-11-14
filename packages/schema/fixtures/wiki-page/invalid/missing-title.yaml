@@ -1,9 +1,9 @@
+# expect: /spec required title
 apiVersion: v1
 type: WikiPage
 name: introduction
 spec:
   wiki: vulpo-docs
-  slug: introduction
   content:
     format: topik
     value: "# Introduction"

@@ -1,1 +1,2 @@
+# expect: /spec additionalProperties age
 { apiVersion: v1, type: Person, name: john-doe, spec: { name: John Doe, age: 30 } }

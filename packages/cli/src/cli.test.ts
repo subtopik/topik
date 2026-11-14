@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
+import type { BroCliConfig, BroCliEvent } from "@drizzle-team/brocli";
 import { PublicCompileError } from "@topik/core";
+import packageJson from "../package.json";
 import { CliError, formatPublicCliError, PublicCliError } from "./errors";
 
 const runMock = vi.fn();
@@ -34,7 +36,38 @@ describe("cli entrypoint", () => {
     expect(runMock.mock.calls[0]?.[1]).toMatchObject({
       name: "topik",
       description: "Topik CLI",
+      version: packageJson.version,
     });
+  });
+
+  test("routes brocli handler failures through the public error formatter", async () => {
+    const sentinel = "PRIVATE_VALUE";
+    const output: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...values) => {
+      output.push(values.map(String).join(" "));
+    });
+
+    await import("./cli");
+    // The entrypoint was imported after a module reset; use its own error class.
+    const { PublicCliError: EntrypointPublicCliError } = await import("./errors");
+    const theme = (runMock.mock.calls[0]?.[1] as BroCliConfig | undefined)?.theme;
+    const unknownError = (error: unknown): BroCliEvent => ({
+      type: "error",
+      violation: "unknown_error",
+      name: "topik",
+      description: "Topik CLI",
+      error,
+    });
+
+    expect(await theme?.(unknownError(new Error(`listen EADDRINUSE /tmp/${sentinel}`)))).toBe(true);
+    expect(await theme?.(unknownError(new EntrypointPublicCliError("dev-port-invalid")))).toBe(
+      true,
+    );
+    expect(await theme?.({ type: "version", name: "topik", description: undefined })).toBe(false);
+    expect(output).toEqual([
+      "Topik command failed.",
+      "Dev server port must be an integer from 0 to 65535.",
+    ]);
   });
 
   test("prints a generic failure for unknown recursive errors", async () => {

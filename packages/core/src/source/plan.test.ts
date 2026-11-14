@@ -1356,3 +1356,62 @@ test("nested theme addition uses independently inspected insertion evidence", as
     "primary: '#ff0000' # keep\n    light: \"#ffffff\"\n",
   );
 });
+
+test("a new Wiki in an update plan reports that source initialization is required", async () => {
+  const project = await readSourceProject({
+    tree: [
+      file(
+        ".topik.yaml",
+        "version: 1\nnamespace: example/wiki\nsources: [{kind: wiki, config: docs/wiki.yaml}]\n",
+      ),
+      file("docs/wiki.yaml", "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation: [intro]\n"),
+      file("docs/intro.md", "# Intro\n"),
+    ],
+  });
+  const created: Wiki = { apiVersion: "v1", type: "Wiki", name: "other", spec: { title: "Other" } };
+  const admitted = authority(project);
+  expect(
+    await planSourceUpdates({
+      project,
+      expectedTreeDigest: project.treeDigest,
+      packageCohort: cohort,
+      desiredResources: [...project.compilation.resources, created],
+      operations: [{ kind: "create", resource: "Wiki/other", config: "docs/wiki.yaml" }],
+      authority: { ...admitted, resources: [...admitted.resources, "Wiki/other"] },
+    }),
+  ).toMatchObject({
+    ok: false,
+    diagnostics: [{ code: "source-creation-required", resource: "Wiki/other" }],
+  });
+});
+
+test("opaque legacy frontmatter blocks reviewed opt-in with a coded page diagnostic", async () => {
+  const project = await readSourceProject({
+    tree: [
+      file(
+        ".topik.yaml",
+        "version: 1\nnamespace: example/legacy\nsources: [{kind: collection, config: blog/custom.yaml}]\n",
+      ),
+      file("blog/custom.yaml", "id: blog\ntitle: Blog\n"),
+      file("blog/post.md", "---\ntitle: &title Original\nsubtitle: *title\n---\n# Original\n"),
+    ],
+  });
+  const post = project.documents.find((document) => document.path === "blog/post.md");
+  expect(post).toBeDefined();
+  expect(
+    await planSourceUpdates({
+      project,
+      expectedTreeDigest: project.treeDigest,
+      packageCohort: cohort,
+      desiredResources: project.compilation.resources,
+      operations: [],
+      authority: authority(project),
+      optInConfigs: ["blog/custom.yaml"],
+    }),
+  ).toMatchObject({
+    ok: false,
+    diagnostics: [
+      { code: "source-version-collision", resource: post!.resource, path: "blog/post.md" },
+    ],
+  });
+});

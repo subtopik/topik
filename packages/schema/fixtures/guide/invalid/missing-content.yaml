@@ -1,1 +1,2 @@
+# expect: /spec required content
 { apiVersion: v1, type: Guide, name: test-guide, spec: { title: Test Guide, slug: test-guide } }

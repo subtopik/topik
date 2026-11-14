@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vite-plus/test";
 import { render } from "pele";
 import { withDiagramMath } from "./diagram-math";
 import { safeDiagramSvg } from "./diagram-svg";
@@ -16,10 +16,11 @@ const math =
   '<math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><mfrac><mi>x</mi><mi>y</mi></mfrac></math>';
 const markup = `<span class="katex">${math}</span>`;
 const fonts = Object.getOwnPropertyDescriptor(document, "fonts");
+let measure: MockInstance<Element["getBoundingClientRect"]>;
 
 beforeEach(() => {
   typeset.mockReset().mockReturnValue(markup);
-  vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
+  measure = vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
     width: 60,
     height: 45,
     x: 0,
@@ -119,7 +120,7 @@ describe("diagram math resolver", () => {
   it.each([0, NaN, Infinity, 4097])(
     "keeps TeX when measurement is unusable (%s)",
     async (width) => {
-      vi.mocked(Element.prototype.getBoundingClientRect).mockReturnValue({
+      measure.mockReturnValue({
         width,
         height: 40,
       } as DOMRect);
@@ -132,7 +133,7 @@ describe("diagram math resolver", () => {
       '<span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><mtext href="https://example.com">x</mtext></math></span>',
     );
     await withDiagramMath("$$x$$", (resolver) => expect(resolver?.("x", 16)).toBeNull());
-    expect(Element.prototype.getBoundingClientRect).not.toHaveBeenCalled();
+    expect(measure).not.toHaveBeenCalled();
   });
 
   it("bounds formula input, dimensions and total resolver calls", async () => {

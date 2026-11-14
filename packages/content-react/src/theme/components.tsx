@@ -5,7 +5,9 @@ import {
 } from "@topik/content";
 import {
   Children,
+  createContext,
   isValidElement,
+  useContext,
   useId,
   useMemo,
   useRef,
@@ -18,6 +20,7 @@ import {
 } from "react";
 import type {
   TopikColorScheme,
+  TopikComponent,
   TopikComponentMap,
   TopikComponentProps,
   TopikLinkHandler,
@@ -659,60 +662,83 @@ export const defaultTopikComponents = {
   TopikUnderline,
 } satisfies TopikComponentMap;
 
+/** @internal Rendering options that themed slots read at render time, not at map creation. */
+export interface TopikSlotOptions {
+  colorScheme?: TopikColorScheme;
+  onNavigateLink?: TopikLinkHandler;
+  renderLink?: TopikLinkRenderer;
+  resolveLink?: TopikLinkResolver;
+}
+
+const TopikSlotOptionsContext = createContext<TopikSlotOptions | undefined>(undefined);
+
+/** @internal Supplies the latest handlers to slots without changing slot component identities. */
+export const TopikSlotOptionsProvider = TopikSlotOptionsContext.Provider;
+
+type TopikSlotKind = "card" | "choice" | "explanation" | "figure" | "link";
+
+const slotKinds = new WeakMap<TopikComponent, TopikSlotKind>();
+const slotCache: Record<TopikSlotKind, WeakMap<TopikComponent, TopikComponent>> = {
+  card: new WeakMap(),
+  choice: new WeakMap(),
+  explanation: new WeakMap(),
+  figure: new WeakMap(),
+  link: new WeakMap(),
+};
+
+function createSlot(kind: TopikSlotKind, Component: TopikComponent): TopikComponent {
+  switch (kind) {
+    case "card":
+    case "link":
+      return function TopikNavigationSlot(props: TopikComponentProps) {
+        const options = useContext(TopikSlotOptionsContext);
+        return (
+          <Component
+            {...props}
+            onNavigateLink={options?.onNavigateLink ?? props.onNavigateLink}
+            renderLink={options?.renderLink ?? props.renderLink}
+            resolveLink={options?.resolveLink ?? props.resolveLink}
+          />
+        );
+      };
+    case "figure":
+      return function TopikFigureSlot(props: TopikComponentProps) {
+        const options = useContext(TopikSlotOptionsContext);
+        return <Component {...props} colorScheme={options?.colorScheme ?? props.colorScheme} />;
+      };
+    case "choice":
+    case "explanation":
+      return Object.assign(
+        function TopikRoleSlot(props: TopikComponentProps) {
+          return <Component {...props} __topikRole={kind} />;
+        },
+        { __topikRole: kind },
+      );
+  }
+}
+
+/** One wrapper per component and slot, so repeated component maps never remount content. */
+function slot(kind: TopikSlotKind, Component: TopikComponent): TopikComponent {
+  if (slotKinds.get(Component) === kind) return Component;
+  let wrapped = slotCache[kind].get(Component);
+  if (!wrapped) {
+    wrapped = createSlot(kind, Component);
+    slotKinds.set(wrapped, kind);
+    slotCache[kind].set(Component, wrapped);
+  }
+  return wrapped;
+}
+
 export function getDefaultTopikComponents(
   overrides: Partial<TopikComponentMap> = {},
-  options: {
-    colorScheme?: TopikColorScheme;
-    onNavigateLink?: TopikLinkHandler;
-    renderLink?: TopikLinkRenderer;
-    resolveLink?: TopikLinkResolver;
-  } = {},
 ): TopikComponentMap {
-  const TopikCardComponent = overrides.TopikCard ?? TopikCard;
-  const TopikChoiceComponent = overrides.TopikChoice ?? TopikChoice;
-  const TopikExplanationComponent = overrides.TopikExplanation ?? TopikExplanation;
-  const TopikFigureComponent = overrides.TopikFigure ?? TopikFigure;
-  const TopikLinkComponent = overrides.TopikLink ?? TopikLink;
-
   return {
     ...defaultTopikComponents,
     ...overrides,
-    TopikCard: function TopikCardSlot(props: TopikComponentProps) {
-      return (
-        <TopikCardComponent
-          {...props}
-          onNavigateLink={options.onNavigateLink ?? props.onNavigateLink}
-          renderLink={options.renderLink ?? props.renderLink}
-          resolveLink={options.resolveLink ?? props.resolveLink}
-        />
-      );
-    },
-    TopikChoice: Object.assign(
-      function TopikChoiceSlot(props: TopikComponentProps) {
-        return <TopikChoiceComponent {...props} __topikRole="choice" />;
-      },
-      { __topikRole: "choice" },
-    ),
-    TopikExplanation: Object.assign(
-      function TopikExplanationSlot(props: TopikComponentProps) {
-        return <TopikExplanationComponent {...props} __topikRole="explanation" />;
-      },
-      { __topikRole: "explanation" },
-    ),
-    TopikFigure: function TopikFigureSlot(props: TopikComponentProps) {
-      return (
-        <TopikFigureComponent {...props} colorScheme={options.colorScheme ?? props.colorScheme} />
-      );
-    },
-    TopikLink: function TopikLinkSlot(props: TopikComponentProps) {
-      return (
-        <TopikLinkComponent
-          {...props}
-          onNavigateLink={options.onNavigateLink ?? props.onNavigateLink}
-          renderLink={options.renderLink ?? props.renderLink}
-          resolveLink={options.resolveLink ?? props.resolveLink}
-        />
-      );
-    },
+    TopikCard: slot("card", overrides.TopikCard ?? TopikCard),
+    TopikChoice: slot("choice", overrides.TopikChoice ?? TopikChoice),
+    TopikExplanation: slot("explanation", overrides.TopikExplanation ?? TopikExplanation),
+    TopikFigure: slot("figure", overrides.TopikFigure ?? TopikFigure),
+    TopikLink: slot("link", overrides.TopikLink ?? TopikLink),
   };
 }

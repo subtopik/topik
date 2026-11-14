@@ -38,7 +38,8 @@ export function RichTopikContentProvider({
 }: RichTopikContentProviderProps) {
   const mergedComponents = useRichTopikComponents(components);
   return (
-    <RichTopikThemeProvider theme={theme}>
+    // Rich output follows the content color scheme unless a rich theme is given explicitly.
+    <RichTopikThemeProvider theme={theme ?? props.colorScheme}>
       <TopikContentProvider {...props} components={mergedComponents}>
         {children}
       </TopikContentProvider>

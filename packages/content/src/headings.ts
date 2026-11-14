@@ -1,7 +1,10 @@
 import type { Heading } from "mdast";
-import GithubSlugger from "github-slugger";
+import GithubSlugger, { slug } from "github-slugger";
 import type { ContentDocument } from "./model.js";
 import { plainText, walkContent } from "./traversal.js";
+
+/** Base anchor for headings whose text has no sluggable characters. */
+const FALLBACK_HEADING_ID = "section";
 
 export interface TopikHeading {
   id: string;
@@ -30,8 +33,10 @@ export function assignHeadingIds(headings: readonly Heading[]): TopikHeading[] {
     let id = explicit;
     if (typeof id !== "string") {
       // Explicit anchors retain their spelling; only generated IDs are slugified.
+      // Headings without sluggable text share a fallback so no ID is ever empty.
+      const base = slug(title) === "" ? FALLBACK_HEADING_ID : title;
       do {
-        id = slugger.slug(title);
+        id = slugger.slug(base);
       } while (explicitIds.has(id));
     }
     heading.data = { ...heading.data, hProperties: { id } };

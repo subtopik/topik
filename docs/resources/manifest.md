@@ -38,7 +38,7 @@ Configuration paths use normalized, portable, manifest-relative `/` spelling. Ab
 
 Paths inside each configuration remain relative to that configuration's directory; Markdown media references remain relative to their document. Both retain their existing local containment rules. Changing the working directory does not change resolution. The location for new media is a local configuration setting: see [New media destination](./assets.md#new-media-destination).
 
-The manifest and explicitly selected configurations are limited to 1 MiB each, with at most 1,000 sources and 32 levels of configuration nesting. YAML uses core data types; duplicate keys, aliases and custom tags are rejected. Unknown fields and kinds, unsupported versions and missing sources fail visibly. Config failures identify the zero-based `sources[index]`, declared kind and safe manifest-relative config path. No nearby config is substituted.
+The manifest and explicitly selected configurations are limited to 1 MiB each, with at most 1,000 sources and 32 levels of configuration nesting. YAML uses core data types; duplicate keys, aliases and custom tags are rejected. Unknown fields and kinds, unsupported versions and missing sources fail visibly. Config failures identify the zero-based `sources[index]`, declared kind and safe manifest-relative config path. A failure in a source's own files, such as invalid page frontmatter, keeps that file's manifest-relative path and any offending field instead. No nearby config is substituted.
 
 ## Library usage
 

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -37,6 +37,21 @@ describe("Astro static Asset publication", () => {
     await removeDigestSnapshot(output);
     expect(await readdir(output.pathname)).toEqual([]);
   });
+
+  test.skipIf(process.platform === "win32")(
+    "publishes world-traversable directories and readable files",
+    async () => {
+      const outputPath = join(root, "served", "dist");
+      const files = snapshot("served");
+
+      await publishDigestSnapshot(outputUrl(outputPath), files);
+
+      expect((await stat(join(root, "served"))).mode & 0o777).toBe(0o755);
+      expect((await stat(outputPath)).mode & 0o777).toBe(0o755);
+      expect((await stat(join(outputPath, "blobs"))).mode & 0o777).toBe(0o755);
+      expect((await stat(join(outputPath, "blobs", files[0].digest))).mode & 0o777).toBe(0o444);
+    },
+  );
 
   test("snapshots caller-owned bytes before asynchronous staging", async () => {
     const output = outputUrl(join(root, "snapshot"));

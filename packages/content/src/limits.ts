@@ -3,8 +3,11 @@ import type { Diagnostic, TreeNode } from "./model.js";
 /** Fixed admission limits, measured in UTF-16 code units and tree nodes. */
 export const CONTENT_LIMITS = Object.freeze({
   sourceLength: 1_000_000,
-  /** Inline delimiter attempts; code-span attempts are weighted by delimiter run length. */
-  parserSteps: 4_096,
+  /**
+   * Inline parser work per document: event visits charged for possible closing
+   * delimiters, plus code-span scans and label serialization. Linear syntax is free.
+   */
+  parserSteps: 67_108_864,
   treeDepth: 64,
   treeNodes: 50_000,
   dataDepth: 160,

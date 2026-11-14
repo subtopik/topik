@@ -125,8 +125,11 @@ export async function compileResourceLinks(input: CompileResourceLinksInput): Pr
     );
     const moduleNames = new Set(modules.map((module) => module.name));
     const pages = documents.filter(
+      // Like the analysis loop above, pages without a source binding take no part in routing.
       (resource): resource is Extract<DocumentResource, { type: "CoursePage" }> =>
-        resource.type === "CoursePage" && moduleNames.has(resource.spec.module),
+        resource.type === "CoursePage" &&
+        moduleNames.has(resource.spec.module) &&
+        input.sourcePathsByResource[resourceKey(resource)] !== undefined,
     );
     const resolved = resolveCourseNavigation({
       course: course.name,

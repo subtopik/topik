@@ -538,6 +538,61 @@ describe("compile command", () => {
     },
   );
 
+  test("publishes into a pre-existing empty output directory", async () => {
+    const outDir = join(dir, "precreated");
+    await mkdir(outDir);
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await (compile as CompileCommand).handler?.({
+      dir,
+      outDir,
+      format: "json",
+      dryRun: false,
+      validate: true,
+      links: "error",
+    });
+
+    expect((await readdir(outDir)).sort()).toEqual([
+      "blobs",
+      "materialization.json",
+      "resources",
+      "semantic.json",
+    ]);
+  });
+
+  test("still refuses an output directory holding only an empty subdirectory", async () => {
+    const outDir = join(dir, "nearly-empty");
+    await mkdir(join(outDir, "keep"), { recursive: true });
+
+    await expect(replaceCompilationTree(outDir, ownedFiles("replacement"))).rejects.toThrow(
+      /not recognized as owned/u,
+    );
+    expect(await readdir(outDir)).toEqual(["keep"]);
+  });
+
+  test.skipIf(process.platform === "win32")(
+    "publishes directories traversable by other users",
+    async () => {
+      const outDir = join(dir, "served", "nested", "out");
+
+      for (const generation of ["first", "second"]) {
+        await replaceCompilationTree(outDir, ownedFiles(generation));
+        const modes = await treeModes(outDir);
+        expect(modes).toEqual({
+          "": 0o755,
+          blobs: 0o755,
+          "materialization.json": 0o644,
+          resources: 0o755,
+          "resources/Guide": 0o755,
+          [ownedResourcePath(generation)]: 0o644,
+          "semantic.json": 0o644,
+        });
+      }
+      expect((await lstat(join(dir, "served"))).mode & 0o777).toBe(0o755);
+      expect((await lstat(join(dir, "served", "nested"))).mode & 0o777).toBe(0o755);
+    },
+  );
+
   test("replaces a genuinely valid empty prior compilation", async () => {
     const outDir = join(dir, "valid-empty-compilation");
     await writeEmptyOwnedTree(outDir);
@@ -786,6 +841,18 @@ async function writeEmptyOwnedTree(root: string): Promise<void> {
   ]) {
     await writeFile(join(root, file.path), file.bytes);
   }
+}
+
+async function treeModes(root: string, prefix = ""): Promise<Record<string, number>> {
+  const modes: Record<string, number> = {
+    [prefix]: (await lstat(join(root, prefix))).mode & 0o777,
+  };
+  for (const entry of await readdir(join(root, prefix), { withFileTypes: true })) {
+    const path = prefix.length === 0 ? entry.name : `${prefix}/${entry.name}`;
+    if (entry.isDirectory()) Object.assign(modes, await treeModes(root, path));
+    else modes[path] = (await lstat(join(root, path))).mode & 0o777;
+  }
+  return modes;
 }
 
 function ownedResourcePath(generation: string): string {

@@ -46,6 +46,23 @@ export function ArticleWithComponents() {
 }
 ```
 
+### Color scheme
+
+Pass `colorScheme="light"` or `colorScheme="dark"` to `TopikContent`, or to
+`TopikContentProvider`, to choose the scheme for all content. The content root
+then carries a matching `data-theme` attribute: the stylesheet uses its colors,
+figures show `src` or `darkSrc`, and `RichTopikContentProvider` uses the same
+scheme for code highlighting and diagrams unless its own `theme` is set. An
+explicit `colorScheme` overrides a `.dark` class on an ancestor in both
+directions.
+
+Without `colorScheme`, the root has no `data-theme`. The stylesheet then uses
+dark colors only inside a `.dark` ancestor, and figures with `darkSrc` follow the
+reader's operating-system preference through `prefers-color-scheme`, because the
+renderer cannot observe the application's theme class. Applications with a theme
+switch should pass the selected scheme as `colorScheme` so that text, panels,
+figures and rich output always agree.
+
 ## Variables
 
 Supply reader values through `config.variables`:
@@ -100,6 +117,27 @@ export function Preview({ source }: { source: string }) {
 The placeholder has alert semantics and does not expose the source or diagnostic
 text. Retain the source separately for correction. Use `onDiagnostic` to collect
 sanitized compilation diagnostics when the application needs them.
+
+In the browser, `TopikContent` reports `onDiagnostic`, `onAssetDiagnostic`,
+`onLinkDiagnostic` and `onNavigationDiagnostic` after the content commits, once
+for each compiled document. The callbacks may therefore update application state,
+and inline callbacks are safe: their identity never causes recompilation, and the
+latest callback receives the report. Resolving the same document again, for
+example with a new `resolveLink` function, reports only when the resulting
+diagnostics differ. During server rendering, where no commit follows, the
+callbacks run while rendering. When content cannot be admitted and no placeholder
+is requested, `onDiagnostic` runs before `InvalidTopikContentError` is thrown.
+The lower-level `renderTopikMarkdown` and `renderTopikContent` functions call
+their callbacks synchronously, as they have no component lifecycle.
+
+`TopikContent` compiles again only when `content`, `file` or the value of `config`
+changes; an inline `config` object with equal contents reuses the compiled
+document. New `onNavigateLink`, `renderLink`, `resolveLink`, `resolveAsset` or
+inline `components` objects with the same component functions update the rendered
+content in place, so interactive state such as quiz answers, selected tabs and
+expanded code regions is kept. Pass component functions that are defined once,
+outside render: a new component function is a different component to React and
+remounts its content.
 
 To inspect a result before rendering, compile explicitly:
 

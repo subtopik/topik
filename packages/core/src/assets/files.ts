@@ -362,16 +362,11 @@ async function readPortableAssetFileAnchored(
         (typeof constants.O_NONBLOCK === "number" ? constants.O_NONBLOCK : 0),
     );
     const before = await fileHandle.stat({ bigint: true });
-    if (
-      !before.isFile() ||
-      before.nlink !== 1n ||
-      (before.mode & 0o111n) !== 0n ||
-      before.size > BigInt(maxBytes) ||
-      (before.size > 0n && before.blocks * 512n < before.size)
-    ) {
+    const unsafeFile = unsafeFilesystemFileReason(before, maxBytes);
+    if (unsafeFile !== undefined) {
       return {
         ok: false,
-        diagnostics: [unsupportedPath(options.path, "Unsafe filesystem file type or mode")],
+        diagnostics: [unsupportedPath(options.path, unsafeFile)],
       };
     }
     // Bound allocation/read even if the file grows after stat. The identity check below
@@ -795,13 +790,36 @@ function globToRegExp(pattern: string): RegExp {
   return new RegExp(`${source}$`, "u");
 }
 
+/** Git LFS never treats a blob of this size or larger as a pointer. */
+const GIT_LFS_POINTER_MAX_BYTES = 1024;
+/** Pointer version identifiers that Git LFS accepts, including legacy aliases. */
+const GIT_LFS_POINTER_VERSION =
+  /^version[ \t]+(?:https?:\/\/git-lfs\.github\.com\/spec\/v1|https?:\/\/hawser\.github\.com\/spec\/v1|https?:\/\/git-media\.io\/v\/2)[ \t]*$/iu;
+
+/**
+ * Detect Git LFS pointer files by their spec shape: a small text blob whose first line names a
+ * pointer version. Malformed or reordered keys after that line are still rejected, so truncated or
+ * hand-edited pointers never publish as asset bytes, while ordinary text that merely mentions
+ * Git LFS (for example `git-lfs` in a namespace or prose) remains readable.
+ */
 export function looksLikeGitLfsPointer(bytes: Uint8Array): boolean {
-  const prefix = new TextDecoder().decode(bytes.slice(0, 1024));
-  return (
-    /(?:^|\n)version\s+https?:\/\/git-lfs\.github\.com\/spec\/v1(?:\s|$)/iu.test(prefix) ||
-    /(?:^|\n)oid\s+sha256:[0-9a-f]{32,64}(?:\s|$)/iu.test(prefix) ||
-    /git-media|git-lfs/iu.test(prefix.slice(0, 256))
-  );
+  if (bytes.byteLength === 0 || bytes.byteLength >= GIT_LFS_POINTER_MAX_BYTES) return false;
+  const text = new TextDecoder().decode(bytes);
+  const firstLine = text.replace(/^[﻿\s]+/u, "").split(/\r?\n/u, 1)[0] ?? "";
+  return GIT_LFS_POINTER_VERSION.test(firstLine);
+}
+
+function unsafeFilesystemFileReason(stats: BigIntStats, maxBytes: number): string | undefined {
+  if (!stats.isFile()) return "Only regular files can be read; found a special filesystem entry";
+  if (stats.nlink !== 1n) return "Hard-linked files cannot be read; replace the link with a copy";
+  if ((stats.mode & 0o111n) !== 0n) {
+    return "Executable files cannot be read; clear the executable permission bits";
+  }
+  if (stats.size > BigInt(maxBytes)) return "File exceeds the read size limit";
+  if (stats.size > 0n && stats.blocks * 512n < stats.size) {
+    return "Sparse or filesystem-compressed files cannot be read; rewrite the file without holes";
+  }
+  return undefined;
 }
 
 function unsupported(file: PortableAssetFileDescriptor, message: string): TopikAssetDiagnostic {

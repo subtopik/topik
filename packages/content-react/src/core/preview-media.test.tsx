@@ -5,6 +5,8 @@ import { createRoot, hydrateRoot, type Root } from "react-dom/client";
 import { renderToString } from "react-dom/server";
 import { afterEach, expect, test, vi } from "vite-plus/test";
 import { TopikContent } from "../theme/TopikContent";
+import { defaultTopikComponents } from "../theme/components";
+import { compileTopikContent, renderTrustedTopikTree } from "./render";
 import { createPreviewAssetAdapter, type PreviewAssetAdapter } from "./preview-assets";
 const name = `auto-v1-${"a".repeat(52)}`;
 const bytes = new Uint8Array([1, 2, 3]);
@@ -333,6 +335,51 @@ test.each([false, true])(
     } finally {
       vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     }
+  },
+);
+
+test.each(["trusted tree", "inline resolver"] as const)(
+  "loaded preview media survives a fresh but equivalent render: %s",
+  async (mode) => {
+    setup();
+    const fetcher = vi.fn(async (url: URL) => mediaResponse(url));
+    vi.stubGlobal("fetch", fetcher);
+    const content = `![Hero](asset:${name})\n\n{% figure src="asset:${name}" alt="Figure" /%}`;
+    const compiled = compileTopikContent(content);
+    if (!compiled.ok) throw new Error("fixture must compile");
+    const page = (label: string) =>
+      mode === "trusted tree" ? (
+        <div data-label={label}>
+          {renderTrustedTopikTree(compiled.tree, {
+            components: defaultTopikComponents,
+            previewAssets: adapter,
+          })}
+        </div>
+      ) : (
+        <TopikContent
+          content={content}
+          previewAssets={adapter}
+          resolveAsset={() => undefined}
+          className={label}
+        />
+      );
+    await act(async () => root.render(page("first")));
+    await vi.waitFor(async () => {
+      await act(async () => {});
+      expect(container.querySelectorAll("img")).toHaveLength(2);
+    });
+    const images = [...container.querySelectorAll("img")];
+    // A synchronous act commits before the cached load settles, exposing any loading flash.
+    act(() => root.render(page("second")));
+    expect(container.querySelector('[role="status"]')).toBeNull();
+    expect([...container.querySelectorAll("img")]).toEqual(images);
+    await act(async () => {});
+    expect([...container.querySelectorAll("img")]).toEqual(images);
+    expect(images.map((image) => image.getAttribute("src"))).toEqual([
+      "blob:managed",
+      "blob:managed",
+    ]);
+    expect(fetcher).toHaveBeenCalledTimes(1);
   },
 );
 

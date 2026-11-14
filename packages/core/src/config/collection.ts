@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { DEFAULT_ASSET_DIRECTORY, sourceAssetsConfigSchema } from "./assets";
+import { rejectMisspelledKeys } from "./misspelled-keys";
 import { sourceVersionSchema, parseSourcePersons } from "./source-version";
 
 const nameRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -18,6 +19,7 @@ export type CollectionConfig = Omit<z.infer<typeof collectionConfigSchema>, "per
 };
 
 export function parseCollectionConfig(raw: unknown): CollectionConfig {
+  rejectMisspelledKeys(raw, Object.keys(collectionConfigSchema.shape));
   const { persons, ...config } = collectionConfigSchema.parse(raw);
   return {
     ...config,

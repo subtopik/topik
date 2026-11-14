@@ -1,1 +1,2 @@
+# expect: /type const
 { apiVersion: v1, type: Guide, name: john-doe, spec: { name: John Doe } }

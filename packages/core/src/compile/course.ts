@@ -9,8 +9,8 @@ import type { SourceResource } from "../resource";
 import { compileAssetResources, type AssetCompilationOptions } from "./assets";
 import { configurationDirectory, readExactConfigFile, type LoadedConfig } from "./config";
 import type { CompileResourceDiscovery } from "./guide";
-import { readRegularFileWithinRoot } from "./files";
-import { PublicCompileError } from "./public-errors";
+import { decodeUtf8Document, readRegularFileWithinRoot } from "./files";
+import { PublicCompileError, publicSchemaError } from "./public-errors";
 import {
   parseMarkdownFrontmatter,
   throwOnCompileErrors,
@@ -70,8 +70,8 @@ export async function discoverCourse(
   let config;
   try {
     config = parseCourseConfig(loaded.value);
-  } catch {
-    throw new PublicCompileError("config-invalid", options.configFile ?? loaded.path);
+  } catch (error) {
+    throw publicSchemaError("config-invalid", options.configFile ?? loaded.path, error);
   }
   const course: Course = {
     apiVersion: "v1",
@@ -117,8 +117,8 @@ export async function discoverCourse(
       let metadata;
       try {
         metadata = parseCoursePageMetadata(parsed.frontmatter);
-      } catch {
-        throw new PublicCompileError("frontmatter-invalid", file.path);
+      } catch (error) {
+        throw publicSchemaError("frontmatter-invalid", file.path, error);
       }
       const key = `CoursePage/${metadata.id}`;
       if (Object.hasOwn(sourcePathsByResource, key))
@@ -196,11 +196,7 @@ async function readCoursePage(
       throw error;
     }
     if (found) throw new PublicCompileError("course-page-ambiguous", path);
-    try {
-      found = { path, raw: new TextDecoder("utf-8", { fatal: true }).decode(bytes) };
-    } catch {
-      throw new PublicCompileError("frontmatter-invalid", path);
-    }
+    found = { path, raw: decodeUtf8Document(bytes, path) };
   }
   if (!found) throw new PublicCompileError("course-page-not-found", source);
   return found;

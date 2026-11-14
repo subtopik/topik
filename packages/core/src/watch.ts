@@ -2,18 +2,30 @@ import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { relative, resolve } from "node:path";
 import { watch as chokidarWatch } from "chokidar";
-import { compile, PublicCompileError, publicCompileErrorMessage } from "./compile";
+import {
+  compile,
+  PublicCompileError,
+  publicCompileErrorMessage,
+  type CompileValidationOptions,
+} from "./compile";
 import type { AssetPayload } from "./compile/assets";
 import { digestTopikMaterializationRecord } from "./assets/identity";
 import type { Resource } from "./resource";
 import { TOPIK_PREVIEW_PROTOCOL, type PreviewState } from "./preview";
 
+export type UpdateListener = (key: string, resource: Resource) => void;
+export type ErrorListener = (error: Error) => void;
 export interface WatchOptions {
   dir: string;
   signal?: AbortSignal;
+  /** Validation options passed to every compilation, for example the link policy. */
+  validation?: CompileValidationOptions;
+  /**
+   * Receives every compile and watch error, including one from the initial compilation
+   * that completes before `watch()` resolves and so before `on("error")` can be called.
+   */
+  onError?: ErrorListener;
 }
-export type UpdateListener = (key: string, resource: Resource) => void;
-export type ErrorListener = (error: Error) => void;
 export type PreviewStateListener = (state: PreviewState) => void;
 export interface Watcher {
   /** Compatibility inventory; replaced completely before any success notification. */
@@ -44,6 +56,7 @@ function freeze<T>(value: T): T {
 export async function watch(options: WatchOptions): Promise<Watcher> {
   const dir = resolve(options.dir);
   const emitter = new EventEmitter();
+  if (options.onError) emitter.on("error", options.onError);
   const resources = new Map<string, Resource>();
   const payloads = new Map<string, AssetPayload>();
   let state: PreviewState = freeze({
@@ -95,7 +108,7 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
       const revision = requested;
       publish({ status: "compiling", diagnostics: [] });
       try {
-        const result = await compile({ dir });
+        const result = await compile({ dir, validation: options.validation });
         // An edit arrived while reading: discard this candidate, including its payloads.
         if (closed || watchFailed) return;
         if (revision !== requested) continue;

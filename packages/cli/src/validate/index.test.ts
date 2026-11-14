@@ -148,9 +148,83 @@ describe("validate command", () => {
     await expect((validate as ValidateCommand).handler?.({ path: dir })).resolves.toBeUndefined();
     expect(log).toHaveBeenCalledWith("Validated 1 resources");
 
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
     await expect(
       (validate as ValidateCommand).handler?.({ path: join(dir, ".cache") }),
-    ).rejects.toMatchObject({ id: "resource-yaml-invalid" });
+    ).rejects.toMatchObject({ id: "resource-validation-failed" });
+  });
+
+  test("names each unparseable file in a directory and keeps validating the rest", async () => {
+    const sentinel = "PRIVATE_VALUE";
+    await writeFile(join(dir, "a-broken.json"), `{ "secret": "${sentinel}"`);
+    await writeFile(join(dir, "b-broken.yaml"), "a: [");
+    await writeFile(
+      join(dir, "c-invalid.json"),
+      JSON.stringify({ apiVersion: "v1", type: "Wiki", name: "docs", spec: { title: 1 } }),
+    );
+    await writeFile(
+      join(dir, "d-valid.yaml"),
+      ["apiVersion: v1", "type: Wiki", "name: ok", "spec:", "  title: Docs", ""].join("\n"),
+    );
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect((validate as ValidateCommand).handler?.({ path: dir })).rejects.toMatchObject({
+      id: "resource-validation-failed",
+    });
+
+    const output = error.mock.calls.map((call) => call.join(" ")).join("\n");
+    expect(output).toBe(
+      [
+        "a-broken.json: JSON resource input could not be parsed.",
+        "b-broken.yaml: YAML resource input could not be parsed.",
+        "c-invalid.json: Wiki/docs: /spec/title must be string",
+        "",
+        "1 validation error(s) in 2 resources while validating resources",
+        "2 resource file(s) could not be read or parsed; 2 resources were validated",
+      ].join("\n"),
+    );
+    expect(output).not.toContain(sentinel);
+    expect(output).not.toContain(dir);
+  });
+
+  test("fails when every resource file in a directory is unparseable", async () => {
+    await writeFile(join(dir, "broken.jsonl"), "{\n");
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect((validate as ValidateCommand).handler?.({ path: dir })).rejects.toMatchObject({
+      id: "resource-validation-failed",
+    });
+    expect(error.mock.calls.map((call) => call.join(" "))).toEqual([
+      "broken.jsonl: JSONL resource input could not be parsed.",
+      "1 resource file(s) could not be read or parsed; 0 resources were validated",
+    ]);
+  });
+
+  test.each(["json", "jsonl", "yaml"])("accepts a UTF-8 byte order mark in .%s", async (ext) => {
+    const resource = { apiVersion: "v1", type: "Wiki", name: "docs", spec: { title: "Docs" } };
+    const filePath = join(dir, `wiki.${ext}`);
+    await writeFile(filePath, `\uFEFF${JSON.stringify(resource)}\n`);
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await expect(
+      (validate as ValidateCommand).handler?.({ path: filePath }),
+    ).resolves.toBeUndefined();
+    expect(log).toHaveBeenCalledWith("Validated 1 resources");
+  });
+
+  test("reports every schema violation in a resource", async () => {
+    const filePath = join(dir, "wiki.json");
+    await writeFile(filePath, JSON.stringify({ apiVersion: "v1", type: "Wiki", spec: {} }));
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect((validate as ValidateCommand).handler?.({ path: filePath })).rejects.toMatchObject(
+      { id: "resource-validation-failed" },
+    );
+    expect(error).toHaveBeenCalledWith(
+      "wiki.json: Wiki/unknown: / must have required property 'name'\n" +
+        "wiki.json: Wiki/unknown: /spec must have required property 'title'\n\n" +
+        "2 validation error(s) in 1 resources while validating resources",
+    );
   });
 
   test("keeps JSON bytes and absolute paths out of parse failures", async () => {

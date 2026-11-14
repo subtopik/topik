@@ -1,5 +1,6 @@
 import { sanitizeTopikDiagnosticFile } from "@topik/content";
 import type { ValidationError } from "@topik/core";
+import { formatPublicCliError } from "./errors";
 
 /** A validation error, optionally located in the resource file it was read from. */
 export interface LocatedValidationError extends ValidationError {
@@ -28,6 +29,11 @@ export function formatValidationFailure(
   lines.push("");
   lines.push(`${errors.length} validation error(s) in ${resourceCount} resources while ${context}`);
   return lines.join("\n");
+}
+
+/** Render a resource file that could not be read or parsed, with its safe label. */
+export function formatUnreadableResourceFile(file: string, error: unknown): string {
+  return `${safeFileLabel(file)}: ${formatPublicCliError(error)}`;
 }
 
 function safeFileLabel(file: string): string {
@@ -59,11 +65,6 @@ function safePointer(pointer: string): string {
 function safeMessage(error: ValidationError): string {
   // These messages interpolate the input's own type or apiVersion values.
   if (error.id === "resource-unsupported-version") return "Unsupported resource apiVersion";
-  if (
-    error.id === "resource-unsupported-type" ||
-    error.message.startsWith("Unsupported resource type")
-  ) {
-    return "Unsupported resource type";
-  }
+  if (error.id === "resource-unsupported-type") return "Unsupported resource type";
   return SAFE_MESSAGE.test(error.message) ? error.message : "is invalid";
 }

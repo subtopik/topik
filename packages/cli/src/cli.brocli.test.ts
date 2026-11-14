@@ -84,6 +84,27 @@ describe.skipIf(!existsSync(builtCli))("built topik binary", () => {
     expect(result.stderr).toBe("Topik command failed.\n");
   });
 
+  test("prints located content diagnostics when compilation fails", async () => {
+    dir = await mkdtemp(join(tmpdir(), "topik-cli-bin-"));
+    await writeFile(
+      join(dir, ".topik.yaml"),
+      "version: 1\nnamespace: a/b\nsources:\n  - kind: wiki\n    config: wiki.yaml\n",
+    );
+    await writeFile(join(dir, "wiki.yaml"), "id: w\ntitle: W\nnavigation: [index]\n");
+    await writeFile(join(dir, "index.md"), "# Index\n\n[missing](./missing.md)\n");
+
+    const result = await runBuilt(["compile", dir, "--dry-run"]);
+
+    expect(result).toMatchObject({
+      code: 1,
+      stdout: "",
+      stderr:
+        "index.md:3 error link-page-not-found: Internal link target page was not found.\n" +
+        "1 compile error(s)\n" +
+        "Compilation found errors.\n",
+    });
+  });
+
   test("rejects a malformed dev port before compiling", async () => {
     dir = await mkdtemp(join(tmpdir(), "topik-cli-bin-"));
 

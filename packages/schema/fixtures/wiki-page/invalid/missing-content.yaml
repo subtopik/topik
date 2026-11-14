@@ -1,7 +1,7 @@
+# expect: /spec required content
 apiVersion: v1
 type: WikiPage
 name: introduction
 spec:
   wiki: vulpo-docs
   title: Introduction
-  slug: introduction

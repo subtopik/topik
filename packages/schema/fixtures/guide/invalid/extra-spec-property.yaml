@@ -1,3 +1,4 @@
+# expect: /spec additionalProperties branch
 {
   apiVersion: v1,
   type: Guide,

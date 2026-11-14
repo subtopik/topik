@@ -1,3 +1,4 @@
+# expect: /spec additionalProperties icon
 apiVersion: v1
 type: CourseModule
 name: module-basics

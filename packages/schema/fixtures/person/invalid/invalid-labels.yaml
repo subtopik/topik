@@ -1,1 +1,2 @@
+# expect: /labels/count type
 { apiVersion: v1, type: Person, name: john-doe, labels: { count: 123 }, spec: { name: John Doe } }

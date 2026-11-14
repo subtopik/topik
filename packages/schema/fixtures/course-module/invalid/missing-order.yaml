@@ -1,3 +1,4 @@
+# expect: /spec required order
 apiVersion: v1
 type: CourseModule
 name: module-basics

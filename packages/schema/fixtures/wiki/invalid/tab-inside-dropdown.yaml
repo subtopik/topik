@@ -1,3 +1,5 @@
+# expect: /spec/navigation/0 oneOf via internalDropdownNode
+# expect: /spec/navigation/0/children/0 oneOf
 apiVersion: v1
 type: Wiki
 name: reversed-navigation

@@ -1,9 +1,9 @@
+# expect: /spec required wiki
 apiVersion: v1
 type: WikiPage
 name: introduction
 spec:
   title: Introduction
-  slug: introduction
   content:
     format: topik
     value: "# Introduction"

@@ -1,3 +1,4 @@
+# expect: /spec additionalProperties tabs
 apiVersion: v1
 type: Wiki
 name: vulpo-docs

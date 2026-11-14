@@ -14,11 +14,13 @@ npm install @topik/schema
 ## Usage
 
 Each schema is published as `@topik/schema/<resource>/v1.json`, with types at
-`@topik/schema/<resource>/v1`. Validate with any draft 2020-12 validator, for
-example Ajv:
+`@topik/schema/<resource>/v1`. Validate with any draft 2020-12 validator that
+supports the `email` and `uri` formats. With Ajv, whose default strict mode rejects
+unknown formats, register them with `ajv-formats`:
 
 ```ts
 import Ajv2020 from "ajv/dist/2020.js";
+import addFormats from "ajv-formats";
 import guideSchema from "@topik/schema/guide/v1.json" with { type: "json" };
 import type { Guide } from "@topik/schema/guide/v1";
 
@@ -33,7 +35,9 @@ const guide: Guide = {
   },
 };
 
-const validate = new Ajv2020().compile(guideSchema);
+const ajv = new Ajv2020();
+addFormats(ajv);
+const validate = ajv.compile(guideSchema);
 if (!validate(guide)) throw new Error(JSON.stringify(validate.errors));
 ```
 

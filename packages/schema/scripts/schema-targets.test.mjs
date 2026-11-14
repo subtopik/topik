@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, test } from "vite-plus/test";
+import { expect, test, vi } from "vite-plus/test";
 import { discoverSchemaTargets } from "./schema-targets.mjs";
 
 test("discovers every numeric resource version without treating tests as entries", async () => {
@@ -85,6 +85,35 @@ test("rejects non-versioned schema files", async () => {
       "Invalid versioned schema filename: src/asset/schema.json",
     );
   } finally {
+    await rm(packageDirectory, { recursive: true, force: true });
+  }
+});
+
+test("orders resources by code point regardless of the host collation", async () => {
+  const packageDirectory = await mkdtemp(join(tmpdir(), "topik-schema-targets-"));
+  // A host collation that disagrees with code-point order must not change the output.
+  const localeCompare = vi
+    .spyOn(String.prototype, "localeCompare")
+    .mockImplementation(function (other) {
+      return String(this) < other ? 1 : String(this) > other ? -1 : 0;
+    });
+
+  try {
+    for (const resource of ["wiki-page", "course", "wiki", "course-module", "asset"]) {
+      await mkdir(join(packageDirectory, "src", resource), { recursive: true });
+      await writeFile(join(packageDirectory, "src", resource, "v1.json"), "{}\n");
+    }
+
+    const targets = await discoverSchemaTargets(packageDirectory);
+    expect(targets.map(({ resource }) => resource)).toEqual([
+      "asset",
+      "course",
+      "course-module",
+      "wiki",
+      "wiki-page",
+    ]);
+  } finally {
+    localeCompare.mockRestore();
     await rm(packageDirectory, { recursive: true, force: true });
   }
 });

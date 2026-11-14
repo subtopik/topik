@@ -199,6 +199,10 @@ describe("rich content-react entry", () => {
     expect(renderToStringMock).toHaveBeenCalledWith("E = mc^2", {
       displayMode: true,
       throwOnError: false,
+      trust: false,
+      maxSize: 20,
+      maxExpand: 1000,
+      macros: {},
     });
     expect(mermaidRenderMock).toHaveBeenCalledWith(
       expect.stringContaining("graph TD"),

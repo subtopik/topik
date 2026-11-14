@@ -1,6 +1,8 @@
 import { expect, test } from "vite-plus/test";
 import {
+  components,
   isContentTag,
+  parseDocument,
   parseTopikContent,
   transformTopikContent,
   validateTopikContent,
@@ -99,4 +101,104 @@ test("rendering resolves context as literal text and leaves the authored branche
     ],
   });
   expect(document).toEqual(original);
+});
+
+function attributesOf(tree: unknown, name: string): Record<string, unknown>[] {
+  const found: Record<string, unknown>[] = [];
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) value.forEach(visit);
+    else if (isContentTag(value)) {
+      if (value.name === name) found.push(value.attributes);
+      value.children.forEach(visit);
+    }
+  };
+  visit(tree);
+  return found;
+}
+
+function transformUnadmitted(source: string, config: TopikContentConfig = {}): unknown {
+  const parsed = parseDocument(source, { ...components, ...config.components });
+  if (!parsed.ok) throw new Error(JSON.stringify(parsed.diagnostics));
+  return transformTopikContent(parsed.document, config);
+}
+
+test("the low-level transform drops URLs that fail the source URL policy", () => {
+  const source = [
+    "[x](javascript:alert(1)) ![i](javascript:alert(2)) [d](data:text/html,x) [v](VBScript:x)",
+    "",
+    "[e]() [p](//evil.example) [r][bad]",
+    "",
+    "[bad]: javascript:alert(3)",
+    "",
+    '{% figure src="javascript:alert(4)" darkSrc="data:image/png;base64,AA" alt="a" /%}',
+    "",
+    "{% cardGrid %}",
+    '{% card title="a" href="javascript:alert(5)" /%}',
+    `{% card title="b" href="asset:auto-v1-${"a".repeat(52)}" /%}`,
+    "{% /cardGrid %}",
+  ].join("\n");
+  expect(validateTopikContent(source).valid).toBe(false);
+  const tree = transformUnadmitted(source);
+
+  expect(attributesOf(tree, "TopikLink")).toEqual([{}, {}, {}, {}, {}, {}]);
+  expect(attributesOf(tree, "TopikImage")).toEqual([{ alt: "i" }]);
+  expect(attributesOf(tree, "TopikFigure")).toEqual([{ alt: "a" }]);
+  expect(attributesOf(tree, "TopikCard")).toEqual([{ title: "a" }, { title: "b" }]);
+  expect(JSON.stringify(tree)).not.toMatch(/javascript|data:|vbscript|evil/i);
+});
+
+test("the low-level transform drops unsafe custom asset attributes only", () => {
+  const config: TopikContentConfig = {
+    components: {
+      clip: {
+        kind: "block",
+        render: "Clip",
+        attributes: {
+          src: { type: "string", asset: true },
+          label: { type: "string" },
+        },
+        children: "none",
+        selfClosing: true,
+      },
+    },
+  };
+  const tree = transformUnadmitted(
+    '{% clip src="javascript:alert(1)" label="javascript:x" /%}',
+    config,
+  );
+  expect(attributesOf(tree, "Clip")).toEqual([{ label: "javascript:x" }]);
+});
+
+test("the low-level transform preserves URLs that admitted content may contain", () => {
+  const asset = `asset:auto-v1-${"a".repeat(52)}`;
+  const source = [
+    "[a](https://example.com/a?b#c) [b](./page) [c](#top) [d](mailto:a@example.com) [e](ref://wiki-page/install)",
+    "",
+    `![i](images/a.png) ![j](https://example.com/j.png) ![k](${asset})`,
+    "",
+    '{% figure src="images/a.png" darkSrc="https://example.com/d.png" alt="a" /%}',
+    "",
+    "{% cardGrid %}",
+    '{% card title="a" href="ref://wiki-page/install" /%}',
+    "{% /cardGrid %}",
+  ].join("\n");
+  const tree = transformUnadmitted(source);
+  expect(attributesOf(tree, "TopikLink").map((attributes) => attributes.href)).toEqual([
+    "https://example.com/a?b#c",
+    "./page",
+    "#top",
+    "mailto:a@example.com",
+    "ref://wiki-page/install",
+  ]);
+  expect(attributesOf(tree, "TopikImage").map((attributes) => attributes.src)).toEqual([
+    "images/a.png",
+    "https://example.com/j.png",
+    asset,
+  ]);
+  expect(attributesOf(tree, "TopikFigure")).toEqual([
+    { src: "images/a.png", darkSrc: "https://example.com/d.png", alt: "a" },
+  ]);
+  expect(attributesOf(tree, "TopikCard")).toEqual([
+    { title: "a", href: "ref://wiki-page/install" },
+  ]);
 });

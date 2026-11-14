@@ -118,7 +118,7 @@ export function transformMintlify(source: string, options: TransformOptions = {}
     warn(warnings, source, 0, `${error.message}; source kept`);
     return kept();
   }
-  const result = convert(text, tree, bomLength, bodyStart, dedent.bodyLines);
+  const result = convert(text, tree, bomLength, bodyStart, dedent.bodyLines, options.mdx ?? false);
   warnings.push(...result.warnings.map(toSource));
   if (!result.changed || warnings.length > 0) return kept();
   return { content: result.content, warnings, changed: true };
@@ -154,6 +154,7 @@ function parseSource(source: string, bomLength: number, mdx: boolean): SourceTre
       ...gfmFromMarkdown(),
       frontmatterFromMarkdown(),
       protectedMarkersFromMarkdown(),
+      imageLabelsFromMarkdown(),
     ],
   });
   assertTreeLimits(tree);
@@ -166,6 +167,7 @@ function convert(
   bomLength: number,
   bodyStart: number,
   bodyLines: ReadonlySet<number>,
+  mdx: boolean,
 ): TransformResult {
   const warnings: TransformWarning[] = [];
   const kept = (): TransformResult => ({ content: source, warnings, changed: false });
@@ -253,12 +255,14 @@ function convert(
 
   // Conversion is transactional: never claim a partial or invalid migration.
   if (warnings.length > 0) return kept();
-  for (const code of indentedCodeIn(source, tree, bomLength, lines, bodyLines))
+  for (const code of indentedCodeIn(source, tree, bomLength, lines, mdx ? null : bodyLines))
     warn(
       warnings,
       source,
       code,
-      "Indented text inside a component body would become a code block (MDX reads it as text); source kept",
+      bodyLines.has(lineIndex(lines, code))
+        ? "Indented text inside a component body would become a code block (MDX reads it as text); source kept"
+        : "Indented text would become a code block once renamed to .md (MDX reads it as text); source kept",
     );
   if (warnings.length > 0) return kept();
   const validation = validateTopikContent(out);
@@ -421,14 +425,18 @@ function indentedCodeIn(
   tree: SourceTree,
   bomLength: number,
   lines: number[],
-  bodyLines: ReadonlySet<number>,
+  /** Lines to inspect; null inspects the whole document (MDX has no indented code). */
+  bodyLines: ReadonlySet<number> | null,
 ): number[] {
   const offsets: number[] = [];
   collectNodes(tree, (node) => {
     if (node.type !== "code") return;
     const start = node.position!.start.offset! + bomLength;
     // Indented code starts at its indentation; fenced code starts at its fence.
-    if (bodyLines.has(lineIndex(lines, start)) && isIndentedCodeNode(source, start))
+    if (
+      (bodyLines === null || bodyLines.has(lineIndex(lines, start))) &&
+      isIndentedCodeNode(source, start)
+    )
       offsets.push(start);
   });
   return offsets;
@@ -448,7 +456,8 @@ function findMdxOnlySyntax(
   for (const node of tree.children) {
     if (node.type !== "paragraph") continue;
     const start = node.position!.start.offset! + bomLength;
-    if (start < bodyStart || (start > 0 && source[start - 1] !== "\n")) continue;
+    // A start right after the initial BOM is the beginning of the document.
+    if (start < bodyStart || (start > bomLength && source[start - 1] !== "\n")) continue;
     if (!MDX_ESM_RE.test(source.slice(start, start + 7))) continue;
     esm.add(node);
     found.push({
@@ -457,6 +466,16 @@ function findMdxOnlySyntax(
     });
   }
   const visit = (node: SourceNode): void => {
+    // MDX parses expressions in link labels and image alt text; destinations
+    // and titles are literal strings and are not label children.
+    if (node.type === "link" || node.type === "linkReference") {
+      node.children?.forEach(visit);
+      return;
+    }
+    if (node.type === "image" || node.type === "imageReference") {
+      (node as ImageNode).topikLabel?.forEach(visit);
+      return;
+    }
     if (PROTECTED_NODE_TYPES.has(node.type) || esm.has(node)) return;
     if (node.type === "text") {
       const start = node.position!.start.offset! + bomLength;
@@ -687,6 +706,20 @@ function protectedMarkersFromMarkdown(): Extension {
       topikJsxFlowBoundary: exit,
     },
   };
+}
+
+type ImageNode = SourceNode & { topikLabel?: SourceNode[] };
+
+function imageLabelsFromMarkdown(): Extension {
+  // Image alt text is flattened to a string; keep the parsed label children so
+  // MDX-only syntax inside alt text can be located. The closing label marker is
+  // entered last, once the label's children are complete.
+  const enterLabelMarker: Handle = function () {
+    const fragment = this.stack.at(-1) as unknown as SourceNode;
+    const node = this.stack.at(-2) as unknown as ImageNode | undefined;
+    if (node?.type === "image") node.topikLabel = [...(fragment.children ?? [])];
+  };
+  return { enter: { labelMarker: enterLabelMarker } };
 }
 
 function collectProtectedRanges(tree: SourceNode, offset: number): SourceRange[] {

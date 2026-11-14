@@ -548,6 +548,32 @@ describe("MDX-only syntax", () => {
     ["flow expression", "# Title\n\n{/* comment */}\n", 3, 1, "expressions"],
     ["inline expression", "Hello {user.name}!\n", 1, 7, "expressions"],
     ["expression in a body", "<Note>\n  Value: {1 + 1}\n</Note>\n", 2, 10, "expressions"],
+    ["expression in a link label", "[{1 + 1}](./page)\n", 1, 2, "expressions"],
+    ["expression in a nested link label", "[See *{name}*](./page)\n", 1, 7, "expressions"],
+    [
+      "expression in a reference link label",
+      "[Total {n}][ref]\n\n[ref]: ./page\n",
+      1,
+      8,
+      "expressions",
+    ],
+    ["expression in image alt text", "![{alt}](./img.png)\n", 1, 3, "expressions"],
+    [
+      "expression in reference image alt",
+      "![Logo {x}][pic]\n\n[pic]: ./a.png\n",
+      1,
+      8,
+      "expressions",
+    ],
+    ["expression in a linked image alt", "[![{alt}](./img.png)](./page)\n", 1, 4, "expressions"],
+    [
+      "default import after a BOM",
+      "﻿import Thing from './thing.js'\n\n# Page\n",
+      1,
+      2,
+      "import/export",
+    ],
+    ["export after a BOM", "﻿export const title = 'x'\n\n# Page\n", 1, 2, "import/export"],
   ])("refuses %s in MDX sources", (_name, source, line, column, kind) => {
     const result = transformMintlify(source, { mdx: true });
     expect(result).toMatchObject({ content: source, changed: false });
@@ -563,8 +589,32 @@ describe("MDX-only syntax", () => {
     "```js\nimport x from 'y'\nconst a = {b};\n```\n",
     "Text mentioning import and export.\nimport on a continuation line is prose.\n",
     '{% callout title="x" %}\nBody.\n{% /callout %}\n',
-    "[Link {text}](./page)\n",
+    // Destinations and titles are literal strings in MDX, not expressions.
+    '[Link](./page?q={x} "Title {y}")\n',
+    '![Alt](https://example.com/a.png?v={x} "Title {y}")\n',
+    "[Link `{code}`](./page)\n",
+    "![Alt `{code}` and \\{escaped\\}](https://example.com/a.png)\n",
   ])("allows Markdown that only resembles MDX syntax: %j", (source) => {
     expect(transformMintlify(source, { mdx: true }).warnings).toEqual([]);
+  });
+
+  // MDX has no indented code, so Markdown would turn this prose into code.
+  test.each([
+    ["top-level indented prose", "    Plain prose.\n", 1, 1],
+    ["indented prose after a BOM", "﻿    Plain prose.\n", 1, 2],
+    ["indented prose in a list item", "- Item\n\n      Continued prose.\n", 3, 3],
+    ["indented prose in a blockquote", "> Quote\n>\n>     Indented.\n", 3, 3],
+    ["an indented component", "    <Note>Example.</Note>\n", 1, 1],
+    ["indented prose after a component", "<Note>\n  Body.\n</Note>\n\n    Outside.\n", 5, 1],
+  ])("refuses %s in MDX sources", (_name, source, line, column) => {
+    const result = transformMintlify(source, { mdx: true });
+    expect(result).toMatchObject({ content: source, changed: false });
+    expect(result.warnings).toEqual([
+      { line, column, message: expect.stringContaining("code block") },
+    ]);
+    // In Markdown an indented block really is code.
+    expect(transformMintlify(source).warnings.some((w) => w.message.includes("code block"))).toBe(
+      false,
+    );
   });
 });

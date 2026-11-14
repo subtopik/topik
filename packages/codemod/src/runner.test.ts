@@ -102,6 +102,21 @@ describe("runMintlify", () => {
     expect(await readdir(dir)).not.toContain("unsupported.md");
   });
 
+  test.each([
+    ["an expression in a link label", "[{1 + 1}](./page)\n"],
+    ["a default import after a BOM", "﻿import Thing from './thing.js'\n\n# Page\n"],
+    ["top-level indented prose", "    Plain prose.\n"],
+  ])("keeps an MDX file with %s and its extension unchanged", async (_name, source) => {
+    await writeFile(join(dir, "page.mdx"), source);
+
+    const summary = await runMintlify({ dir, dryRun: false, keepExtension: false });
+
+    expect(summary.filesChanged).toBe(0);
+    expect(summary.warnings).toBeGreaterThan(0);
+    expect(await readdir(dir)).toEqual(["page.mdx"]);
+    expect(await readFile(join(dir, "page.mdx"), "utf-8")).toBe(source);
+  });
+
   test("does not rename an untouched file containing unknown JSX", async () => {
     const source = '<CustomThing title="x" />\n';
     await writeFile(join(dir, "custom.mdx"), source);

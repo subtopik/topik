@@ -24,6 +24,9 @@
     "dist"
   ],
   "type": "module",
+  "sideEffects": [
+    "**/*.css"
+  ],
   "exports": {
     ".": "./dist/index.mjs",
     "./rich": "./dist/rich.mjs",
@@ -36,7 +39,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "vp pack && mkdir -p dist/theme dist/rich && cp src/theme/styles.css dist/theme/styles.css && cp src/rich/styles.css dist/rich/styles.css",
+    "build": "vp pack && node scripts/copy-styles.mjs",
     "dev": "vp pack --watch",
     "test": "vp test",
     "check": "vp check",
@@ -59,7 +62,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitest/browser-playwright": "catalog:",
-    "ajv": "^8.20.0",
+    "ajv": "catalog:",
     "jsdom": "^28.1.0",
     "katex": "^0.19.1",
     "pele": "catalog:",

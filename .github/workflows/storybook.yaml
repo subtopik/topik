@@ -9,8 +9,8 @@ on:
 permissions:
   contents: read
 
-# Supersede outdated pull request runs only. Pushes to main and calls from the
-# publish workflow get a unique group per run and are never cancelled.
+# Supersede outdated pull request runs only. Pushes to main get a unique group
+# per run and are never cancelled.
 concurrency:
   group: storybook-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -19,6 +19,7 @@ jobs:
   storybook:
     name: Build and browser checks
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

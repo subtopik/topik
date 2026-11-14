@@ -97,6 +97,44 @@ describe("watch exclusions", () => {
     },
   );
 
+  test.each([
+    ".git",
+    ".topik",
+    ".topik-compilation-generation-test",
+    ".topik-compilation-prior-test",
+  ])(
+    "watches a project below an ancestor named %s while excluding its own copy",
+    async (ancestor) => {
+      dir = join(temporary, ancestor, "project");
+      await mkdir(dir, { recursive: true });
+      await writeProject();
+      const ignoredDir = join(dir, ancestor);
+      await mkdir(ignoredDir);
+      await writeFile(join(ignoredDir, "output.json"), "{}");
+      const activeWatcher = await startWatching();
+      const updates = vi.fn();
+      activeWatcher.on("update", updates);
+
+      await writeFile(join(dir, "intro.md"), "# Updated\n");
+      await vi.waitFor(
+        () =>
+          expect(updates).toHaveBeenCalledWith(
+            "Guide/guides-intro",
+            expect.objectContaining({
+              spec: expect.objectContaining({ title: "Updated" }),
+            }),
+          ),
+        { timeout: 2_000 },
+      );
+      expect(compile).toHaveBeenCalledTimes(2);
+
+      await writeFile(join(ignoredDir, "output.json"), '{"changed":true}');
+      await writeFile(join(ignoredDir, "added.json"), "{}");
+      await delay(350);
+      expect(compile).toHaveBeenCalledTimes(2);
+    },
+  );
+
   test.each(["node_modules", "packages/nested/node_modules"])(
     "does not recompile for changes, additions, or removals inside %s",
     async (dependencyDir) => {

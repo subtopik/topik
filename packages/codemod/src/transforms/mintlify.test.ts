@@ -67,7 +67,7 @@ describe("Mintlify to Topik content", () => {
     "<Card title={name} />",
     '<Card title="Safe" icon={Icon} />',
     '<Card title="Safe" unknown="value" />',
-    "<CodeGroup>```js\nhello\n```</CodeGroup>",
+    "<CodeGroup>\n```js\nhello\n```\n</CodeGroup>",
     '<Tab title="Orphan">Body</Tab>',
     '<Card title="One" title="Two" />',
   ])("keeps unsupported source unchanged with a warning: %s", (source) => {
@@ -210,10 +210,29 @@ describe("Mintlify to Topik content", () => {
           changed: false,
         });
         // Definition fixtures include their terminating newline; JSX directly
-        // follows inline resources to exercise the protected range boundary.
-        const output = converted(`${prefix}<Note>Real.</Note>\n`);
-        expect(output).toBe(
-          `${prefix}${prefix.endsWith("\n") ? "" : "\n"}{% callout variant="info" %}\nReal.\n{% /callout %}\n`,
+        // follows inline resources to exercise the protected range boundary,
+        // where it is inline JSX: it is found right after the resource and refused.
+        const adjacent = `${prefix}<Note>Real.</Note>\n`;
+        if (prefix.endsWith("\n")) {
+          expect(converted(adjacent)).toBe(
+            `${prefix}{% callout variant="info" %}\nReal.\n{% /callout %}\n`,
+          );
+          continue;
+        }
+        const lastLine = prefix.split(eol).at(-1)!;
+        expect(transformMintlify(adjacent)).toEqual({
+          content: adjacent,
+          changed: false,
+          warnings: [
+            {
+              line: prefix.split(eol).length,
+              column: lastLine.length + 1,
+              message: expect.stringContaining("paragraph with other text"),
+            },
+          ],
+        });
+        expect(converted(`${prefix}${eol}${eol}<Note>Real.</Note>\n`)).toBe(
+          `${prefix}${eol}${eol}{% callout variant="info" %}\nReal.\n{% /callout %}\n`,
         );
       }
     }
@@ -240,9 +259,19 @@ describe("Mintlify to Topik content", () => {
   test.each(["` unmatched ", "\\` escaped ", "`` unmatched with ` "])(
     "does not treat %j backticks as code",
     (prefix) => {
-      expect(converted(`${prefix}<Note>Real.</Note>\n`)).toBe(
-        `${prefix}\n{% callout variant="info" %}\nReal.\n{% /callout %}\n`,
-      );
+      // The tag is found (not hidden in code) and refused as inline paragraph JSX.
+      const source = `${prefix}<Note>Real.</Note>\n`;
+      expect(transformMintlify(source)).toEqual({
+        content: source,
+        changed: false,
+        warnings: [
+          {
+            line: 1,
+            column: prefix.length + 1,
+            message: expect.stringContaining("paragraph with other text"),
+          },
+        ],
+      });
     },
   );
 
@@ -324,10 +353,23 @@ describe("migration preserves Markdown context and JSX attribute values", () => 
     expect(output).toBe(`${literal}\n{% callout variant="info" %}\nActual.\n{% /callout %}\n`);
   });
 
-  test.each([2, 4])("converts tags after %s backslashes", (count) => {
+  test.each([2, 4])("recognizes tags after %s backslashes", (count) => {
     const slashes = "\\".repeat(count);
-    const output = converted(`${slashes}<Note>Actual.</Note>\n`);
-    expect(output).toBe(`${slashes}\n{% callout variant="info" %}\nActual.\n{% /callout %}\n`);
+    // Escaped backslashes are paragraph text, so the tag is inline and refused.
+    const source = `${slashes}<Note>Actual.</Note>\n`;
+    expect(transformMintlify(source)).toEqual({
+      content: source,
+      changed: false,
+      warnings: [
+        {
+          line: 1,
+          column: count + 1,
+          message: expect.stringContaining("paragraph with other text"),
+        },
+      ],
+    });
+    const output = converted(`${slashes}\n\n<Note>Actual.</Note>\n`);
+    expect(output).toBe(`${slashes}\n\n{% callout variant="info" %}\nActual.\n{% /callout %}\n`);
   });
 
   test.each([
@@ -616,5 +658,356 @@ describe("MDX-only syntax", () => {
     expect(transformMintlify(source).warnings.some((w) => w.message.includes("code block"))).toBe(
       false,
     );
+  });
+});
+
+describe("inline positions", () => {
+  test.each([
+    ["a table cell", "| a | b |\n|---|---|\n| <Note>x</Note> | y |\n", 3, 3, "Markdown table"],
+    ["an ATX heading", "# Title <Tip>t</Tip>\n", 1, 9, "Markdown heading"],
+    ["a setext heading", "Title <Tip>t</Tip>\n===\n", 1, 7, "Markdown heading"],
+    [
+      "the middle of a paragraph",
+      "Text with <Tip>inline</Tip> in the middle.\n",
+      1,
+      11,
+      "paragraph with other text",
+    ],
+    ["text after a component", "<Tip>inline</Tip> trailing.\n", 1, 1, "paragraph with other text"],
+    ["a self-closing card in text", 'See <Card title="A" /> here.\n', 1, 5, "paragraph"],
+    [
+      "a nested component among body text",
+      "<Note>\nSee <Tip>this</Tip> now.\n</Note>\n",
+      2,
+      5,
+      "paragraph with other text",
+    ],
+  ])("keeps JSX inside %s", (_name, source, line, column, context) => {
+    for (const mdx of [false, true]) {
+      for (const eol of ["\n", "\r\n", "\r"]) {
+        const original = source.replaceAll("\n", eol);
+        expect(transformMintlify(original, { mdx })).toEqual({
+          content: original,
+          changed: false,
+          warnings: [{ line, column, message: expect.stringContaining(context) }],
+        });
+      }
+    }
+  });
+
+  test("still converts paragraphs that contain only components", () => {
+    expect(converted('<Note>One.</Note><Card title="A" />\n<Tip>Two\nlines.</Tip>\n')).toBe(
+      '{% callout variant="info" %}\nOne.\n{% /callout %}\n{% card title="A" /%}\n' +
+        '{% callout variant="tip" %}\nTwo\nlines.\n{% /callout %}\n',
+    );
+  });
+});
+
+describe("multi-line opening tags", () => {
+  test.each(["  ", "    ", "\t"])("dedents a body indented by %j under the tag", (unit) => {
+    for (const eol of ["\n", "\r\n", "\r"]) {
+      const source = [
+        "<Card",
+        '  title="C"',
+        '  href="/sub/b.mdx"',
+        ">",
+        `${unit}Body multi`,
+        `${unit}continued.`,
+        "</Card>",
+        "",
+      ].join(eol);
+      const result = transformMintlify(source, { mdx: true });
+      expect(result).toEqual({
+        content: [
+          '{% card title="C" href="/sub/b.mdx" %}',
+          "Body multi",
+          "continued.",
+          "{% /card %}",
+          "",
+        ].join(eol),
+        warnings: [],
+        changed: true,
+      });
+    }
+  });
+
+  test("dedents nested bodies under multi-line opening tags", () => {
+    const source = [
+      "<Steps>",
+      "  <Step",
+      '    title="A"',
+      "  >",
+      "    Body.",
+      "  </Step>",
+      "</Steps>",
+      "",
+    ].join("\n");
+    expect(converted(source)).toBe(
+      '{% steps %}\n{% step title="A" %}\nBody.\n{% /step %}\n{% /steps %}\n',
+    );
+  });
+});
+
+describe("Mintlify code groups", () => {
+  test("wraps each titled fence in a code tab", () => {
+    const source = [
+      "<CodeGroup>",
+      "```bash npm",
+      "npm i @topik/cli",
+      "```",
+      "",
+      "~~~~ts Hello World.ts",
+      "const x = 1;",
+      "~~~~",
+      "</CodeGroup>",
+      "",
+    ].join("\n");
+    const output = converted(source);
+    expect(output).toBe(
+      [
+        "{% codeGroup %}",
+        '{% codeTab title="npm" %}',
+        "```bash",
+        "npm i @topik/cli",
+        "```",
+        "{% /codeTab %}",
+        '{% codeTab title="Hello World.ts" %}',
+        "~~~~ts",
+        "const x = 1;",
+        "~~~~",
+        "{% /codeTab %}",
+        "{% /codeGroup %}",
+        "",
+      ].join("\n"),
+    );
+    expect(parseTopikContent(output).children[0]).toMatchObject({
+      type: "topikComponent",
+      name: "codeGroup",
+      children: [
+        {
+          name: "codeTab",
+          props: { title: "npm" },
+          children: [{ type: "code", lang: "bash", value: "npm i @topik/cli" }],
+        },
+        {
+          name: "codeTab",
+          props: { title: "Hello World.ts" },
+          children: [{ type: "code", lang: "ts", value: "const x = 1;" }],
+        },
+      ],
+    });
+    expect(transformMintlify(output)).toEqual({ content: output, warnings: [], changed: false });
+  });
+
+  test("dedents fences and keeps line endings inside tabs", () => {
+    for (const eol of ["\n", "\r\n", "\r"]) {
+      const source = [
+        "<Tabs>",
+        '  <Tab title="Install">',
+        "    <CodeGroup>",
+        "      ```bash npm",
+        "      npm i x",
+        "      ```",
+        "    </CodeGroup>",
+        "  </Tab>",
+        "</Tabs>",
+        "",
+      ].join(eol);
+      expect(transformMintlify(source, { mdx: true })).toEqual({
+        content: [
+          "{% tabs %}",
+          '{% tab title="Install" %}',
+          "{% codeGroup %}",
+          '{% codeTab title="npm" %}',
+          "```bash",
+          "npm i x",
+          "```",
+          "{% /codeTab %}",
+          "{% /codeGroup %}",
+          "{% /tab %}",
+          "{% /tabs %}",
+          "",
+        ].join(eol),
+        warnings: [],
+        changed: true,
+      });
+    }
+  });
+
+  test.each([
+    ["no title", "```js\nx\n```", "has no title"],
+    ["no language", "```\nx\n```", "has no title"],
+    ["highlight options", "```js app.js {1-3}\nx\n```", "options"],
+    ["attribute options", '```js title="app.js"\nx\n```', "options"],
+    ["display flags", "```js app.js wrap\nx\n```", "options"],
+  ])("keeps a code group whose fence has %s", (_name, fence, message) => {
+    const source = `<CodeGroup>\n${fence}\n</CodeGroup>\n`;
+    const result = transformMintlify(source);
+    expect(result).toMatchObject({ content: source, changed: false });
+    expect(result.warnings).toEqual([
+      { line: 2, column: 1, message: expect.stringContaining(message) },
+    ]);
+  });
+
+  test("keeps a code group with prose beside its fences", () => {
+    const source = "<CodeGroup>\nIntro.\n\n```js a.js\nx\n```\n</CodeGroup>\n";
+    const result = transformMintlify(source);
+    expect(result).toMatchObject({ content: source, changed: false });
+    expect(result.warnings).toEqual([
+      expect.objectContaining({ message: expect.stringContaining("not valid Topik content") }),
+    ]);
+  });
+});
+
+describe("Mintlify attribute forms", () => {
+  test("maps literal JSX expressions and renamed attributes", () => {
+    const output = converted(
+      [
+        "<CardGroup cols={2}>",
+        '<Card title="A" icon="star" />',
+        "</CardGroup>",
+        '<Accordion title="Bare" defaultOpen>Body.</Accordion>',
+        '<Accordion title="Literal" defaultOpen={false}>Body.</Accordion>',
+        '<Accordion title="Topik" open={true}>Body.</Accordion>',
+        "",
+      ].join("\n"),
+    );
+    expect(output).toBe(
+      [
+        "{% cardGrid columns=2 %}",
+        '{% card title="A" icon="star" /%}',
+        "{% /cardGrid %}",
+        '{% accordion title="Bare" open=true %}',
+        "Body.",
+        "{% /accordion %}",
+        '{% accordion title="Literal" open=false %}',
+        "Body.",
+        "{% /accordion %}",
+        '{% accordion title="Topik" open=true %}',
+        "Body.",
+        "{% /accordion %}",
+        "",
+      ].join("\n"),
+    );
+    expect(parseTopikContent(output).children).toMatchObject([
+      { name: "cardGrid", props: { columns: 2 } },
+      { name: "accordion", props: { open: true } },
+      { name: "accordion", props: { open: false } },
+      { name: "accordion", props: { open: true } },
+    ]);
+  });
+
+  test.each([
+    [
+      '<CardGroup cols={columns}>\n<Card title="A" />\n</CardGroup>\n',
+      "Dynamic JSX attribute cols",
+    ],
+    [
+      '<CardGroup cols={true}>\n<Card title="A" />\n</CardGroup>\n',
+      "cols requires a finite number",
+    ],
+    ['<Accordion title="A" defaultOpen={1}>B</Accordion>\n', "defaultOpen requires a boolean"],
+    ["<Accordion title={2}>B</Accordion>\n", "title requires a string"],
+    ['<Card title="A" featured />\n', "featured is unsupported"],
+    ['<Card title="A" cols={2} />\n', "cols is unsupported"],
+    ['<Step title="A" icon={Icon}>B</Step>\n', "Dynamic JSX attribute icon"],
+  ])("keeps unsupported attribute forms: %j", (source, message) => {
+    const result = transformMintlify(source);
+    expect(result).toMatchObject({ content: source, changed: false });
+    expect(result.warnings).toEqual([
+      expect.objectContaining({ message: expect.stringContaining(message) }),
+    ]);
+  });
+
+  test("drops icons Topik steps, tabs and accordions cannot show, with a warning", () => {
+    const source = [
+      '<Steps><Step title="A" icon="rocket">One.</Step></Steps>',
+      '<Tabs><Tab title="B" icon="code">Two.</Tab></Tabs>',
+      '<Accordion title="C" icon="info">Three.</Accordion>',
+      "",
+    ].join("\n");
+    const result = transformMintlify(source, { mdx: true });
+    expect(result.changed).toBe(true);
+    expect(result.content).toBe(
+      [
+        "{% steps %}",
+        '{% step title="A" %}',
+        "One.",
+        "{% /step %}",
+        "{% /steps %}",
+        "{% tabs %}",
+        '{% tab title="B" %}',
+        "Two.",
+        "{% /tab %}",
+        "{% /tabs %}",
+        '{% accordion title="C" %}',
+        "Three.",
+        "{% /accordion %}",
+        "",
+      ].join("\n"),
+    );
+    expect(result.warnings).toEqual([
+      { line: 1, column: 24, message: expect.stringContaining("icon on <Step>") },
+      { line: 2, column: 22, message: expect.stringContaining("icon on <Tab>") },
+      { line: 3, column: 22, message: expect.stringContaining("icon on <Accordion>") },
+    ]);
+    // A refused file reports only its refusals, not icons it did not drop.
+    const kept = transformMintlify(`${source}<Icon icon="x" />\n`);
+    expect(kept.changed).toBe(false);
+    expect(kept.warnings).toEqual([
+      expect.objectContaining({ message: expect.stringContaining("no equivalent") }),
+    ]);
+  });
+});
+
+describe("tag nesting", () => {
+  test.each([
+    ["a mismatched closing tag", "<Note>\nbody\n</Tip>\n", 3, "</Tip> does not match <Note>"],
+    [
+      "crossed nesting",
+      "<Tabs>\n<Tab title='A'>\nx\n</Tabs>\n</Tab>\n",
+      4,
+      "</Tabs> does not match <Tab>",
+    ],
+    ["an orphan closing tag", "body\n\n</Note>\n", 3, "</Note> has no matching opening tag"],
+    ["an unclosed tag", "<Note>\nbody\n", 1, "<Note> is never closed"],
+  ])("keeps %s", (_name, source, line, message) => {
+    for (const eol of ["\n", "\r\n", "\r"]) {
+      const original = source.replaceAll("\n", eol);
+      const result = transformMintlify(original);
+      expect(result).toMatchObject({ content: original, changed: false });
+      expect(result.warnings).toEqual([
+        { line, column: 1, message: expect.stringContaining(message) },
+      ]);
+    }
+  });
+});
+
+describe("CR-only line endings", () => {
+  test("keeps lone CR terminators and dedents bodies", () => {
+    expect(converted("# T\r\r<Note>\r  x\r</Note>\r")).toBe(
+      '# T\r\r{% callout variant="info" %}\rx\r{% /callout %}\r',
+    );
+  });
+
+  test("splits same-line bodies with CR and preserves frontmatter bytes", () => {
+    const header = '﻿---\rtitle: "<Note>x</Note>"\r---\r\r';
+    const output = converted(`${header}<Tabs><Tab title="A">Body</Tab></Tabs>`);
+    expect(output).toBe(
+      `${header}{% tabs %}\r{% tab title="A" %}\rBody\r{% /tab %}\r{% /tabs %}\r`,
+    );
+    expect(transformMintlify(output)).toEqual({ content: output, warnings: [], changed: false });
+  });
+
+  test.each(["\n", "\r\n", "\r"])("keeps a BOM directly before a tag with %j", (eol) => {
+    expect(converted(`﻿<Note>${eol}  x${eol}</Note>${eol}`)).toBe(
+      `﻿{% callout variant="info" %}${eol}x${eol}{% /callout %}${eol}`,
+    );
+  });
+
+  test("reports warnings at CR-separated lines", () => {
+    expect(transformMintlify("# T\r\r<Card title={x} />\r").warnings).toEqual([
+      expect.objectContaining({ line: 3, column: 7, message: expect.stringContaining("Dynamic") }),
+    ]);
   });
 });

@@ -298,6 +298,126 @@ describe("runMintlify", () => {
     expect(summary.files.map((file) => file.relativePath)).toEqual([join("guides", "page.mdx")]);
   });
 
+  test("matches extensions case-insensitively and rewrites links to them", async () => {
+    await writeFile(join(dir, "Upper.MDX"), "<Note>Upper.</Note>\n");
+    await writeFile(join(dir, "Mixed.Md"), "<Tip>Mixed.</Tip>\n\n[Upper](./Upper.MDX)\n");
+    const summary = await runMintlify({ dir, dryRun: false, keepExtension: false });
+    expect(summary.files.map((file) => [file.relativePath, file.newRelativePath])).toEqual(
+      expect.arrayContaining([
+        ["Upper.MDX", "Upper.MD"],
+        ["Mixed.Md", undefined],
+      ]),
+    );
+    expect(summary.filesChanged).toBe(2);
+    expect((await readdir(dir)).sort()).toEqual(["Mixed.Md", "Upper.MD"]);
+    expect(await readFile(join(dir, "Upper.MD"), "utf8")).toContain('{% callout variant="info" %}');
+    expect(await readFile(join(dir, "Mixed.Md"), "utf8")).toContain("[Upper](./Upper.MD)");
+  });
+
+  test.skipIf(process.platform === "win32")(
+    "reports symbolic links without following them and keeps extensions",
+    async () => {
+      const outside = await mkdtemp(join(tmpdir(), "topik-codemod-outside-"));
+      try {
+        await writeFile(join(outside, "target.mdx"), "<Note>Outside.</Note>\n");
+        await mkdir(join(outside, "folder"));
+        await writeFile(join(outside, "folder", "nested.mdx"), "<Note>Nested.</Note>\n");
+        await symlink(join(outside, "target.mdx"), join(dir, "linked.mdx"));
+        await symlink(join(outside, "folder"), join(dir, "linked-folder"));
+        await symlink(join(outside, "target.mdx"), join(dir, "image.png"));
+        await writeFile(join(dir, "page.mdx"), "<Note>Page.</Note>\n");
+
+        const summary = await runMintlify({ dir, dryRun: false, keepExtension: false });
+
+        expect(summary.files.map((file) => file.relativePath)).toEqual(["page.mdx"]);
+        expect(summary.notices).toEqual(
+          expect.arrayContaining([
+            expect.stringMatching(/^Kept .mdx extensions on 1 file\(s\) because pages behind/),
+            expect.stringMatching(
+              /^Skipped 2 symbolic link\(s\), which are not followed: (linked-folder, linked\.mdx|linked\.mdx, linked-folder)$/,
+            ),
+          ]),
+        );
+        expect(await readFile(join(dir, "page.mdx"), "utf8")).toContain("{% callout");
+        expect(await readFile(join(outside, "target.mdx"), "utf8")).toBe("<Note>Outside.</Note>\n");
+        expect(await readFile(join(outside, "folder", "nested.mdx"), "utf8")).toBe(
+          "<Note>Nested.</Note>\n",
+        );
+      } finally {
+        await rm(outside, { recursive: true, force: true });
+      }
+    },
+  );
+
+  test("renames every page when a Prettier-formatted opening tag is converted", async () => {
+    await writeFile(
+      join(dir, "card.mdx"),
+      '<Card\n  title="C"\n  href="/sub/b.mdx"\n>\n    Body multi\n</Card>\n',
+    );
+    await mkdir(join(dir, "sub"));
+    await writeFile(join(dir, "sub", "b.mdx"), "# B\n");
+    const summary = await runMintlify({ dir, dryRun: false, keepExtension: false });
+    expect(summary.notices).toEqual([]);
+    expect(summary.warnings).toBe(0);
+    // Navigation rewriting formats the tag's attributes in its own order.
+    expect(await readFile(join(dir, "card.md"), "utf8")).toBe(
+      '{% card href="/sub/b.md" title="C" %}\nBody multi\n{% /card %}\n',
+    );
+    expect(await readdir(join(dir, "sub"))).toEqual(["b.md"]);
+  });
+
+  test("converts and renames files whose only warnings are dropped icons", async () => {
+    await writeFile(join(dir, "faq.mdx"), '<Accordion title="Q" icon="info">A.</Accordion>\n');
+    await writeFile(join(dir, "plain.mdx"), "# Plain\n");
+    const summary = await runMintlify({ dir, dryRun: false, keepExtension: false });
+    expect(summary.files.find((file) => file.relativePath === "faq.mdx")).toMatchObject({
+      changed: true,
+      contentChanged: true,
+      newRelativePath: "faq.md",
+      warnings: [expect.objectContaining({ message: expect.stringContaining("dropped") })],
+    });
+    expect(summary.notices).toEqual([]);
+    expect((await readdir(dir)).sort()).toEqual(["faq.md", "plain.md"]);
+  });
+
+  test("is idempotent, and dry runs write nothing", async () => {
+    const fixtures: Record<string, string> = {
+      "group.mdx": "<CodeGroup>\n```bash npm\nnpm i x\n```\n</CodeGroup>\n",
+      "cards.mdx":
+        '<CardGroup cols={2}>\n  <Card\n    title="A"\n  >\n    Body.\n  </Card>\n</CardGroup>\n',
+      "cr.md": "# T\r\r<Note>\r  x\r</Note>\r",
+      "crlf.mdx": '﻿<Accordion title="More" defaultOpen>\r\n  Body.\r\n</Accordion>\r\n',
+    };
+    for (const [name, content] of Object.entries(fixtures))
+      await writeFile(join(dir, name), content);
+    const snapshot = async () =>
+      Object.fromEntries(
+        await Promise.all(
+          (await readdir(dir)).sort().map(async (name) => [name, await readFile(join(dir, name))]),
+        ),
+      );
+
+    const before = await snapshot();
+    const dry = await runMintlify({ dir, dryRun: true, keepExtension: false });
+    expect(dry.filesChanged).toBe(4);
+    expect(await snapshot()).toEqual(before);
+
+    const first = await runMintlify({ dir, dryRun: false, keepExtension: false });
+    expect(first).toMatchObject({ filesChanged: 4, warnings: 0, notices: [] });
+    const converted = await snapshot();
+    expect(Object.keys(converted)).toEqual(["cards.md", "cr.md", "crlf.md", "group.md"]);
+    expect(converted["crlf.md"].toString("utf8")).toBe(
+      '﻿{% accordion title="More" open=true %}\r\nBody.\r\n{% /accordion %}\r\n',
+    );
+    expect(converted["cr.md"].toString("utf8")).toBe(
+      '# T\r\r{% callout variant="info" %}\rx\r{% /callout %}\r',
+    );
+
+    const second = await runMintlify({ dir, dryRun: false, keepExtension: false });
+    expect(second).toMatchObject({ filesChanged: 0, warnings: 0, notices: [] });
+    expect(await snapshot()).toEqual(converted);
+  });
+
   test.skipIf(process.platform === "win32")(
     "does not overwrite a dangling destination symlink",
     async () => {

@@ -2,6 +2,19 @@
   "name": "@topik/core",
   "version": "0.1.0-alpha.7",
   "description": "Topik core library",
+  "keywords": [
+    "compiler",
+    "content",
+    "course",
+    "documentation",
+    "markdown",
+    "topik",
+    "wiki"
+  ],
+  "homepage": "https://github.com/subtopik/topik/tree/main/packages/core#readme",
+  "bugs": {
+    "url": "https://github.com/subtopik/topik/issues"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -43,5 +56,8 @@
     "typescript": "catalog:",
     "vite": "catalog:",
     "vite-plus": "catalog:"
+  },
+  "engines": {
+    "node": ">=22.12.0"
   }
 }

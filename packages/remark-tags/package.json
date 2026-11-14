@@ -10,6 +10,10 @@
     "tags",
     "unified"
   ],
+  "homepage": "https://github.com/subtopik/topik/tree/main/packages/remark-tags#readme",
+  "bugs": {
+    "url": "https://github.com/subtopik/topik/issues"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",

@@ -2,6 +2,18 @@
   "name": "@topik/cli",
   "version": "0.1.0-alpha.7",
   "description": "Topik CLI",
+  "keywords": [
+    "cli",
+    "compiler",
+    "documentation",
+    "lint",
+    "markdown",
+    "topik"
+  ],
+  "homepage": "https://github.com/subtopik/topik/tree/main/packages/cli#readme",
+  "bugs": {
+    "url": "https://github.com/subtopik/topik/issues"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -41,5 +53,8 @@
     "typescript": "catalog:",
     "vite": "catalog:",
     "vite-plus": "catalog:"
+  },
+  "engines": {
+    "node": ">=22.12.0"
   }
 }

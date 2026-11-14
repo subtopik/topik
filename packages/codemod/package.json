@@ -2,6 +2,18 @@
   "name": "@topik/codemod",
   "version": "0.1.0-alpha.7",
   "description": "Codemods for migrating content to Topik",
+  "keywords": [
+    "codemod",
+    "markdown",
+    "mdx",
+    "migration",
+    "mintlify",
+    "topik"
+  ],
+  "homepage": "https://github.com/subtopik/topik/tree/main/packages/codemod#readme",
+  "bugs": {
+    "url": "https://github.com/subtopik/topik/issues"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -43,6 +55,9 @@
     "typescript": "catalog:",
     "vite": "catalog:",
     "vite-plus": "catalog:"
+  },
+  "engines": {
+    "node": ">=22.12.0"
   },
   "inlinedDependencies": {
     "devlop": "1.1.0",

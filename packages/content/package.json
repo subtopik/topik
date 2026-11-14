@@ -2,6 +2,19 @@
   "name": "@topik/content",
   "version": "0.1.0-alpha.7",
   "description": "Declarative Topik content model, Markdown format, validation and rendering",
+  "keywords": [
+    "content",
+    "documentation",
+    "markdown",
+    "mdast",
+    "renderer",
+    "topik",
+    "validation"
+  ],
+  "homepage": "https://github.com/subtopik/topik/tree/main/packages/content#readme",
+  "bugs": {
+    "url": "https://github.com/subtopik/topik/issues"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",

@@ -2,6 +2,18 @@
   "name": "@topik/content-react",
   "version": "0.1.0-alpha.7",
   "description": "React renderer for declarative Topik content",
+  "keywords": [
+    "content",
+    "documentation",
+    "markdown",
+    "react",
+    "renderer",
+    "topik"
+  ],
+  "homepage": "https://github.com/subtopik/topik/tree/main/packages/content-react#readme",
+  "bugs": {
+    "url": "https://github.com/subtopik/topik/issues"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -78,5 +90,8 @@
     "pele": {
       "optional": true
     }
+  },
+  "engines": {
+    "node": ">=22.12.0"
   }
 }

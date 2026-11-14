@@ -177,6 +177,33 @@ describe("rich content-react entry", () => {
     });
   });
 
+  it.each([
+    [undefined, "dark", "dark"],
+    ["light", "dark", "light"],
+    [undefined, undefined, "light"],
+  ] as const)(
+    "uses theme %s with color scheme %s as the %s rich theme",
+    async (theme, colorScheme, expected) => {
+      const dom = mount(
+        <RichTopikContentProvider theme={theme} colorScheme={colorScheme}>
+          <TopikContent content={richContent} />
+        </RichTopikContentProvider>,
+      );
+      await waitFor(() => {
+        expect(dom.querySelector(".topik-rich-code-block pre.shiki")).not.toBeNull();
+        expect(dom.querySelector(".topik-rich-mermaid[data-theme]")).not.toBeNull();
+      });
+      expect(codeToTokensMock).toHaveBeenCalledWith("const answer = 42;", {
+        lang: "ts",
+        theme: `github-${expected}`,
+      });
+      expect(dom.querySelector(".topik-rich-mermaid")?.getAttribute("data-theme")).toBe(expected);
+      expect(dom.querySelector(".topik-content")?.getAttribute("data-theme")).toBe(
+        colorScheme ?? null,
+      );
+    },
+  );
+
   it("renders rich client output after dynamic imports resolve", async () => {
     const dom = mount(
       <RichTopikContentProvider theme="dark">

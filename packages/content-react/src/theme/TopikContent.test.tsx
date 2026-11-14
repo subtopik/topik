@@ -1,10 +1,28 @@
+// @vitest-environment jsdom
+
+import { act, type ReactNode } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { mergeTopikContentConfig } from "@topik/content";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { TopikContentProvider } from "../core/context";
 import type { TopikLinkRenderProps } from "../core/components";
 import { InvalidTopikContentError } from "../core/render";
 import { TopikContent } from "./TopikContent";
+
+/** Diagnostics are reported after commit in a browser, so collect them from a client render. */
+function renderInBrowser(element: ReactNode): string {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    act(() => root.render(element));
+    return container.innerHTML;
+  } finally {
+    act(() => root.unmount());
+    vi.unstubAllGlobals();
+  }
+}
 
 describe("TopikContent", () => {
   it("keeps canonical validation after a caller mutates a merged schema", () => {
@@ -159,6 +177,28 @@ describe("TopikContent", () => {
     expect(html).not.toContain("prefers-color-scheme");
   });
 
+  it.each([
+    [undefined, undefined, undefined],
+    ["dark", undefined, "dark"],
+    ["light", undefined, "light"],
+    [undefined, "dark", "dark"],
+    ["light", "dark", "light"],
+  ] as const)(
+    "marks the content root with color scheme %s (provider %s)",
+    (colorScheme, providerScheme, expected) => {
+      const html = renderToStaticMarkup(
+        <TopikContentProvider colorScheme={providerScheme}>
+          <TopikContent colorScheme={colorScheme} content="Text" />
+        </TopikContentProvider>,
+      );
+      expect(
+        html.startsWith(
+          `<div class="topik-content"${expected ? ` data-theme="${expected}"` : ""}>`,
+        ),
+      ).toBe(true);
+    },
+  );
+
   it("inherits an explicit color scheme from the provider", () => {
     const html = renderToStaticMarkup(
       <TopikContentProvider colorScheme="dark">
@@ -182,7 +222,7 @@ describe("TopikContent", () => {
     "é.png",
   ])("fails closed for unsafe default-renderer asset reference %s", (reference) => {
     const diagnostics: string[] = [];
-    const html = renderToStaticMarkup(
+    const html = renderInBrowser(
       <TopikContent
         content={`{% figure src="${reference}" alt="Unsafe" /%}`}
         invalidContent="placeholder"
@@ -300,7 +340,7 @@ describe("TopikContent", () => {
     (resolveLink) => {
       const diagnostics: string[] = [];
       const received: unknown[] = [];
-      const html = renderToStaticMarkup(
+      const html = renderInBrowser(
         <TopikContent
           content={
             '[Wiki](ref://wiki-page/wiki-name)\n\n{% card title="Wiki" href="ref://wiki-page/wiki-name" /%}'

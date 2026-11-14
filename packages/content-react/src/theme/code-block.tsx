@@ -49,6 +49,43 @@ function includesLine(intervals: [number, number][] | undefined, line: number): 
   return false;
 }
 
+type LineRanges = [number, number][];
+const rangeOptions = ["added", "collapse", "focus", "highlight", "removed"] as const;
+
+/** Keep sorted, disjoint integer ranges within the rendered rows; drop anything else. */
+function clampRanges(value: unknown, rowCount: number): LineRanges | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const ranges: LineRanges = [];
+  for (const range of value as unknown[]) {
+    if (!Array.isArray(range) || range.length !== 2) continue;
+    const [start, end] = range as unknown[];
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end)) continue;
+    const first = Math.max(1, start as number);
+    const last = Math.min(rowCount, end as number);
+    if (first <= last) ranges.push([first, last]);
+  }
+  ranges.sort(([left], [right]) => left - right);
+  const disjoint: LineRanges = [];
+  for (const range of ranges) {
+    if (disjoint.length === 0 || range[0] > disjoint[disjoint.length - 1][1]) disjoint.push(range);
+  }
+  return disjoint;
+}
+
+/** Public code components receive presentation from arbitrary props; never trust its ranges. */
+function presentedOptions(
+  presentation: unknown,
+  rowCount: number,
+): CodePresentationEffectiveOptions | undefined {
+  if (!presentation || typeof presentation !== "object" || Array.isArray(presentation))
+    return undefined;
+  const options = { ...(presentation as CodePresentationEffectiveOptions) };
+  for (const name of rangeOptions) {
+    if (Object.hasOwn(options, name)) options[name] = clampRanges(options[name], rowCount);
+  }
+  return options;
+}
+
 function tokenStyle(token: CodeToken): CSSProperties {
   return {
     color: token.color,
@@ -94,7 +131,7 @@ export function CodeBlockView({
   payload,
   content,
   language,
-  presentation,
+  presentation: presentationProp,
   highlight,
   rich = false,
 }: CodeBlockViewProps) {
@@ -103,7 +140,8 @@ export function CodeBlockView({
   const legendId = `${id}-diff`;
   const headingId = `${id}-heading`;
   // Ordinary fences remain a single text node until bounded highlighting succeeds.
-  const rows = presentation ? payload.split("\n") : [];
+  const rows = presentedOptions(presentationProp, 0) ? payload.split("\n") : [];
+  const presentation = presentedOptions(presentationProp, rows.length);
   const lineNumberWidth = presentation?.lineNumbers
     ? `${String((presentation.startLine ?? 1) + rows.length - 1).length}ch`
     : undefined;
@@ -192,7 +230,7 @@ export function CodeBlockView({
           </span>
         ) : null}
         <span className="topik-code-block__text">
-          {highlight
+          {highlight && highlight.tokens[index]
             ? highlightedCode([highlight.tokens[index]], highlight.fg, false)
             : rows[index]}
           {index < rows.length - 1 || content.endsWith("\n") ? "\n" : null}

@@ -93,6 +93,31 @@ describe("default Topik theme components", () => {
     expect(richStyles.trimStart()).toMatch(/^@layer components\s*\{/);
   });
 
+  it.each([
+    ['<div class="topik-content" data-theme="dark">', true],
+    ['<div class="topik-content" data-theme="light">', false],
+    ['<div class="topik-content">', false],
+    ['<div class="dark"><div class="topik-content">', true],
+    ['<div class="dark"><div class="topik-content" data-theme="light">', false],
+    ['<div class="dark"><div class="topik-content" data-theme="dark">', true],
+  ])("applies dark theme variables to %s: %s", (markup, dark) => {
+    const selectorsFor = (declaration: string) => {
+      const block = new RegExp(`([^{}]+)\\{[^}]*${declaration}`, "u").exec(themeStyles);
+      if (!block) throw new Error(`Missing rule for ${declaration}`);
+      return block[1].trim();
+    };
+    const host = document.createElement("div");
+    host.innerHTML = markup;
+    const content = host.querySelector(".topik-content")!;
+    expect(content.matches(selectorsFor("--topik-color-canvas: #101828"))).toBe(dark);
+    content.innerHTML = '<aside class="topik-callout"></aside>';
+    expect(
+      content.firstElementChild!.matches(
+        selectorsFor("--topik-callout-heading: var\\(--topik-color-text\\)"),
+      ),
+    ).toBe(dark);
+  });
+
   it("renders card grids and cards with link, icon, title, and body slots", () => {
     const linked = renderToStaticMarkup(
       <TopikCardGrid columns={2}>

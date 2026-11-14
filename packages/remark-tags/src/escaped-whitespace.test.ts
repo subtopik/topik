@@ -84,6 +84,34 @@ echo {% $package.name %}
     ).toThrow("Invalid value for attribute title");
   });
 
+  test("looks up escaped-whitespace slots by own tag names only", () => {
+    for (const source of [
+      '{% constructor a="b" /%}',
+      'x {% toString a="b" /%}',
+      '{% hasOwnProperty text="a" /%}',
+    ]) {
+      let thrown: unknown;
+      try {
+        parse(source);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(TagSyntaxError);
+      expect((thrown as TagSyntaxError).diagnostics).toMatchObject([
+        { id: "tag-undefined", line: 1 },
+      ]);
+    }
+
+    const tags = { constructor: { kind: "inline" } } as const;
+    const tree = fromMarkdown('{% constructor text="a" /%}', {
+      extensions: [tagSyntax(tags, options)],
+      mdastExtensions: [tagFromMarkdown(tags, options)],
+    });
+    expect(toMarkdown(tree, { extensions: [tagToMarkdown(tags, options)] })).toBe(
+      '{% constructor text="a" /%}\n',
+    );
+  });
+
   test("keeps template literals control-free even in an admitted ordinary-string slot", () => {
     for (const escape of ["n", "r", "t"])
       expect(() => parse(`{% math text=t"a\\${escape}b" /%}`)).toThrow("Invalid escape in text");

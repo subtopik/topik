@@ -1,6 +1,6 @@
 import { tagOptions } from "./tag-options.js";
-import type { Root } from "mdast";
-import { toMarkdown } from "mdast-util-to-markdown";
+import type { Blockquote, Nodes, Root, ThematicBreak } from "mdast";
+import { defaultHandlers, toMarkdown, type Handle } from "mdast-util-to-markdown";
 import { frontmatterToMarkdown } from "mdast-util-frontmatter";
 import { tagToMarkdown } from "@topik/remark-tags";
 import type { Component, ContentDocument, TextTemplate, TreeNode } from "./model.js";
@@ -338,8 +338,46 @@ export function serializeDocument(
   return written;
 }
 
+/** An empty item or an ordered start other than 1 cannot interrupt a paragraph. */
+function opensWithInterruptionlessList(node: Blockquote): boolean {
+  let first: Nodes | undefined = node.children[0];
+  while (first?.type === "blockquote") first = first.children[0];
+  return (
+    first?.type === "list" &&
+    (!first.children[0]?.children.length || (first.ordered === true && (first.start ?? 1) !== 1))
+  );
+}
+
+/**
+ * micromark lets a paragraph continue into a quote that starts on the next
+ * line, so such a list would become text there. An empty first quote line
+ * keeps it a list, as in the source it was parsed from.
+ */
+const blockquote: Handle = (node: Blockquote, parent, state, info) => {
+  const written = defaultHandlers.blockquote(node, parent, state, info);
+  const siblings: readonly Nodes[] = parent?.type === "listItem" ? parent.children : [];
+  return siblings[siblings.indexOf(node) - 1]?.type === "paragraph" &&
+    opensWithInterruptionlessList(node)
+    ? `>\n${written}`
+    : written;
+};
+
+/**
+ * A list after another list switches to the other bullet, which can equal the
+ * rule marker. A rule on an item's first line then reads as one longer rule.
+ */
+const thematicBreak: Handle = (node: ThematicBreak, parent, state) => {
+  const written = defaultHandlers.thematicBreak(node, parent, state);
+  return parent?.type === "listItem" &&
+    parent.children[0] === node &&
+    written[0] === state.bulletCurrent
+    ? written.replaceAll(written[0], written[0] === "*" ? "-" : "*")
+    : written;
+};
+
 function writeMarkdown(tree: Root, registry: Registry): string {
   return toMarkdown(tree, {
+    handlers: { blockquote, thematicBreak },
     extensions: [
       gfmToMarkdown(),
       markWriterExtension(tree as TreeNode),

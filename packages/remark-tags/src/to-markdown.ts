@@ -13,6 +13,7 @@ import type {
 import { TAG_LIMITS } from "./types.js";
 import { writeTextTemplate } from "./templates.js";
 import {
+  escapesWhitespace,
   hasControlCharacter,
   invalidCodeTemplateHeader,
   validConditionSource,
@@ -151,7 +152,7 @@ function tagStart(
       result += ` ${name}=${Object.is(value, -0) ? "-0" : String(value)}`;
     else if (
       (typeof value === "string" &&
-        !hasControlCharacter(value, options.escapedWhitespace?.[node.name]?.includes(name))) ||
+        !hasControlCharacter(value, escapesWhitespace(options, node.name, name))) ||
       (options.expressions && typeof value === "object")
     ) {
       const template = typeof value !== "string";

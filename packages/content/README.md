@@ -149,9 +149,10 @@ marks, and empty components that require inline children. It also removes termin
 hard breaks exposed by those omissions so the evaluated document remains writable.
 
 `evaluateDocument` verifies that its result can be written faithfully. If evaluation
-creates an unrepresentable structure, such as an empty task item or adjacent
-strikethrough spans, it throws `ContentEvaluationError` and leaves the authored
-document untouched. Rendering through `transformTopikContent` does not require a
+creates an unrepresentable structure, such as an empty task item, it throws
+`ContentEvaluationError` and leaves the authored document untouched. Marks that
+evaluation brings together merge instead: `~~a~~{% $e %}~~b~~` with an empty `e`
+writes `~~ab~~`. Rendering through `transformTopikContent` does not require a
 Markdown representation and retains those structures in its derived render tree.
 
 Rendering assigns heading IDs using all authored headings before selecting
@@ -318,9 +319,11 @@ parser work, so long reference pages and changelogs are limited by source and
 tree size rather than by markup density. The parser budget charges only syntax
 whose resolution can grow faster than its paragraph: every possible closing
 emphasis or strikethrough delimiter costs the number of parser events in its
-paragraph, unmatched code-span attempts cost the text they rescan, and label
-ends cost the label text they reread. In practice a single paragraph can hold a
-few thousand emphasis delimiters; split denser text into separate paragraphs.
+paragraph, unmatched code-span attempts cost the text they rescan, label ends
+cost the label text they reread and the events since the latest label, and each
+run of brackets or escapes left as text costs a fraction of its paragraph's
+events. In practice a single paragraph can hold a few thousand emphasis
+delimiters or unmatched brackets; split denser text into separate paragraphs.
 
 ## Further documentation
 

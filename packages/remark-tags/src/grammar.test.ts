@@ -57,6 +57,12 @@ describe("tag grammar boundaries", () => {
     ["{% hint %}open", ["missing-closing"]],
     ["{% panel %}\n\nText", ["missing-closing"]],
     ["{% panel %}\n\nText\n\n{% /media %}", ["missing-opening", "missing-closing"]],
+    // A failed opening still scopes its closer, which then reports nothing.
+    ["{% panel title='x' %}\n\nText\n\n{% /panel %}", ["attribute-syntax-invalid"]],
+    ["{% hint label=plain %}text{% /hint %}", ["attribute-syntax-invalid"]],
+    ["{% panel title='x' %}\n\nText", ["attribute-syntax-invalid"]],
+    ["{% panel %}\n\n{% media x= %}\n\nText\n\n{% /panel %}", ["attribute-syntax-invalid"]],
+    ["{% badge label='x' /%} {% /badge %}", ["attribute-syntax-invalid", "missing-opening"]],
     ["{%", ["tag-unterminated"]],
     ["{% panel /%} trailing", ["tag-placement-invalid"]],
   ])("identifies %s with stable diagnostic IDs", (source, ids) => {

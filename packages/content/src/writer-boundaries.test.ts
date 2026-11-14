@@ -2,6 +2,7 @@ import { describe, expect, test } from "vite-plus/test";
 import { parseDocument } from "./markdown.js";
 import { sameDocumentMeaning } from "./document-meaning.js";
 import { formatTopikContent } from "./format.js";
+import { compileTopikContent } from "./compile.js";
 import { validateTopikContent } from "./validate.js";
 import { rewriteTopikAssetOccurrences } from "./rewrite.js";
 import { rewriteTopikNavigationReferences } from "./navigation-rewrite.js";
@@ -80,5 +81,66 @@ describe("image alt and reference writer boundaries", () => {
     const source = `[${label}]: /next\n\n| Heading |\n|---|\n| [label][${label}] |`;
     expect(validateTopikContent(source).valid).toBe(false);
     expect(formatTopikContent(source)).toMatchObject({ ok: false, source });
+  });
+});
+
+describe("block and inline writer boundaries", () => {
+  test.each([
+    // Inside a quote, a list keeps the blank line before a following container.
+    "> - a\n> > b",
+    "> 1. a\n> > b",
+    "> > - a\n> > > b",
+    "- > - a\n  > > b",
+    "> - a\n> - b\n> > c",
+    "> 1.\n> 2)",
+    "> 2)\n>\n>",
+    "> - 1. [\n>\n>   a",
+    // The second list's bullet must not join a rule on its first line.
+    "-\n* ---",
+    // A shortcut reference before a link that is written with brackets.
+    "[r]: /u\n\n[r]<https://m>",
+    "[r]: /u\n\n[r]<a@b.co>",
+    "[r]: /u\n[s]: /v\n\n[r][][s]",
+    // Vertical tabs are never trimmed, and their references decode to U+FFFD.
+    "x\n\u000b",
+    "\u000b\n(",
+    "| a |\n| - |\n| \u000b |",
+    // Decoded leading whitespace in code-fence metadata.
+    "```js &#x20;\nx\n```",
+    "```title &#x20; x\nx\n```",
+    "```js &#x9;a\nx\n```",
+    // A list that cannot interrupt a paragraph opens a quote after one.
+    "- [\n  >\n  >2)",
+    "- [\n  >\n  >-",
+    "- [\n  >\n  > >2) x",
+  ])("formats %j idempotently without changing its meaning", (source) => {
+    roundtrip(source);
+    const compiled = compileTopikContent(source);
+    const formatted = formatTopikContent(source);
+    if (!compiled.ok || !formatted.ok) throw new Error("Expected valid content");
+    expect(compileTopikContent(formatted.formatted)).toMatchObject({ tree: compiled.tree });
+  });
+
+  test("blank lines after the last item of a quoted list leave it tight", () => {
+    type Tree = { name?: string; children?: Tree[] };
+    const firstList = (source: string): Tree | undefined => {
+      const compiled = compileTopikContent(source);
+      if (!compiled.ok) throw new Error("Expected valid content");
+      const pending = [JSON.parse(JSON.stringify(compiled.tree)) as Tree];
+      for (let node = pending.shift(); node; node = pending.shift()) {
+        if (node.name === "ul") return node;
+        pending.push(...(node.children ?? []).filter((child) => typeof child === "object"));
+      }
+    };
+    for (const [quoted, plain] of [
+      ["> - a\n>\n> > b", "- a"],
+      ["> - a\n>\n>", "- a"],
+      ["> - a\n> - b\n>\n> > c", "- a\n- b"],
+      ["> 1. a\n>\n> - b", "- b"],
+      // Blank lines between items or between an item's blocks still make it loose.
+      ["> - a\n>\n> - b", "- a\n\n- b"],
+      ["> - 1. a\n>\n>   b", "- 1. a\n\n  b"],
+    ])
+      expect(firstList(quoted)).toEqual(firstList(plain));
   });
 });

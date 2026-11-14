@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { DEFAULT_ASSET_DIRECTORY, sourceAssetsConfigSchema } from "./assets";
+import { rejectMisspelledKeys } from "./misspelled-keys";
 import wikiV1Schema from "@topik/schema/wiki/v1.json" with { type: "json" };
 import { sourceVersionSchema, sourceLabelsSchema, pageSourcePathSchema } from "./source-version";
 
@@ -325,6 +326,7 @@ export type WikiConfig = Omit<z.infer<typeof wikiConfigSchema>, "labels"> & {
 };
 
 export function parseWikiConfig(raw: unknown): WikiConfig {
+  rejectMisspelledKeys(raw, Object.keys(wikiConfigSchema.shape));
   const config = wikiConfigSchema.parse(raw);
   const { labels, ...rest } = config;
   return {

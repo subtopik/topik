@@ -87,10 +87,12 @@ export function parseMarkdownFrontmatter(
       frontmatter.title != null &&
       typeof frontmatter.title !== "string"
     ) {
-      throw new Error("Frontmatter title must be a string");
+      throw new PublicCompileError("frontmatter-invalid", filePath, { field: "title" });
     }
     return { frontmatter, content: match.content };
-  } catch {
+  } catch (error) {
+    // YAML parser messages can quote authored text, so only the structural field survives.
+    if (error instanceof PublicCompileError) throw error;
     throw new PublicCompileError("frontmatter-invalid", filePath);
   }
 }

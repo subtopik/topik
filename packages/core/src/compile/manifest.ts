@@ -13,7 +13,11 @@ import { readConfigurationText, parseSafeConfigurationYaml, readExactConfigFile 
 import { discoverGuides, validateGuideAuthors, type CompileResourceDiscovery } from "./guide";
 import { discoverWiki } from "./wiki";
 import { discoverCourse, validateCourseAuthors } from "./course";
-import { PublicCompileError, type PublicCompileErrorId } from "./public-errors";
+import {
+  PublicCompileError,
+  type PublicCompileErrorId,
+  type PublicCompileErrorOptions,
+} from "./public-errors";
 import { throwOnCompileErrors, type CompileResult } from "./shared";
 import type { SourceResource } from "../resource";
 import type { CompileOptions } from "./index";
@@ -48,12 +52,42 @@ export class ManifestSourceError extends PublicCompileError {
     sourceIndex: number,
     kind?: TopikManifestSource["kind"],
     config?: string,
+    options?: PublicCompileErrorOptions,
   ) {
-    super(id, config);
+    super(id, config, options);
     this.name = "ManifestSourceError";
     this.sourceIndex = sourceIndex;
     this.kind = kind;
   }
+}
+
+function manifestSourceFailure(
+  error: unknown,
+  source: ManifestSourceDescriptor,
+  directory: string,
+): ManifestSourceError {
+  if (!(error instanceof PublicCompileError))
+    return new ManifestSourceError(
+      "manifest-source-failed",
+      source.sourceIndex,
+      source.kind,
+      source.config,
+      { cause: error },
+    );
+  return new ManifestSourceError(
+    error.id,
+    source.sourceIndex,
+    source.kind,
+    error.location === undefined ? source.config : posix.join(directory, error.location),
+    {
+      cause: error,
+      field: error.field,
+      relatedLocation:
+        error.relatedLocation === undefined
+          ? undefined
+          : posix.join(directory, error.relatedLocation),
+    },
+  );
 }
 
 /** Explicit loading requires the canonical file in exactly the supplied root. */
@@ -135,9 +169,14 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
 
   for (const source of sources) {
     let discovered: CompileResourceDiscovery;
+    let selected;
     try {
       // Read against the project root so every config path component is checked.
-      const selected = await readExactConfigFile(root, source.config);
+      selected = await readExactConfigFile(root, source.config);
+    } catch (error) {
+      throw manifestSourceFailure(error, source, "");
+    }
+    try {
       const localOptions = { dir: join(root, source.directory), validation: options.validation };
       discovered = await (source.kind === "wiki"
         ? discoverWiki(localOptions, selected)
@@ -145,12 +184,8 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
           ? discoverCourse(localOptions, selected)
           : discoverGuides(localOptions, selected));
     } catch (error) {
-      throw new ManifestSourceError(
-        error instanceof PublicCompileError ? error.id : "manifest-source-failed",
-        source.sourceIndex,
-        source.kind,
-        source.config,
-      );
+      // Discovery locations are relative to the source's configuration directory.
+      throw manifestSourceFailure(error, source, source.directory);
     }
     const paths: Record<string, string> = {};
     for (const resource of discovered.resources) {

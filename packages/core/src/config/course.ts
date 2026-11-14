@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { sourceAssetsConfigSchema, DEFAULT_ASSET_DIRECTORY } from "./assets";
+import { rejectMisspelledKeys } from "./misspelled-keys";
 import { pageSourcePathSchema, parseSourcePersons, sourceLabelsSchema } from "./source-version";
 import { validateCoursePageSources } from "../course-navigation";
 
@@ -71,6 +72,7 @@ export type CourseConfig = Omit<z.infer<typeof courseConfigSchema>, "persons"> &
 export type CourseModuleConfig = z.infer<typeof moduleSchema>;
 
 export function parseCourseConfig(raw: unknown): CourseConfig {
+  rejectMisspelledKeys(raw, Object.keys(courseConfigSchema.shape));
   const config = courseConfigSchema.parse(raw);
   const { persons, ...rest } = config;
   return { ...rest, ...(persons !== undefined ? { persons: parseSourcePersons(persons) } : {}) };

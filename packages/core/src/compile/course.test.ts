@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { afterEach, expect, test } from "vite-plus/test";
 import { compileCourse } from "./course";
 import { compileManifest } from "./manifest";
+import { compileResourceLinks } from "./links";
 import { validateResources } from "../validate";
 import { analyzeTopikContent } from "@topik/content";
 
@@ -301,4 +302,63 @@ test("transports authored module/page indices independently from sorted resource
     name: "a-page",
     declarationIndex: 0,
   });
+});
+
+test("Course failures name the invalid field and reject invalid UTF-8 pages", async () => {
+  let dir = await fixture({
+    ...sourceFiles(),
+    "course.yaml": `${configuration}${persons}modlues: []\n`,
+  });
+  await expect(compileCourse({ dir })).rejects.toMatchObject({
+    id: "config-field-unknown",
+    location: "course.yaml",
+    field: "modlues",
+  });
+
+  dir = await fixture({
+    ...sourceFiles(),
+    "pages/welcome.md": welcome.replace("order: 12", "order: -1"),
+  });
+  await expect(compileCourse({ dir })).rejects.toMatchObject({
+    id: "frontmatter-invalid",
+    location: "pages/welcome.md",
+    field: "order",
+  });
+
+  dir = await fixture({ ...sourceFiles(), "pages/welcome.md": Buffer.from([0x23, 0x20, 0xff]) });
+  await expect(compileCourse({ dir })).rejects.toMatchObject({
+    id: "document-encoding-invalid",
+    location: "pages/welcome.md",
+  });
+});
+
+test("link compilation skips a CoursePage that has no source-path binding", async () => {
+  const dir = await fixture({});
+  const result = await compileResourceLinks({
+    rootDir: dir,
+    resources: [
+      { apiVersion: "v1", type: "Course", name: "c", spec: { title: "C", slug: "c" } },
+      {
+        apiVersion: "v1",
+        type: "CourseModule",
+        name: "m",
+        spec: { course: "c", title: "M", slug: "m", order: 0 },
+      },
+      {
+        apiVersion: "v1",
+        type: "CoursePage",
+        name: "p",
+        spec: {
+          module: "m",
+          title: "P",
+          slug: "p",
+          order: 0,
+          content: { format: "topik", value: "# P\n" },
+        },
+      },
+    ],
+    sourcePathsByResource: {},
+  });
+  expect(result.resources).toHaveLength(3);
+  expect(result.diagnostics).toEqual([]);
 });

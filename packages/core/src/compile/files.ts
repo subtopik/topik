@@ -65,7 +65,15 @@ async function openRegularFileWithinRoot(filePath: string, rootDir: string): Pro
   if (!isWithinRoot(authoredRoot, authoredFile)) {
     throw new FileOutsideCompilationRootError(filePath, rootDir);
   }
-  const [canonicalRoot, canonicalFile] = await Promise.all([realpath(rootDir), realpath(filePath)]);
+  let canonicalRoot: string;
+  let canonicalFile: string;
+  try {
+    [canonicalRoot, canonicalFile] = await Promise.all([realpath(rootDir), realpath(filePath)]);
+  } catch (error) {
+    // A non-directory or looping ancestor component cannot name a regular input file.
+    if (isNotRegularPathError(error)) throw new FileNotRegularError(filePath, rootDir);
+    throw error;
+  }
   if (!isWithinRoot(canonicalRoot, canonicalFile)) {
     throw new FileOutsideCompilationRootError(filePath, rootDir);
   }
@@ -118,7 +126,7 @@ async function openPortableFile(
     return handle;
   } catch (error) {
     await handle?.close();
-    if (["ELOOP", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) {
+    if (isNotRegularPathError(error)) {
       throw new FileNotRegularError(filePath, rootDir);
     }
     throw error;
@@ -167,13 +175,64 @@ async function openAnchoredLinuxFile(filePath: string, rootDir: string): Promise
     return handle;
   } catch (error) {
     await handle?.close();
-    if (["ELOOP", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) {
+    if (isNotRegularPathError(error)) {
       throw new FileNotRegularError(filePath, rootDir);
     }
     throw error;
   } finally {
     await Promise.all(directories.map((directory) => directory.close()));
   }
+}
+
+function isNotRegularPathError(error: unknown): boolean {
+  return ["ELOOP", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "");
+}
+
+/**
+ * Decode authored Markdown strictly so invalid bytes fail visibly instead of becoming
+ * U+FFFD. `location` is the safe compilation-relative path reported on failure.
+ */
+export function decodeUtf8Document(bytes: Uint8Array, location: string): string {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    throw new PublicCompileError("document-encoding-invalid", location);
+  }
+}
+
+/**
+ * Map items with at most `limit` operations in flight, keeping results in input order.
+ * Bounds descriptor use when a compilation reads many files. Items start in order and
+ * no new item starts after a failure, so the reported failure is always the earliest
+ * failing item regardless of completion timing.
+ */
+export async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  operation: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = [];
+  let next = 0;
+  let failedIndex = Number.POSITIVE_INFINITY;
+  let failure: unknown;
+  const worker = async (): Promise<void> => {
+    while (failedIndex === Number.POSITIVE_INFINITY && next < items.length) {
+      const index = next++;
+      try {
+        results[index] = await operation(items[index], index);
+      } catch (error) {
+        if (index < failedIndex) {
+          failedIndex = index;
+          failure = error;
+        }
+      }
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, () => worker()),
+  );
+  if (failedIndex !== Number.POSITIVE_INFINITY) throw failure;
+  return results;
 }
 
 function isWithinRoot(rootDir: string, filePath: string): boolean {

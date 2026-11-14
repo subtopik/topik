@@ -395,6 +395,14 @@ describe("descriptor-anchored filesystem reads", () => {
     ["escaped pattern", "hero\\.png filter=lfs\n", "hero.png"],
     ["quoted pattern", '"hero.png" filter=lfs\n', "hero.png"],
     ["filtering macro", "[attr]stored filter=lfs\n*.png stored\n", "hero.png"],
+    ["macro defined after use", "*.png stored\n[attr]stored filter=lfs\n", "hero.png"],
+    [
+      "macro chain defined after use",
+      "*.png outer\n[attr]outer inner\n[attr]inner filter=lfs\n",
+      "hero.png",
+    ],
+    ["quoted supplementary-plane pattern", '"\u{1F4F7}.png" filter=lfs\n', "\u{1F4F7}.png"],
+    ["POSIX character class", "[[:alpha:]]ero.png filter=lfs\n", "hero.png"],
   ])("rejects a %s that can match the file", async (_name, attributes, path) => {
     const root = await mkdtemp(join(tmpdir(), "topik-attribute-match-"));
     roots.push(root);
@@ -414,6 +422,7 @@ describe("descriptor-anchored filesystem reads", () => {
     ["quoted pattern", '"other file.png" filter=lfs\n'],
     ["negative pattern", "!hero.png filter=lfs\n"],
     ["filtering macro", "[attr]stored filter=lfs\n*.psd stored\n"],
+    ["POSIX character class", "[[:alpha:]]ero.psd filter=lfs\n"],
   ])("ignores a %s that cannot match the file", async (_name, attributes) => {
     const root = await mkdtemp(join(tmpdir(), "topik-attribute-unrelated-"));
     roots.push(root);
@@ -421,6 +430,17 @@ describe("descriptor-anchored filesystem reads", () => {
     await writeFile(join(root, "hero.png"), PNG_BYTES);
     expect(await readPortableAssetFile({ root, path: "hero.png" })).toMatchObject({ ok: true });
   });
+
+  test("matches many-wildcard patterns against long names in bounded time", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topik-attribute-wildcards-"));
+    roots.push(root);
+    const name = `${"a".repeat(200)}.png`;
+    await writeFile(join(root, ".gitattributes"), `${"*a".repeat(8)}*b.png filter=lfs\n`);
+    await writeFile(join(root, name), PNG_BYTES);
+    const started = performance.now();
+    expect(await readPortableAssetFile({ root, path: name })).toMatchObject({ ok: true });
+    expect(performance.now() - started).toBeLessThan(1000);
+  }, 20_000);
 
   test("accepts only explicit nested resets to unspecified", async () => {
     const root = await mkdtemp(join(tmpdir(), "topik-attribute-reset-"));

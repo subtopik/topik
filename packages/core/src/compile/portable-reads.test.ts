@@ -4,7 +4,11 @@ import { chmod, chown, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/pr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
-import { findTrustedGitExecutable } from "../assets/files";
+import {
+  createPortableReadSession,
+  findTrustedGitExecutable,
+  readPortableAssetFileInSession,
+} from "../assets/files";
 import { compile } from "./index";
 import { compileGuides } from "./guide";
 import { compileWiki } from "./wiki";
@@ -154,6 +158,30 @@ describe("Git repository evidence", () => {
     expect((error as Error).message).toContain("safe.directory");
     expect((error as Error).message).not.toContain(dir);
     expect((error as Error).cause).toBeInstanceOf(AggregateError);
+  });
+
+  gitTest("re-derives cached evidence when a symlinked ancestor is retargeted", async () => {
+    const standalone = await temporaryDirectory("topik-retarget-standalone-");
+    const repository = await temporaryDirectory("topik-retarget-repository-");
+    const aliases = await temporaryDirectory("topik-retarget-alias-");
+    for (const base of [standalone, repository]) {
+      await mkdir(join(base, "docs"));
+      await writeFile(join(base, "docs", "hero.png"), "bytes\n");
+    }
+    git(repository, "init", "-q");
+    await writeFile(join(repository, ".gitattributes"), "*.png filter=lfs\n");
+    const alias = join(aliases, "current");
+    await symlink(standalone, alias, "dir");
+    const session = createPortableReadSession();
+    const options = { root: join(alias, "docs"), path: "hero.png" };
+    expect(await readPortableAssetFileInSession(session, options)).toMatchObject({ ok: true });
+
+    await rm(alias);
+    await symlink(repository, alias, "dir");
+    expect(await readPortableAssetFileInSession(session, options)).toMatchObject({
+      ok: false,
+      diagnostics: [{ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" }],
+    });
   });
 
   linuxTest("finds Git only in trusted, non-writable locations", async () => {

@@ -355,6 +355,13 @@ async function readPortableAssetFileAnchored(
         reason: "changed-during-read",
       });
     }
+    // The opened directory must be the one the repository evidence describes.
+    if (`${openedRoot.dev}:${openedRoot.ino}` !== repository.rootIdentity) {
+      return fail({
+        message: "Resource root changed after its Git repository evidence was derived",
+        reason: "changed-during-read",
+      });
+    }
     const rootGitBoundary = await anchoredGitBoundaryFingerprint(rootHandle);
     if (!rootGitBoundary.ok) return fail(rootGitBoundary.failure);
     gitBoundaryFingerprints.push(rootGitBoundary.fingerprint);
@@ -511,12 +518,15 @@ type RepositoryEvidence =
       ok: true;
       kind: "none";
       canonicalRoot: string;
+      /** `dev:ino` of the canonical root when the evidence was derived. */
+      rootIdentity: string;
       stamp: string;
     }
   | {
       ok: true;
       kind: "worktree";
       canonicalRoot: string;
+      rootIdentity: string;
       worktree: string;
       /** Portable `/` spelling of the canonical root relative to the worktree. */
       rootFromWorktree: string;
@@ -534,7 +544,7 @@ async function sessionRepositoryEvidence(
 ): Promise<RepositoryEvidence> {
   const key = resolve(root);
   const cached = session.repositories.get(key);
-  if (cached !== undefined && (!cached.ok || (await repositoryStamp(cached)) === cached.stamp)) {
+  if (cached !== undefined && (!cached.ok || (await isCurrentRepositoryEvidence(key, cached)))) {
     return cached;
   }
   const evidence = await computeRepositoryEvidence(key);
@@ -548,7 +558,7 @@ async function verifyRepositoryEvidence(
   root: string,
   before: ProvenRepositoryEvidence,
 ): Promise<PortableReadFailure | undefined> {
-  if ((await repositoryStamp(before)) === before.stamp) return undefined;
+  if (await isCurrentRepositoryEvidence(resolve(root), before)) return undefined;
   // A stamp also changes for harmless updates such as an index stat refresh, so compare the
   // evidence itself before failing.
   const key = resolve(root);
@@ -557,6 +567,8 @@ async function verifyRepositoryEvidence(
   if (!after.ok) return after.failure;
   const same =
     after.kind === before.kind &&
+    after.canonicalRoot === before.canonicalRoot &&
+    after.rootIdentity === before.rootIdentity &&
     (after.kind === "none" ||
       (before.kind === "worktree" &&
         after.worktree === before.worktree &&
@@ -570,16 +582,49 @@ async function verifyRepositoryEvidence(
       };
 }
 
-async function computeRepositoryEvidence(root: string): Promise<RepositoryEvidence> {
-  // Git discovers repositories from the canonical directory, so evaluate the same one.
+/**
+ * Evidence stays valid only while the authored root still resolves to the same canonical
+ * directory (a retargeted ancestor symlink changes which tree supplies the bytes) and its
+ * repository stamps are unchanged.
+ */
+async function isCurrentRepositoryEvidence(
+  root: string,
+  evidence: ProvenRepositoryEvidence,
+): Promise<boolean> {
+  const current = await canonicalRootIdentity(root);
+  return (
+    current.canonicalRoot === evidence.canonicalRoot &&
+    current.rootIdentity === evidence.rootIdentity &&
+    (await repositoryStamp(evidence)) === evidence.stamp
+  );
+}
+
+async function canonicalRootIdentity(
+  root: string,
+): Promise<{ canonicalRoot: string; rootIdentity: string }> {
   let canonicalRoot: string;
   try {
     canonicalRoot = await realpath(root);
   } catch {
     canonicalRoot = root;
   }
+  try {
+    const stats = await stat(canonicalRoot, { bigint: true });
+    return { canonicalRoot, rootIdentity: `${stats.dev}:${stats.ino}` };
+  } catch (error) {
+    return {
+      canonicalRoot,
+      rootIdentity: `error:${(error as NodeJS.ErrnoException).code ?? "unknown"}`,
+    };
+  }
+}
+
+async function computeRepositoryEvidence(root: string): Promise<RepositoryEvidence> {
+  // Git discovers repositories from the canonical directory, so evaluate the same one.
+  const { canonicalRoot, rootIdentity } = await canonicalRootIdentity(root);
   const boundary = await gitBoundaryEvidence(canonicalRoot);
-  if (!boundary.present) return { ok: true, kind: "none", canonicalRoot, stamp: boundary.stamp };
+  if (!boundary.present)
+    return { ok: true, kind: "none", canonicalRoot, rootIdentity, stamp: boundary.stamp };
   const revParse = await runGit(
     [
       "-C",
@@ -596,7 +641,7 @@ async function computeRepositoryEvidence(root: string): Promise<RepositoryEviden
     // Git itself found no repository (for example, an ancestor `.git` that is not a valid
     // repository), so no Git attributes or index entries apply to this tree.
     return revParse.notRepository
-      ? { ok: true, kind: "none", canonicalRoot, stamp: boundary.stamp }
+      ? { ok: true, kind: "none", canonicalRoot, rootIdentity, stamp: boundary.stamp }
       : { ok: false, failure: revParse.failure };
   }
   const lines = revParse.stdout.split("\n");
@@ -655,6 +700,7 @@ async function computeRepositoryEvidence(root: string): Promise<RepositoryEviden
     ok: true,
     kind: "worktree",
     canonicalRoot,
+    rootIdentity,
     worktree,
     rootFromWorktree: rootFromWorktree === "" ? "" : rootFromWorktree.split(sep).join("/"),
     indexPath,
@@ -1037,9 +1083,33 @@ async function applyGitAttributes(
       message,
       reason: "git-filtered",
     });
-    for (const rawLine of source.split(/\r?\n/u)) {
-      const line = rawLine.trim();
-      if (line.length === 0 || line.startsWith("#")) continue;
+    const lines = source
+      .split(/\r?\n/u)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && !line.startsWith("#"));
+    // Git resolves macros after reading every definition, so collect filtering macros (and
+    // macros that expand to them, in any order) before applying any rule.
+    const definitions = lines.flatMap((line) => {
+      const parsed = splitGitAttributeLine(line);
+      return parsed?.pattern.startsWith("[attr]") ? [parsed] : [];
+    });
+    for (let changed = true; changed;) {
+      changed = false;
+      for (const definition of definitions) {
+        const name = definition.pattern.slice("[attr]".length);
+        if (
+          !state.macros.has(name) &&
+          definition.fields.some(
+            (token) =>
+              isPortableAttributeToken(token) || state.macros.has(attributeTokenName(token)),
+          )
+        ) {
+          state.macros.add(name);
+          changed = true;
+        }
+      }
+    }
+    for (const line of lines) {
       const parsed = splitGitAttributeLine(line);
       if (parsed === undefined) {
         if (/(?:filter|working-tree-encoding)/u.test(line) || state.macros.size > 0) {
@@ -1053,10 +1123,7 @@ async function applyGitAttributes(
       const relevant = fields.some(
         (token) => isPortableAttributeToken(token) || state.macros.has(attributeTokenName(token)),
       );
-      if (pattern.startsWith("[attr]")) {
-        if (relevant) state.macros.add(pattern.slice("[attr]".length));
-        continue;
-      }
+      if (pattern.startsWith("[attr]")) continue;
       // Git ignores negative patterns in attribute files.
       if (!relevant || pattern.startsWith("!")) continue;
       const match = gitAttributePatternMatch(pattern, relativePath);
@@ -1095,7 +1162,8 @@ function splitGitAttributeLine(line: string): { pattern: string; fields: string[
   const bytes: number[] = [];
   const encoder = new TextEncoder();
   for (let index = 1; index < line.length; index++) {
-    const character = line[index];
+    // Literal characters are whole code points, so supplementary-plane text stays intact.
+    const character = String.fromCodePoint(line.codePointAt(index) ?? 0);
     if (character === '"') {
       const rest = line.slice(index + 1);
       if (rest.length > 0 && !/^[\t ]/u.test(rest)) return undefined;
@@ -1108,6 +1176,7 @@ function splitGitAttributeLine(line: string): { pattern: string; fields: string[
     }
     if (character !== "\\") {
       bytes.push(...encoder.encode(character));
+      index += character.length - 1;
       continue;
     }
     const next = line[++index];
@@ -1157,8 +1226,8 @@ function isPortableAttributeToken(token: string): boolean {
 /**
  * Decide whether a Git attribute pattern matches `relativePath`. Wildcards (`*`, `?`) and a
  * double asterisk forming a whole leading, trailing, or middle path component are matched
- * exactly. Bracket expressions, escapes, and other double asterisks are over-approximated: a
- * pattern that cannot match even then is "no", otherwise "unknown".
+ * exactly, byte by byte as Git does. Bracket expressions, escapes, and other double asterisks
+ * are over-approximated: a pattern that cannot match even then is "no", otherwise "unknown".
  */
 function gitAttributePatternMatch(pattern: string, relativePath: string): "yes" | "no" | "unknown" {
   if (pattern.length === 0 || pattern.endsWith("/")) return "no";
@@ -1166,13 +1235,28 @@ function gitAttributePatternMatch(pattern: string, relativePath: string): "yes" 
   const body = anchored ? pattern.slice(1) : pattern;
   const candidate =
     anchored || body.includes("/") ? relativePath : (relativePath.split("/").at(-1) ?? "");
-  const glob = globToRegExp(body);
-  if (!glob.regexp.test(candidate)) return "no";
+  const glob = compileGlob(body);
+  if (!matchGlob(glob.tokens, new TextEncoder().encode(candidate))) return "no";
   return glob.exact ? "yes" : "unknown";
 }
 
-function globToRegExp(pattern: string): { regexp: RegExp; exact: boolean } {
-  let source = "^";
+const SLASH = 0x2f;
+
+type GlobToken =
+  | { kind: "byte"; value: number }
+  /** One byte; `slash` allows `/`. */
+  | { kind: "one"; slash: boolean }
+  /** Zero or more bytes; `slash` allows `/`. */
+  | { kind: "star"; slash: boolean }
+  /** Optional group: either skip the next `length` tokens or match them. */
+  | { kind: "optional"; length: number };
+
+function compileGlob(pattern: string): { tokens: GlobToken[]; exact: boolean } {
+  const tokens: GlobToken[] = [];
+  const encoder = new TextEncoder();
+  const literal = (text: string) => {
+    for (const value of encoder.encode(text)) tokens.push({ kind: "byte", value });
+  };
   let exact = true;
   for (let index = 0; index < pattern.length; index++) {
     const character = pattern[index];
@@ -1183,47 +1267,103 @@ function globToRegExp(pattern: string): { regexp: RegExp; exact: boolean } {
       const atEnd = end === pattern.length || pattern[end] === "/";
       if (atStart && atEnd && end - index === 2) {
         if (end === pattern.length) {
-          source += ".*";
+          tokens.push({ kind: "star", slash: true });
         } else {
-          // `**/` matches zero or more whole directories.
-          source += "(?:.*/)?";
+          // A double-asterisk component followed by `/` matches zero or more whole directories.
+          tokens.push({ kind: "optional", length: 2 });
+          tokens.push({ kind: "star", slash: true });
+          tokens.push({ kind: "byte", value: SLASH });
           end++;
         }
       } else {
-        // Git treats these asterisks like `*`; `.*` is a superset.
-        source += ".*";
+        // Git treats these asterisks like `*`; any bytes is a superset.
+        tokens.push({ kind: "star", slash: true });
         exact = false;
       }
       index = end - 1;
     } else if (character === "*") {
-      source += "[^/]*";
+      tokens.push({ kind: "star", slash: false });
     } else if (character === "?") {
-      source += "[^/]";
+      tokens.push({ kind: "one", slash: false });
     } else if (character === "[") {
       exact = false;
-      let end = index + 1;
-      if (pattern[end] === "!" || pattern[end] === "^") end++;
-      if (pattern[end] === "]") end++;
-      while (end < pattern.length && pattern[end] !== "]") end++;
-      if (end >= pattern.length) {
-        source += ".*";
+      const end = bracketExpressionEnd(pattern, index);
+      if (end === undefined) {
+        // Not confidently parsed: let the rest of the pattern match anything.
+        tokens.push({ kind: "star", slash: true });
         break;
       }
-      source += ".";
+      // A bracket expression matches one character, which may span several bytes.
+      tokens.push({ kind: "star", slash: false });
       index = end;
     } else if (character === "\\") {
       exact = false;
       if (index + 1 >= pattern.length) {
-        source += ".*";
+        tokens.push({ kind: "star", slash: true });
         break;
       }
-      source += ".";
-      index++;
+      const escaped = String.fromCodePoint(pattern.codePointAt(index + 1) ?? 0);
+      literal(escaped);
+      index += escaped.length;
     } else {
-      source += character.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+      const text = String.fromCodePoint(pattern.codePointAt(index) ?? 0);
+      literal(text);
+      index += text.length - 1;
     }
   }
-  return { regexp: new RegExp(`${source}$`, "u"), exact };
+  return { tokens, exact };
+}
+
+/** Index of the `]` closing the bracket expression at `start`, including POSIX classes. */
+function bracketExpressionEnd(pattern: string, start: number): number | undefined {
+  let index = start + 1;
+  if (pattern[index] === "!" || pattern[index] === "^") index++;
+  if (pattern[index] === "]") index++;
+  while (index < pattern.length) {
+    const character = pattern[index];
+    if (character === "]") return index;
+    if (character === "[" && [":", ".", "="].includes(pattern[index + 1] ?? "")) {
+      const close = pattern.indexOf(`${pattern[index + 1]}]`, index + 2);
+      if (close === -1) return undefined;
+      index = close + 2;
+      continue;
+    }
+    if (character === "\\") index++;
+    index++;
+  }
+  return undefined;
+}
+
+/** Linear-time simulation of the token automaton: O(tokens * candidate bytes). */
+function matchGlob(tokens: readonly GlobToken[], candidate: Uint8Array): boolean {
+  let states = closeGlobStates(tokens, [0]);
+  for (const value of candidate) {
+    const next: number[] = [];
+    for (const state of states) {
+      const token = tokens[state];
+      if (token === undefined || token.kind === "optional") continue;
+      if (token.kind === "byte" ? token.value === value : token.slash || value !== SLASH) {
+        next.push(token.kind === "star" ? state : state + 1);
+      }
+    }
+    states = closeGlobStates(tokens, next);
+    if (states.size === 0) return false;
+  }
+  return states.has(tokens.length);
+}
+
+function closeGlobStates(tokens: readonly GlobToken[], initial: readonly number[]): Set<number> {
+  const states = new Set<number>();
+  const pending = [...initial];
+  while (pending.length > 0) {
+    const state = pending.pop() as number;
+    if (states.has(state)) continue;
+    states.add(state);
+    const token = tokens[state];
+    if (token?.kind === "star") pending.push(state + 1);
+    if (token?.kind === "optional") pending.push(state + 1, state + 1 + token.length);
+  }
+  return states;
 }
 
 /** Git LFS never treats a blob of this size or larger as a pointer. */

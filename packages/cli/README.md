@@ -20,12 +20,18 @@ npx topik validate ./handbook/.topik/resources
 npx topik dev ./handbook
 ```
 
-| Command    | Purpose                                                                 |
-| ---------- | ----------------------------------------------------------------------- |
-| `compile`  | Compile project content into resource files (`--out-dir`, `--dry-run`). |
-| `lint`     | Check source content without writing compiled resources.                |
-| `validate` | Validate resource files in JSON, JSONL, or YAML against the schemas.    |
-| `dev`      | Start a development server that watches for content changes.            |
+| Command    | Purpose                                                                                                                |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `compile`  | Compile project content into resource files (`--out-dir`/`-o`, `--format`/`-f`, `--dry-run`, `--validate`, `--links`). |
+| `lint`     | Check source content without writing compiled resources (`--links`).                                                   |
+| `validate` | Validate a resource file, directory, or compile output in JSON, JSONL, or YAML against the schemas.                    |
+| `dev`      | Start a development server that watches for content changes (`--port`/`-p`, `--allow-origin`, `--links`).              |
+
+`--links` sets how unresolved wiki links and local guide fragments are handled:
+`error` (default), `warning`, or `off`. `--format` accepts only `json`. The dev
+server listens on `127.0.0.1` port `50001` by default and accepts browser
+connections from `https://write.subtopik.com` unless `--allow-origin` names
+another origin.
 
 Run `topik <command> --help` for every flag. Writing compilation output
 currently requires Linux.

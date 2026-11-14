@@ -1,10 +1,19 @@
+import { stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { resolve } from "node:path";
 import { command, positional, string } from "@drizzle-team/brocli";
-import { watch, TOPIK_PREVIEW_PROTOCOL, type PreviewState, type Watcher } from "@topik/core";
+import {
+  CompileError,
+  watch,
+  TOPIK_PREVIEW_PROTOCOL,
+  type LinkValidationPolicy,
+  type PreviewState,
+  type Watcher,
+} from "@topik/core";
 
 import { version } from "../../package.json";
 
+import { printDiagnostics } from "../diagnostics";
 import { formatPublicCliError, PublicCliError } from "../errors";
 
 const DEV_HOST = "127.0.0.1";
@@ -288,22 +297,20 @@ export async function startDevServer(options: {
   dir: string;
   port: number;
   allowOrigin?: string;
+  links?: LinkValidationPolicy;
 }): Promise<StartedDevServer> {
   const dir = resolve(options.dir);
   const allowedOrigin = normalizeAllowedOrigin(options.allowOrigin ?? DEFAULT_ALLOWED_ORIGIN);
+  await assertSourceDirectory(dir);
 
   console.log("Watching content for changes...");
-  const watcher = await watch({ dir });
-  if (watcher.state.status === "error")
-    console.error(
-      "Compile error:",
-      watcher.state.diagnostics.map((diagnostic) => diagnostic.message).join(" "),
-    );
-  else console.log(`Compiled ${watcher.resources.size} resources`);
-
-  watcher.on("error", (error: Error) => {
-    console.error("Compile error:", formatPublicCliError(error));
+  const watcher = await watch({
+    dir,
+    validation: { links: options.links ?? "error" },
+    // Registered before the initial compile so its failure is reported too.
+    onError: reportWatchError,
   });
+  if (watcher.state.status !== "error") console.log(`Compiled ${watcher.resources.size} resources`);
 
   watcher.on("update", (key: string) => {
     console.log(`Updated ${key}`);
@@ -371,6 +378,24 @@ export async function startDevServer(options: {
   };
 }
 
+/**
+ * Print compile failures to the local terminal. The preview protocol omits source
+ * paths, but the person running the dev server needs the located diagnostics.
+ */
+function reportWatchError(error: Error): void {
+  if (error instanceof CompileError) {
+    console.error("Compile error:");
+    printDiagnostics(error.diagnostics);
+    return;
+  }
+  console.error("Compile error:", formatPublicCliError(error));
+}
+
+async function assertSourceDirectory(dir: string): Promise<void> {
+  const info = await stat(dir).catch(() => undefined);
+  if (info?.isDirectory() !== true) throw new PublicCliError("dev-source-access-failed");
+}
+
 export const dev = command({
   name: "dev",
   desc: "Start a development server that watches for content changes",
@@ -380,6 +405,10 @@ export const dev = command({
     allowOrigin: string("allow-origin").desc(
       `Browser origin allowed to connect (default: ${DEFAULT_ALLOWED_ORIGIN})`,
     ),
+    links: string("links")
+      .desc("How unresolved wiki links and local guide fragments are handled")
+      .enum("error", "warning", "off")
+      .default("error"),
   },
   handler: async (options) => {
     const port = parseDevPort(options.port);
@@ -389,6 +418,7 @@ export const dev = command({
       dir,
       port,
       allowOrigin: options.allowOrigin,
+      links: options.links as LinkValidationPolicy,
     });
     console.log(`Dev server listening on http://localhost:${runningServer.port}`);
 

@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
+import { CompileError } from "./compile";
 import { pagePathToName } from "./compile/wiki";
 import { watch } from "./watch";
 import type { Watcher } from "./watch";
@@ -205,6 +206,29 @@ describe("watch", () => {
     const err = await error;
     expect(err).toBeInstanceOf(Error);
   }, 10_000);
+
+  test("reports an initial compile failure to onError with its located diagnostics", async () => {
+    await writeFile(join(dir, "intro.md"), "# Intro\n\n[Missing](#missing)\n");
+    const errors: Error[] = [];
+
+    watcher = await watch({ dir, onError: (error) => errors.push(error) });
+
+    expect(watcher.state.status).toBe("error");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toBeInstanceOf(CompileError);
+    expect((errors[0] as CompileError).diagnostics).toEqual([
+      expect.objectContaining({ file: "intro.md", level: "error" }),
+    ]);
+  });
+
+  test("passes the link validation policy to every compilation", async () => {
+    await writeFile(join(dir, "intro.md"), "# Intro\n\n[Missing](#missing)\n");
+
+    watcher = await watch({ dir, validation: { links: "warning" } });
+
+    expect(watcher.state.status).toBe("ready");
+    expect(watcher.resources.has("Guide/guides-intro")).toBe(true);
+  });
 });
 
 describe("authoritative preview state", () => {

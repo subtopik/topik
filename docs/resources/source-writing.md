@@ -219,7 +219,9 @@ replay shared byte edits, checking that all bytes outside it remain identical.
 
 Unchanged files remain byte-for-byte identical. Metadata edits retain the exact
 body, unrelated keys, comments, newline spelling and mode. Body edits use the
-public content writer with semantic checks. A move persists stable identity,
+public content writer with semantic checks, so equivalent inline mark nestings
+from an editor are written in one
+[canonical spelling](../content/content-design.md#inline-mark-nesting). A move persists stable identity,
 repairs navigation and incoming references, and requires authority for every
 derived edit. `derivedRepairs` and `assetMappings` are part of reviewable output.
 Retain the source context and referenced `wikiContexts` snapshot with saved

@@ -5,6 +5,7 @@ import {
   evaluateDocument,
   mergeTopikContentConfig,
   parseDocument,
+  sameDocumentMeaning,
   transformTopikContent,
   writeDocument,
 } from "./index.js";
@@ -213,11 +214,14 @@ describe("evaluation boundary", () => {
     },
   );
 
-  test("refuses unwritable adjacent marks without merging their rendered boundaries", () => {
+  test("writes adjacent marks exposed by empty values as one canonical span", () => {
     const document = parse("~~a~~{% $value %}~~b~~");
     const original = structuredClone(document);
     for (const value of [null, ""]) {
-      expect(() => evaluateDocument(document, { value })).toThrow(ContentEvaluationError);
+      const resolved = evaluateDocument(document, { value });
+      const written = writeDocument(resolved);
+      expect(written).toBe("~~ab~~\n");
+      expect(sameDocumentMeaning(parse(written), resolved)).toBe(true);
       expect(transformTopikContent(document, { variables: { value } })).toMatchObject({
         children: [
           {

@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 import { readConfigFile } from "./config";
 import { compileWiki } from "./wiki";
-import { PublicCompileError } from "./public-errors";
+import { PublicCompileError, publicSchemaError } from "./public-errors";
 
 const execFileAsync = promisify(execFile);
 const SENTINEL = "PRIVATE_VALUE";
@@ -97,3 +97,41 @@ function publicErrorSurfaces(error: unknown): string {
   }
   return surfaces.join("\n");
 }
+
+describe("public schema error fields", () => {
+  test("keeps only a structural field path from schema issues", () => {
+    const error = publicSchemaError("config-invalid", "wiki.yaml", {
+      issues: [{ code: "invalid_type", path: ["navigation", 2, "title"], message: SENTINEL }],
+    });
+    expect(error).toMatchObject({ id: "config-invalid", field: "navigation[2].title" });
+    expect(JSON.stringify(error)).not.toContain(SENTINEL);
+  });
+
+  test("prefers an unknown key and reports it as the field", () => {
+    const error = publicSchemaError("config-invalid", "wiki.yaml", {
+      issues: [
+        { code: "invalid_type", path: ["title"], message: "missing" },
+        { code: "unrecognized_keys", path: [], keys: ["titel"], message: "unknown" },
+      ],
+    });
+    expect(error).toMatchObject({ id: "config-field-unknown", field: "titel" });
+  });
+
+  test.each([["/tmp/private-value"], ["has space"], ["a".repeat(300)], ["labels.café"], ["x\ny"]])(
+    "omits unsafe field spellings: %j",
+    (field) => {
+      expect(new PublicCompileError("config-invalid", "wiki.yaml", { field })).not.toHaveProperty(
+        "field",
+      );
+    },
+  );
+
+  test("sanitizes related locations like primary locations", () => {
+    expect(
+      new PublicCompileError("guide-duplicate", "b.md", { relatedLocation: "../outside.md" }),
+    ).not.toHaveProperty("relatedLocation");
+    expect(
+      new PublicCompileError("guide-duplicate", "b.md", { relatedLocation: "a.md" }),
+    ).toMatchObject({ relatedLocation: "a.md" });
+  });
+});

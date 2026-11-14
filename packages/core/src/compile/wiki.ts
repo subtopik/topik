@@ -20,8 +20,8 @@ import {
   configurationDirectory,
   type LoadedConfig,
 } from "./config";
-import { readRegularFileWithinRoot } from "./files";
-import { PublicCompileError } from "./public-errors";
+import { decodeUtf8Document, mapWithConcurrency, readRegularFileWithinRoot } from "./files";
+import { PublicCompileError, publicSchemaError } from "./public-errors";
 import {
   extractMarkdownTitle,
   parseMarkdownFrontmatter,
@@ -40,6 +40,9 @@ export interface CompileWikiOptions {
   assets?: AssetCompilationOptions;
   referenceTargets?: readonly CompileResourceReferenceTarget[];
 }
+
+/** Bounds open page descriptors; results keep declaration order. */
+const PAGE_READ_CONCURRENCY = 16;
 
 export async function compileWiki(options: CompileWikiOptions): Promise<CompileResult> {
   const result = await inspectWiki(options);
@@ -91,15 +94,15 @@ export async function discoverWiki(
   let config;
   try {
     config = parseWikiConfig(loadedConfig.value);
-  } catch {
-    throw new PublicCompileError("config-invalid", options.configFile ?? loadedConfig.path);
+  } catch (error) {
+    throw publicSchemaError("config-invalid", options.configFile ?? loadedConfig.path, error);
   }
   const pages = config.navigation ? collectPages(config.navigation) : [];
   const pagePaths = [...new Set(pages.map((page) => page.sourcePath))];
   if (config.sourceVersion === 1 && pagePaths.length !== pages.length)
     throw new PublicCompileError("config-invalid", loadedConfig.path);
-  const resolvedFiles = await Promise.all(
-    pagePaths.map((pagePath) => readPageFile(dir, pagePath, config.sourceVersion === 1)),
+  const resolvedFiles = await mapWithConcurrency(pagePaths, PAGE_READ_CONCURRENCY, (pagePath) =>
+    readPageFile(dir, pagePath, config.sourceVersion === 1),
   );
 
   const resources: SourceResource[] = [];
@@ -111,14 +114,14 @@ export async function discoverWiki(
     const pagePath = pagePaths[i];
     const { filePath, raw } = resolvedFiles[i];
     const sourcePath = `${pagePath}${filePath.endsWith(".mdx") ? ".mdx" : ".md"}`;
-    const parsed = parseMarkdownFrontmatter(raw, pagePath, config.sourceVersion);
+    const parsed = parseMarkdownFrontmatter(raw, sourcePath, config.sourceVersion);
     const { content } = parsed;
     let frontmatter = parsed.frontmatter;
     if (config.sourceVersion === 1) {
       try {
         frontmatter = parsePageMetadata(frontmatter);
-      } catch {
-        throw new PublicCompileError("frontmatter-invalid", sourcePath);
+      } catch (error) {
+        throw publicSchemaError("frontmatter-invalid", sourcePath, error);
       }
     }
     const validation = validateTopikContent(content, { file: sourcePath });
@@ -231,17 +234,19 @@ async function readPageFile(
   let found: { filePath: string; raw: string } | undefined;
   for (const ext of [".mdx", ".md"]) {
     const filePath = join(dir, pagePath + ext);
+    let bytes: Buffer;
     try {
-      const raw = await readRegularFileWithinRoot(filePath, dir, "utf-8");
-      if (!requireUnique) return { filePath, raw };
-      if (found) throw new PublicCompileError("wiki-page-ambiguous");
-      found = { filePath, raw };
+      bytes = await readRegularFileWithinRoot(filePath, dir);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         continue;
       }
       throw error;
     }
+    const raw = decodeUtf8Document(bytes, pagePath + ext);
+    if (!requireUnique) return { filePath, raw };
+    if (found) throw new PublicCompileError("wiki-page-ambiguous");
+    found = { filePath, raw };
   }
   if (found) return found;
   throw new PublicCompileError("wiki-page-not-found");

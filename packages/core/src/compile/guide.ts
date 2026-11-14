@@ -13,11 +13,12 @@ import {
   type LoadedConfig,
 } from "./config";
 import {
+  decodeUtf8Document,
   FileNotRegularError,
   FileOutsideCompilationRootError,
   readRegularFileWithinRoot,
 } from "./files";
-import { PublicCompileError } from "./public-errors";
+import { PublicCompileError, publicSchemaError } from "./public-errors";
 import {
   extractMarkdownTitle,
   parseMarkdownFrontmatter,
@@ -104,8 +105,8 @@ export async function discoverGuides(
   let config;
   try {
     config = parseCollectionConfig(loadedConfig.value);
-  } catch {
-    throw new PublicCompileError("config-invalid", options.configFile ?? loadedConfig.path);
+  } catch (error) {
+    throw publicSchemaError("config-invalid", options.configFile ?? loadedConfig.path, error);
   }
 
   const files = await readdir(dir);
@@ -114,12 +115,13 @@ export async function discoverGuides(
   const resources: SourceResource[] = [...(config.persons ?? [])];
   const diagnostics: CompileResult["diagnostics"] = [];
   const sourcePathsByResource: Record<string, string> = {};
+  const claimedNames = new Map<string, string>();
 
   for (const file of markdownFiles) {
     const filePath = join(dir, file);
     let rawContent: string;
     try {
-      rawContent = await readRegularFileWithinRoot(filePath, dir, "utf-8");
+      rawContent = decodeUtf8Document(await readRegularFileWithinRoot(filePath, dir), file);
     } catch (error) {
       if (error instanceof FileOutsideCompilationRootError) {
         diagnostics.push({
@@ -151,21 +153,32 @@ export async function discoverGuides(
     if (config.sourceVersion === 1) {
       try {
         frontmatter = parseGuideMetadata(frontmatter);
-      } catch {
-        throw new PublicCompileError("frontmatter-invalid", file);
+      } catch (error) {
+        throw publicSchemaError("frontmatter-invalid", file, error);
       }
     }
+    const explicitSlug =
+      config.sourceVersion === 1 && typeof frontmatter.slug === "string"
+        ? frontmatter.slug
+        : undefined;
+    const explicitName =
+      config.sourceVersion === 1 && typeof frontmatter.id === "string" ? frontmatter.id : undefined;
+    const slug = explicitSlug ?? fileToSlug(file);
+    const name = explicitName ?? `${config.id}-${fileToSlug(file)}`;
+    // Filename-derived identities must already be valid resource names and slugs.
+    if (
+      (explicitSlug === undefined || explicitName === undefined) &&
+      (!GUIDE_SLUG_PATTERN.test(fileToSlug(file)) ||
+        (explicitName === undefined && name.length > GUIDE_NAME_MAX_LENGTH))
+    )
+      throw new PublicCompileError("guide-name-invalid", file);
+    const duplicate = claimedNames.get(name);
+    if (duplicate !== undefined)
+      throw new PublicCompileError("guide-duplicate", file, { relatedLocation: duplicate });
+    claimedNames.set(name, file);
     const validation = validateTopikContent(content, { file });
     diagnostics.push(...validation.errors);
     if (!validation.valid) continue;
-    const slug =
-      config.sourceVersion === 1 && typeof frontmatter.slug === "string"
-        ? frontmatter.slug
-        : fileToSlug(file);
-    const name =
-      config.sourceVersion === 1 && typeof frontmatter.id === "string"
-        ? frontmatter.id
-        : `${config.id}-${fileToSlug(file)}`;
     const analysis = analyzeTopikContent(content, { file });
     diagnostics.push(...analysis.diagnostics);
     const title =
@@ -225,6 +238,9 @@ export async function discoverGuides(
 function fileToSlug(filename: string): string {
   return filename.replace(/\.(mdx?|md)$/, "");
 }
+
+const GUIDE_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const GUIDE_NAME_MAX_LENGTH = 63;
 
 export { extractMarkdownTitle as extractTitle } from "./shared";
 

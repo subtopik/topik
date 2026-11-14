@@ -130,6 +130,20 @@ the collection ID and slug. A frontmatter `title` overrides the first heading as
 the displayed title. The compiler can process a wiki and collection together
 when both configurations are listed in the manifest.
 
+Filename-derived slugs must use lowercase letters, digits and single hyphens,
+such as `getting-started.md`, and the collection ID, a hyphen and the slug must
+fit in 63 characters. Other filenames fail with `guide-name-invalid` at that
+file, unless `sourceVersion: 1` frontmatter supplies both `id` and `slug`. Two
+files that produce the same Guide identity, such as `intro.md` and `intro.mdx`,
+fail with `guide-duplicate`, which names both files.
+
+Markdown inputs must be valid UTF-8; invalid bytes fail with
+`document-encoding-invalid` at that file rather than being replaced. Unknown
+configuration keys are retained for source tools, but a top-level key that looks
+like a misspelling of a known key, such as `navigaton` or `Title`, fails with
+`config-field-unknown`. Configuration and frontmatter failures report the
+offending field, such as `navigation[2].title`, when one can be identified.
+
 ## Use the compiler as a library
 
 ```ts

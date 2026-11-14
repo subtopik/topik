@@ -61,7 +61,7 @@ export function formatPublicCliError(error: unknown): string {
   if (error instanceof ManifestSourceError) {
     const message = publicCompileErrorMessage(error.id) ?? "Topik command failed.";
     // Re-sanitize mutable error properties at the presentation boundary.
-    const location = new PublicCompileError(error.id, error.location).location;
+    const safe = resanitize(error);
     const index =
       Number.isSafeInteger(error.sourceIndex) && error.sourceIndex >= 0
         ? `sources[${error.sourceIndex}]`
@@ -70,10 +70,23 @@ export function formatPublicCliError(error: unknown): string {
       error.kind === "wiki" || error.kind === "collection" || error.kind === "course"
         ? ` (${error.kind})`
         : "";
-    return `.topik.yaml ${index}${kind}${location ? ` ${location}` : ""}: ${message}`;
+    return `.topik.yaml ${index}${kind}${safe.location ? ` ${safe.location}` : ""}${details(safe)}: ${message}`;
   }
   if (error instanceof PublicCompileError) {
     return publicCompileErrorMessage(error.id) ?? "Topik command failed.";
   }
   return "Topik command failed.";
+}
+
+function resanitize(error: PublicCompileError): PublicCompileError {
+  return new PublicCompileError(error.id, error.location, {
+    field: error.field,
+    relatedLocation: error.relatedLocation,
+  });
+}
+
+function details(error: PublicCompileError): string {
+  return `${error.field ? ` field ${error.field}` : ""}${
+    error.relatedLocation ? ` (conflicts with ${error.relatedLocation})` : ""
+  }`;
 }

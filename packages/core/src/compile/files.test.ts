@@ -15,7 +15,11 @@ import {
 import { tmpdir } from "node:os";
 import { basename, join, relative } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
-import { assertRegularFileWithinRoot, readRegularFileWithinRoot } from "./files";
+import {
+  assertRegularFileWithinRoot,
+  mapWithConcurrency,
+  readRegularFileWithinRoot,
+} from "./files";
 import { compileWiki } from "./wiki";
 
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -303,3 +307,30 @@ linuxTest(
     }
   },
 );
+
+test("bounded mapping keeps order, limits concurrency and reports the earliest failure", async () => {
+  let active = 0;
+  let peak = 0;
+  const delays = Array.from({ length: 50 }, (_, index) => (index * 7) % 5);
+  const results = await mapWithConcurrency(delays, 4, async (delay, index) => {
+    active++;
+    peak = Math.max(peak, active);
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    active--;
+    return index;
+  });
+  expect(results).toEqual(delays.map((_, index) => index));
+  expect(peak).toBe(4);
+  expect(await mapWithConcurrency([], 4, async () => 1)).toEqual([]);
+
+  const started: number[] = [];
+  await expect(
+    mapWithConcurrency([0, 30, 0, 0, 0, 0, 0], 3, async (delay, index) => {
+      started.push(index);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      if (index >= 1) throw new Error(`failed ${index}`);
+      return index;
+    }),
+  ).rejects.toThrow("failed 1");
+  expect(started).not.toContain(6);
+});

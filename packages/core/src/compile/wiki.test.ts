@@ -804,6 +804,89 @@ navigation:
       location: "wiki.yaml",
     });
   });
+  test("names a misspelled top-level key instead of compiling an empty Wiki", async () => {
+    await writeWikiConfig("id: tw\ntitle: Wiki\nnavigaton:\n  - intro\n");
+    await writePage("intro", "# Intro\n");
+
+    await expect(compileWiki({ dir })).rejects.toMatchObject({
+      name: "PublicCompileError",
+      id: "config-field-unknown",
+      location: "wiki.yaml",
+      field: "navigaton",
+    });
+  });
+
+  test("keeps unrelated unknown configuration keys accepted", async () => {
+    await writeWikiConfig("id: tw\ntitle: Wiki\ncustom: retained\nnavigation:\n  - intro\n");
+    await writePage("intro", "# Intro\n");
+
+    const result = await compileWiki({ dir });
+    expect(result.resources.filter((resource) => resource.type === "WikiPage")).toHaveLength(1);
+  });
+
+  test("names the invalid configuration and frontmatter field", async () => {
+    await writeWikiConfig(
+      "id: tw\ntitle: Wiki\nnavigation:\n  - intro\n  - type: link\n    title: 7\n    href: https://example.com\n",
+    );
+    await expect(compileWiki({ dir })).rejects.toMatchObject({
+      id: "config-invalid",
+      location: "wiki.yaml",
+      field: "navigation[1]",
+    });
+
+    await writeWikiConfig("id: tw\ntitle: Wiki\nsourceVersion: 1\nnavigation:\n  - intro\n");
+    await writePage("intro", "---\nid: Not_Valid\n---\n# Intro\n");
+    await expect(compileWiki({ dir })).rejects.toMatchObject({
+      id: "frontmatter-invalid",
+      location: "intro.md",
+      field: "id",
+    });
+
+    await writePage("intro", "---\ntitle: [list]\n---\n# Intro\n");
+    await expect(compileWiki({ dir })).rejects.toMatchObject({
+      id: "frontmatter-invalid",
+      location: "intro.md",
+      field: "title",
+    });
+  });
+
+  test("rejects invalid UTF-8 in Wiki pages", async () => {
+    await writeWikiConfig("id: tw\ntitle: Wiki\nnavigation:\n  - intro\n");
+    await writeFile(join(dir, "intro.md"), Buffer.from([0x23, 0x20, 0xc3, 0x28, 0x0a]));
+
+    await expect(compileWiki({ dir })).rejects.toMatchObject({
+      id: "document-encoding-invalid",
+      location: "intro.md",
+    });
+  });
+
+  test("reports a navigation path through a regular file as a non-regular input", async () => {
+    await writeWikiConfig("id: tw\ntitle: Wiki\nnavigation:\n  - guide/start\n");
+    await writeFile(join(dir, "guide"), "not a directory\n");
+
+    await expect(compileWiki({ dir })).rejects.toMatchObject({
+      name: "FileNotRegularError",
+      id: "file-not-regular",
+      location: "guide/start.mdx",
+    });
+  });
+
+  test("compiles many pages in declaration order", async () => {
+    const names = Array.from({ length: 120 }, (_, index) => `page-${index}`);
+    await writeWikiConfig(
+      `id: tw\ntitle: Wiki\nnavigation:\n${names.map((name) => `  - ${name}\n`).join("")}`,
+    );
+    await Promise.all(names.map((name) => writePage(name, `# ${name}\n`)));
+
+    const result = await compileWiki({ dir });
+    const titles = new Map(
+      result.resources.flatMap((resource) =>
+        resource.type === "WikiPage" ? [[resource.name, resource.spec.title] as const] : [],
+      ),
+    );
+    expect(names.map((name) => titles.get(pageName("tw", name)))).toEqual(names);
+    expect(result).toEqual(await compileWiki({ dir }));
+  });
 });
 
 describe("pagePathToName", () => {

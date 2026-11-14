@@ -93,3 +93,30 @@ test("manifest diagnostics show safe entry, kind, and root-relative config", () 
     ),
   ).not.toContain("private");
 });
+
+test("manifest diagnostics show the safe offending field and conflicting file", () => {
+  expect(
+    formatPublicCliError(
+      new ManifestSourceError("config-field-unknown", 0, "wiki", "docs/wiki.yaml", {
+        field: "navigaton",
+      }),
+    ),
+  ).toBe(
+    ".topik.yaml sources[0] (wiki) docs/wiki.yaml field navigaton: Configuration contains an unknown field. Check the field name for typos or remove it.",
+  );
+  expect(
+    formatPublicCliError(
+      new ManifestSourceError("guide-duplicate", 1, "collection", "guides/foo.mdx", {
+        relatedLocation: "guides/foo.md",
+      }),
+    ),
+  ).toMatch(
+    /^\.topik\.yaml sources\[1\] \(collection\) guides\/foo\.mdx \(conflicts with guides\/foo\.md\): /,
+  );
+  const tampered = new ManifestSourceError("config-invalid", 0, "wiki", "wiki.yaml");
+  Object.defineProperty(tampered, "field", { value: "PRIVATE value: /tmp" });
+  Object.defineProperty(tampered, "relatedLocation", { value: "/private/secret.md" });
+  expect(formatPublicCliError(tampered)).toBe(
+    ".topik.yaml sources[0] (wiki) wiki.yaml: Configuration is invalid.",
+  );
+});

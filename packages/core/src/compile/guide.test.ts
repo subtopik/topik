@@ -448,4 +448,104 @@ describe("compileGuides", () => {
       expect(valid).toBe(true);
     }
   });
+
+  test("rejects .md and .mdx files that produce the same Guide identity", async () => {
+    await writeCollectionConfig("id: blog\ntitle: Blog\n");
+    await writeGuide("foo", "# Markdown\n");
+    await writeFile(join(dir, "foo.mdx"), "# MDX\n");
+
+    await expect(compileGuides({ dir })).rejects.toMatchObject({
+      name: "PublicCompileError",
+      id: "guide-duplicate",
+      location: "foo.mdx",
+      relatedLocation: "foo.md",
+    });
+  });
+
+  test("rejects versioned Guides that declare the same frontmatter id", async () => {
+    await writeCollectionConfig("id: blog\ntitle: Blog\nsourceVersion: 1\n");
+    await writeGuide("a", "---\nid: shared\n---\n# A\n");
+    await writeGuide("b", "---\nid: shared\nslug: other\n---\n# B\n");
+
+    await expect(compileGuides({ dir })).rejects.toMatchObject({
+      id: "guide-duplicate",
+      location: "b.md",
+      relatedLocation: "a.md",
+    });
+  });
+
+  test.each(["My Guide", "Upper", "under_score", "dotted.name", "double--hyphen"])(
+    "rejects filename-derived Guide identities that are not valid names: %j",
+    async (name) => {
+      await writeCollectionConfig("id: blog\ntitle: Blog\n");
+      await writeGuide(name, "# Guide\n");
+
+      await expect(compileGuides({ dir })).rejects.toMatchObject({
+        name: "PublicCompileError",
+        id: "guide-name-invalid",
+        location: `${name}.md`,
+      });
+    },
+  );
+
+  test("rejects filename-derived Guide names longer than a resource name allows", async () => {
+    await writeCollectionConfig("id: blog\ntitle: Blog\n");
+    await writeGuide("a".repeat(59), "# Guide\n");
+    await writeGuide("b".repeat(58), "# Guide\n");
+
+    await expect(compileGuides({ dir })).rejects.toMatchObject({
+      id: "guide-name-invalid",
+      location: `${"a".repeat(59)}.md`,
+    });
+  });
+
+  test("accepts any filename when versioned frontmatter supplies both id and slug", async () => {
+    await writeCollectionConfig("id: blog\ntitle: Blog\nsourceVersion: 1\n");
+    await writeGuide("My Guide", "---\nid: my-guide\nslug: my-guide\n---\n# Guide\n");
+
+    const result = await compileGuides({ dir });
+    expect(result.resources).toContainEqual(
+      expect.objectContaining({
+        name: "my-guide",
+        spec: expect.objectContaining({ slug: "my-guide" }),
+      }),
+    );
+  });
+
+  test("rejects invalid UTF-8 instead of substituting replacement characters", async () => {
+    await writeCollectionConfig("id: blog\ntitle: Blog\n");
+    await writeFile(join(dir, "broken.md"), Buffer.from([0x23, 0x20, 0xff, 0x0a]));
+
+    await expect(compileGuides({ dir })).rejects.toMatchObject({
+      id: "document-encoding-invalid",
+      location: "broken.md",
+    });
+  });
+
+  test("names a misspelled collection key and the invalid config field", async () => {
+    await writeCollectionConfig("id: blog\ntitle: Blog\ntag: [a]\n");
+    await expect(compileGuides({ dir })).rejects.toMatchObject({
+      id: "config-field-unknown",
+      location: "collection.yaml",
+      field: "tag",
+    });
+
+    await writeCollectionConfig("id: blog\ntitle: Blog\ntags: [a, 7]\n");
+    await expect(compileGuides({ dir })).rejects.toMatchObject({
+      id: "config-invalid",
+      location: "collection.yaml",
+      field: "tags[1]",
+    });
+  });
+
+  test("names the invalid versioned frontmatter field", async () => {
+    await writeCollectionConfig("id: blog\ntitle: Blog\nsourceVersion: 1\n");
+    await writeGuide("post", "---\nslug: Not A Slug\n---\n# Post\n");
+
+    await expect(compileGuides({ dir })).rejects.toMatchObject({
+      id: "frontmatter-invalid",
+      location: "post.md",
+      field: "slug",
+    });
+  });
 });

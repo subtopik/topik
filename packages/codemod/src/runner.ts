@@ -39,9 +39,11 @@ export async function runMintlify(options: RunOptions): Promise<RunSummary> {
   const plans: FilePlan[] = [];
   const notices: string[] = [];
   const staging: string[] = [];
+  const symlinks: string[] = [];
   let opaqueSource = false;
-  for await (const path of walk(root, staging)) {
-    if (!path.endsWith(".mdx") && !path.endsWith(".md")) continue;
+  for await (const path of walk(root, staging, symlinks)) {
+    const mdx = isMdx(path);
+    if (!mdx && !isMarkdown(path)) continue;
     const result: FileResult = {
       relativePath: relative(root, path),
       warnings: [],
@@ -62,7 +64,7 @@ export async function runMintlify(options: RunOptions): Promise<RunSummary> {
         continue;
       }
       // MDX-only syntax (ESM, expressions) would render as prose once renamed to .md.
-      const transformed = transformMintlify(source, { mdx: path.endsWith(".mdx") });
+      const transformed = transformMintlify(source, { mdx });
       result.warnings = transformed.warnings;
       const plan: FilePlan = {
         path,
@@ -72,10 +74,12 @@ export async function runMintlify(options: RunOptions): Promise<RunSummary> {
         result,
       };
       plans.push(plan);
-      if (result.warnings.length) {
+      // Warnings on a converted file are notes (such as a dropped icon), not refusals.
+      if (!transformed.changed && result.warnings.length) {
         opaqueSource = true;
-      } else if (!options.keepExtension && path.endsWith(".mdx")) {
-        const destination = path.slice(0, -4) + ".md";
+      } else if (!options.keepExtension && mdx) {
+        // Drop the final x, keeping the spelling of the rest of the extension.
+        const destination = path.slice(0, -1);
         if (await pathExists(destination)) {
           result.error = `Skipping rename: destination ${relative(root, destination)} already exists`;
         } else {
@@ -94,7 +98,9 @@ export async function runMintlify(options: RunOptions): Promise<RunSummary> {
   if (renames.size) {
     let reason = opaqueSource
       ? "files kept unchanged with warnings or errors may link to renamed pages"
-      : undefined;
+      : symlinks.length
+        ? "pages behind symbolic links that were not followed may link to renamed pages"
+        : undefined;
     const rewritten = new Map<FilePlan, string>();
     if (!reason) {
       for (const plan of plans) {
@@ -157,6 +163,10 @@ export async function runMintlify(options: RunOptions): Promise<RunSummary> {
         `Found ${relative(root, directory)} from an interrupted or failed run. If a page next to it is missing or incomplete, restore it from "original" (the pre-migration source; "candidate" is the converted version), then delete the directory`,
     ),
   );
+  if (symlinks.length)
+    notices.push(
+      `Skipped ${symlinks.length} symbolic link(s), which are not followed: ${symlinks.map((path) => relative(root, path)).join(", ")}`,
+    );
   return {
     files,
     filesChanged: files.filter((file) => file.changed).length,
@@ -181,24 +191,40 @@ function renamedHref(
     return;
   }
   // The compiler also accepts explicit Markdown filenames with trailing separators.
-  if (!decoded.replace(/\/+$/, "").endsWith(".mdx")) return;
+  if (!isMdx(decoded.replace(/\/+$/, ""))) return;
   const target = decoded.startsWith("/")
     ? resolve(root, `.${decoded}`)
     : resolve(dirname(sourcePath), decoded);
   if (!renames.has(target)) return;
   // Remove just the final x, retaining the spelling of the path, query, and hash.
-  return pathname.replace(/(?:x|%78)((?:\/|%2[fF])*)$/, "$1") + (end < 0 ? "" : href.slice(end));
+  return (
+    pathname.replace(/(?:[xX]|%78|%58)((?:\/|%2[fF])*)$/, "$1") + (end < 0 ? "" : href.slice(end))
+  );
 }
 
-async function* walk(dir: string, staging: string[]): AsyncGenerator<string> {
+function isMdx(path: string): boolean {
+  return path.toLowerCase().endsWith(".mdx");
+}
+
+function isMarkdown(path: string): boolean {
+  return path.toLowerCase().endsWith(".md");
+}
+
+async function* walk(dir: string, staging: string[], symlinks: string[]): AsyncGenerator<string> {
   const entries = await readdir(dir, { withFileTypes: true });
   for (const entry of entries) {
     if (entry.isDirectory() && entry.name.startsWith(STAGING_PREFIX))
       staging.push(join(dir, entry.name));
     if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
     const full = join(dir, entry.name);
-    if (entry.isDirectory()) yield* walk(full, staging);
+    if (entry.isDirectory()) yield* walk(full, staging, symlinks);
     else if (entry.isFile()) yield full;
+    // Symbolic links are not followed; report pages and directories they hide.
+    else if (
+      entry.isSymbolicLink() &&
+      (isMdx(entry.name) || isMarkdown(entry.name) || (await isDirectory(full)))
+    )
+      symlinks.push(full);
   }
 }
 

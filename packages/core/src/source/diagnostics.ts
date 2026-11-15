@@ -3,8 +3,60 @@ import { CompileError } from "../compile/shared";
 import { ManifestSourceError } from "../compile/manifest";
 import { PublicCompileError } from "../compile/public-errors";
 
+/** Every code the source planners raise themselves. */
+export type SourcePlanDiagnosticCode =
+  | "asset-bytes-mismatch"
+  | "asset-bytes-required"
+  | "asset-path-invalid"
+  | "asset-reference-unrepresentable"
+  | "asset-source-missing"
+  | "content-unrepresentable"
+  | "create-authority-required"
+  | "exclusive-authority-required"
+  | "identity-ambiguous"
+  | "initialization-collision"
+  | "initialization-unproven"
+  | "initialization-validation-failed"
+  | "module-not-empty"
+  | "operation-ambiguous"
+  | "operation-inconsistent"
+  | "operation-required"
+  | "package-cohort-required"
+  | "reference-context-invalid"
+  | "reference-context-required"
+  | "reference-target-removed"
+  | "reference-target-unresolved"
+  | "reference-unrepresentable"
+  | "resource-invalid"
+  | "resource-scope-denied"
+  | "resource-unrepresentable"
+  | "round-trip-mismatch"
+  | "shared-authority-required"
+  | "shared-authority-stale"
+  | "shared-reference-scope-denied"
+  | "shared-scope-denied"
+  | "source-add-validation-failed"
+  | "source-base-changed"
+  | "source-creation-required"
+  | "source-deletion-required"
+  | "source-intent-mismatch"
+  | "source-mapping-invalid"
+  | "source-mapping-missing"
+  | "source-path-collision"
+  | "source-path-invalid"
+  | "source-reference-unrepresentable"
+  | "source-tree-invalid"
+  | "source-validation-failed"
+  | "source-version-collision"
+  | "source-version-required"
+  | "source-writer-incompatible";
+
 export interface SourcePlanDiagnostic {
-  code: string;
+  /**
+   * A planner code, or the stable ID of a compiler diagnostic passed through unchanged.
+   * The `string & {}` member keeps the field assignable to and from `string`.
+   */
+  code: SourcePlanDiagnosticCode | (string & {});
   message: string;
   resource?: string;
   path?: string;
@@ -25,6 +77,21 @@ export class SourcePlanningError extends Error {
     super(diagnostic.message);
     this.name = "SourcePlanningError";
   }
+}
+
+/** Stop planning with a declared code; empty `resource`/`path` values are left out. */
+export function failSourcePlan(
+  code: SourcePlanDiagnosticCode,
+  message: string,
+  resource?: string,
+  path?: string,
+): never {
+  throw new SourcePlanningError({
+    code,
+    message,
+    ...(resource ? { resource } : {}),
+    ...(path ? { path } : {}),
+  });
 }
 
 /** A complete source tree exceeded its bounds or held unsafe, duplicate or colliding paths. */

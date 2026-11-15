@@ -14,14 +14,17 @@ import { CODE_PRESENTATION_LIMITS, type CodePresentationEffectiveOptions } from 
 
 const codeToTokens = vi.hoisted(() =>
   vi.fn(
-    async (payload: string, _options: { lang: string; theme: string }): Promise<CodeHighlight> => ({
+    async (
+      payload: string,
+      _options: { lang: string; theme: string; engine: string },
+    ): Promise<CodeHighlight> => ({
       tokens: payload.split("\n").map((content) => [{ content, color: "#24292e" }]),
       bg: "#ffffff",
       fg: "#24292e",
     }),
   ),
 );
-vi.mock("shiki", () => ({ codeToTokens }));
+vi.mock("./rich/code-highlight", () => ({ highlightCode: codeToTokens }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 let root: Root | undefined;
@@ -478,7 +481,11 @@ describe("highlighting and groups", () => {
         presentation={{ lineNumbers: false, wrap: false }}
       />,
     );
-    expect(codeToTokens).toHaveBeenCalledWith(payload, { lang: "ts", theme: "github-light" });
+    expect(codeToTokens).toHaveBeenCalledWith(payload, {
+      lang: "ts",
+      theme: "github-light",
+      engine: "oniguruma",
+    });
     expect(dom.querySelector("pre.shiki")).not.toBeNull();
     expect(dom.querySelectorAll("[data-line]")).toHaveLength(2);
     expect(dom.querySelector("b")).toBeNull();

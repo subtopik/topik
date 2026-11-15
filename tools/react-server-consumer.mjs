@@ -52,6 +52,8 @@ const markdown = root.renderTopikMarkdown("Hello [link](/x)", {
 assert.ok(markdown, "renderTopikMarkdown returns a React tree on the server");
 assert.throws(() => root.renderTopikMarkdown("{% mystery /%}"), root.InvalidTopikContentError);
 assert.equal(typeof root.createPreviewAssetAdapter, "function");
+const previewAssets = await import("@topik/content-react/preview-assets");
+assert.equal(previewAssets.createPreviewAssetAdapter, root.createPreviewAssetAdapter);
 assert.equal(typeof root.getTopikComponents().TopikCallout, "function");
 // Stateful exports cross the boundary as client references instead of failing to import.
 assert.equal(root.TopikContentProvider.$$typeof, clientReference);

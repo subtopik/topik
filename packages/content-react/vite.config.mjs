@@ -9,7 +9,7 @@ const schemaSource = fileURLToPath(new URL("../schema/src", import.meta.url));
 
 const sourceRoot = fileURLToPath(new URL("src/", import.meta.url));
 const clientModules = new Map();
-const entry = ["src/index.ts", "src/theme.ts", "src/rich.tsx"];
+const entry = ["src/index.ts", "src/preview-assets.ts", "src/theme.ts", "src/rich.tsx"];
 const entries = new Set(entry.map((path) => fileURLToPath(new URL(path, import.meta.url))));
 
 /** Source modules that start with a "use client" directive (React client boundaries). */
@@ -72,7 +72,8 @@ const config = defineConfig({
         "react-dom",
         "react/jsx-dev-runtime",
         "react/jsx-runtime",
-        "shiki",
+        // Rich code loads Shiki's fine-grained subpaths (core, langs, themes, engines, wasm).
+        /^shiki(?:\/|$)/u,
       ],
     },
   },

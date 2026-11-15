@@ -1,10 +1,13 @@
 // @vitest-environment node
 import { createHash } from "node:crypto";
 import { afterEach, expect, test, vi } from "vite-plus/test";
+import { isTopikGeneratedAssetName, TOPIK_GENERATED_ASSET_NAME_PATTERN } from "@topik/content";
 import {
   createPreviewAssetAdapter,
   getPreviewAssetToken,
+  isPreviewGeneratedAssetName,
   previewAssetToken,
+  previewGeneratedAssetName,
   type PreviewAssetInventory,
 } from "./preview-assets";
 const name = `auto-v1-${"a".repeat(52)}`;
@@ -388,4 +391,47 @@ test("disposal cancels a stalled read, prevents retry and cannot affect a replac
   } finally {
     next.dispose();
   }
+});
+
+test("admits exactly the generated Asset names that @topik/content admits", () => {
+  // The light preview-assets entry keeps its own copy of the grammar instead of importing it.
+  expect(previewGeneratedAssetName.source).toBe(TOPIK_GENERATED_ASSET_NAME_PATTERN.source);
+  expect(previewGeneratedAssetName.flags).toBe(TOPIK_GENERATED_ASSET_NAME_PATTERN.flags);
+  const alphabet = "abcdefghijklmnopqrstuvwxyz234567";
+  const candidates: unknown[] = [
+    name,
+    `auto-v1-${"a".repeat(51)}q`,
+    `auto-v1-${"7".repeat(51)}a`,
+    `auto-v1-${"a".repeat(51)}b`,
+    `auto-v1-${"a".repeat(51)}`,
+    `auto-v1-${"a".repeat(53)}`,
+    `auto-v1-${"A".repeat(52)}`,
+    `auto-v1-${"1".repeat(51)}a`,
+    `auto-v2-${"a".repeat(52)}`,
+    ` ${name}`,
+    `${name}\n`,
+    `asset:${name}`,
+    "",
+    undefined,
+    null,
+    42,
+    {},
+  ];
+  for (let seed = 0; seed < 64; seed++) {
+    const body = Array.from({ length: 51 }, (_, index) => alphabet[(seed * 7 + index * 13) % 32]);
+    candidates.push(`auto-v1-${body.join("")}${"aqbz"[seed % 4]}`);
+  }
+  for (const candidate of candidates) {
+    expect(isPreviewGeneratedAssetName(candidate), String(candidate)).toBe(
+      isTopikGeneratedAssetName(candidate),
+    );
+  }
+  expect(candidates.filter(isPreviewGeneratedAssetName).length).toBeGreaterThan(30);
+});
+
+test("the preview-assets entry exports the same adapter the renderer admits", async () => {
+  const entry = await import("../preview-assets");
+  const root = await import("../index");
+  expect(entry.createPreviewAssetAdapter).toBe(root.createPreviewAssetAdapter);
+  expect(Object.keys(entry)).toEqual(["createPreviewAssetAdapter"]);
 });

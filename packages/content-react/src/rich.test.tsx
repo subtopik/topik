@@ -9,12 +9,13 @@ import {
   RichTopikCodeBlock,
   RichTopikMermaid,
   RichTopikContentProvider,
+  RichTopikThemeProvider,
   richTopikComponents,
 } from "./rich";
 import { TopikContent } from "./theme/TopikContent";
 
 const codeToTokensMock = vi.hoisted(() =>
-  vi.fn(async (code: string, _options: { lang: string; theme: string }) => ({
+  vi.fn(async (code: string, _options: { lang: string; theme: string; engine: string }) => ({
     tokens: code.split("\n").map((content) => [{ content, color: "#24292e" }]),
     fg: "#24292e",
     bg: "#ffffff",
@@ -32,7 +33,7 @@ const mermaidRenderMock = vi.hoisted(() =>
   })),
 );
 
-vi.mock("shiki", () => ({ codeToTokens: codeToTokensMock }));
+vi.mock("./rich/code-highlight", () => ({ highlightCode: codeToTokensMock }));
 vi.mock("katex", () => ({ renderToString: renderToStringMock }));
 vi.mock("pele", () => ({ render: mermaidRenderMock }));
 
@@ -203,6 +204,7 @@ describe("rich content-react entry", () => {
       expect(codeToTokensMock).toHaveBeenCalledWith("const answer = 42;", {
         lang: "ts",
         theme: `github-${expected}`,
+        engine: "oniguruma",
       });
       expect(dom.querySelector(".topik-rich-mermaid")?.getAttribute("data-theme")).toBe(expected);
       expect(dom.querySelector(".topik-content")?.getAttribute("data-theme")).toBe(
@@ -229,6 +231,7 @@ describe("rich content-react entry", () => {
     expect(codeToTokensMock).toHaveBeenCalledWith("const answer = 42;", {
       lang: "ts",
       theme: "github-dark",
+      engine: "oniguruma",
     });
     expect(renderToStringMock).toHaveBeenCalledWith("E = mc^2", {
       displayMode: true,
@@ -245,6 +248,54 @@ describe("rich content-react entry", () => {
         links: false,
         images: false,
       }),
+    );
+  });
+
+  it("passes the host's code highlight engine to every nested rich code block", async () => {
+    const dom = mount(
+      <RichTopikContentProvider codeHighlightEngine="javascript">
+        <TopikContent content={richContent} />
+        <RichTopikThemeProvider theme="dark">
+          <RichTopikCodeBlock payload="nested" language="ts" />
+        </RichTopikThemeProvider>
+        <RichTopikThemeProvider codeHighlightEngine="oniguruma">
+          <RichTopikCodeBlock payload="override" language="ts" />
+        </RichTopikThemeProvider>
+      </RichTopikContentProvider>,
+    );
+    await waitFor(() => {
+      expect(dom.querySelectorAll(".topik-rich-code-block pre.shiki")).toHaveLength(3);
+    });
+    expect(codeToTokensMock).toHaveBeenCalledWith("const answer = 42;", {
+      lang: "ts",
+      theme: "github-light",
+      engine: "javascript",
+    });
+    expect(codeToTokensMock).toHaveBeenCalledWith("nested", {
+      lang: "ts",
+      theme: "github-dark",
+      engine: "javascript",
+    });
+    expect(codeToTokensMock).toHaveBeenCalledWith("override", {
+      lang: "ts",
+      theme: "github-light",
+      engine: "oniguruma",
+    });
+  });
+
+  it("keeps plain code without throwing when the selected engine cannot run a grammar", async () => {
+    codeToTokensMock.mockRejectedValueOnce(new Error("Unsupported grammar pattern"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const dom = mount(
+      <RichTopikContentProvider codeHighlightEngine="javascript">
+        <TopikContent content={"```ts\nconst plain = true;\n```"} />
+      </RichTopikContentProvider>,
+    );
+    await waitFor(() => expect(warn).toHaveBeenCalled());
+    expect(codeToTokensMock).toHaveBeenCalledTimes(1);
+    expect(dom.querySelector(".topik-rich-code-block pre.shiki")).toBeNull();
+    expect(dom.querySelector(".topik-rich-code-block pre code")?.textContent).toBe(
+      "const plain = true;\n",
     );
   });
 

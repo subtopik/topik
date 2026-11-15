@@ -1,4 +1,12 @@
-import { isTopikGeneratedAssetName } from "@topik/content";
+// The preview-assets entry must not import @topik/content, whose compiler would then load with it.
+// This mirrors isTopikGeneratedAssetName; preview-assets.test.ts keeps the two in agreement.
+/** @internal */
+export const previewGeneratedAssetName = /^auto-v1-[a-z2-7]{51}[aq]$/u;
+
+/** @internal Same admission as `isTopikGeneratedAssetName` from `@topik/content`. */
+export function isPreviewGeneratedAssetName(value: unknown): value is string {
+  return typeof value === "string" && previewGeneratedAssetName.test(value);
+}
 
 export interface PreviewAssetInventory {
   sessionId: string;
@@ -64,7 +72,7 @@ export function createPreviewAssetAdapter(options: {
   for (const resource of snapshot.resources) {
     if (resource.type !== "Asset") continue;
     if (
-      !isTopikGeneratedAssetName(resource.name) ||
+      !isPreviewGeneratedAssetName(resource.name) ||
       names.has(resource.name) ||
       !resource.spec ||
       typeof resource.spec !== "object"

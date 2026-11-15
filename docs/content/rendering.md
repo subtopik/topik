@@ -282,12 +282,69 @@ Pele's synchronous rendering still runs on the browser main thread after the laz
 import. Topik retains the existing 300 ms minimum loading indicator; a smaller
 renderer does not remove this visible delay.
 
+### Code highlighting and Content-Security-Policy
+
+Rich code blocks use Shiki with the `github-light` and `github-dark` themes only,
+so a bundler emits those two theme chunks. Every language Shiki bundles stays
+available; each loads the first time a code block uses it.
+
+Shiki's default Oniguruma engine runs as WebAssembly. With a
+Content-Security-Policy, add `'wasm-unsafe-eval'` to `script-src`; otherwise
+the browser refuses the engine and code blocks stay plain.
+
+Hosts that cannot allow WebAssembly can select Shiki's JavaScript
+regular-expression engine with `codeHighlightEngine`. That engine never loads
+WebAssembly:
+
+```tsx
+import { RichTopikContentProvider } from "@topik/content-react/rich";
+import { TopikContent } from "@topik/content-react/theme";
+
+export function StrictArticle({ source }: { source: string }) {
+  return (
+    <RichTopikContentProvider codeHighlightEngine="javascript">
+      <TopikContent content={source} />
+    </RichTopikContentProvider>
+  );
+}
+```
+
+`RichTopikThemeProvider` accepts the same option for rich components rendered
+without the provider. Nested providers inherit the engine unless they set their
+own. The JavaScript engine translates each grammar's Oniguruma patterns to
+native regular expressions, and not every grammar translates identically. A code
+block whose grammar fails under the JavaScript engine renders as plain code; it
+does not fall back to WebAssembly or throw. Keep the default `"oniguruma"` when
+the policy allows WebAssembly and exact Shiki output for every grammar matters.
+
 ## Integrate with application URLs
 
 Compiled content may contain generated `asset:` references. Supply `resolveAsset`
 to map each generated name to a delivered URL; see [Assets](../resources/assets.md#render-compiled-assets).
 Missing or malformed generated references emit an asset diagnostic and omit the
 unresolved browser-facing URL.
+
+Local preview hosts can also pass a `previewAssets` adapter, which loads
+verified media from the local preview server.
+`@topik/content-react/preview-assets` exports `createPreviewAssetAdapter` and its
+`PreviewAssetAdapter` and `PreviewAssetInventory` types without the Markdown
+compiler or the renderer. A single-page app can create the adapter in a store
+that its entry chunk loads and import the renderer lazily, so the entry chunk
+stays small. The root entry point exports the same function, and an adapter from
+either entry point works with the renderer:
+
+```ts
+import { createPreviewAssetAdapter } from "@topik/content-react/preview-assets";
+import type { PreviewAssetInventory } from "@topik/content-react/preview-assets";
+
+export function createPreviewStore(origin: string, snapshot: PreviewAssetInventory) {
+  return {
+    previewAssets: createPreviewAssetAdapter({ origin, snapshot }),
+    // The compiler and renderer load with the article view, not with the entry.
+    loadRenderer: () => import("@topik/content-react"),
+  };
+}
+```
 
 Compiled document links identify resources through `ref://wiki-page/<name>`,
 `ref://guide/<name>` or `ref://course-page/<name>`. The name is the destination's exact `resource.name`, not its

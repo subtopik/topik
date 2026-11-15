@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, spyOn, waitFor } from "storybook/test";
-import { RichTopikContentProvider } from "../rich";
+import { RichTopikContentProvider, RichTopikThemeProvider } from "../rich";
 import { TopikContent } from "../theme/TopikContent";
 import "../rich/styles.css";
 import "katex/dist/katex.min.css";
@@ -72,6 +72,33 @@ export const HighlightedCode: Story = {
     await waitFor(() => expect(canvasElement.querySelector("pre.shiki")).toHaveTextContent(code), {
       timeout: 10000,
     });
+  },
+};
+
+export const JavaScriptHighlightEngine: Story = {
+  args: { content: `\`\`\`ts\n${code}\n\`\`\`` },
+  decorators: [
+    (Story) => (
+      <RichTopikThemeProvider codeHighlightEngine="javascript">
+        <Story />
+      </RichTopikThemeProvider>
+    ),
+  ],
+  parameters: {
+    docs: {
+      description: {
+        story:
+          'codeHighlightEngine="javascript" highlights with native regular expressions and never loads WebAssembly, so hosts need no wasm-unsafe-eval Content-Security-Policy source.',
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    await waitFor(() => expect(canvasElement.querySelector("pre.shiki")).toHaveTextContent(code), {
+      timeout: 10000,
+    });
+    await expect(
+      canvasElement.querySelectorAll("pre.shiki code span[style]").length,
+    ).toBeGreaterThan(2);
   },
 };
 

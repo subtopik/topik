@@ -21,6 +21,7 @@ import {
   type TopikComponentProps,
 } from "../core/components";
 import { CodeBlockView, type CodeHighlight } from "../theme/code-block";
+import { highlightCode } from "./code-highlight";
 import {
   CODE_PRESENTATION_LIMITS,
   CONTENT_LIMITS,
@@ -28,6 +29,15 @@ import {
 } from "@topik/content";
 
 export type RichTopikTheme = "light" | "dark";
+
+/**
+ * Regular-expression engine for Shiki highlighting.
+ *
+ * `"oniguruma"` (the default) uses WebAssembly, so a Content-Security-Policy must allow
+ * `'wasm-unsafe-eval'` in `script-src`. `"javascript"` uses native regular expressions and never
+ * loads WebAssembly; a grammar it cannot run leaves that block as plain code.
+ */
+export type RichTopikCodeHighlightEngine = "oniguruma" | "javascript";
 
 interface HtmlState {
   html: string;
@@ -38,23 +48,33 @@ const emptyTopikComponents: Partial<TopikComponentMap> = {};
 const defaultRichTopikTheme: RichTopikTheme = "light";
 // Undefined follows the content color scheme; an explicit theme always wins.
 const RichTopikThemeContext = createContext<RichTopikTheme | undefined>(undefined);
+// Undefined inherits an enclosing provider's engine, then the WebAssembly default.
+const RichTopikCodeHighlightEngineContext = createContext<RichTopikCodeHighlightEngine | undefined>(
+  undefined,
+);
 const shikiThemes = {
   light: "github-light",
   dark: "github-dark",
-} satisfies Record<RichTopikTheme, string>;
+} as const satisfies Record<RichTopikTheme, string>;
 const minimumMermaidLoadingDurationMs = 300;
 
 export function RichTopikThemeProvider({
   children,
   theme,
+  codeHighlightEngine,
 }: {
   children: ReactNode;
   theme?: RichTopikTheme;
+  /** Shiki regular-expression engine; defaults to `"oniguruma"` (WebAssembly). */
+  codeHighlightEngine?: RichTopikCodeHighlightEngine;
 }) {
   const inherited = useContext(RichTopikThemeContext);
+  const inheritedEngine = useContext(RichTopikCodeHighlightEngineContext);
   return (
     <RichTopikThemeContext.Provider value={theme ?? inherited}>
-      {children}
+      <RichTopikCodeHighlightEngineContext.Provider value={codeHighlightEngine ?? inheritedEngine}>
+        {children}
+      </RichTopikCodeHighlightEngineContext.Provider>
     </RichTopikThemeContext.Provider>
   );
 }
@@ -152,6 +172,7 @@ export function RichTopikCodeBlock(props: TopikComponentProps) {
     stringAttribute(props.payload) ?? (code.endsWith("\n") ? code.slice(0, -1) : code);
   const language = stringAttribute(props.language) ?? "text";
   const theme = useRichTopikTheme();
+  const engine = useContext(RichTopikCodeHighlightEngineContext) ?? "oniguruma";
   const presented = Boolean(props.presentation);
   const foldCount =
     (props.presentation as CodePresentationEffectiveOptions | undefined)?.collapse?.length ?? 0;
@@ -159,6 +180,7 @@ export function RichTopikCodeBlock(props: TopikComponentProps) {
     payload: string;
     language: string;
     theme: RichTopikTheme;
+    engine: RichTopikCodeHighlightEngine;
     presented: boolean;
     foldCount: number;
     highlight: CodeHighlight;
@@ -171,12 +193,8 @@ export function RichTopikCodeBlock(props: TopikComponentProps) {
     for (let index = 0; index < payload.length; index++) {
       if (payload.charCodeAt(index) === 10 && ++rowCount > CODE_PRESENTATION_LIMITS.rows) return;
     }
-    void import("shiki")
-      .then(async (shiki) => {
-        const highlight = await shiki.codeToTokens(payload, {
-          lang: language,
-          theme: shikiThemes[theme],
-        });
+    void highlightCode(payload, { lang: language, theme: shikiThemes[theme], engine })
+      .then((highlight) => {
         const rows = payload.split("\n");
         if (highlight.tokens.length !== rows.length) {
           throw new Error("Syntax highlighting changed physical code rows");
@@ -223,7 +241,8 @@ export function RichTopikCodeBlock(props: TopikComponentProps) {
         if (decorationLength > decorationBudget) {
           throw new Error("Syntax highlighting exceeds the code decoration budget");
         }
-        if (!cancelled) setRendered({ payload, language, theme, presented, foldCount, highlight });
+        if (!cancelled)
+          setRendered({ payload, language, theme, engine, presented, foldCount, highlight });
       })
       .catch(() => {
         console.warn("Failed to highlight code; using plain code");
@@ -231,12 +250,13 @@ export function RichTopikCodeBlock(props: TopikComponentProps) {
     return () => {
       cancelled = true;
     };
-  }, [payload, language, theme, presented, foldCount]);
+  }, [payload, language, theme, engine, presented, foldCount]);
 
   const highlight =
     rendered?.payload === payload &&
     rendered.language === language &&
     rendered.theme === theme &&
+    rendered.engine === engine &&
     rendered.presented === presented &&
     rendered.foldCount === foldCount
       ? rendered.highlight

@@ -173,7 +173,11 @@ export async function compileResourceLinksInSession(
     if (result === undefined) {
       result =
         path === "" ||
-        (await classifyPortableNavigationPath({ root: input.rootDir, path })) === "directory";
+        (await classifyPortableNavigationPath({
+          root: input.rootDir,
+          path,
+          fileSafety: session.fileSafety,
+        })) === "directory";
       directories.set(path, result);
     }
     return result;

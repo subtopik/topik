@@ -99,8 +99,12 @@ Compilation validates source and unresolved internal wiki links by default.
 separate output directory, which may already exist if it is empty. A non-empty
 directory is replaced only when it holds a previous compilation. Published
 directories are mode `0755` and files `0644`, so another user, such as a web
-server, can read them. Writing compilation output with the current CLI requires
-Linux.
+server, can read them. `topik compile`, `topik lint`, `topik dev` and
+`topik validate` run on Linux, macOS and Windows. Off Linux, project files are
+read and output is published with the weaker
+[portable file safety](#source-filesystem-safety), and the CLI prints one notice
+saying so; pass `--file-safety anchored` to refuse instead, which exits with a
+message naming the Linux requirement.
 
 Use [Navigation](./navigation.md) to add folders, groups, page links, and routes.
 If the source includes local assets, see [Assets](./assets.md) for project
@@ -174,7 +178,9 @@ reads each file through the same handle.
 
 Canonical aliases above the source directory, such as macOS's `/var` path or a
 symlinked `/home`, are accepted on every platform; the source directory itself and
-everything below it must not be symlinks. A dangling symlink, or a file removed
+everything below it must not be symlinks. A name the volume stores in another
+Unicode normalization form (for example decomposed on macOS HFS+) is accepted;
+a name that differs in case is not. A dangling symlink, or a file removed
 while the directory is read, is reported like any other non-regular entry.
 
 On Linux, these reads also open every component of the canonical path through
@@ -195,11 +201,27 @@ traversal also does not provide an immutable snapshot of file contents.
 [Manifest and explicitly selected configuration files](./manifest.md), Course
 configurations, and
 [local assets](./assets.md#file-and-output-constraints) retain their separate,
-stricter file rules, including their current Linux requirement and the
-[Git checkout rules](./manifest.md#inside-a-git-checkout). The portable
-reader does not extend support for those operations. Link resolution does not
-need them: on any platform, an extensionless link such as `[Next](./next)`
-resolves to a declared page when no file named `next` exists.
+stricter file rules and the
+[Git checkout rules](./manifest.md#inside-a-git-checkout). On Linux they use the
+same descriptor-anchored traversal. Elsewhere they use the same portable mode
+when file safety is `portable` (the default, `DEFAULT_FILE_SAFETY`): each path
+component at and below the source directory is inspected without following
+links, the opened handle must be the inspected file, the resolved path must equal
+the lexical one, and the whole path is inspected again after the read. The same
+limitation applies: this is not containment against a process concurrently
+mutating the source tree. Two checks are dropped on Windows because its file
+metadata cannot support them: executable permission bits (Node synthesizes mode
+bits there) and the sparse-file check (NTFS reports no allocation for small files
+stored in the file table). With file safety `anchored` (`compile`, `lint` and
+`watch` option `fileSafety`, CLI `--file-safety anchored`), these reads fail with
+reason `platform-unsupported` off Linux. Link resolution works in both modes: an
+extensionless link such as `[Next](./next)` resolves to a declared page when no
+file named `next` exists.
+
+Off Linux, `topik compile --out-dir` publishes in the same portable mode: it stages
+the complete generation in a sibling temporary directory, verifies it, proves an
+existing output is a previous compilation, and renames it into place, refusing a
+symlinked or foreign target. Linux keeps its descriptor-anchored publication.
 
 ## Multi-source projects
 

@@ -24,7 +24,12 @@ import { compileWiki } from "./wiki";
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
-  return { ...actual, lstat: vi.fn(actual.lstat), open: vi.fn(actual.open) };
+  return {
+    ...actual,
+    lstat: vi.fn(actual.lstat),
+    open: vi.fn(actual.open),
+    realpath: vi.fn(actual.realpath),
+  };
 });
 let root: string;
 let outside: string;
@@ -44,6 +49,8 @@ afterEach(async () => {
   const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
   vi.mocked(lstat).mockImplementation(actual.lstat);
   vi.mocked(open).mockImplementation(actual.open);
+  vi.mocked(realpath).mockReset();
+  vi.mocked(realpath).mockImplementation(actual.realpath);
   await rm(root, { recursive: true, force: true });
   await rm(outside, { recursive: true, force: true });
 });
@@ -334,3 +341,66 @@ test("bounded mapping keeps order, limits concurrency and reports the earliest f
   ).rejects.toThrow("failed 1");
   expect(started).not.toContain(6);
 });
+
+const COMPOSED = "café.md";
+const DECOMPOSED = "café.md";
+
+/**
+ * Simulate a normalization-insensitive volume that stores names decomposed (HFS+, or APFS for
+ * names created decomposed): lookups ignore the form and realpath reports the stored NFD form.
+ */
+async function simulateDecomposedVolume(): Promise<void> {
+  const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+  const stored = (path: unknown) => (typeof path === "string" ? path.normalize("NFC") : path);
+  vi.mocked(realpath).mockImplementation((async (path: Parameters<typeof actual.realpath>[0]) =>
+    String(await actual.realpath(stored(path) as string)).normalize(
+      "NFD",
+    )) as typeof actual.realpath);
+  vi.mocked(lstat).mockImplementation(((path: string, options?: object) =>
+    actual.lstat(stored(path) as string, options as never)) as typeof actual.lstat);
+  vi.mocked(open).mockImplementation(((path: string, ...rest: unknown[]) =>
+    (actual.open as (...values: unknown[]) => unknown)(
+      stored(path),
+      ...rest,
+    )) as typeof actual.open);
+}
+
+test.each(platforms)(
+  "reads an NFC-authored name that the volume resolves decomposed on %s",
+  async (platform) => {
+    if (platform !== "native") vi.spyOn(process, "platform", "get").mockReturnValue(platform);
+    await writeFile(join(root, "pages", COMPOSED), "# Café\n");
+    await simulateDecomposedVolume();
+
+    expect(await readRegularFileWithinRoot(join(root, "pages", COMPOSED), root, "utf8")).toBe(
+      "# Café\n",
+    );
+  },
+);
+
+test.for(platforms)(
+  "keeps NFC and NFD siblings distinct and refuses a link between them on %s",
+  async (platform, context) => {
+    if (platform !== "native") vi.spyOn(process, "platform", "get").mockReturnValue(platform);
+    await writeFile(join(root, "pages", DECOMPOSED), "# Decomposed\n");
+    try {
+      await writeFile(join(root, "pages", COMPOSED), "# Composed\n", { flag: "wx" });
+    } catch {
+      // A normalization-insensitive filesystem cannot hold both spellings.
+      return context.skip();
+    }
+    const composedPath = join(root, "pages", COMPOSED);
+    expect(await readRegularFileWithinRoot(composedPath, root, "utf8")).toBe("# Composed\n");
+
+    await rm(composedPath);
+    try {
+      await symlink(DECOMPOSED, composedPath);
+    } catch (error) {
+      if (process.platform === "win32") return context.skip();
+      throw error;
+    }
+    await expect(readRegularFileWithinRoot(composedPath, root)).rejects.toMatchObject({
+      id: "file-not-regular",
+    });
+  },
+);

@@ -1,3 +1,4 @@
+import type { FileSafety } from "../assets/files";
 import { compileManifest } from "./manifest";
 import { CompileError, type CompileResult, type CompileValidationOptions } from "./shared";
 
@@ -51,6 +52,11 @@ export {
 
 export interface CompileOptions {
   dir: string;
+  /**
+   * How manifest, configuration and asset files are read where descriptor-anchored traversal
+   * is unavailable (every platform except Linux). Defaults to `DEFAULT_FILE_SAFETY`.
+   */
+  fileSafety?: FileSafety;
   validation?: CompileValidationOptions;
   /** Optional application-supplied inventory for explicit resource references. */
   referenceTargets?: readonly import("./links").CompileResourceReferenceTarget[];

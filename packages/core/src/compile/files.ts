@@ -87,7 +87,8 @@ async function openRegularFileWithinRoot(filePath: string, rootDir: string): Pro
   // path.relative folds case even when the filesystem contains distinct case-sensitive entries.
   const expectedFile = resolve(canonicalRoot, relative(authoredRoot, authoredFile));
   if (
-    expectedFile !== canonicalFile ||
+    (expectedFile !== canonicalFile &&
+      !(await differsOnlyInUnicodeForm(authoredRoot, authoredFile, expectedFile, canonicalFile))) ||
     (process.platform === "linux"
       ? // The root itself is not a link when it keeps its name under its canonical parent.
         canonicalRoot !== join(await realpath(dirname(authoredRoot)), basename(authoredRoot))
@@ -108,6 +109,35 @@ async function openRegularFileWithinRoot(filePath: string, rootDir: string): Pro
   return process.platform === "linux"
     ? openAnchoredLinuxFile(canonicalFile, filePath, rootDir)
     : openPortableFile(filePath, rootDir, canonicalFile, initialStat);
+}
+
+/**
+ * HFS+ (and APFS for names created decomposed) resolves an NFC-authored name to its stored
+ * NFD spelling. Accept that difference only — Unicode form, never case — and only when no
+ * authored component below the root is a link and the authored name is the resolved entry.
+ * Without those checks a link from one spelling to a distinct sibling with the other spelling
+ * (possible on normalization-sensitive filesystems) would pass the relaxed comparison.
+ */
+async function differsOnlyInUnicodeForm(
+  authoredRoot: string,
+  authoredFile: string,
+  expectedFile: string,
+  canonicalFile: string,
+): Promise<boolean> {
+  if (expectedFile.normalize("NFC") !== canonicalFile.normalize("NFC")) return false;
+  try {
+    let current = authoredRoot;
+    let entry: BigIntStats | undefined;
+    for (const component of relative(authoredRoot, authoredFile).split(sep)) {
+      current = join(current, component);
+      entry = await lstat(current, { bigint: true });
+      if (entry.isSymbolicLink()) return false;
+    }
+    const resolved = await lstat(canonicalFile, { bigint: true });
+    return entry !== undefined && entry.dev === resolved.dev && entry.ino === resolved.ino;
+  } catch {
+    return false;
+  }
 }
 
 async function isSymbolicLink(path: string): Promise<boolean> {

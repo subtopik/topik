@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { createServer } from "node:net";
+import { PORTABLE_READS_NOTICE } from "../file-safety";
 import { formatPublicCliError } from "../errors";
 import {
   installShutdownHandlers,
@@ -582,6 +583,44 @@ describe("dev command", () => {
     );
     expect(log).not.toHaveBeenCalled();
   });
+
+  test.each(["darwin", "win32"] as const)(
+    "serves on %s with portable reads and one notice",
+    async (platform) => {
+      vi.spyOn(process, "platform", "get").mockReturnValue(platform);
+      vi.spyOn(console, "log").mockImplementation(() => undefined);
+      const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+      runningServer = await startDevServer({ dir, port: 0 });
+
+      expect(runningServer.watcher.state.status).toBe("ready");
+      expect(error.mock.calls).toEqual([[PORTABLE_READS_NOTICE]]);
+    },
+  );
+
+  test.each(["darwin", "win32"] as const)(
+    "stops on %s with the platform requirement when anchored reads are required",
+    async (platform) => {
+      vi.spyOn(process, "platform", "get").mockReturnValue(platform);
+      vi.spyOn(console, "log").mockImplementation(() => undefined);
+      const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+      const failure = await startDevServer({ dir, port: 0, fileSafety: "anchored" }).then(
+        () => undefined,
+        (reason: unknown) => reason,
+      );
+
+      expect(failure).toMatchObject({ id: "project-platform-unsupported" });
+      await rm(join(dir, ".topik.yaml"));
+      await expect(startDevServer({ dir, port: 0, fileSafety: "anchored" })).rejects.toMatchObject({
+        id: "project-platform-unsupported",
+      });
+      expect(formatPublicCliError(failure)).toBe(
+        "--file-safety anchored requires descriptor-anchored file reads, which only Linux provides. Use --file-safety portable on a workspace you trust, or run on Linux, for example in WSL 2 or a Linux container.",
+      );
+      expect(error).not.toHaveBeenCalled();
+    },
+  );
 });
 
 test("HTTP and SSE share complete state; reconnect receives existing failure; health binds session", async () => {

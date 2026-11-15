@@ -7,9 +7,9 @@ import {
   type TopikNavigationReference,
 } from "@topik/content";
 import type { Wiki, WikiNavNode } from "@topik/schema/wiki/v1";
-import type { Guide } from "@topik/schema/guide/v1";
 import type { WikiPage } from "@topik/schema/wiki-page/v1";
-import type { CoursePage } from "@topik/schema/course-page/v1";
+import type { Course } from "@topik/schema/course/v1";
+import type { CourseModule } from "@topik/schema/course-module/v1";
 import {
   resolveCourseContentHref,
   resolveCourseNavigation,
@@ -23,10 +23,10 @@ import {
   transportCourseReferences,
 } from "./course";
 import { collectMetadataEdits } from "./metadata";
-import type { WikiNavNode as SourceWikiNavNode } from "../config/wiki";
 import type { Resource } from "../resource";
 import type { SourceMediaSelection } from "./initialize";
 import { resolveSourceReferenceContext } from "./reference-context";
+import { transportWikiReferences, type SourceDerivedRepair } from "./reference-transport";
 import {
   normalizeSourceResourceReferences,
   prepareSourceResourceReferences,
@@ -34,27 +34,32 @@ import {
   isSourceReferenceShadowed,
 } from "./resource-references";
 import {
+  failSourcePlan as block,
   sourcePlanDiagnostics,
-  SourcePlanningError,
   type SourcePlanDiagnostic,
 } from "./diagnostics";
-export type { SourcePlanDiagnostic } from "./diagnostics";
+export type { SourcePlanDiagnostic, SourcePlanDiagnosticCode } from "./diagnostics";
 import {
   applySourceAssetReferenceContexts,
   type SourceAssetReferenceContexts,
 } from "./asset-context";
+import {
+  allocateDocumentPath,
+  resourceKey,
+  writeMarkdown,
+  type WritableDocument,
+} from "./plan-markdown";
+import {
+  collectNavigationEdits,
+  sourceNavigation,
+  type NavigationSequenceEdit,
+} from "./plan-navigation";
 import { validateResources } from "../validate";
 import { isSourceNonPageReference, sourcePathInventory } from "../reference-paths";
 import { serializeTopikJson } from "../assets/json";
 import { generateAutomaticAssetName } from "../assets/asset";
 import { validateTopikPathSet } from "../assets/path";
-import { extractMarkdownTitle } from "../compile/shared";
-import {
-  joinWikiPath,
-  resolveWikiNavigation,
-  resolveWikiContentHref,
-  resolveWikiContentReference,
-} from "../wiki-navigation";
+import { resolveWikiNavigation, resolveWikiContentHref } from "../wiki-navigation";
 import {
   readSourceProject,
   digestSourceTree,
@@ -70,7 +75,6 @@ import {
   encodeSource,
   inspectSourceSyntax,
   inspectFrontmatterSyntax,
-  patchFrontmatterFields,
   patchSourceFields,
   patchSourceSequence,
   replaySourceByteEdits,
@@ -79,7 +83,6 @@ import {
   type SourceByteEdit,
 } from "./syntax";
 
-type WritableDocument = Guide | WikiPage | CoursePage;
 export type SourceResourceOperation =
   | { kind: "update" | "delete"; resource: string }
   | { kind: "move"; resource: string; path: string }
@@ -147,15 +150,6 @@ export interface PlanSourceUpdatesInput {
   media?: readonly (SourceMediaSelection & { config: string })[];
 }
 
-function block(code: string, message: string, resource?: string, path?: string): never {
-  throw new SourcePlanningError({
-    code,
-    message,
-    ...(resource ? { resource } : {}),
-    ...(path ? { path } : {}),
-  });
-}
-const resourceKey = (resource: Resource): string => `${resource.type}/${resource.name}`;
 function resourceMap(resources: readonly Resource[]): Map<string, Resource> {
   if (!validateResources(resources).valid)
     block(
@@ -408,636 +402,340 @@ function compareSharedEdits(left: SourceByteEdit, right: SourceByteEdit): number
   return depth(right) - depth(left);
 }
 
-function allocateDocumentPath(
+type SourceDocument = SourceProject["documents"][number];
+type PlannedMedium = {
+  selection: SourceMediaSelection & { config: string };
+  asset: Extract<Resource, { type: "Asset" }>;
+  path: string;
+  name: string;
+};
+
+/** Mutable planning state shared by the steps of one {@link planSourceUpdates} call. */
+interface PlanState {
+  readonly input: PlanSourceUpdatesInput;
+  /** The pinned base project, reinspected from its tree. */
+  readonly project: SourceProject;
+  readonly base: ReadonlyMap<string, Resource>;
+  /** The desired graph; replaced as a whole when media identities are remapped. */
+  desired: Map<string, Resource>;
+  readonly operationKeys: ReadonlySet<string>;
+  /** Resources changed by a derived repair rather than an explicit operation. */
+  readonly derivedKeys: Set<string>;
+  readonly derivedRepairs: SourceDerivedRepair[];
+  readonly files: ReadonlyMap<string, SourceTreeFile>;
+  /** Current document path of every resource, including planned creates and moves. */
+  readonly paths: Map<string, string>;
+  /** Document paths in the base project. */
+  readonly originalPaths: ReadonlyMap<string, string>;
+  /** Every occupied or planned path. */
+  readonly reserved: Set<string>;
+  /** File modes of documents that move to a new path. */
+  readonly createdModes: Map<string, SourceTreeFile["mode"]>;
+  /** Parsed values of every declared source configuration, inspected after path allocation. */
+  configs: ReadonlyMap<string, Record<string, unknown>>;
+  readonly configUpdates: Map<string, Record<string, unknown>>;
+  readonly navigationUpdates: Map<string, { previous: Wiki; desired: Wiki; directory: string }>;
+  readonly personAdditions: Map<string, unknown[]>;
+  readonly personDeletions: Map<string, string[]>;
+  readonly courseSequenceEdits: Map<string, SourceByteEdit[]>;
+  /** Proven source path of every Asset name. */
+  readonly assets: Map<string, string>;
+  readonly modified: Map<string, Uint8Array>;
+  readonly deleted: Set<string>;
+}
+
+/** Path inventories and saved-reference provenance used by reference repair. */
+interface ReferenceScope {
+  readonly originalInventory: ReadonlySet<string>;
+  readonly currentInventory: ReadonlySet<string>;
+  /** Base documents, with references prepared from freshly supplied source paths. */
+  readonly referenceDocuments: Map<string, SourceDocument | undefined>;
+  /** Resources whose resource references were restored to source spelling. */
+  readonly referenceRepairKeys: Set<string>;
+  sourceDirectory(key: string): string;
+  /** Whether a reference names a file or folder rather than a page. */
+  nonPageReference(
+    resource: WritableDocument,
+    reference: TopikNavigationReference,
+    hasSavedTarget: boolean,
+  ): boolean;
+}
+
+const isWritableDocument = (resource: Resource): resource is WritableDocument =>
+  resource.type === "Guide" || resource.type === "WikiPage" || resource.type === "CoursePage";
+const documentOf = (project: SourceProject, key: string): SourceDocument | undefined =>
+  project.documents.find((document) => document.resource === key);
+const provenanceOf = (project: SourceProject, config: string | undefined) =>
+  project.compilation.provenance.find((source) => source.config === config);
+const configVersion = (state: PlanState, config: string): unknown =>
+  state.configUpdates.get(config)?.sourceVersion ?? state.configs.get(config)!.sourceVersion;
+
+/** Reject a plan whose cohort, writer or pinned base tree does not match. */
+function checkPlanPins(input: PlanSourceUpdatesInput): void {
+  if (!/^[a-f0-9]{64}$/.test(input.packageCohort))
+    block("package-cohort-required", "Plans require the verified package cohort integrity.");
+  if (serializeTopikJson(input.project.descriptor) !== serializeTopikJson(SOURCE_WRITER_DESCRIPTOR))
+    block(
+      "source-writer-incompatible",
+      "The saved source grammar or writer has changed. Reinspect the source project before retrying.",
+    );
+  if (
+    digestSourceTree(input.project.tree) !== input.expectedTreeDigest ||
+    input.project.treeDigest !== input.expectedTreeDigest
+  )
+    block("source-base-changed", "Source bytes no longer match the pinned tree.");
+}
+
+/** Each operation is admitted, unique and consistent with the base and desired graphs. */
+function checkOperations(
+  input: PlanSourceUpdatesInput,
+  base: ReadonlyMap<string, Resource>,
+  desired: ReadonlyMap<string, Resource>,
+): Set<string> {
+  const operationKeys = new Set<string>();
+  for (const op of input.operations) {
+    if (!input.authority.resources.includes(op.resource))
+      block(
+        "resource-scope-denied",
+        "The operation exceeds the admitted resource scope.",
+        op.resource,
+      );
+    if (operationKeys.has(op.resource))
+      block("operation-ambiguous", "Each resource requires one explicit operation.", op.resource);
+    operationKeys.add(op.resource);
+    if (
+      op.kind === "create"
+        ? base.has(op.resource) || !desired.has(op.resource)
+        : !base.has(op.resource) ||
+          (op.kind === "delete" ? desired.has(op.resource) : !desired.has(op.resource))
+    )
+      block(
+        "operation-inconsistent",
+        "Operations must match the complete base and desired graphs.",
+        op.resource,
+      );
+  }
+  return operationKeys;
+}
+
+/** Every authored difference between the graphs needs an explicit operation. */
+function requireExplicitIntent(
+  input: PlanSourceUpdatesInput,
   project: SourceProject,
-  directory: string,
-  resource: WritableDocument,
-): string {
-  const slug =
-    resource.type === "Guide" || resource.type === "CoursePage"
-      ? resource.spec.slug
-      : resource.name;
-  const stem = posix.join(directory, slug || "index");
-  for (const suffix of ["", `-${sourceHash(encodeSource(resource.name)).slice(0, 8)}`]) {
-    const candidate = `${stem}${suffix}.md`;
+  base: ReadonlyMap<string, Resource>,
+  desired: ReadonlyMap<string, Resource>,
+  operationKeys: ReadonlySet<string>,
+): void {
+  const originalInventory = sourcePathInventory(project.tree.map((file) => file.path));
+  const originalDocumentsByKey = new Map(
+    project.documents.map((document) => [document.resource, document]),
+  );
+  const originalNonPageReference = (
+    resource: WritableDocument,
+    reference: TopikNavigationReference,
+  ) => {
+    const document = originalDocumentsByKey.get(resourceKey(resource));
+    return document
+      ? isSourceNonPageReference(reference, document.path, document.directory, originalInventory)
+      : false;
+  };
+  for (const [key, resource] of base) {
+    if (resource.type === "Asset") continue;
+    const next = desired.get(key);
     if (
-      !project.tree.some((file) => file.path === candidate) &&
-      validateTopikPathSet([...project.tree.map((file) => file.path), candidate]).ok
+      !operationKeys.has(key) &&
+      (!next ||
+        !sameAuthoredResource(
+          resource,
+          next,
+          base,
+          input.referenceContexts,
+          input.courseReferenceContexts,
+          project.courseContexts,
+          originalNonPageReference,
+        ))
     )
-      return candidate;
+      block("operation-required", "Every changed or deleted resource needs explicit intent.", key);
   }
-  return block(
-    "source-path-collision",
-    "A new Markdown path collides with the existing project.",
-    resourceKey(resource),
-  );
+  for (const [key, resource] of desired)
+    if (resource.type !== "Asset" && !base.has(key) && !operationKeys.has(key))
+      block("operation-required", "Every created resource needs explicit intent.", key);
 }
 
-export function authoredBody(
-  resource: WritableDocument,
-  path: string,
-  assetsByName: ReadonlyMap<string, string>,
-): string {
-  if (resource.spec.content.format !== "topik")
-    block(
-      "content-unrepresentable",
-      "Only unevaluated Topik content has a source representation.",
-      resourceKey(resource),
-    );
-  const rewrite = rewriteTopikAssetOccurrences(
-    resource.spec.content.value,
-    (occurrence) => {
-      if (!occurrence.reference.startsWith("asset:")) return undefined;
-      const assetPath = assetsByName.get(occurrence.reference.slice(6));
-      if (!assetPath)
-        block(
-          "asset-source-missing",
-          "An Asset has no proven source path or supplied bytes.",
-          resourceKey(resource),
-        );
-      return posix
-        .relative(posix.dirname(path), assetPath)
-        .split("/")
-        .map(encodeURIComponent)
-        .join("/");
-    },
-    { allowCompiledAssetReferences: true, includeGenericLinkCandidates: true },
-  );
-  if (!rewrite.ok)
-    block(
-      "content-unrepresentable",
-      "Asset references cannot be written faithfully.",
-      resourceKey(resource),
-    );
-  const formatted = formatTopikContent(rewrite.content);
-  if (!formatted.ok)
-    block(
-      "content-unrepresentable",
-      "Content cannot be written faithfully.",
-      resourceKey(resource),
-    );
-  return formatted.formatted;
-}
-
-function writeMarkdown(
-  base: SourceTreeFile | undefined,
-  prior: WritableDocument | undefined,
-  desired: WritableDocument,
-  version: unknown,
-  moved: boolean,
-  path: string,
-  assets: ReadonlyMap<string, string>,
-  sourceContent?: string,
-  referenceRepair = false,
-): Uint8Array {
-  const sections = base ? sourceMarkdownSections(base.bytes) : undefined;
-  const oldContent = prior
-    ? formatTopikContent(prior.spec.content.value, { allowCompiledAssetReferences: true })
-    : undefined;
-  const newContent = formatTopikContent(desired.spec.content.value, {
-    allowCompiledAssetReferences: true,
-  });
-  if (!newContent.ok || (oldContent && !oldContent.ok))
-    block(
-      "content-unrepresentable",
-      "Authoring content must remain writable.",
-      resourceKey(desired),
-    );
-  const bodyChanged =
-    !oldContent || oldContent.formatted !== newContent.formatted || moved || referenceRepair;
-  const body = bodyChanged
-    ? authoredBody(
-        sourceContent === undefined
-          ? desired
-          : ({
-              ...desired,
-              spec: { ...desired.spec, content: { ...desired.spec.content, value: sourceContent } },
-            } as WritableDocument),
+/** Reserve the Markdown path of every created or moved document. */
+function allocateOperationPaths(state: PlanState): void {
+  const { input, project, desired, paths, reserved } = state;
+  for (const op of input.operations) {
+    if (op.kind !== "create" && op.kind !== "move") continue;
+    const next = desired.get(op.resource)!;
+    if (!isWritableDocument(next)) continue;
+    const config = op.kind === "create" ? op.config : documentOf(project, op.resource)!.config;
+    const source = provenanceOf(project, config);
+    if (!source)
+      block("source-mapping-missing", "The operation needs its declared source.", op.resource);
+    // The requested path is caller text: name only the resource, never echo the path.
+    if (op.path !== undefined && !validateTopikPathSet([op.path]).ok)
+      block(
+        "source-path-invalid",
+        "The requested source path is not a portable project path.",
+        op.resource,
+      );
+    const path =
+      op.path ??
+      allocateDocumentPath(
+        {
+          ...project,
+          tree: [...reserved].map((path) => ({ path, mode: "100644", bytes: new Uint8Array() })),
+        },
+        source.directory,
+        next,
+      );
+    if (reserved.has(path))
+      block(
+        "source-path-collision",
+        "New paths cannot overwrite occupied paths.",
+        op.resource,
         path,
-        assets,
-      )
-    : sections!.body;
-  const updates: Record<string, unknown> = {};
-  if (
-    !prior ||
-    prior.spec.title !== desired.spec.title ||
-    (bodyChanged &&
-      !sections?.frontmatter?.match(/^title:/m) &&
-      extractMarkdownTitle(body, desired.name) !== desired.spec.title)
-  )
-    updates.title = desired.spec.title;
-  if (desired.type !== "CoursePage") {
-    const priorDescription =
-      prior && prior.type !== "CoursePage" ? prior.spec.description : undefined;
-    if (!prior || priorDescription !== desired.spec.description)
-      updates.description = desired.spec.description;
+      );
+    reserved.add(path);
+    paths.set(op.resource, path);
+    if (op.kind === "move") state.createdModes.set(path, documentOf(project, op.resource)!.mode);
   }
-  collectMetadataEdits(updates, "labels", prior?.labels, desired.labels);
-  if (moved || !prior) updates.id = desired.name;
-  if (desired.type === "Guide") {
-    const old = prior?.type === "Guide" ? prior : undefined;
-    if (moved || !old || old.spec.slug !== desired.spec.slug) updates.slug = desired.spec.slug;
-    if (
-      !old ||
-      serializeTopikJson(old.spec.authors ?? null) !==
-        serializeTopikJson(desired.spec.authors ?? null)
-    )
-      updates.authors = desired.spec.authors;
-    if (
-      !old ||
-      serializeTopikJson(old.spec.tags ?? null) !== serializeTopikJson(desired.spec.tags ?? null)
-    ) {
-      updates.tags = desired.spec.tags;
-      updates.inheritTags = false;
-    }
-  }
-  if (desired.type === "CoursePage") {
-    const old = prior?.type === "CoursePage" ? prior : undefined;
-    if (moved || !old || old.spec.slug !== desired.spec.slug) updates.slug = desired.spec.slug;
-    if (!old || old.spec.order !== desired.spec.order) updates.order = desired.spec.order;
-    if (
-      !old ||
-      serializeTopikJson(old.spec.authors ?? null) !==
-        serializeTopikJson(desired.spec.authors ?? null)
-    )
-      updates.authors = desired.spec.authors;
-  }
-  if (
-    version !== 1 &&
-    Object.keys(updates).some((field) =>
-      ["id", "slug", "labels", "inheritTags"].includes(field.split("/")[0]),
-    )
-  )
-    block(
-      "source-version-required",
-      "This change needs an explicitly reviewed sourceVersion: 1 opt-in.",
-      resourceKey(desired),
-    );
-  const eol = sections?.raw.includes("\r\n") ? "\r\n" : "\n";
-  const writtenBody = bodyChanged && eol === "\r\n" ? body.replace(/(?<!\r)\n/g, eol) : body;
-  if (!Object.keys(updates).length)
-    return encodeSource(
-      sections
-        ? sections.raw.slice(0, sections.raw.length - sections.body.length) + writtenBody
-        : writtenBody,
-    );
-  if (sections?.frontmatter !== undefined && sections.frontmatterRange) {
-    const patched = patchFrontmatterFields(sections.frontmatter, updates, eol);
-    // Nonempty frontmatter text excludes the line break before its closing fence.
-    // An appended or removed final entry must not leave a blank line before it.
-    let frontmatter = patched.bytes;
-    const eolBytes = encodeSource(eol);
-    if (
-      sections.frontmatter &&
-      !/[\r\n]$/.test(sections.frontmatter) &&
-      Buffer.from(frontmatter.slice(-eolBytes.length)).equals(eolBytes)
-    )
-      frontmatter = frontmatter.slice(0, -eolBytes.length);
-    return new Uint8Array(
-      Buffer.concat([
-        base!.bytes.slice(0, sections.frontmatterRange.start),
-        frontmatter,
-        base!.bytes.slice(sections.frontmatterRange.end, sections.bodyRange.start),
-        encodeSource(writtenBody),
-      ]),
-    );
-  }
-  const metadata = Object.entries(updates)
-    .filter(([, value]) => value !== undefined)
-    .map(([key, value]) => `${key}: ${JSON.stringify(value)}${eol}`)
-    .join("");
-  const prefix = sections ? sections.raw.slice(0, sections.raw.length - sections.body.length) : "";
-  return encodeSource(
-    prefix + (metadata ? `---${eol}${metadata}---${eol}${writtenBody}` : writtenBody),
-  );
 }
 
-export function sourceNavigation(
-  nodes: readonly WikiNavNode[],
-  wiki: Wiki,
-  paths: ReadonlyMap<string, string>,
-  directory: string,
-  prefix = "",
-): SourceWikiNavNode[] {
-  return nodes.map((node) => {
-    if (node.type === "page") {
-      const path = paths.get(`WikiPage/${node.page}`);
-      if (!path || (directory && !path.startsWith(`${directory}/`)))
-        block(
-          "source-mapping-missing",
-          "Navigation must reference a page owned by its declared source.",
-          `Wiki/${wiki.name}`,
-        );
-      const source = posix.relative(directory || ".", path).replace(/\.mdx?$/i, "");
-      const localSlug = node.slug === "" ? "index" : node.slug;
-      return {
-        type: "page",
-        slug: localSlug,
-        ...(source !== joinWikiPath(prefix, localSlug) ? { source } : {}),
-        ...(node.icon !== undefined ? { icon: node.icon } : {}),
-        ...(node.hidden !== undefined ? { hidden: node.hidden } : {}),
-      };
-    }
-    return "children" in node
-      ? {
-          ...node,
-          children: sourceNavigation(
-            node.children,
-            wiki,
-            paths,
-            directory,
-            joinWikiPath(prefix, "slug" in node ? node.slug : undefined),
-          ),
+/** A reviewed `sourceVersion: 1` opt-in is admitted only when no reserved legacy key collides. */
+function planOptIns(state: PlanState): void {
+  const { project, files, configs } = state;
+  for (const config of state.input.optInConfigs ?? []) {
+    const value = configs.get(config);
+    if (!value)
+      block(
+        "source-mapping-missing",
+        "Opt-in must name a declared configuration.",
+        undefined,
+        config,
+      );
+    if (value.sourceVersion === 1) continue;
+    if (value.persons !== undefined || value.labels !== undefined)
+      block(
+        "source-version-collision",
+        "Resolve opaque reserved configuration fields in Git before opting in.",
+        undefined,
+        config,
+      );
+    for (const document of project.documents.filter(
+      (document) => document.config === config && document.path !== config,
+    )) {
+      const frontmatter = sourceMarkdownSections(files.get(document.path)!.bytes).frontmatter;
+      if (frontmatter) {
+        let values: Record<string, unknown>;
+        try {
+          values = inspectFrontmatterSyntax(frontmatter).value;
+        } catch {
+          // Inspection tolerates opaque legacy frontmatter; opt-in cannot prove it.
+          block(
+            "source-version-collision",
+            "Resolve opaque legacy frontmatter in Git before opting in.",
+            document.resource,
+            document.path,
+          );
         }
-      : node;
-  });
-}
-
-interface NavigationSequenceEdit {
-  additions: unknown[];
-  removals: string[];
+        if (["id", "slug", "labels", "inheritTags"].some((field) => Object.hasOwn(values, field)))
+          block(
+            "source-version-collision",
+            "Resolve opaque reserved frontmatter fields in Git before opting in.",
+            document.resource,
+            document.path,
+          );
+      }
+    }
+    state.configUpdates.set(config, { sourceVersion: 1 });
+  }
 }
 
 /**
- * Align a changed navigation list with its source items. Unchanged items keep
- * their syntax; removed items are deleted in place and new items are appended.
- * Returns undefined when the change needs a new item before a retained one.
+ * Plan every media destination before reference repair so its parent directories
+ * participate in the same candidate inventory as document creates and moves.
  */
-function alignNavigation(
-  previous: readonly unknown[],
-  desired: readonly unknown[],
-): { pairs: Array<[number, number]>; removals: number[]; additions: number[] } | undefined {
-  const before = previous.map((item) => serializeTopikJson(item ?? null));
-  const after = desired.map((item) => serializeTopikJson(item ?? null));
-  // Longest common subsequence of identical items anchors the retained entries.
-  const table = Array.from({ length: before.length + 1 }, () =>
-    Array<number>(after.length + 1).fill(0),
-  );
-  for (let i = before.length - 1; i >= 0; i--)
-    for (let j = after.length - 1; j >= 0; j--)
-      table[i][j] =
-        before[i] === after[j]
-          ? table[i + 1][j + 1] + 1
-          : Math.max(table[i + 1][j], table[i][j + 1]);
-  const anchors: Array<[number, number]> = [];
-  for (let i = 0, j = 0; i < before.length && j < after.length;)
-    if (before[i] === after[j]) anchors.push([i++, j++]);
-    else if (table[i + 1][j] >= table[i][j + 1]) i++;
-    else j++;
-  const pairs: Array<[number, number]> = [];
-  const removals: number[] = [];
-  const additions: number[] = [];
-  let i = 0;
-  let j = 0;
-  for (const [anchorBefore, anchorAfter] of [
-    ...anchors,
-    [before.length, after.length] as [number, number],
-  ]) {
-    const removed = anchorBefore - i;
-    const added = anchorAfter - j;
-    const last = anchorBefore === before.length;
-    if (removed === added || (last && added > removed)) {
-      // Equal gaps are edits of the same entries; a longer final gap appends.
-      for (let offset = 0; offset < removed; offset++) pairs.push([i + offset, j + offset]);
-      for (let offset = removed; offset < added; offset++) additions.push(j + offset);
-    } else if (added === 0) {
-      for (let offset = 0; offset < removed; offset++) removals.push(i + offset);
-    } else return undefined;
-    i = anchorBefore + 1;
-    j = anchorAfter + 1;
-  }
-  return { pairs, removals, additions };
-}
-
-function collectNavigationEdits(
-  updates: Record<string, unknown>,
-  sequences: Map<string, NavigationSequenceEdit>,
-  selector: string,
-  raw: unknown,
-  previous: unknown,
-  desired: unknown,
-): void {
-  if (serializeTopikJson(previous ?? null) === serializeTopikJson(desired ?? null)) return;
-  const alignment =
-    Array.isArray(previous) &&
-    Array.isArray(desired) &&
-    Array.isArray(raw) &&
-    raw.length === previous.length
-      ? alignNavigation(previous, desired)
-      : undefined;
-  if (alignment && Array.isArray(previous) && Array.isArray(desired) && Array.isArray(raw)) {
-    for (const [before, after] of alignment.pairs)
-      collectNavigationEdits(
-        updates,
-        sequences,
-        `${selector}/${before}`,
-        raw[before],
-        previous[before],
-        desired[after],
-      );
-    if (alignment.removals.length || alignment.additions.length)
-      sequences.set(selector, {
-        additions: alignment.additions.map((index) => desired[index]),
-        removals: alignment.removals.map((index) => `${selector}/${index}`),
-      });
-  } else if (
-    raw &&
-    previous &&
-    desired &&
-    typeof raw === "object" &&
-    typeof previous === "object" &&
-    typeof desired === "object" &&
-    !Array.isArray(raw) &&
-    !Array.isArray(previous) &&
-    !Array.isArray(desired)
-  ) {
-    const before = previous as Record<string, unknown>;
-    const after = desired as Record<string, unknown>;
-    for (const field of new Set([...Object.keys(before), ...Object.keys(after)]))
-      collectNavigationEdits(
-        updates,
-        sequences,
-        `${selector}/${encodeURIComponent(field)}`,
-        (raw as Record<string, unknown>)[field],
-        before[field],
-        after[field],
-      );
-  } else updates[selector] = desired;
-}
-
-/** The complete candidate is compiled before any applicable file changes are returned. */
-export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<SourcePlanResult> {
-  try {
-    if (!/^[a-f0-9]{64}$/.test(input.packageCohort))
-      block("package-cohort-required", "Plans require the verified package cohort integrity.");
+function planMediaDestinations(state: PlanState): PlannedMedium[] {
+  const { project, desired, reserved } = state;
+  const mediaNames = new Set<string>();
+  return (state.input.media ?? []).map((selection) => {
+    const asset = desired.get(`Asset/${selection.name}`);
+    const source = provenanceOf(project, selection.config);
     if (
-      serializeTopikJson(input.project.descriptor) !== serializeTopikJson(SOURCE_WRITER_DESCRIPTOR)
+      asset?.type !== "Asset" ||
+      !source ||
+      mediaNames.has(selection.name) ||
+      sourceHash(selection.bytes) !== selection.sha256 ||
+      asset.spec.integrity !== `sha256:${selection.sha256}` ||
+      asset.spec.size !== selection.bytes.length
     )
       block(
-        "source-writer-incompatible",
-        "The saved source grammar or writer has changed. Reinspect the source project before retrying.",
+        "asset-bytes-mismatch",
+        "Every new medium requires an exact desired Asset, declared destination and supplied bytes.",
       );
     if (
-      digestSourceTree(input.project.tree) !== input.expectedTreeDigest ||
-      input.project.treeDigest !== input.expectedTreeDigest
+      posix.basename(selection.filename) !== selection.filename ||
+      !validateTopikPathSet([selection.filename]).ok
     )
-      block("source-base-changed", "Source bytes no longer match the pinned tree.");
-    const project = await readSourceProject({ tree: input.project.tree });
-    const originalInventory = sourcePathInventory(project.tree.map((file) => file.path));
-    const originalDocumentsByKey = new Map(
-      project.documents.map((document) => [document.resource, document]),
+      block("asset-path-invalid", "Media filenames must be portable leaf names.");
+    const extension = posix.extname(selection.filename);
+    const stem = selection.filename.slice(0, selection.filename.length - extension.length);
+    const path = posix.join(
+      source.assetDirectory,
+      `${stem}-${sourceHash(encodeSource(selection.name)).slice(0, 8)}${extension}`,
     );
-    const originalNonPageReference = (
-      resource: WritableDocument,
-      reference: TopikNavigationReference,
-    ) => {
-      const document = originalDocumentsByKey.get(resourceKey(resource));
-      return document
-        ? isSourceNonPageReference(reference, document.path, document.directory, originalInventory)
-        : false;
-    };
-    const base = resourceMap(project.compilation.resources);
-    let desired = resourceMap(structuredClone(input.desiredResources));
-    const savedGraphDigest = digestSourceResourceGraph([...desired.values()]);
-    applySourceAssetReferenceContexts(
-      [...desired.values()],
-      input.assetReferenceContexts,
-      input.authority.resources,
-    );
-    const derivedRepairs: SourceUpdatePlan["derivedRepairs"][number][] = [];
-    const operationKeys = new Set<string>();
-    for (const op of input.operations) {
-      if (!input.authority.resources.includes(op.resource))
-        block(
-          "resource-scope-denied",
-          "The operation exceeds the admitted resource scope.",
-          op.resource,
-        );
-      if (operationKeys.has(op.resource))
-        block("operation-ambiguous", "Each resource requires one explicit operation.", op.resource);
-      operationKeys.add(op.resource);
-      if (
-        op.kind === "create"
-          ? base.has(op.resource) || !desired.has(op.resource)
-          : !base.has(op.resource) ||
-            (op.kind === "delete" ? desired.has(op.resource) : !desired.has(op.resource))
-      )
-        block(
-          "operation-inconsistent",
-          "Operations must match the complete base and desired graphs.",
-          op.resource,
-        );
-    }
-    for (const [key, resource] of base) {
-      if (resource.type === "Asset") continue;
-      const next = desired.get(key);
-      if (
-        !operationKeys.has(key) &&
-        (!next ||
-          !sameAuthoredResource(
-            resource,
-            next,
-            base,
-            input.referenceContexts,
-            input.courseReferenceContexts,
-            project.courseContexts,
-            originalNonPageReference,
-          ))
-      )
-        block(
-          "operation-required",
-          "Every changed or deleted resource needs explicit intent.",
-          key,
-        );
-    }
-    for (const [key, resource] of desired)
-      if (resource.type !== "Asset" && !base.has(key) && !operationKeys.has(key))
-        block("operation-required", "Every created resource needs explicit intent.", key);
-    const files = new Map(project.tree.map((file) => [file.path, file]));
-    const paths = new Map(project.documents.map((document) => [document.resource, document.path]));
-    const reserved = new Set(project.tree.map((file) => file.path));
-    const createdModes = new Map<string, SourceTreeFile["mode"]>();
-    for (const op of input.operations) {
-      if (op.kind !== "create" && op.kind !== "move") continue;
-      const next = desired.get(op.resource)!;
-      if (next.type !== "Guide" && next.type !== "WikiPage" && next.type !== "CoursePage") continue;
-      const config =
-        op.kind === "create"
-          ? op.config
-          : project.documents.find((document) => document.resource === op.resource)!.config;
-      const source = project.compilation.provenance.find((source) => source.config === config);
-      if (!source)
-        block("source-mapping-missing", "The operation needs its declared source.", op.resource);
-      // The requested path is caller text: name only the resource, never echo the path.
-      if (op.path !== undefined && !validateTopikPathSet([op.path]).ok)
-        block(
-          "source-path-invalid",
-          "The requested source path is not a portable project path.",
-          op.resource,
-        );
-      const path =
-        op.path ??
-        allocateDocumentPath(
-          {
-            ...project,
-            tree: [...reserved].map((path) => ({ path, mode: "100644", bytes: new Uint8Array() })),
-          },
-          source.directory,
-          next,
-        );
-      if (reserved.has(path))
-        block(
-          "source-path-collision",
-          "New paths cannot overwrite occupied paths.",
-          op.resource,
-          path,
-        );
-      reserved.add(path);
-      paths.set(op.resource, path);
-      if (op.kind === "move")
-        createdModes.set(
-          path,
-          project.documents.find((document) => document.resource === op.resource)!.mode,
-        );
-    }
-    const configs = new Map(
-      project.configurations
-        .filter((config) => config.path !== ".topik.yaml")
-        .map((config) => [
-          config.path,
-          inspectSourceSyntax(
-            decodeSource(files.get(config.path)!.bytes),
-            config.path.endsWith(".json"),
-          ).value,
-        ]),
-    );
-    const configUpdates = new Map<string, Record<string, unknown>>();
-    const navigationUpdates = new Map<
-      string,
-      { previous: Wiki; desired: Wiki; directory: string }
-    >();
-    const personAdditions = new Map<string, unknown[]>();
-    const personDeletions = new Map<string, string[]>();
-    const courseSequenceEdits = new Map<string, SourceByteEdit[]>();
-    for (const config of input.optInConfigs ?? []) {
-      const value = configs.get(config);
-      if (!value)
-        block(
-          "source-mapping-missing",
-          "Opt-in must name a declared configuration.",
-          undefined,
-          config,
-        );
-      if (value.sourceVersion === 1) continue;
-      if (value.persons !== undefined || value.labels !== undefined)
-        block(
-          "source-version-collision",
-          "Resolve opaque reserved configuration fields in Git before opting in.",
-          undefined,
-          config,
-        );
-      for (const document of project.documents.filter(
-        (document) => document.config === config && document.path !== config,
-      )) {
-        const frontmatter = sourceMarkdownSections(files.get(document.path)!.bytes).frontmatter;
-        if (frontmatter) {
-          let values: Record<string, unknown>;
-          try {
-            values = inspectFrontmatterSyntax(frontmatter).value;
-          } catch {
-            // Inspection tolerates opaque legacy frontmatter; opt-in cannot prove it.
-            block(
-              "source-version-collision",
-              "Resolve opaque legacy frontmatter in Git before opting in.",
-              document.resource,
-              document.path,
-            );
-          }
-          if (["id", "slug", "labels", "inheritTags"].some((field) => Object.hasOwn(values, field)))
-            block(
-              "source-version-collision",
-              "Resolve opaque reserved frontmatter fields in Git before opting in.",
-              document.resource,
-              document.path,
-            );
-        }
-      }
-      configUpdates.set(config, { sourceVersion: 1 });
-    }
-    // Plan every media destination before reference repair so its parent directories
-    // participate in the same candidate inventory as document creates and moves.
-    const mediaNames = new Set<string>();
-    const plannedMedia = (input.media ?? []).map((selection) => {
-      const asset = desired.get(`Asset/${selection.name}`);
-      const source = project.compilation.provenance.find(
-        (source) => source.config === selection.config,
+    if (reserved.has(path) || !validateTopikPathSet([...reserved, path]).ok)
+      block(
+        "source-path-collision",
+        "New media cannot overwrite any occupied path.",
+        undefined,
+        path,
       );
-      if (
-        asset?.type !== "Asset" ||
-        !source ||
-        mediaNames.has(selection.name) ||
-        sourceHash(selection.bytes) !== selection.sha256 ||
-        asset.spec.integrity !== `sha256:${selection.sha256}` ||
-        asset.spec.size !== selection.bytes.length
-      )
-        block(
-          "asset-bytes-mismatch",
-          "Every new medium requires an exact desired Asset, declared destination and supplied bytes.",
-        );
-      if (
-        posix.basename(selection.filename) !== selection.filename ||
-        !validateTopikPathSet([selection.filename]).ok
-      )
-        block("asset-path-invalid", "Media filenames must be portable leaf names.");
-      const extension = posix.extname(selection.filename);
-      const stem = selection.filename.slice(0, selection.filename.length - extension.length);
-      const path = posix.join(
-        source.assetDirectory,
-        `${stem}-${sourceHash(encodeSource(selection.name)).slice(0, 8)}${extension}`,
-      );
-      if (reserved.has(path) || !validateTopikPathSet([...reserved, path]).ok)
-        block(
-          "source-path-collision",
-          "New media cannot overwrite any occupied path.",
-          undefined,
-          path,
-        );
-      const identity = generateAutomaticAssetName({
-        projectNamespace: project.manifest.namespace,
-        manifestRelativePath: path,
-      });
-      if (!identity.ok) block("asset-path-invalid", "The new media destination is invalid.");
-      mediaNames.add(selection.name);
-      reserved.add(path);
-      return { selection, asset, path, name: identity.value };
+    const identity = generateAutomaticAssetName({
+      projectNamespace: project.manifest.namespace,
+      manifestRelativePath: path,
     });
-    const derivedKeys = new Set<string>();
-    const originalPaths = new Map(
-      project.documents.map((document) => [document.resource, document.path]),
+    if (!identity.ok) block("asset-path-invalid", "The new media destination is invalid.");
+    mediaNames.add(selection.name);
+    reserved.add(path);
+    return { selection, asset, path, name: identity.value };
+  });
+}
+
+/** Inventories and the non-page reference rule shared by every reference repair step. */
+function createReferenceScope(
+  state: PlanState,
+  plannedMedia: readonly PlannedMedium[],
+): ReferenceScope {
+  const { input, project, paths, desired } = state;
+  const originalInventory = sourcePathInventory(project.tree.map((file) => file.path));
+  const originalDocumentsByKey = new Map(
+    project.documents.map((document) => [document.resource, document]),
+  );
+  const originalDocuments = new Set(state.originalPaths.values());
+  const currentInventory = sourcePathInventory([
+    ...project.tree.map((file) => file.path).filter((path) => !originalDocuments.has(path)),
+    ...[...paths].filter(([key]) => desired.has(key)).map(([, path]) => path),
+    ...plannedMedia.map(({ path }) => path),
+  ]);
+  const sourceDirectory = (key: string) => {
+    const document = originalDocumentsByKey.get(key);
+    if (document) return document.directory;
+    const creation = input.operations.find(
+      (operation): operation is Extract<SourceResourceOperation, { kind: "create" }> =>
+        operation.resource === key && operation.kind === "create",
     );
-    const originalDocuments = new Set(originalPaths.values());
-    const currentInventory = sourcePathInventory([
-      ...project.tree.map((file) => file.path).filter((path) => !originalDocuments.has(path)),
-      ...[...paths].filter(([key]) => desired.has(key)).map(([, path]) => path),
-      ...plannedMedia.map(({ path }) => path),
-    ]);
-    const sourceDirectory = (key: string) => {
-      const document = originalDocumentsByKey.get(key);
-      if (document) return document.directory;
-      const creation = input.operations.find(
-        (operation): operation is Extract<SourceResourceOperation, { kind: "create" }> =>
-          operation.resource === key && operation.kind === "create",
-      );
-      return (
-        project.compilation.provenance.find((source) => source.config === creation?.config)
-          ?.directory ?? ""
-      );
-    };
-    const nonPageReference = (
-      resource: WritableDocument,
-      reference: TopikNavigationReference,
-      hasSavedTarget: boolean,
-    ) => {
+    return provenanceOf(project, creation?.config)?.directory ?? "";
+  };
+  return {
+    originalInventory,
+    currentInventory,
+    referenceDocuments: new Map(project.documents.map((document) => [document.resource, document])),
+    referenceRepairKeys: new Set(),
+    sourceDirectory,
+    nonPageReference(resource, reference, hasSavedTarget) {
       const key = resourceKey(resource);
       const document = originalDocumentsByKey.get(key);
       const path = document?.path ?? paths.get(key);
@@ -1046,812 +744,920 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
       if (isSourceNonPageReference(reference, path, directory, originalInventory)) return true;
       if (hasSavedTarget) return false;
       return isSourceNonPageReference(reference, path, directory, currentInventory);
+    },
+  };
+}
+
+/** Interpret freshly supplied source paths before the scope-local Wiki and Course passes. */
+function prepareReferenceDocuments(state: PlanState, scope: ReferenceScope): void {
+  for (const [key, resource] of state.desired) {
+    if (!isWritableDocument(resource)) continue;
+    const path = state.paths.get(key);
+    if (!path) continue;
+    const prepared = prepareSourceResourceReferences(
+      resource,
+      scope.referenceDocuments.get(key),
+      path,
+      scope.sourceDirectory(key),
+      state.originalPaths,
+      state.paths,
+      state.base,
+      state.desired,
+      scope.originalInventory,
+      scope.currentInventory,
+    );
+    if (prepared) scope.referenceDocuments.set(key, prepared);
+  }
+}
+
+/** Course membership edits and saved-to-current reference transport for each Course. */
+function planCourseRepairs(state: PlanState, scope: ReferenceScope): void {
+  const { input, project, base, desired, paths } = state;
+  for (const course of desired.values()) {
+    if (course.type !== "Course") continue;
+    const document = documentOf(project, resourceKey(course));
+    const previous = base.get(resourceKey(course));
+    if (!document || previous?.type !== "Course")
+      block(
+        "source-creation-required",
+        "Course creation needs explicit source initialization.",
+        resourceKey(course),
+      );
+    const config = document.config;
+    const source = provenanceOf(project, config)!;
+    const rawModules = state.configs.get(config)!.modules as Array<{ id: string; pages: string[] }>;
+    const configuration = planCourseConfiguration({
+      before: [...base.values()],
+      desired: [...desired.values()],
+      course,
+      originalCourse: previous,
+      paths,
+      originalPaths: state.originalPaths,
+      directory: source.directory,
+      modules: rawModules,
+      raw: decodeSource(state.files.get(config)!.bytes),
+      json: config.endsWith(".json"),
+    });
+    for (const key of configuration.membershipResources) state.derivedKeys.add(key);
+    state.configUpdates.set(config, {
+      ...state.configUpdates.get(config),
+      ...configuration.updates,
+    });
+    if (configuration.edits.length) state.courseSequenceEdits.set(config, configuration.edits);
+    const currentContext = sourceCourseContext(
+      [...desired.values()],
+      course,
+      paths,
+      source.directory,
+    );
+    const currentNavigation = resolveCourseNavigation(currentContext);
+    const previousContext = project.courseContexts[resourceKey(course)];
+    for (const page of desired.values()) {
+      if (page.type !== "CoursePage" || !currentNavigation.pageByName.has(page.name)) continue;
+      const key = resourceKey(page);
+      const prior = base.get(key);
+      const context =
+        input.courseReferenceContexts?.[key] ??
+        (prior?.type === "CoursePage" ? previousContext : currentContext);
+      const saved = resolveSourceCourseContext(context, course.name, page.name);
+      const isNonPageReference = (reference: TopikNavigationReference) =>
+        scope.nonPageReference(
+          page,
+          reference,
+          resolveCourseContentHref(reference.href, page.name, saved) !== null,
+        );
+      if (
+        !input.courseReferenceContexts?.[key] &&
+        hasSourceContextReferences(page, isNonPageReference) &&
+        prior?.type === "CoursePage" &&
+        canonicalResource(prior) !==
+          canonicalResource({ ...prior, spec: { ...prior.spec, content: page.spec.content } }) &&
+        serializeTopikJson(previousContext) !== serializeTopikJson(currentContext)
+      )
+        block(
+          "reference-context-required",
+          "Changed Course authoring content needs its retained context when routes or source paths change.",
+          key,
+        );
+      if (
+        transportCourseReferences(
+          page,
+          saved,
+          currentNavigation,
+          state.derivedRepairs,
+          undefined,
+          isNonPageReference,
+          (reference, current) =>
+            isSourceReferenceShadowed(
+              page,
+              reference,
+              paths.get(key)!,
+              source.directory,
+              paths,
+              desired,
+              scope.currentInventory,
+              `CoursePage/${current?.page.page}`,
+            ),
+        )
+      )
+        state.derivedKeys.add(key);
+    }
+  }
+}
+
+/** Wiki navigation source paths and saved-to-current reference transport for each Wiki. */
+function planWikiRepairs(state: PlanState, scope: ReferenceScope): void {
+  const { input, project, base, desired, paths } = state;
+  for (const resource of desired.values()) {
+    if (resource.type !== "Wiki") continue;
+    const document = documentOf(project, resourceKey(resource));
+    const previous = base.get(resourceKey(resource));
+    if (!document || previous?.type !== "Wiki")
+      block(
+        "source-creation-required",
+        "Wiki creation needs explicit declaration initialization.",
+        resourceKey(resource),
+      );
+    const config = document.config;
+    const source = provenanceOf(project, config)!;
+    if (configVersion(state, config) === 1) resource.spec.sourceVersion = 1;
+    const visit = (nodes: WikiNavNode[]): void => {
+      for (const node of nodes) {
+        if (node.type === "page") {
+          const path = paths.get(`WikiPage/${node.page}`);
+          if (!path)
+            block(
+              "source-mapping-missing",
+              "Every navigation page needs a proven source.",
+              resourceKey(resource),
+            );
+          node.sourcePath = posix.relative(source.directory || ".", path).replace(/\.mdx?$/i, "");
+        } else if ("children" in node && node.children) visit(node.children);
+      }
     };
-    const referenceDocuments = new Map(
-      project.documents.map((document) => [document.resource, document]),
-    );
-    for (const [key, resource] of desired) {
+    visit(resource.spec.navigation ?? []);
+    if (!sameResource(previous, resource)) {
+      state.derivedKeys.add(resourceKey(resource));
+      if (!state.operationKeys.has(resourceKey(resource)))
+        state.derivedRepairs.push({ resource: resourceKey(resource), kind: "navigation" });
+    }
+    const currentNavigation = resolveWikiNavigation(resource.spec.navigation ?? [], {
+      sourceVersion: resource.spec.sourceVersion,
+    });
+    for (const page of desired.values()) {
+      if (page.type !== "WikiPage" || page.spec.wiki !== resource.name) continue;
+      const key = resourceKey(page);
+      const priorPage = base.get(key);
+      const context = resolveSourceReferenceContext(
+        input.referenceContexts?.[key] ?? previous,
+        resource.name,
+        page.name,
+      );
+      if (!context.ok) block("reference-context-invalid", context.message, key);
+      const savedNavigation = context.navigation;
+      const isNonPageReference = (reference: TopikNavigationReference) =>
+        scope.nonPageReference(
+          page,
+          reference,
+          resolveWikiContentHref(reference.href, page.name, savedNavigation) !== null,
+        );
       if (
-        resource.type !== "WikiPage" &&
-        resource.type !== "Guide" &&
-        resource.type !== "CoursePage"
-      )
-        continue;
-      const path = paths.get(key);
-      if (!path) continue;
-      const document = referenceDocuments.get(key);
-      const prepared = prepareSourceResourceReferences(
-        resource,
-        document,
-        path,
-        sourceDirectory(key),
-        originalPaths,
-        paths,
-        base,
-        desired,
-        originalInventory,
-        currentInventory,
-      );
-      if (prepared) referenceDocuments.set(key, prepared);
-    }
-    for (const course of desired.values()) {
-      if (course.type !== "Course") continue;
-      const document = project.documents.find(
-        (document) => document.resource === resourceKey(course),
-      );
-      const previous = base.get(resourceKey(course));
-      if (!document || previous?.type !== "Course")
-        block(
-          "source-creation-required",
-          "Course creation needs explicit source initialization.",
-          resourceKey(course),
-        );
-      const config = document.config;
-      const source = project.compilation.provenance.find((source) => source.config === config)!;
-      const rawModules = configs.get(config)!.modules as Array<{ id: string; pages: string[] }>;
-      const oldPaths = new Map(
-        project.documents.map((document) => [document.resource, document.path]),
-      );
-      const configuration = planCourseConfiguration({
-        before: [...base.values()],
-        desired: [...desired.values()],
-        course,
-        originalCourse: previous,
-        paths,
-        originalPaths: oldPaths,
-        directory: source.directory,
-        modules: rawModules,
-        raw: decodeSource(files.get(config)!.bytes),
-        json: config.endsWith(".json"),
-      });
-      for (const key of configuration.membershipResources) derivedKeys.add(key);
-      configUpdates.set(config, { ...configUpdates.get(config), ...configuration.updates });
-      if (configuration.edits.length) courseSequenceEdits.set(config, configuration.edits);
-      const currentContext = sourceCourseContext(
-        [...desired.values()],
-        course,
-        paths,
-        source.directory,
-      );
-      const currentNavigation = resolveCourseNavigation(currentContext);
-      const previousContext = project.courseContexts[resourceKey(course)];
-      for (const page of desired.values()) {
-        if (page.type !== "CoursePage" || !currentNavigation.pageByName.has(page.name)) continue;
-        const key = resourceKey(page);
-        const prior = base.get(key);
-        const context =
-          input.courseReferenceContexts?.[key] ??
-          (prior?.type === "CoursePage" ? previousContext : currentContext);
-        const saved = resolveSourceCourseContext(context, course.name, page.name);
-        const isNonPageReference = (reference: TopikNavigationReference) =>
-          nonPageReference(
-            page,
-            reference,
-            resolveCourseContentHref(reference.href, page.name, saved) !== null,
-          );
-        if (
-          !input.courseReferenceContexts?.[key] &&
-          hasSourceContextReferences(page, isNonPageReference) &&
-          prior?.type === "CoursePage" &&
-          canonicalResource(prior) !==
-            canonicalResource({ ...prior, spec: { ...prior.spec, content: page.spec.content } }) &&
-          serializeTopikJson(previousContext) !== serializeTopikJson(currentContext)
-        )
-          block(
-            "reference-context-required",
-            "Changed Course authoring content needs its retained context when routes or source paths change.",
-            key,
-          );
-        if (
-          transportCourseReferences(
-            page,
-            saved,
-            currentNavigation,
-            derivedRepairs,
-            undefined,
-            isNonPageReference,
-            (reference) => {
-              const current = resolveCourseContentHref(
-                reference.href,
-                page.name,
-                currentNavigation,
-              );
-              return isSourceReferenceShadowed(
-                page,
-                reference,
-                paths.get(key)!,
-                source.directory,
-                paths,
-                desired,
-                currentInventory,
-                `CoursePage/${current?.page.page}`,
-              );
-            },
-          )
-        )
-          derivedKeys.add(key);
-      }
-    }
-    for (const resource of desired.values()) {
-      if (resource.type !== "Wiki") continue;
-      const document = project.documents.find(
-        (document) => document.resource === resourceKey(resource),
-      );
-      const previous = base.get(resourceKey(resource));
-      if (!document || previous?.type !== "Wiki")
-        block(
-          "source-creation-required",
-          "Wiki creation needs explicit declaration initialization.",
-          resourceKey(resource),
-        );
-      const config = document.config;
-      const source = project.compilation.provenance.find((source) => source.config === config)!;
-      const version =
-        configUpdates.get(config)?.sourceVersion ?? configs.get(config)!.sourceVersion;
-      if (version === 1) resource.spec.sourceVersion = 1;
-      const visit = (nodes: WikiNavNode[]): void => {
-        for (const node of nodes) {
-          if (node.type === "page") {
-            const path = paths.get(`WikiPage/${node.page}`);
-            if (!path)
-              block(
-                "source-mapping-missing",
-                "Every navigation page needs a proven source.",
-                resourceKey(resource),
-              );
-            node.sourcePath = posix.relative(source.directory || ".", path).replace(/\.mdx?$/i, "");
-          } else if ("children" in node && node.children) visit(node.children);
-        }
-      };
-      visit(resource.spec.navigation ?? []);
-      if (!sameResource(previous, resource)) {
-        derivedKeys.add(resourceKey(resource));
-        if (!operationKeys.has(resourceKey(resource)))
-          derivedRepairs.push({ resource: resourceKey(resource), kind: "navigation" });
-      }
-      const currentNavigation = resolveWikiNavigation(resource.spec.navigation ?? [], {
-        sourceVersion: resource.spec.sourceVersion,
-      });
-      for (const page of desired.values()) {
-        if (page.type !== "WikiPage" || page.spec.wiki !== resource.name) continue;
-        const key = resourceKey(page);
-        const priorPage = base.get(key);
-        const context = resolveSourceReferenceContext(
-          input.referenceContexts?.[key] ?? previous,
-          resource.name,
-          page.name,
-        );
-        if (!context.ok) block("reference-context-invalid", context.message, key);
-        const savedNavigation = context.navigation;
-        const isNonPageReference = (reference: TopikNavigationReference) =>
-          nonPageReference(
-            page,
-            reference,
-            resolveWikiContentHref(reference.href, page.name, savedNavigation) !== null,
-          );
-        if (
-          !input.referenceContexts?.[key] &&
-          hasSourceContextReferences(page, isNonPageReference) &&
-          priorPage?.type === "WikiPage" &&
-          canonicalResource(priorPage) !==
-            canonicalResource({
-              ...priorPage,
-              spec: { ...priorPage.spec, content: page.spec.content },
-            }) &&
+        !input.referenceContexts?.[key] &&
+        hasSourceContextReferences(page, isNonPageReference) &&
+        priorPage?.type === "WikiPage" &&
+        canonicalResource(priorPage) !==
+          canonicalResource({
+            ...priorPage,
+            spec: { ...priorPage.spec, content: page.spec.content },
+          }) &&
+        serializeTopikJson({
+          navigation: previous.spec.navigation,
+          version: previous.spec.sourceVersion,
+        }) !==
           serializeTopikJson({
-            navigation: previous.spec.navigation,
-            version: previous.spec.sourceVersion,
-          }) !==
-            serializeTopikJson({
-              navigation: resource.spec.navigation,
-              version: resource.spec.sourceVersion,
-            })
-        )
-          block(
-            "reference-context-required",
-            "Changed authoring content needs its retained context when Wiki routes or source grammar change.",
-            key,
-          );
-        const rewritten = rewriteTopikNavigationReferences(
-          page.spec.content.value,
-          (reference) => {
-            // Compiled resource references have project-wide identity semantics.
-            if (parseTopikResourceReference(reference.href) || isNonPageReference(reference))
-              return undefined;
-            const saved = resolveWikiContentReference(reference.href, page.name, savedNavigation);
-            if (saved.kind === "unresolved")
-              block(
-                "reference-target-unresolved",
-                "An authored link has no target in its saved source context.",
-                key,
-              );
-            if (saved.kind !== "page") return undefined;
-            const before = saved.target;
-            const after = resolveWikiContentHref(reference.href, page.name, currentNavigation);
-            if (
-              !isSourceReferenceShadowed(
-                page,
-                reference,
-                paths.get(key)!,
-                source.directory,
-                paths,
-                desired,
-                currentInventory,
-                `WikiPage/${after?.page.page}`,
-              ) &&
-              after?.page.page === before.page.page &&
-              after.search === before.search &&
-              after.hash === before.hash
-            )
-              return undefined;
-            const target = currentNavigation.pageByName.get(before.page.page);
-            if (!target)
-              block(
-                "reference-target-removed",
-                "An authored reference still targets a removed page.",
-                key,
-              );
-            const href = `/${target.route.split("/").map(encodeURIComponent).join("/")}${before.search}${before.hash ? `#${before.hash}` : ""}`;
-            const proof = resolveWikiContentHref(href, page.name, currentNavigation);
-            if (
-              proof?.page.page !== before.page.page ||
-              proof.search !== before.search ||
-              proof.hash !== before.hash
-            )
-              block(
-                "reference-unrepresentable",
-                "A source reference cannot preserve its target.",
-                key,
-              );
-            derivedRepairs.push({
-              resource: key,
-              kind: "reference",
-              position: reference.position,
-              before: reference.href,
-              after: href,
-              target: before.page.page,
-            });
-            return href;
-          },
-          { allowCompiledAssetReferences: true },
-        );
-        if (!rewritten.ok)
-          block(
-            "reference-unrepresentable",
-            "Authoring references cannot be rewritten faithfully.",
-            key,
-          );
-        if (rewritten.changes.length) {
-          page.spec.content.value = rewritten.content;
-          derivedKeys.add(key);
-        }
-      }
-    }
-    const referenceRepairKeys = new Set<string>();
-    for (const [key, resource] of desired) {
-      if (
-        resource.type !== "WikiPage" &&
-        resource.type !== "Guide" &&
-        resource.type !== "CoursePage"
-      )
-        continue;
-      const path = paths.get(key);
-      if (!path) continue;
-      const restored = restoreSourceResourceReferences(
-        resource,
-        referenceDocuments.get(key),
-        path,
-        paths,
-        originalPaths,
-        base,
-        desired,
-        currentInventory,
-      );
-      if (restored.repairs.length) {
-        derivedRepairs.push(...restored.repairs);
-        derivedKeys.add(key);
-        referenceRepairKeys.add(key);
-      }
-    }
-    const effectiveOperations = [
-      ...input.operations,
-      ...[...derivedKeys]
-        .filter((key) => !operationKeys.has(key))
-        .map((resource) => ({ kind: "update" as const, resource })),
-    ];
-    for (const op of effectiveOperations)
-      if (!input.authority.resources.includes(op.resource))
-        block(
-          "resource-scope-denied",
-          "A derived repair exceeds admitted resource scope.",
-          op.resource,
-        );
-    const assets = new Map<string, string>();
-    for (const file of project.tree) {
-      const generated = generateAutomaticAssetName({
-        projectNamespace: project.manifest.namespace,
-        manifestRelativePath: file.path,
-      });
-      if (generated.ok) assets.set(generated.value, file.path);
-    }
-    const modified = new Map<string, Uint8Array>();
-    const deleted = new Set<string>();
-    const assetMappings: SourceUpdatePlan["assetMappings"][number][] = [];
-    for (const { selection, asset, path, name } of plannedMedia) {
-      assetMappings.push({ from: selection.name, to: name, path });
-      asset.name = name;
-      assets.set(name, path);
-      modified.set(path, new Uint8Array(selection.bytes));
-    }
-    if (assetMappings.length) {
-      for (const resource of desired.values()) {
-        if (
-          resource.type !== "Guide" &&
-          resource.type !== "WikiPage" &&
-          resource.type !== "CoursePage"
-        )
-          continue;
-        const rewritten = rewriteTopikAssetOccurrences(
-          resource.spec.content.value,
-          (occurrence) => {
-            const mapping = assetMappings.find(
-              (mapping) => occurrence.reference === `asset:${mapping.from}`,
-            );
-            return mapping ? `asset:${mapping.to}` : undefined;
-          },
-          { allowCompiledAssetReferences: true, includeGenericLinkCandidates: true },
-        );
-        if (!rewritten.ok)
-          block(
-            "asset-reference-unrepresentable",
-            "New media references cannot be written faithfully.",
-            resourceKey(resource),
-          );
-        resource.spec.content.value = rewritten.content;
-      }
-      desired = resourceMap([...desired.values()]);
-    }
-    for (const op of effectiveOperations) {
-      const next = desired.get(op.resource);
-      const previous = base.get(op.resource);
-      if (
-        next &&
-        previous &&
-        sameResource(previous, next) &&
-        op.kind === "update" &&
-        !referenceRepairKeys.has(op.resource)
-      )
-        continue;
-      if ((next ?? previous)?.type === "Person") {
-        const name = (next ?? previous)!.name;
-        for (const authoringResource of [...base.values(), ...desired.values()]) {
-          if (
-            (authoringResource.type !== "Guide" &&
-              authoringResource.type !== "Course" &&
-              authoringResource.type !== "CoursePage") ||
-            !authoringResource.spec.authors?.includes(name)
-          )
-            continue;
-          const key = resourceKey(authoringResource);
-          if (!input.authority.resources.includes(key))
-            block(
-              "shared-reference-scope-denied",
-              "A shared Person change affects an authoring resource outside admitted resource scope.",
-              key,
-            );
-          derivedKeys.add(key);
-        }
-        if (op.kind === "move")
-          block(
-            "resource-unrepresentable",
-            "Persons stay inside their declared collection configuration.",
-            op.resource,
-          );
-        const document = project.documents.find((document) => document.resource === op.resource);
-        const config = op.kind === "create" ? op.config : document?.config;
-        const source = project.compilation.provenance.find((source) => source.config === config);
-        if (!config || (source?.kind !== "collection" && source?.kind !== "course"))
-          block(
-            "source-mapping-missing",
-            "A Person needs its exact declared collection or Course source.",
-            op.resource,
-          );
-        if ((configUpdates.get(config)?.sourceVersion ?? configs.get(config)!.sourceVersion) !== 1)
-          block("source-version-required", "Persons need sourceVersion: 1.", op.resource);
-        const updates = configUpdates.get(config) ?? {};
-        const selector = `persons/${encodeURIComponent(op.resource.slice(7))}`;
-        if (op.kind === "delete")
-          personDeletions.set(config, [...(personDeletions.get(config) ?? []), selector]);
-        else if (op.kind === "create") {
-          const person = next!;
-          personAdditions.set(config, [
-            ...(personAdditions.get(config) ?? []),
-            {
-              id: person.name,
-              ...(person.labels !== undefined ? { labels: person.labels } : {}),
-              spec: person.spec,
-            },
-          ]);
-        } else {
-          collectMetadataEdits(updates, `${selector}/labels`, previous!.labels, next!.labels);
-          collectMetadataEdits(updates, `${selector}/spec`, previous!.spec, next!.spec);
-        }
-        configUpdates.set(config, updates);
-        continue;
-      }
-      if (op.kind === "delete") {
-        if (previous!.type === "CourseModule") {
-          if (
-            [...desired.values()].some(
-              (resource) =>
-                resource.type === "CoursePage" && resource.spec.module === previous!.name,
-            )
-          )
-            block(
-              "module-not-empty",
-              "Delete or reassign every Course page before deleting its module.",
-              op.resource,
-            );
-          continue;
-        }
-        if (
-          previous!.type !== "Guide" &&
-          previous!.type !== "WikiPage" &&
-          previous!.type !== "CoursePage"
-        )
-          block(
-            "source-deletion-required",
-            "Shared sources require explicit source-level deletion authority.",
-            op.resource,
-          );
-        deleted.add(paths.get(op.resource)!);
-        continue;
-      }
-      if (!next)
-        block(
-          "operation-inconsistent",
-          "An update requires its complete desired resource.",
-          op.resource,
-        );
-      if (next!.type === "Wiki") {
-        const document = project.documents.find((document) => document.resource === op.resource);
-        if (!document || op.kind !== "update" || previous?.type !== "Wiki")
-          block(
-            "source-creation-required",
-            "Wiki creation needs explicit declaration initialization.",
-            op.resource,
-          );
-        const old = previous;
-        const updates = configUpdates.get(document.config) ?? {};
-        for (const field of ["title", "description"] as const)
-          if (
-            serializeTopikJson(old.spec[field] ?? null) !==
-              serializeTopikJson(next.spec[field] ?? null) ||
-            Object.hasOwn(old.spec, field) !== Object.hasOwn(next.spec, field)
-          )
-            updates[field] = next.spec[field];
-        collectMetadataEdits(updates, "theme", old.spec.theme, next.spec.theme);
-        collectMetadataEdits(updates, "labels", old.labels, next.labels);
-        if (
-          serializeTopikJson(old.spec.navigation ?? null) !==
-          serializeTopikJson(next.spec.navigation ?? null)
-        ) {
-          if (next.spec.navigation === undefined) updates.navigation = undefined;
-          else
-            navigationUpdates.set(document.config, {
-              previous: old,
-              desired: next,
-              directory: document.directory,
-            });
-        }
-        configUpdates.set(document.config, updates);
-        continue;
-      }
-      if (next.type === "Course") {
-        const document = project.documents.find((document) => document.resource === op.resource);
-        if (!document || op.kind !== "update" || previous?.type !== "Course")
-          block(
-            "source-creation-required",
-            "Courses remain in their explicitly initialized source configuration.",
-            op.resource,
-          );
-        const updates = configUpdates.get(document.config) ?? {};
-        for (const field of ["title", "slug", "description", "authors"] as const)
-          collectMetadataEdits(updates, field, previous.spec[field], next.spec[field]);
-        collectMetadataEdits(updates, "labels", previous.labels, next.labels);
-        configUpdates.set(document.config, updates);
-        continue;
-      }
-      if (next.type === "CourseModule") {
-        const config =
-          op.kind === "create"
-            ? op.config
-            : project.documents.find((document) => document.resource === op.resource)?.config;
-        const source = project.compilation.provenance.find((source) => source.config === config);
-        const course = desired.get(`Course/${next.spec.course}`);
-        if (
-          !config ||
-          source?.kind !== "course" ||
-          course?.type !== "Course" ||
-          project.documents.find((document) => document.resource === resourceKey(course))
-            ?.config !== config ||
-          op.kind === "move" ||
-          (previous?.type === "CourseModule" && previous.spec.course !== next.spec.course)
-        )
-          block(
-            "source-mapping-missing",
-            "Course modules must stay inside their declared Course source.",
-            op.resource,
-          );
-        continue;
-      }
-      if (next!.type !== "Guide" && next!.type !== "WikiPage" && next!.type !== "CoursePage")
-        block(
-          "resource-unrepresentable",
-          "This resource operation has no admitted source representation.",
-          op.resource,
-        );
-      const document = project.documents.find((document) => document.resource === op.resource);
-      const config = op.kind === "create" ? op.config : document!.config;
-      const source = project.compilation.provenance.find((source) => source.config === config);
-      if (
-        !source ||
-        (next.type === "Guide"
-          ? source.kind !== "collection"
-          : next.type === "WikiPage"
-            ? source.kind !== "wiki"
-            : source.kind !== "course")
+            navigation: resource.spec.navigation,
+            version: resource.spec.sourceVersion,
+          })
       )
         block(
-          "source-mapping-missing",
-          "The operation must use its exact declared source.",
-          op.resource,
+          "reference-context-required",
+          "Changed authoring content needs its retained context when Wiki routes or source grammar change.",
+          key,
         );
-      const path = paths.get(op.resource) ?? document!.path;
-      if (next.type === "Guide" && posix.dirname(path) !== (source.directory || "."))
-        block(
-          "source-path-invalid",
-          "Guides must remain beside their declared collection configuration.",
-          op.resource,
-        );
-      if (
-        (next.type === "WikiPage" || next.type === "CoursePage") &&
-        source.directory &&
-        !path.startsWith(`${source.directory}/`)
-      )
-        block(
-          "source-path-invalid",
-          "Pages must remain inside their declared content root.",
-          op.resource,
-        );
-      if (!/\.mdx?$/.test(path))
-        block("source-path-invalid", "Source pages require a Markdown extension.", op.resource);
-      if ((op.kind === "create" || op.kind === "move") && files.has(path))
-        block(
-          "source-path-collision",
-          "A new source path may not overwrite an existing file.",
-          op.resource,
-          path,
-        );
-      paths.set(op.resource, path);
-      if (next.type === "CoursePage") {
-        const module = desired.get(`CourseModule/${next.spec.module}`);
-        const course =
-          module?.type === "CourseModule" ? desired.get(`Course/${module.spec.course}`) : undefined;
-        if (
-          course?.type !== "Course" ||
-          project.documents.find((document) => document.resource === resourceKey(course))
-            ?.config !== config
-        )
-          block(
-            "source-mapping-missing",
-            "A Course page must belong to a module in its declared source.",
-            op.resource,
-          );
-      }
-      const version =
-        configUpdates.get(config)?.sourceVersion ?? configs.get(config)!.sourceVersion;
-      modified.set(
-        path,
-        writeMarkdown(
-          document ? files.get(document.path) : undefined,
-          previous as WritableDocument | undefined,
-          next,
-          version,
-          op.kind === "move",
-          path,
-          assets,
-          restoreSourceResourceReferences(
-            next,
-            referenceDocuments.get(op.resource),
-            path,
-            paths,
-            originalPaths,
-            base,
-            desired,
-            currentInventory,
-          ).content,
-          referenceRepairKeys.has(op.resource),
-        ),
-      );
-      if (op.kind === "move") deleted.add(document!.path);
-    }
-    const oldPaths = new Map(
-      project.documents.map((document) => [document.resource, document.path]),
-    );
-    const navigationSequences = new Map<string, Map<string, NavigationSequenceEdit>>();
-    for (const [config, { previous, desired: wiki, directory }] of navigationUpdates) {
-      const updates = configUpdates.get(config)!;
-      const sequences = new Map<string, NavigationSequenceEdit>();
-      navigationSequences.set(config, sequences);
-      collectNavigationEdits(
-        updates,
-        sequences,
-        "navigation",
-        configs.get(config)!.navigation,
-        sourceNavigation(previous.spec.navigation ?? [], previous, oldPaths, directory),
-        sourceNavigation(wiki.spec.navigation ?? [], wiki, paths, directory),
-      );
-    }
-    const sharedEdits = new Map<string, readonly SourceByteEdit[]>();
-    for (const [path, updates] of configUpdates) {
-      const file = files.get(path)!;
-      const additions = personAdditions.get(path) ?? [];
-      const removals = personDeletions.get(path) ?? [];
-      if (additions.length && configs.get(path)!.persons === undefined) updates.persons = additions;
-      const patch = patchSourceFields(decodeSource(file.bytes), updates, path.endsWith(".json"));
-      const edits = [
-        ...(courseSequenceEdits.get(path) ?? []),
-        ...patch.edits,
-        ...(removals.length || (additions.length && configs.get(path)!.persons !== undefined)
-          ? patchSourceSequence(
-              decodeSource(file.bytes),
-              "persons",
-              additions,
-              removals,
-              path.endsWith(".json"),
-            )
-          : []),
-        ...[...(navigationSequences.get(path) ?? [])].flatMap(([selector, sequence]) =>
-          patchSourceSequence(
-            decodeSource(file.bytes),
-            selector,
-            sequence.additions,
-            sequence.removals,
-            path.endsWith(".json"),
-          ),
-        ),
-      ].sort(compareSharedEdits);
-      if (!edits.length) continue;
-      verifySharedEdits(
-        file,
-        project.configurations.find((config) => config.path === path)!,
-        input.authority.shared.find((authority) => authority.path === path),
-        edits,
-      );
-      const replayed = replaySourceByteEdits(file.bytes, edits);
-      // Combined edits must still form one safe mapping. Invalid output is a writer
-      // failure, never a parse error attributed to the authored configuration.
-      try {
-        inspectSourceSyntax(decodeSource(replayed), path.endsWith(".json"));
-      } catch (cause) {
-        throw new TypeError("Source configuration edits produced invalid syntax", { cause });
-      }
-      modified.set(path, replayed);
-      sharedEdits.set(path, edits);
-    }
-    const changes: SourceFileChange[] = [];
-    for (const path of [...new Set([...modified.keys(), ...deleted])].sort()) {
-      const old = files.get(path);
-      const bytes = deleted.has(path) ? undefined : modified.get(path);
-      if (old && bytes && sourceHash(old.bytes) === sourceHash(bytes)) continue;
-      if (!sharedEdits.has(path)) {
-        if (old) {
-          const authority = input.authority.exclusive.find((authority) => authority.path === path);
-          if (
-            !authority ||
-            authority.sha256 !== sourceHash(old.bytes) ||
-            authority.mode !== old.mode
-          )
-            block(
-              "exclusive-authority-required",
-              "Source replacement/deletion requires exact exclusive file authority.",
-              undefined,
-              path,
-            );
-        } else if (!input.authority.create.includes(path))
-          block(
-            "create-authority-required",
-            "New files require admitted expected-absence authority.",
-            undefined,
-            path,
-          );
-      }
-      changes.push({
-        kind: old ? (bytes ? "update" : "delete") : "create",
-        path,
-        base: old ? { sha256: sourceHash(old.bytes), mode: old.mode } : null,
-        candidate: bytes
-          ? {
-              bytes,
-              sha256: sourceHash(bytes),
-              mode: old?.mode ?? createdModes.get(path) ?? "100644",
+      const transported = transportWikiReferences(
+        page,
+        savedNavigation,
+        currentNavigation,
+        state.derivedRepairs,
+        {
+          isNonPageReference,
+          isCurrentShadowed: (reference, after) =>
+            isSourceReferenceShadowed(
+              page,
+              reference,
+              paths.get(key)!,
+              source.directory,
+              paths,
+              desired,
+              scope.currentInventory,
+              `WikiPage/${after?.page.page}`,
+            ),
+          fail: (failure) => {
+            switch (failure) {
+              case "unresolved":
+                return block(
+                  "reference-target-unresolved",
+                  "An authored link has no target in its saved source context.",
+                  key,
+                );
+              case "removed":
+                return block(
+                  "reference-target-removed",
+                  "An authored reference still targets a removed page.",
+                  key,
+                );
+              case "unrepresentable":
+                return block(
+                  "reference-unrepresentable",
+                  "A source reference cannot preserve its target.",
+                  key,
+                );
+              case "rewrite":
+                return block(
+                  "reference-unrepresentable",
+                  "Authoring references cannot be rewritten faithfully.",
+                  key,
+                );
             }
-          : null,
-        ...(sharedEdits.has(path) ? { sharedEdits: sharedEdits.get(path) } : {}),
-      });
+          },
+        },
+      );
+      if (transported.changed) {
+        page.spec.content.value = transported.content;
+        state.derivedKeys.add(key);
+      }
     }
-    const tree = project.tree
-      .filter((file) => !deleted.has(file.path))
-      .map((file) => ({ ...file, bytes: modified.get(file.path) ?? file.bytes }));
-    for (const [path, bytes] of modified)
-      if (!files.has(path) && !deleted.has(path))
-        tree.push({ path, mode: createdModes.get(path) ?? "100644", bytes });
-    const candidate = await readSourceProject({ tree });
-    desired = resourceMap(
-      await normalizeSourceResourceReferences([...desired.values()], candidate),
+  }
+}
+
+/** Restore cross-source resource references to their source spelling. */
+function restoreReferenceRepairs(state: PlanState, scope: ReferenceScope): void {
+  for (const [key, resource] of state.desired) {
+    if (!isWritableDocument(resource)) continue;
+    const path = state.paths.get(key);
+    if (!path) continue;
+    const restored = restoreSourceResourceReferences(
+      resource,
+      scope.referenceDocuments.get(key),
+      path,
+      state.paths,
+      state.originalPaths,
+      state.base,
+      state.desired,
+      scope.currentInventory,
     );
-    const compiled = resourceMap(candidate.compilation.resources);
+    if (restored.repairs.length) {
+      state.derivedRepairs.push(...restored.repairs);
+      state.derivedKeys.add(key);
+      scope.referenceRepairKeys.add(key);
+    }
+  }
+}
+
+/** Explicit operations plus an update for every derived repair, all inside admitted scope. */
+function effectiveOperations(state: PlanState): SourceResourceOperation[] {
+  const operations = [
+    ...state.input.operations,
+    ...[...state.derivedKeys]
+      .filter((key) => !state.operationKeys.has(key))
+      .map((resource) => ({ kind: "update" as const, resource })),
+  ];
+  for (const op of operations)
+    if (!state.input.authority.resources.includes(op.resource))
+      block(
+        "resource-scope-denied",
+        "A derived repair exceeds admitted resource scope.",
+        op.resource,
+      );
+  return operations;
+}
+
+/** Map every planned medium to its automatic Asset identity and write its bytes. */
+function applyPlannedMedia(
+  state: PlanState,
+  plannedMedia: readonly PlannedMedium[],
+): SourceUpdatePlan["assetMappings"][number][] {
+  const { project, assets } = state;
+  for (const file of project.tree) {
+    const generated = generateAutomaticAssetName({
+      projectNamespace: project.manifest.namespace,
+      manifestRelativePath: file.path,
+    });
+    if (generated.ok) assets.set(generated.value, file.path);
+  }
+  const assetMappings: SourceUpdatePlan["assetMappings"][number][] = [];
+  for (const { selection, asset, path, name } of plannedMedia) {
+    assetMappings.push({ from: selection.name, to: name, path });
+    asset.name = name;
+    assets.set(name, path);
+    state.modified.set(path, new Uint8Array(selection.bytes));
+  }
+  if (!assetMappings.length) return assetMappings;
+  for (const resource of state.desired.values()) {
+    if (!isWritableDocument(resource)) continue;
+    const rewritten = rewriteTopikAssetOccurrences(
+      resource.spec.content.value,
+      (occurrence) => {
+        const mapping = assetMappings.find(
+          (mapping) => occurrence.reference === `asset:${mapping.from}`,
+        );
+        return mapping ? `asset:${mapping.to}` : undefined;
+      },
+      { allowCompiledAssetReferences: true, includeGenericLinkCandidates: true },
+    );
+    if (!rewritten.ok)
+      block(
+        "asset-reference-unrepresentable",
+        "New media references cannot be written faithfully.",
+        resourceKey(resource),
+      );
+    resource.spec.content.value = rewritten.content;
+  }
+  state.desired = resourceMap([...state.desired.values()]);
+  return assetMappings;
+}
+
+/** Plan the source edits of one effective operation. */
+function planOperation(state: PlanState, scope: ReferenceScope, op: SourceResourceOperation): void {
+  const next = state.desired.get(op.resource);
+  const previous = state.base.get(op.resource);
+  if (
+    next &&
+    previous &&
+    sameResource(previous, next) &&
+    op.kind === "update" &&
+    !scope.referenceRepairKeys.has(op.resource)
+  )
+    return;
+  if ((next ?? previous)?.type === "Person") return planPersonOperation(state, op, previous, next);
+  if (op.kind === "delete") return planDeletion(state, op, previous!);
+  if (!next)
+    block(
+      "operation-inconsistent",
+      "An update requires its complete desired resource.",
+      op.resource,
+    );
+  if (next.type === "Wiki") return planWikiOperation(state, op, previous, next);
+  if (next.type === "Course") return planCourseOperation(state, op, previous, next);
+  if (next.type === "CourseModule") return planCourseModuleOperation(state, op, previous, next);
+  if (!isWritableDocument(next))
+    block(
+      "resource-unrepresentable",
+      "This resource operation has no admitted source representation.",
+      op.resource,
+    );
+  planDocumentOperation(state, scope, op, previous, next);
+}
+
+/** Persons are records in their collection or Course configuration. */
+function planPersonOperation(
+  state: PlanState,
+  op: SourceResourceOperation,
+  previous: Resource | undefined,
+  next: Resource | undefined,
+): void {
+  const { input, project } = state;
+  const name = (next ?? previous)!.name;
+  for (const authoringResource of [...state.base.values(), ...state.desired.values()]) {
     if (
-      compiled.size !== desired.size ||
-      [...desired].some(
-        ([key, resource]) => !compiled.has(key) || !sameResource(resource, compiled.get(key)!),
+      (authoringResource.type !== "Guide" &&
+        authoringResource.type !== "Course" &&
+        authoringResource.type !== "CoursePage") ||
+      !authoringResource.spec.authors?.includes(name)
+    )
+      continue;
+    const key = resourceKey(authoringResource);
+    if (!input.authority.resources.includes(key))
+      block(
+        "shared-reference-scope-denied",
+        "A shared Person change affects an authoring resource outside admitted resource scope.",
+        key,
+      );
+    state.derivedKeys.add(key);
+  }
+  if (op.kind === "move")
+    block(
+      "resource-unrepresentable",
+      "Persons stay inside their declared collection configuration.",
+      op.resource,
+    );
+  const document = documentOf(project, op.resource);
+  const config = op.kind === "create" ? op.config : document?.config;
+  const source = provenanceOf(project, config);
+  if (!config || (source?.kind !== "collection" && source?.kind !== "course"))
+    block(
+      "source-mapping-missing",
+      "A Person needs its exact declared collection or Course source.",
+      op.resource,
+    );
+  if (configVersion(state, config) !== 1)
+    block("source-version-required", "Persons need sourceVersion: 1.", op.resource);
+  const updates = state.configUpdates.get(config) ?? {};
+  const selector = `persons/${encodeURIComponent(op.resource.slice(7))}`;
+  if (op.kind === "delete")
+    state.personDeletions.set(config, [...(state.personDeletions.get(config) ?? []), selector]);
+  else if (op.kind === "create") {
+    const person = next!;
+    state.personAdditions.set(config, [
+      ...(state.personAdditions.get(config) ?? []),
+      {
+        id: person.name,
+        ...(person.labels !== undefined ? { labels: person.labels } : {}),
+        spec: person.spec,
+      },
+    ]);
+  } else {
+    collectMetadataEdits(updates, `${selector}/labels`, previous!.labels, next!.labels);
+    collectMetadataEdits(updates, `${selector}/spec`, previous!.spec, next!.spec);
+  }
+  state.configUpdates.set(config, updates);
+}
+
+/** Only empty Course modules and exclusive Markdown documents can be deleted. */
+function planDeletion(state: PlanState, op: SourceResourceOperation, previous: Resource): void {
+  if (previous.type === "CourseModule") {
+    if (
+      [...state.desired.values()].some(
+        (resource) => resource.type === "CoursePage" && resource.spec.module === previous.name,
       )
     )
       block(
-        "round-trip-mismatch",
-        "The candidate source does not reproduce the complete desired project graph.",
-        [...desired].find(
-          ([key, resource]) => !compiled.has(key) || !sameResource(resource, compiled.get(key)!),
-        )?.[0],
+        "module-not-empty",
+        "Delete or reassign every Course page before deleting its module.",
+        op.resource,
       );
-    const desiredGraphDigest = savedGraphDigest;
-    const evidence = {
+    return;
+  }
+  if (!isWritableDocument(previous))
+    block(
+      "source-deletion-required",
+      "Shared sources require explicit source-level deletion authority.",
+      op.resource,
+    );
+  state.deleted.add(state.paths.get(op.resource)!);
+}
+
+/** Wiki metadata edits its declaration; navigation changes are aligned later. */
+function planWikiOperation(
+  state: PlanState,
+  op: SourceResourceOperation,
+  previous: Resource | undefined,
+  next: Wiki,
+): void {
+  const document = documentOf(state.project, op.resource);
+  if (!document || op.kind !== "update" || previous?.type !== "Wiki")
+    block(
+      "source-creation-required",
+      "Wiki creation needs explicit declaration initialization.",
+      op.resource,
+    );
+  const old = previous;
+  const updates = state.configUpdates.get(document.config) ?? {};
+  for (const field of ["title", "description"] as const)
+    if (
+      serializeTopikJson(old.spec[field] ?? null) !==
+        serializeTopikJson(next.spec[field] ?? null) ||
+      Object.hasOwn(old.spec, field) !== Object.hasOwn(next.spec, field)
+    )
+      updates[field] = next.spec[field];
+  collectMetadataEdits(updates, "theme", old.spec.theme, next.spec.theme);
+  collectMetadataEdits(updates, "labels", old.labels, next.labels);
+  if (
+    serializeTopikJson(old.spec.navigation ?? null) !==
+    serializeTopikJson(next.spec.navigation ?? null)
+  ) {
+    if (next.spec.navigation === undefined) updates.navigation = undefined;
+    else
+      state.navigationUpdates.set(document.config, {
+        previous: old,
+        desired: next,
+        directory: document.directory,
+      });
+  }
+  state.configUpdates.set(document.config, updates);
+}
+
+/** Course metadata edits its declaration. */
+function planCourseOperation(
+  state: PlanState,
+  op: SourceResourceOperation,
+  previous: Resource | undefined,
+  next: Course,
+): void {
+  const document = documentOf(state.project, op.resource);
+  if (!document || op.kind !== "update" || previous?.type !== "Course")
+    block(
+      "source-creation-required",
+      "Courses remain in their explicitly initialized source configuration.",
+      op.resource,
+    );
+  const updates = state.configUpdates.get(document.config) ?? {};
+  for (const field of ["title", "slug", "description", "authors"] as const)
+    collectMetadataEdits(updates, field, previous.spec[field], next.spec[field]);
+  collectMetadataEdits(updates, "labels", previous.labels, next.labels);
+  state.configUpdates.set(document.config, updates);
+}
+
+/** Module records were planned with their Course; only their source placement is checked. */
+function planCourseModuleOperation(
+  state: PlanState,
+  op: SourceResourceOperation,
+  previous: Resource | undefined,
+  next: CourseModule,
+): void {
+  const { project } = state;
+  const config = op.kind === "create" ? op.config : documentOf(project, op.resource)?.config;
+  const source = provenanceOf(project, config);
+  const course = state.desired.get(`Course/${next.spec.course}`);
+  if (
+    !config ||
+    source?.kind !== "course" ||
+    course?.type !== "Course" ||
+    documentOf(project, resourceKey(course))?.config !== config ||
+    op.kind === "move" ||
+    (previous?.type === "CourseModule" && previous.spec.course !== next.spec.course)
+  )
+    block(
+      "source-mapping-missing",
+      "Course modules must stay inside their declared Course source.",
+      op.resource,
+    );
+}
+
+/** Write a Guide, Wiki page or Course page to its Markdown document. */
+function planDocumentOperation(
+  state: PlanState,
+  scope: ReferenceScope,
+  op: SourceResourceOperation,
+  previous: Resource | undefined,
+  next: WritableDocument,
+): void {
+  const { project, files, paths } = state;
+  const document = documentOf(project, op.resource);
+  const config = op.kind === "create" ? op.config : document!.config;
+  const source = provenanceOf(project, config);
+  if (
+    !source ||
+    (next.type === "Guide"
+      ? source.kind !== "collection"
+      : next.type === "WikiPage"
+        ? source.kind !== "wiki"
+        : source.kind !== "course")
+  )
+    block(
+      "source-mapping-missing",
+      "The operation must use its exact declared source.",
+      op.resource,
+    );
+  const path = paths.get(op.resource) ?? document!.path;
+  if (next.type === "Guide" && posix.dirname(path) !== (source.directory || "."))
+    block(
+      "source-path-invalid",
+      "Guides must remain beside their declared collection configuration.",
+      op.resource,
+    );
+  if (
+    (next.type === "WikiPage" || next.type === "CoursePage") &&
+    source.directory &&
+    !path.startsWith(`${source.directory}/`)
+  )
+    block(
+      "source-path-invalid",
+      "Pages must remain inside their declared content root.",
+      op.resource,
+    );
+  if (!/\.mdx?$/.test(path))
+    block("source-path-invalid", "Source pages require a Markdown extension.", op.resource);
+  if ((op.kind === "create" || op.kind === "move") && files.has(path))
+    block(
+      "source-path-collision",
+      "A new source path may not overwrite an existing file.",
+      op.resource,
+      path,
+    );
+  paths.set(op.resource, path);
+  if (next.type === "CoursePage") {
+    const module = state.desired.get(`CourseModule/${next.spec.module}`);
+    const course =
+      module?.type === "CourseModule"
+        ? state.desired.get(`Course/${module.spec.course}`)
+        : undefined;
+    if (course?.type !== "Course" || documentOf(project, resourceKey(course))?.config !== config)
+      block(
+        "source-mapping-missing",
+        "A Course page must belong to a module in its declared source.",
+        op.resource,
+      );
+  }
+  state.modified.set(
+    path,
+    writeMarkdown(
+      document ? files.get(document.path) : undefined,
+      previous as WritableDocument | undefined,
+      next,
+      configVersion(state, config),
+      op.kind === "move",
+      path,
+      state.assets,
+      restoreSourceResourceReferences(
+        next,
+        scope.referenceDocuments.get(op.resource),
+        path,
+        paths,
+        state.originalPaths,
+        state.base,
+        state.desired,
+        scope.currentInventory,
+      ).content,
+      scope.referenceRepairKeys.has(op.resource),
+    ),
+  );
+  if (op.kind === "move") state.deleted.add(document!.path);
+}
+
+/** Align each changed Wiki navigation with its source items. */
+function planNavigationSequences(
+  state: PlanState,
+): Map<string, Map<string, NavigationSequenceEdit>> {
+  const navigationSequences = new Map<string, Map<string, NavigationSequenceEdit>>();
+  for (const [config, { previous, desired: wiki, directory }] of state.navigationUpdates) {
+    const updates = state.configUpdates.get(config)!;
+    const sequences = new Map<string, NavigationSequenceEdit>();
+    navigationSequences.set(config, sequences);
+    collectNavigationEdits(
+      updates,
+      sequences,
+      "navigation",
+      state.configs.get(config)!.navigation,
+      sourceNavigation(previous.spec.navigation ?? [], previous, state.originalPaths, directory),
+      sourceNavigation(wiki.spec.navigation ?? [], wiki, state.paths, directory),
+    );
+  }
+  return navigationSequences;
+}
+
+/** Combine and verify every shared configuration edit, then write the edited files. */
+function planSharedConfigurationEdits(
+  state: PlanState,
+  navigationSequences: ReadonlyMap<string, ReadonlyMap<string, NavigationSequenceEdit>>,
+): Map<string, readonly SourceByteEdit[]> {
+  const { configs } = state;
+  const sharedEdits = new Map<string, readonly SourceByteEdit[]>();
+  for (const [path, updates] of state.configUpdates) {
+    const file = state.files.get(path)!;
+    const additions = state.personAdditions.get(path) ?? [];
+    const removals = state.personDeletions.get(path) ?? [];
+    if (additions.length && configs.get(path)!.persons === undefined) updates.persons = additions;
+    const patch = patchSourceFields(decodeSource(file.bytes), updates, path.endsWith(".json"));
+    const edits = [
+      ...(state.courseSequenceEdits.get(path) ?? []),
+      ...patch.edits,
+      ...(removals.length || (additions.length && configs.get(path)!.persons !== undefined)
+        ? patchSourceSequence(
+            decodeSource(file.bytes),
+            "persons",
+            additions,
+            removals,
+            path.endsWith(".json"),
+          )
+        : []),
+      ...[...(navigationSequences.get(path) ?? [])].flatMap(([selector, sequence]) =>
+        patchSourceSequence(
+          decodeSource(file.bytes),
+          selector,
+          sequence.additions,
+          sequence.removals,
+          path.endsWith(".json"),
+        ),
+      ),
+    ].sort(compareSharedEdits);
+    if (!edits.length) continue;
+    verifySharedEdits(
+      file,
+      state.project.configurations.find((config) => config.path === path)!,
+      state.input.authority.shared.find((authority) => authority.path === path),
+      edits,
+    );
+    const replayed = replaySourceByteEdits(file.bytes, edits);
+    // Combined edits must still form one safe mapping. Invalid output is a writer
+    // failure, never a parse error attributed to the authored configuration.
+    try {
+      inspectSourceSyntax(decodeSource(replayed), path.endsWith(".json"));
+    } catch (cause) {
+      throw new TypeError("Source configuration edits produced invalid syntax", { cause });
+    }
+    state.modified.set(path, replayed);
+    sharedEdits.set(path, edits);
+  }
+  return sharedEdits;
+}
+
+/** Every changed file, each admitted by shared, exclusive or create authority. */
+function collectFileChanges(
+  state: PlanState,
+  sharedEdits: ReadonlyMap<string, readonly SourceByteEdit[]>,
+): SourceFileChange[] {
+  const { input, files, modified, deleted } = state;
+  const changes: SourceFileChange[] = [];
+  for (const path of [...new Set([...modified.keys(), ...deleted])].sort()) {
+    const old = files.get(path);
+    const bytes = deleted.has(path) ? undefined : modified.get(path);
+    if (old && bytes && sourceHash(old.bytes) === sourceHash(bytes)) continue;
+    if (!sharedEdits.has(path)) {
+      if (old) {
+        const authority = input.authority.exclusive.find((authority) => authority.path === path);
+        if (!authority || authority.sha256 !== sourceHash(old.bytes) || authority.mode !== old.mode)
+          block(
+            "exclusive-authority-required",
+            "Source replacement/deletion requires exact exclusive file authority.",
+            undefined,
+            path,
+          );
+      } else if (!input.authority.create.includes(path))
+        block(
+          "create-authority-required",
+          "New files require admitted expected-absence authority.",
+          undefined,
+          path,
+        );
+    }
+    changes.push({
+      kind: old ? (bytes ? "update" : "delete") : "create",
+      path,
+      base: old ? { sha256: sourceHash(old.bytes), mode: old.mode } : null,
+      candidate: bytes
+        ? {
+            bytes,
+            sha256: sourceHash(bytes),
+            mode: old?.mode ?? state.createdModes.get(path) ?? "100644",
+          }
+        : null,
+      ...(sharedEdits.has(path) ? { sharedEdits: sharedEdits.get(path) } : {}),
+    });
+  }
+  return changes;
+}
+
+/** Compile the candidate tree and require it to reproduce the complete desired graph. */
+async function compileCandidate(state: PlanState): Promise<SourceProject> {
+  const { files, modified, deleted } = state;
+  const tree = state.project.tree
+    .filter((file) => !deleted.has(file.path))
+    .map((file) => ({ ...file, bytes: modified.get(file.path) ?? file.bytes }));
+  for (const [path, bytes] of modified)
+    if (!files.has(path) && !deleted.has(path))
+      tree.push({ path, mode: state.createdModes.get(path) ?? "100644", bytes });
+  const candidate = await readSourceProject({ tree });
+  const desired = resourceMap(
+    await normalizeSourceResourceReferences([...state.desired.values()], candidate),
+  );
+  state.desired = desired;
+  const compiled = resourceMap(candidate.compilation.resources);
+  if (
+    compiled.size !== desired.size ||
+    [...desired].some(
+      ([key, resource]) => !compiled.has(key) || !sameResource(resource, compiled.get(key)!),
+    )
+  )
+    block(
+      "round-trip-mismatch",
+      "The candidate source does not reproduce the complete desired project graph.",
+      [...desired].find(
+        ([key, resource]) => !compiled.has(key) || !sameResource(resource, compiled.get(key)!),
+      )?.[0],
+    );
+  return candidate;
+}
+
+/** Digest of every input and output the plan depends on, with bytes replaced by hashes. */
+function planDigest(
+  input: PlanSourceUpdatesInput,
+  plan: Omit<SourceUpdatePlan, "planDigest" | "candidate" | "affectedResources">,
+): string {
+  const evidence = {
+    descriptor: SOURCE_WRITER_DESCRIPTOR,
+    packageCohort: input.packageCohort,
+    baseTreeDigest: plan.baseTreeDigest,
+    desiredGraphDigest: plan.desiredGraphDigest,
+    candidateTreeDigest: plan.candidateTreeDigest,
+    authority: input.authority,
+    operations: input.operations,
+    optInConfigs: input.optInConfigs ?? [],
+    referenceContexts: input.referenceContexts ?? {},
+    courseReferenceContexts: input.courseReferenceContexts ?? {},
+    assetReferenceContexts: input.assetReferenceContexts ?? {},
+    derivedRepairs: plan.derivedRepairs,
+    assetMappings: plan.assetMappings,
+    media: (input.media ?? []).map(({ bytes, ...selection }) => ({
+      ...selection,
+      bytes: sourceHash(bytes),
+    })),
+    changes: plan.changes.map((change) => ({
+      ...change,
+      candidate: change.candidate
+        ? { ...change.candidate, bytes: sourceHash(change.candidate.bytes) }
+        : null,
+      ...(change.sharedEdits
+        ? {
+            sharedEdits: change.sharedEdits.map((edit) => ({
+              ...edit,
+              replacement: sourceHash(edit.replacement),
+            })),
+          }
+        : {}),
+    })),
+  };
+  return sourceHash(encodeSource(serializeTopikJson(evidence)));
+}
+
+/** The complete candidate is compiled before any applicable file changes are returned. */
+export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<SourcePlanResult> {
+  try {
+    checkPlanPins(input);
+    const project = await readSourceProject({ tree: input.project.tree });
+    const base = resourceMap(project.compilation.resources);
+    const desired = resourceMap(structuredClone(input.desiredResources));
+    const savedGraphDigest = digestSourceResourceGraph([...desired.values()]);
+    applySourceAssetReferenceContexts(
+      [...desired.values()],
+      input.assetReferenceContexts,
+      input.authority.resources,
+    );
+    const operationKeys = checkOperations(input, base, desired);
+    requireExplicitIntent(input, project, base, desired, operationKeys);
+    const state: PlanState = {
+      input,
+      project,
+      base,
+      desired,
+      operationKeys,
+      derivedKeys: new Set(),
+      derivedRepairs: [],
+      files: new Map(project.tree.map((file) => [file.path, file])),
+      paths: new Map(project.documents.map((document) => [document.resource, document.path])),
+      originalPaths: new Map(
+        project.documents.map((document) => [document.resource, document.path]),
+      ),
+      reserved: new Set(project.tree.map((file) => file.path)),
+      createdModes: new Map(),
+      configs: new Map(),
+      configUpdates: new Map(),
+      navigationUpdates: new Map(),
+      personAdditions: new Map(),
+      personDeletions: new Map(),
+      courseSequenceEdits: new Map(),
+      assets: new Map(),
+      modified: new Map(),
+      deleted: new Set(),
+    };
+    allocateOperationPaths(state);
+    state.configs = inspectConfigurations(project);
+    planOptIns(state);
+    const plannedMedia = planMediaDestinations(state);
+    const scope = createReferenceScope(state, plannedMedia);
+    prepareReferenceDocuments(state, scope);
+    planCourseRepairs(state, scope);
+    planWikiRepairs(state, scope);
+    restoreReferenceRepairs(state, scope);
+    const operations = effectiveOperations(state);
+    const assetMappings = applyPlannedMedia(state, plannedMedia);
+    for (const op of operations) planOperation(state, scope, op);
+    const sharedEdits = planSharedConfigurationEdits(state, planNavigationSequences(state));
+    const changes = collectFileChanges(state, sharedEdits);
+    const candidate = await compileCandidate(state);
+    const plan = {
       descriptor: SOURCE_WRITER_DESCRIPTOR,
       packageCohort: input.packageCohort,
       baseTreeDigest: project.treeDigest,
-      desiredGraphDigest,
+      desiredGraphDigest: savedGraphDigest,
       candidateTreeDigest: candidate.treeDigest,
-      authority: input.authority,
-      operations: input.operations,
-      optInConfigs: input.optInConfigs ?? [],
-      referenceContexts: input.referenceContexts ?? {},
-      courseReferenceContexts: input.courseReferenceContexts ?? {},
-      assetReferenceContexts: input.assetReferenceContexts ?? {},
-      derivedRepairs,
+      changes,
+      derivedRepairs: state.derivedRepairs,
       assetMappings,
-      media: (input.media ?? []).map(({ bytes, ...selection }) => ({
-        ...selection,
-        bytes: sourceHash(bytes),
-      })),
-      changes: changes.map((change) => ({
-        ...change,
-        candidate: change.candidate
-          ? { ...change.candidate, bytes: sourceHash(change.candidate.bytes) }
-          : null,
-        ...(change.sharedEdits
-          ? {
-              sharedEdits: change.sharedEdits.map((edit) => ({
-                ...edit,
-                replacement: sourceHash(edit.replacement),
-              })),
-            }
-          : {}),
-      })),
     };
     return {
       ok: true,
       plan: {
-        descriptor: SOURCE_WRITER_DESCRIPTOR,
-        packageCohort: input.packageCohort,
-        baseTreeDigest: project.treeDigest,
-        desiredGraphDigest,
-        candidateTreeDigest: candidate.treeDigest,
-        planDigest: sourceHash(encodeSource(serializeTopikJson(evidence))),
+        descriptor: plan.descriptor,
+        packageCohort: plan.packageCohort,
+        baseTreeDigest: plan.baseTreeDigest,
+        desiredGraphDigest: plan.desiredGraphDigest,
+        candidateTreeDigest: plan.candidateTreeDigest,
+        planDigest: planDigest(input, plan),
         changes,
         candidate,
-        affectedResources: [...new Set([...operationKeys, ...derivedKeys])].sort(),
-        derivedRepairs,
+        affectedResources: [...new Set([...operationKeys, ...state.derivedKeys])].sort(),
+        derivedRepairs: state.derivedRepairs,
         assetMappings,
       },
     };
@@ -1865,4 +1671,20 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
       }),
     };
   }
+}
+
+/** Parsed values of every declared source configuration, excluding the manifest. */
+function inspectConfigurations(project: SourceProject): Map<string, Record<string, unknown>> {
+  const files = new Map(project.tree.map((file) => [file.path, file]));
+  return new Map(
+    project.configurations
+      .filter((config) => config.path !== ".topik.yaml")
+      .map((config) => [
+        config.path,
+        inspectSourceSyntax(
+          decodeSource(files.get(config.path)!.bytes),
+          config.path.endsWith(".json"),
+        ).value,
+      ]),
+  );
 }

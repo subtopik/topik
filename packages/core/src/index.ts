@@ -137,6 +137,7 @@ export {
   type SourceUpdatePlan,
   type SourcePlanResult,
   type SourcePlanDiagnostic,
+  type SourcePlanDiagnosticCode,
 } from "./source/plan";
 export {
   replaySourceByteEdits,

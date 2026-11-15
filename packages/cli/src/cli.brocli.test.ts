@@ -8,10 +8,13 @@ import { promisify } from "node:util";
 import { command } from "@drizzle-team/brocli";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import packageJson from "../package.json";
+import { PORTABLE_READS_NOTICE } from "./file-safety";
 
 const SENTINEL = "PRIVATE_VALUE";
 const execFileAsync = promisify(execFile);
 const builtCli = fileURLToPath(new URL("../dist/cli.mjs", import.meta.url));
+/** What a project-reading command prints on stderr before its own output on this platform. */
+const NATIVE_NOTICE = process.platform === "linux" ? "" : `${PORTABLE_READS_NOTICE}\n`;
 
 // Keep real brocli: only replace one command with a handler that fails like a raw
 // Node.js filesystem or socket error.
@@ -175,6 +178,30 @@ describe.skipIf(!existsSync(builtCli))("built topik binary", () => {
       expect(result).toMatchObject({ code: 0, stdout: "Lint passed\n", stderr: PORTABLE_NOTICE });
     });
 
+    test("format --check reads with one notice", async () => {
+      const result = await runOnPlatform(["format", await project(), "--check"]);
+
+      expect(result).toMatchObject({
+        code: 0,
+        stdout: "All 1 file(s) are formatted\n",
+        stderr: PORTABLE_NOTICE,
+      });
+    });
+
+    test("format rewrites a file with one notice", async () => {
+      const source = await project();
+      await writeFile(join(source, "index.md"), "# Index\n\n- a\n* b\n");
+
+      const result = await runOnPlatform(["format", source]);
+
+      expect(result).toMatchObject({
+        code: 0,
+        stdout: "index.md\nFormatted 1 of 1 file(s)\n",
+        stderr: PORTABLE_NOTICE,
+      });
+      expect(await readFile(join(source, "index.md"), "utf8")).toBe("# Index\n\n- a\n\n* b\n");
+    });
+
     test("dev serves with one notice", async () => {
       const source = await project();
       const child = spawn(
@@ -204,6 +231,7 @@ describe.skipIf(!existsSync(builtCli))("built topik binary", () => {
       ["compile --dry-run", (source: string) => ["compile", source, "--dry-run"]],
       ["compile", (source: string) => ["compile", source, "--out-dir", join(source, "out")]],
       ["lint", (source: string) => ["lint", source]],
+      ["format", (source: string) => ["format", source]],
     ])("%s --file-safety anchored fails with the platform requirement", async (_name, args) => {
       const source = await project();
 
@@ -271,11 +299,64 @@ describe.skipIf(!existsSync(builtCli))("built topik binary", () => {
       "compile    Compile project content into Topik resource files\n",
     );
     expect(result.stdout).not.toContain("Requires Linux");
-    for (const command of ["compile", "dev", "lint"]) {
+    for (const command of ["compile", "dev", "format", "lint"]) {
       expect((await runBuilt([command, "--help"])).stdout).toMatch(
         /--file-safety \[ portable \| anchored \] +How project files are read where descriptor-anchored reads are unavailable \(macOS, Windows\): .* \(default: "portable"\)\n/u,
       );
     }
+  });
+
+  test("init scaffolds a project that compiles with --validate and is formatted", async () => {
+    dir = await mkdtemp(join(tmpdir(), "topik-cli-init-"));
+    const project = join(dir, "handbook");
+
+    expect(await runBuilt(["init", project])).toMatchObject({
+      code: 0,
+      stdout:
+        "Created .topik.yaml, wiki.yaml, index.md\n" +
+        "Next: run topik compile --validate in the project directory\n",
+      stderr: "",
+    });
+    const compiled = await runBuilt(["compile", project, "--validate"]);
+    expect(compiled).toMatchObject({ code: 0, stderr: NATIVE_NOTICE });
+    expect(compiled.stdout).toMatch(/^Compiled 2 resources and 0 payloads to /u);
+    expect(await runBuilt(["format", project, "--check"])).toMatchObject({
+      code: 0,
+      stderr: NATIVE_NOTICE,
+    });
+    expect(await runBuilt(["init", project])).toMatchObject({
+      code: 1,
+      stdout: "",
+      stderr: "Project files already exist. topik init does not overwrite files.\n",
+    });
+  });
+
+  test("lint --json prints only the report on stdout", async () => {
+    dir = await mkdtemp(join(tmpdir(), "topik-cli-bin-"));
+    await writeFile(
+      join(dir, ".topik.yaml"),
+      "version: 1\nnamespace: a/b\nsources:\n  - kind: wiki\n    config: wiki.yaml\n",
+    );
+    await writeFile(join(dir, "wiki.yaml"), "id: w\ntitle: W\nnavigation: [index]\n");
+    await writeFile(join(dir, "index.md"), "# Index\n\n[missing](./missing.md)\n");
+
+    const result = await runBuilt(["lint", dir, "--json"]);
+
+    expect(result).toMatchObject({ code: 1, stderr: `${NATIVE_NOTICE}Lint found errors.\n` });
+    expect(JSON.parse(result.stdout)).toEqual({
+      diagnostics: [
+        {
+          file: "index.md",
+          line: 3,
+          lines: [3],
+          id: "link-page-not-found",
+          severity: "error",
+          message: "Internal link target page was not found.",
+        },
+      ],
+      errors: 1,
+      warnings: 0,
+    });
   });
 
   test("rejects a malformed dev port before compiling", async () => {

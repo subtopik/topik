@@ -1,24 +1,34 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import type { TopikContentDiagnostic } from "@topik/content";
 import {
   compileTopikContent,
   InvalidTopikContentError,
   renderTopikContent,
+  type CompileTopikContentFailure,
   type CompileTopikContentResult,
   type RenderTopikMarkdownOptions,
   type TopikAssetResolutionDiagnostic,
   type TopikLinkResolutionDiagnostic,
   type TopikNavigationResolutionDiagnostic,
 } from "../core/render";
-import { useTopikContentContextValue } from "../core/context";
+import { TopikRenderedColorSchemeProvider, useTopikContentContextValue } from "../core/context";
 import { getDefaultTopikComponents, TopikSlotOptionsProvider } from "./components";
-import type {
-  TopikColorScheme,
-  TopikAssetResolver,
-  TopikComponentOverrides,
-  TopikLinkHandler,
-  TopikLinkRenderer,
-  TopikLinkResolver,
+import {
+  mergeTopikComponentOverrides,
+  type TopikColorScheme,
+  type TopikAssetResolver,
+  type TopikComponentOverrides,
+  type TopikLinkHandler,
+  type TopikLinkRenderer,
+  type TopikLinkResolver,
 } from "../core/components";
 
 export interface TopikContentProps extends RenderTopikMarkdownOptions {
@@ -48,6 +58,15 @@ interface TopikContentDiagnosticHandlers {
 
 // Without a DOM no commit follows, so server rendering reports while rendering.
 const canUseDOM = typeof document !== "undefined";
+
+const subscribeNever = () => () => {};
+const clientSnapshot = () => false;
+const serverSnapshot = () => true;
+
+/** True while React renders on a server (or hydrates), where no layout effect may follow. */
+function useServerRender(): boolean {
+  return useSyncExternalStore(subscribeNever, clientSnapshot, serverSnapshot);
+}
 
 /** Compile-time guard: every TopikContentProps field must be destructured explicitly below. */
 function assertHandledProps(_rest: Record<string, never>): void {}
@@ -96,7 +115,7 @@ export function TopikContent(props: TopikContentProps) {
   );
 
   const overrides = useStableValue<TopikComponentOverrides>(
-    { ...context?.componentOverrides, ...components },
+    mergeTopikComponentOverrides(context?.componentOverrides, components),
     shallowEqual,
   );
   const mergedComponents = useMemo(() => getDefaultTopikComponents(overrides), [overrides]);
@@ -111,10 +130,15 @@ export function TopikContent(props: TopikContentProps) {
     [effectiveColorScheme, effectiveOnNavigateLink, effectiveRenderLink, effectiveResolveLink],
   );
 
-  if (!compiled.ok && invalidContent !== "placeholder") {
-    // This render throws and never commits, so report before throwing.
-    reportCompileDiagnostics(compiled, handlers);
-    throw new InvalidTopikContentError(compiled);
+  const throwsInvalid = !compiled.ok && invalidContent !== "placeholder";
+  // On the client, invalid content first commits an empty root and reports from a layout effect;
+  // the following render throws. React may retry a throwing render, so it reports nothing itself.
+  const serverRender = useServerRender();
+  const [thrown, setThrown] = useState<CompileTopikContentResult>();
+  if (throwsInvalid && (serverRender || thrown === compiled)) {
+    // No commit follows a server render, so it reports before throwing.
+    if (serverRender) reportCompileDiagnostics(compiled, handlers);
+    throw new InvalidTopikContentError(compiled as CompileTopikContentFailure);
   }
 
   const rendered = useMemo((): RenderedTopikContent => {
@@ -125,6 +149,7 @@ export function TopikContent(props: TopikContentProps) {
       linkDiagnostics: [],
       navigationDiagnostics: [],
     };
+    if (throwsInvalid) return result;
     result.node = renderTopikContent(compiled, {
       components: mergedComponents,
       invalidContent,
@@ -139,6 +164,7 @@ export function TopikContent(props: TopikContentProps) {
     return result;
   }, [
     compiled,
+    throwsInvalid,
     effectiveResolveAsset,
     effectiveResolveLink,
     invalidContent,
@@ -151,6 +177,12 @@ export function TopikContent(props: TopikContentProps) {
 
   // Report after commit with the latest callbacks, once per distinct result.
   const reported = useRef<RenderedTopikContent | undefined>(undefined);
+  useLayoutEffect(() => {
+    if (!throwsInvalid || reported.current === rendered) return;
+    reported.current = rendered;
+    reportCompileDiagnostics(rendered.compiled, handlers);
+    setThrown(rendered.compiled);
+  });
   useEffect(() => {
     const previous = reported.current;
     if (previous === rendered) return;
@@ -162,7 +194,9 @@ export function TopikContent(props: TopikContentProps) {
 
   return (
     <div className={classes} data-theme={effectiveColorScheme}>
-      <TopikSlotOptionsProvider value={slotOptions}>{rendered.node}</TopikSlotOptionsProvider>
+      <TopikRenderedColorSchemeProvider value={effectiveColorScheme}>
+        <TopikSlotOptionsProvider value={slotOptions}>{rendered.node}</TopikSlotOptionsProvider>
+      </TopikRenderedColorSchemeProvider>
     </div>
   );
 }

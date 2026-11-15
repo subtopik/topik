@@ -121,7 +121,10 @@ describe("rich content-react entry", () => {
       </RichTopikContentProvider>,
     );
 
-    expect(dom.querySelector(".topik-rich-mermaid--loading")).not.toBeNull();
+    const placeholder = dom.querySelector(".topik-rich-mermaid--loading");
+    expect(placeholder?.getAttribute("role")).toBe("status");
+    expect(placeholder?.getAttribute("aria-label")).toBeNull();
+    expect(placeholder?.textContent).toBe("Rendering diagram…");
     expect(dom.querySelector("pre.topik-mermaid")).toBeNull();
 
     await waitFor(() => {
@@ -178,15 +181,19 @@ describe("rich content-react entry", () => {
   });
 
   it.each([
-    [undefined, "dark", "dark"],
-    ["light", "dark", "light"],
-    [undefined, undefined, "light"],
+    [undefined, "dark", undefined, "dark"],
+    ["light", "dark", undefined, "light"],
+    [undefined, undefined, undefined, "light"],
+    [undefined, undefined, "dark", "dark"],
+    [undefined, "light", "dark", "dark"],
+    [undefined, "dark", "light", "light"],
+    ["light", undefined, "dark", "light"],
   ] as const)(
-    "uses theme %s with color scheme %s as the %s rich theme",
-    async (theme, colorScheme, expected) => {
+    "uses theme %s with provider scheme %s and content scheme %s as the %s rich theme",
+    async (theme, providerScheme, contentScheme, expected) => {
       const dom = mount(
-        <RichTopikContentProvider theme={theme} colorScheme={colorScheme}>
-          <TopikContent content={richContent} />
+        <RichTopikContentProvider theme={theme} colorScheme={providerScheme}>
+          <TopikContent content={richContent} colorScheme={contentScheme} />
         </RichTopikContentProvider>,
       );
       await waitFor(() => {
@@ -199,7 +206,7 @@ describe("rich content-react entry", () => {
       });
       expect(dom.querySelector(".topik-rich-mermaid")?.getAttribute("data-theme")).toBe(expected);
       expect(dom.querySelector(".topik-content")?.getAttribute("data-theme")).toBe(
-        colorScheme ?? null,
+        contentScheme ?? providerScheme ?? null,
       );
     },
   );

@@ -33,9 +33,12 @@ export function Article() {
 
 The root `@topik/content-react` entry point also exports `renderTopikMarkdown`
 and `renderTopikContent` for applications that own their component mapping.
-Pass themed components when using those functions to render the built-in tags:
+Pass themed components when using those functions to render the built-in tags.
+In a client component, pass the complete themed map:
 
 ```tsx
+"use client";
+
 import { renderTopikMarkdown } from "@topik/content-react";
 import { defaultTopikComponents } from "@topik/content-react/theme";
 
@@ -46,13 +49,36 @@ export function ArticleWithComponents() {
 }
 ```
 
+`renderTopikMarkdown`, `renderTopikContent` and `compileTopikContent` can also be
+imported from React Server Components. The provider, hooks and the `theme` and
+`rich` entry points are client modules, so a server component receives their
+exports as opaque client references: it can render an imported component, but it
+cannot read properties of `defaultTopikComponents` or `getRichTopikComponents()`.
+Assemble the map on the server from the components the content uses:
+
+```tsx
+import { renderTopikMarkdown } from "@topik/content-react";
+import { TopikCallout, TopikCodeBlock, TopikLink } from "@topik/content-react/theme";
+
+export function ServerArticle({ source }: { source: string }) {
+  return renderTopikMarkdown(source, {
+    components: { TopikCallout, TopikCodeBlock, TopikLink },
+  });
+}
+```
+
+Tags without a supplied component render their children without the themed
+wrapper.
+
 ### Color scheme
 
 Pass `colorScheme="light"` or `colorScheme="dark"` to `TopikContent`, or to
 `TopikContentProvider`, to choose the scheme for all content. The content root
 then carries a matching `data-theme` attribute: the stylesheet uses its colors,
-figures show `src` or `darkSrc`, and `RichTopikContentProvider` uses the same
-scheme for code highlighting and diagrams unless its own `theme` is set. An
+figures show `src` or `darkSrc`, and rich components inside it use the same scheme
+for code highlighting and diagrams unless `RichTopikContentProvider` or
+`RichTopikThemeProvider` sets its own `theme`. A `colorScheme` on `TopikContent`
+takes precedence over one on the surrounding provider. An
 explicit `colorScheme` overrides a `.dark` class on an ancestor in both
 directions.
 
@@ -103,12 +129,17 @@ Use an explicit placeholder when a reader should see a fallback:
 ```tsx
 import { TopikContent } from "@topik/content-react/theme";
 
+// Define the placeholder once: an inline function is a new component on every render.
+function PreviewUnavailable() {
+  return <p>This content cannot be previewed.</p>;
+}
+
 export function Preview({ source }: { source: string }) {
   return (
     <TopikContent
       content={source}
       invalidContent="placeholder"
-      invalidContentPlaceholder={() => <p>This content cannot be previewed.</p>}
+      invalidContentPlaceholder={PreviewUnavailable}
     />
   );
 }
@@ -126,7 +157,11 @@ latest callback receives the report. Resolving the same document again, for
 example with a new `resolveLink` function, reports only when the resulting
 diagnostics differ. During server rendering, where no commit follows, the
 callbacks run while rendering. When content cannot be admitted and no placeholder
-is requested, `onDiagnostic` runs before `InvalidTopikContentError` is thrown.
+is requested, `onDiagnostic` runs once for each diagnostic before
+`InvalidTopikContentError` is thrown. In the browser, `TopikContent` first commits
+an empty content root, reports from a layout effect, and throws from the render
+that follows, so the nearest error boundary receives the error before the browser
+paints. On the server, `onDiagnostic` runs during the render that throws.
 The lower-level `renderTopikMarkdown` and `renderTopikContent` functions call
 their callbacks synchronously, as they have no component lifecycle.
 
@@ -139,9 +174,12 @@ expanded code regions is kept. Pass component functions that are defined once,
 outside render: a new component function is a different component to React and
 remounts its content.
 
-To inspect a result before rendering, compile explicitly:
+To inspect a result before rendering, compile explicitly. This example passes the
+complete themed map, so it is a client component:
 
 ```tsx
+"use client";
+
 import { compileTopikContent, renderTopikContent } from "@topik/content-react";
 import { defaultTopikComponents } from "@topik/content-react/theme";
 
@@ -165,8 +203,8 @@ diagrams through Pele. Install the optional peers needed by your content:
 | ---------------------- | ---------------------------------------------- |
 | Code highlighting      | `shiki@^4.0.0`                                 |
 | Math                   | `katex@^0.18.2` or `katex@^0.19.1`             |
-| Mermaid syntax (Pele)  | `pele@1.12.0`                                  |
-| Math in diagram labels | `pele@1.12.0` and either supported KaTeX range |
+| Mermaid syntax (Pele)  | `pele@1.13.0`                                  |
+| Math in diagram labels | `pele@1.13.0` and either supported KaTeX range |
 
 Wrap the themed renderer with the rich provider:
 
@@ -196,7 +234,7 @@ Rich components load their peers in the browser. Server rendering emits the
 initial fallback or loading state; hydration completes the rich presentation.
 Code and math retain plain fallbacks if rendering fails. Mermaid displays a
 loading state and falls back to diagram source on failure. The authored `mermaid` fences and public `TopikMermaid` / `RichTopikMermaid`
-components are unchanged; replace the optional `mermaid` installation with `pele@1.12.0`.
+components are unchanged; replace the optional `mermaid` installation with `pele@1.13.0`.
 
 Pele uses its own layouts and CSS colors, so output differs from Mermaid.js.
 Provider themes are isolated per diagram. `accTitle` and `accDescr` retain unique
@@ -302,7 +340,9 @@ References resolve before custom components and `renderLink` adapters receive
 their props. Server rendering emits the actual destination URL, so modified
 clicks and opening a link in a new tab work. `renderLink` selects the navigation
 component; `onNavigateLink` handles ordinary client navigation after resolution.
-Neither hook replaces `resolveLink` for a resource reference.
+Its `href` argument is the authored destination for an ordinary link and the
+resolved browser URL for a `ref://` link. Neither hook replaces `resolveLink` for
+a resource reference.
 
 `TopikContentProvider` also accepts `resolveLink`. Pass it directly in the options
 for `renderTopikMarkdown`, `renderTopikContent`, and `renderTrustedTopikTree` when

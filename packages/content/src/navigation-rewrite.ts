@@ -2,7 +2,7 @@ import { indexDocument, isReference } from "./document-index.js";
 import { prepareSource, writeFailure } from "./source.js";
 import { serializeDocument } from "./writer.js";
 import { FORMAT_VERSION } from "./parser.js";
-import { sameDocumentMeaning } from "./document-meaning.js";
+import { locateMeaningDifference, sameDocumentMeaning } from "./document-meaning.js";
 import type { TreeNode } from "./model.js";
 import type { ValidateTopikContentOptions } from "./validate.js";
 import type { TopikContentDiagnostic } from "./diagnostics.js";
@@ -76,7 +76,12 @@ export function rewriteTopikNavigationReferences(
     return writeFailure(source, options.file);
   }
   const output = prepareSource(content, { ...options, config: prepared.config });
-  if (!output.ok || !sameDocumentMeaning(prepared.document, output.document))
-    return writeFailure(source, options.file);
+  if (!output.ok) return writeFailure(source, options.file);
+  if (!sameDocumentMeaning(prepared.document, output.document))
+    return writeFailure(
+      source,
+      options.file,
+      locateMeaningDifference(prepared.document, output.document),
+    );
   return { ok: true, content, changes, diagnostics: [] };
 }

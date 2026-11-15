@@ -132,7 +132,15 @@ async function withMinimumDelay<T>(load: () => Promise<T>, delayMs: number): Pro
   return result.value;
 }
 
-function useRenderedHtml(load: () => Promise<string>, deps: DependencyList): HtmlState {
+/**
+ * Render HTML asynchronously. With `keepPrevious`, a re-render keeps the last HTML (status
+ * `"loading"`) until the new output is ready, instead of clearing it.
+ */
+function useRenderedHtml(
+  load: () => Promise<string>,
+  deps: DependencyList,
+  keepPrevious = false,
+): HtmlState {
   const [state, setState] = useState<HtmlState>({ html: "", status: "loading" });
   const [previousDeps, setPreviousDeps] = useState(deps);
 
@@ -141,7 +149,7 @@ function useRenderedHtml(load: () => Promise<string>, deps: DependencyList): Htm
     deps.some((dependency, index) => !Object.is(dependency, previousDeps[index]))
   ) {
     setPreviousDeps(deps);
-    setState({ html: "", status: "loading" });
+    setState({ html: keepPrevious ? state.html : "", status: "loading" });
   }
 
   useEffect(() => {
@@ -326,9 +334,11 @@ export function RichTopikMermaid(props: TopikComponentProps) {
         return safeDiagramSvg(result.svg);
       }, minimumMermaidLoadingDurationMs),
     [content, id],
+    true,
   );
 
-  if (rendered.status === "loading") {
+  // A re-render keeps showing the previous diagram rather than the placeholder or source.
+  if (rendered.status === "loading" && !rendered.html) {
     return (
       <div className="topik-rich-mermaid topik-rich-mermaid--loading" role="status">
         <span className="topik-rich-mermaid__status">Rendering diagram…</span>
@@ -338,6 +348,7 @@ export function RichTopikMermaid(props: TopikComponentProps) {
   if (rendered.status === "error") return <TopikMermaid {...props} />;
   return (
     <div
+      aria-busy={rendered.status === "loading" ? true : undefined}
       className="topik-rich-mermaid"
       data-theme={theme}
       dangerouslySetInnerHTML={{ __html: rendered.html }}

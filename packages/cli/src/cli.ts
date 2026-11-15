@@ -5,6 +5,8 @@ import { version } from "../package.json";
 import { compile } from "./compile";
 import { dev } from "./dev";
 import { formatPublicCliError } from "./errors";
+import { format } from "./format";
+import { init } from "./init";
 import { lint } from "./lint";
 import { validate } from "./validate";
 
@@ -22,7 +24,7 @@ function theme(event: BroCliEvent): boolean {
 }
 
 try {
-  await run([compile, dev, lint, validate], {
+  await run([compile, dev, format, init, lint, validate], {
     name: "topik",
     description: "Topik CLI",
     version,

@@ -322,16 +322,18 @@ import { renderTopikMarkdown } from "@topik/content-react";
 import * as rich from "@topik/content-react/rich";
 import * as theme from "@topik/content-react/theme";
 import guideSchema from "@topik/schema/guide/v1.json" with { type: "json" };
+import resourceSchema from "@topik/schema/resource/v1.json" with { type: "json" };
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 const modulePrefix = new URL("./node_modules/", import.meta.url).href;
 const topikPrefix = new URL("./node_modules/@topik/", import.meta.url).href;
-for (const specifier of ["@topik/remark-tags", "@topik/content", "@topik/core", "@topik/core/wiki-navigation", "@topik/core/course-navigation", "@topik/content-react", "@topik/content-react/preview-assets", "@topik/content-react/rich", "@topik/content-react/theme", "@topik/schema/guide/v1.json"]) {
+for (const specifier of ["@topik/remark-tags", "@topik/content", "@topik/core", "@topik/core/wiki-navigation", "@topik/core/course-navigation", "@topik/content-react", "@topik/content-react/preview-assets", "@topik/content-react/rich", "@topik/content-react/theme", "@topik/schema/guide/v1.json", "@topik/schema/resource/v1.json"]) {
   assert.ok(import.meta.resolve(specifier).startsWith(topikPrefix), specifier + " resolved outside the packed cohort");
 }
 assert.ok(import.meta.resolve("react-dom/server").startsWith(modulePrefix), "react-dom resolved outside the clean consumer");
 assert.equal(guideSchema.properties.type.const, "Guide");
+assert.ok(resourceSchema.properties.type.enum.includes("Guide"));
 const wikiLinks = resolveWikiNavigation([{type: "page", page: "home", slug: "", title: "Home", sourcePath: "index"}, {type: "page", page: "setup", slug: "install", title: "Setup", sourcePath: "setup"}], {sourceVersion: 1});
 assert.equal(resolveWikiContentHref("./setup.md?mode=full#start", "home", wikiLinks)?.page.page, "setup");
 assert.equal(resolveWikiContentReference("./missing.md", "home", wikiLinks).kind, "unresolved");
@@ -520,6 +522,7 @@ function verifyDeclarations(consumer) {
   writeFileSync(
     fixture,
     `import type { Guide } from "@topik/schema/guide/v1";
+import type { Resource } from "@topik/schema/resource/v1";
 import { validateTopikContent } from "@topik/content";
 import { validateResources } from "@topik/core";
 import { renderTopikMarkdown } from "@topik/content-react";
@@ -536,6 +539,8 @@ void adapter;
 const guide: Guide = { apiVersion: "v1", type: "Guide", name: "packed", spec: { title: "Packed", slug: "packed", content: { format: "topik", value: "# Packed" } } };
 validateTopikContent(guide.spec.content.value);
 validateResources([guide]);
+const resource: Resource = guide;
+void resource;
 renderTopikMarkdown(guide.spec.content.value);
 void RichTopikContentProvider;
 void TopikContent;

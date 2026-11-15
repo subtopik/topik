@@ -9,10 +9,8 @@ import {
   isValidElement,
   useContext,
   useId,
-  useRef,
   useState,
   type CSSProperties,
-  type KeyboardEvent,
   type MouseEvent,
   type ReactElement,
   type ReactNode,
@@ -28,6 +26,7 @@ import type {
 } from "../core/components";
 import { useTopikLinkHandler, useTopikLinkRenderer, useTopikLinkResolver } from "../core/context";
 import { CodeBlockView } from "./code-block";
+import { TopikTablist } from "./tablist";
 import type { CodePresentationEffectiveOptions } from "@topik/content";
 
 interface TopikRoleProps {
@@ -140,52 +139,6 @@ function createLinkClickHandler(target: string, handleNavigate?: TopikLinkHandle
   };
 }
 
-function useRovingTabs(tabCount: number) {
-  const [selectedIndex, setSelected] = useState(0);
-  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const selected = Math.max(0, Math.min(selectedIndex, tabCount - 1));
-
-  // Persist the clamp so removed selections do not return when tabs are added.
-  if (selected !== selectedIndex) setSelected(selected);
-
-  function selectTab(index: number, focus = false) {
-    setSelected(index);
-    if (focus) tabRefs.current[index]?.focus();
-  }
-
-  function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
-    let nextIndex: number;
-    const previous = index > 0 ? index - 1 : tabCount - 1;
-    const next = index < tabCount - 1 ? index + 1 : 0;
-    // Arrow keys follow the visual order, which is mirrored in right-to-left layouts.
-    const rightToLeft =
-      (event.key === "ArrowLeft" || event.key === "ArrowRight") &&
-      isRightToLeft(event.currentTarget);
-
-    if (event.key === "ArrowLeft") nextIndex = rightToLeft ? next : previous;
-    else if (event.key === "ArrowRight") nextIndex = rightToLeft ? previous : next;
-    else if (event.key === "Home") nextIndex = 0;
-    else if (event.key === "End") nextIndex = tabCount - 1;
-    else return;
-
-    event.preventDefault();
-    selectTab(nextIndex, true);
-  }
-
-  return { handleKeyDown, selectTab, selected, tabRefs };
-}
-
-function isRightToLeft(element: HTMLElement): boolean {
-  const direction = element.ownerDocument.defaultView?.getComputedStyle(element).direction;
-  if (direction === "rtl" || direction === "ltr") return direction === "rtl";
-  // Without computed styles, fall back to the dir attribute (older engines lack :dir()).
-  try {
-    return element.matches(":dir(rtl)");
-  } catch {
-    return element.closest("[dir]")?.getAttribute("dir")?.toLowerCase() === "rtl";
-  }
-}
-
 export function TopikCallout({ children, title, variant = "info" }: TopikComponentProps) {
   const calloutTitle = stringAttribute(title);
   const titleId = useId();
@@ -296,54 +249,22 @@ export function TopikUnderline({ children }: TopikComponentProps) {
 }
 
 export function TopikCodeGroup({ children }: TopikComponentProps) {
-  const id = useId();
-  const tabs = childElements(children);
-  const { handleKeyDown, selectTab, selected, tabRefs } = useRovingTabs(tabs.length);
-
   return (
-    <div className="topik-code-group">
-      <div aria-label="Code examples" className="topik-code-group__tabs" role="tablist">
-        {tabs.map((tab, index) => {
-          const active = index === selected;
-          const label = stringAttribute(tab.props.title) ?? `Code ${index + 1}`;
-          return (
-            <button
-              aria-controls={`${id}-code-panel-${index}`}
-              aria-selected={active}
-              className="topik-code-group__tab"
-              id={`${id}-code-tab-${index}`}
-              key={index}
-              onClick={() => selectTab(index)}
-              onKeyDown={(event) => handleKeyDown(event, index)}
-              ref={(element) => {
-                tabRefs.current[index] = element;
-              }}
-              role="tab"
-              tabIndex={active ? 0 : -1}
-              type="button"
-            >
-              {stringAttribute(tab.props.icon) ? (
-                <span className="topik-code-group__icon">{stringAttribute(tab.props.icon)}</span>
-              ) : null}
-              {label}
-            </button>
-          );
-        })}
-      </div>
-      {tabs.map((tab, index) => (
-        <div
-          aria-labelledby={`${id}-code-tab-${index}`}
-          className="topik-code-group__panel"
-          hidden={index !== selected}
-          id={`${id}-code-panel-${index}`}
-          key={index}
-          role="tabpanel"
-          tabIndex={0}
-        >
-          {tab}
-        </div>
-      ))}
-    </div>
+    <TopikTablist
+      className="topik-code-group"
+      iconClassName="topik-code-group__icon"
+      items={childElements(children).map((tab, index) => ({
+        icon: stringAttribute(tab.props.icon),
+        label: stringAttribute(tab.props.title) ?? `Code ${index + 1}`,
+        panel: tab,
+      }))}
+      label="Code examples"
+      listClassName="topik-code-group__tabs"
+      panelClassName="topik-code-group__panel"
+      panelId="code-panel"
+      tabClassName="topik-code-group__tab"
+      tabId="code-tab"
+    />
   );
 }
 
@@ -361,50 +282,20 @@ export function TopikAccordion({ children, open, title }: TopikComponentProps) {
 }
 
 export function TopikTabs({ children }: TopikComponentProps) {
-  const id = useId();
-  const tabs = childElements(children);
-  const { handleKeyDown, selectTab, selected, tabRefs } = useRovingTabs(tabs.length);
-
   return (
-    <div className="topik-tabs">
-      <div aria-label="Tabs" className="topik-tabs__list" role="tablist">
-        {tabs.map((tab, index) => {
-          const active = index === selected;
-          return (
-            <button
-              aria-controls={`${id}-panel-${index}`}
-              aria-selected={active}
-              className="topik-tabs__tab"
-              id={`${id}-tab-${index}`}
-              key={index}
-              onClick={() => selectTab(index)}
-              onKeyDown={(event) => handleKeyDown(event, index)}
-              ref={(element) => {
-                tabRefs.current[index] = element;
-              }}
-              role="tab"
-              tabIndex={active ? 0 : -1}
-              type="button"
-            >
-              {stringAttribute(tab.props.title) ?? `Tab ${index + 1}`}
-            </button>
-          );
-        })}
-      </div>
-      {tabs.map((tab, index) => (
-        <div
-          aria-labelledby={`${id}-tab-${index}`}
-          className="topik-tabs__panel"
-          hidden={index !== selected}
-          id={`${id}-panel-${index}`}
-          key={index}
-          role="tabpanel"
-          tabIndex={0}
-        >
-          {tab}
-        </div>
-      ))}
-    </div>
+    <TopikTablist
+      className="topik-tabs"
+      items={childElements(children).map((tab, index) => ({
+        label: stringAttribute(tab.props.title) ?? `Tab ${index + 1}`,
+        panel: tab,
+      }))}
+      label="Tabs"
+      listClassName="topik-tabs__list"
+      panelClassName="topik-tabs__panel"
+      panelId="panel"
+      tabClassName="topik-tabs__tab"
+      tabId="tab"
+    />
   );
 }
 

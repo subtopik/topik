@@ -10,7 +10,7 @@ import { promisify } from "node:util";
 import type { LoaderContext } from "astro/loaders";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { topikGuidesLoader } from "./guides";
-import { topik, type TopikAssetLoader } from "./integration";
+import { PORTABLE_PUBLICATION_NOTICE, topik, type TopikAssetLoader } from "./integration";
 import { topikWikiLoader } from "./wiki";
 
 const execFileAsync = promisify(execFile);
@@ -523,6 +523,34 @@ describe("topik integration", () => {
     expect(
       (await dispatch(middleware, `/blobs/${"a".repeat(64)}`, "POST")).next,
     ).toHaveBeenCalledTimes(1);
+  });
+
+  test("announces portable build output once off Linux", async () => {
+    const output = join(tempDir, "dist");
+    const codegen = join(tempDir, "codegen");
+    await mkdir(codegen);
+    const warn = vi.fn();
+    const setup = () =>
+      topik({ loaders: [] }).hooks["astro:config:setup"]?.({
+        addMiddleware: () => undefined,
+        command: "build",
+        config: { outDir: pathToFileURL(`${output}/`), output: "static" },
+        createCodegenDir: () => pathToFileURL(`${codegen}/`),
+        logger: { warn },
+        updateConfig: () => undefined,
+      } as never);
+
+    if (process.platform === "linux") {
+      await setup();
+      expect(warn).not.toHaveBeenCalled();
+    }
+    const platform = vi.spyOn(process, "platform", "get").mockReturnValue("darwin");
+    try {
+      await setup();
+    } finally {
+      platform.mockRestore();
+    }
+    expect(warn.mock.calls).toEqual([[PORTABLE_PUBLICATION_NOTICE]]);
   });
 
   test("never follows a displaced static Asset parent during build cleanup", async () => {

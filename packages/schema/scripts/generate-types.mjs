@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { compileFromFile } from "json-schema-to-typescript";
 import { discoverSchemaTargets } from "./schema-targets.mjs";
@@ -28,12 +28,15 @@ try {
     targets.map(async (target, index) => {
       const schemaPath = fileURLToPath(new URL(target.schema, packageUrl));
       const temporaryPath = join(temporaryDirectory, `${index}.ts`);
-      const generated = await compileFromFile(schemaPath, {
-        bannerComment,
-        cwd: packageDirectory,
-        format: false,
-        unreachableDefinitions: true,
-      });
+      const schema = JSON.parse(await readFile(schemaPath, "utf8"));
+      const generated =
+        (await compileResourceUnion(schema, schemaPath)) ??
+        (await compileFromFile(schemaPath, {
+          bannerComment,
+          cwd: packageDirectory,
+          format: false,
+          unreachableDefinitions: true,
+        }));
       await writeFile(temporaryPath, generated);
       return { ...target, temporaryPath };
     }),
@@ -61,3 +64,46 @@ try {
 }
 
 if (stale) process.exitCode = 1;
+
+/**
+ * A union discriminated by `type` references sibling resource schemas with
+ * `allOf: [{ if: { properties: { type: { const } } }, then: { $ref } }]`. Its
+ * types import the sibling modules instead of redeclaring every resource.
+ */
+async function compileResourceUnion(schema, schemaPath) {
+  if (!Array.isArray(schema.allOf) || !schema.allOf.every((branch) => "then" in branch)) {
+    return undefined;
+  }
+  const discriminators = schema.properties?.type?.enum;
+  const members = await Promise.all(
+    schema.allOf.map(async (branch) => {
+      const discriminator = branch.if?.properties?.type?.const;
+      const reference = branch.then?.$ref;
+      if (
+        typeof discriminator !== "string" ||
+        !/^\.\.\/[a-z0-9-]+\/v[1-9][0-9]*\.json$/u.test(reference)
+      ) {
+        throw new Error(`Unsupported union branch in ${schema.$id}`);
+      }
+      const member = JSON.parse(
+        await readFile(new URL(reference, pathToFileURL(schemaPath)), "utf8"),
+      );
+      if (member.properties?.type?.const !== discriminator) {
+        throw new Error(`${reference} does not declare type ${discriminator}`);
+      }
+      return { name: member.title, module: reference.replace(/\.json$/u, "") };
+    }),
+  );
+  if (
+    !Array.isArray(discriminators) ||
+    discriminators.length !== members.length ||
+    !schema.allOf.every(
+      (branch, index) => branch.if.properties.type.const === discriminators[index],
+    )
+  ) {
+    throw new Error(`${schema.$id} must list each union discriminator once, in branch order`);
+  }
+  const imports = members.map(({ name, module }) => `import type { ${name} } from "${module}";`);
+  const description = schema.description ? `/**\n * ${schema.description}\n */\n` : "";
+  return `${bannerComment}\n\n${imports.join("\n")}\n\n${description}export type ${schema.title} = ${members.map(({ name }) => name).join(" | ")};\n`;
+}

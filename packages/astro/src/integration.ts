@@ -1,5 +1,6 @@
 import { writeFile } from "node:fs/promises";
 import type { AstroIntegration } from "astro";
+import { usesPortableFileReads } from "@topik/core";
 import {
   assertTopikAssetLoaders,
   collectTopikAssetPayloads,
@@ -38,6 +39,9 @@ const DOWNLOAD_MEDIA_TYPES: readonly string[] = [
 const DEVELOPMENT_CACHE_CONTROL = "no-cache";
 /** Production blob paths are content-addressed (`blobs/<sha256>`), so bytes never change. */
 const PRODUCTION_CACHE_CONTROL = "public, max-age=31536000, immutable";
+/** Mirrors the CLI notice: announced once per build when the weaker portable mode is used. */
+export const PORTABLE_PUBLICATION_NOTICE =
+  "This platform cannot anchor file access to the output directory, so Topik checks paths and file identity when it writes blobs/. Build only in a workspace you trust.";
 const VIRTUAL_SNAPSHOT_ID = "virtual:@topik/astro/asset-snapshot";
 const RESOLVED_VIRTUAL_SNAPSHOT_ID = `\0${VIRTUAL_SNAPSHOT_ID}`;
 
@@ -54,11 +58,13 @@ export function topik(options: TopikOptions): AstroIntegration {
         command,
         config,
         createCodegenDir,
+        logger,
         updateConfig,
       }) => {
         base = `${(config.base ?? "/").replace(/\/+$/u, "")}/`;
         setTopikAssetBase(loaders, base);
         if (command === "build") {
+          if (usesPortableFileReads()) logger.warn(PORTABLE_PUBLICATION_NOTICE);
           await removePublishedSnapshot(
             config.output === "server" ? config.build.client : config.outDir,
           );

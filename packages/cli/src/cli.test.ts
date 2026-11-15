@@ -28,11 +28,13 @@ describe("cli entrypoint", () => {
     vi.resetModules();
   });
 
-  test("registers the compile, dev, lint, and validate commands with brocli", async () => {
+  test("registers the compile, dev, format, init, lint, and validate commands with brocli", async () => {
     await import("./cli");
 
     expect(runMock).toHaveBeenCalledTimes(1);
-    expect(runMock.mock.calls[0]?.[0]).toHaveLength(4);
+    expect(
+      (runMock.mock.calls[0]?.[0] as { name: string }[] | undefined)?.map(({ name }) => name),
+    ).toEqual(["compile", "dev", "format", "init", "lint", "validate"]);
     expect(runMock.mock.calls[0]?.[1]).toMatchObject({
       name: "topik",
       description: "Topik CLI",

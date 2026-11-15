@@ -3,6 +3,9 @@ import { defineConfig } from "vite-plus";
 export default defineConfig({
   pack: {
     entry: "src/index.ts",
+    // Publish one file per source module so a consumer bundler can place small
+    // utilities, parsing, analysis and serialization in different chunks.
+    unbundle: true,
     dts: true,
     exports: true,
     deps: {

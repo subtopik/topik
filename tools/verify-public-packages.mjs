@@ -113,6 +113,13 @@ try {
         timeout: 30_000,
       },
     );
+  const chunkFixture = join(consumer, "content-chunk-consumer.mjs");
+  copyFileSync(join(root, "tools/content-chunk-consumer.mjs"), chunkFixture);
+  execFileSync(process.execPath, [chunkFixture, rendererTestRequire.resolve("vite")], {
+    cwd: consumer,
+    stdio: "inherit",
+    timeout: 60_000,
+  });
   const serverComponentFixture = join(consumer, "react-server-consumer.mjs");
   copyFileSync(join(root, "tools/react-server-consumer.mjs"), serverComponentFixture);
   for (const runtime of runtimeNodes)
@@ -143,6 +150,13 @@ try {
       timeout: 60_000,
     },
   );
+  const previewAssetsFixture = join(consumer, "preview-assets-entry-consumer.mjs");
+  copyFileSync(join(root, "tools/preview-assets-entry-consumer.mjs"), previewAssetsFixture);
+  execFileSync(process.execPath, [previewAssetsFixture, rendererTestRequire.resolve("vite")], {
+    cwd: consumer,
+    stdio: "inherit",
+    timeout: 60_000,
+  });
   const diagramMathFixture = join(consumer, "diagram-math-browser-consumer.mjs");
   // Earlier consumers intentionally verify that every optional rich peer is
   // absent. Vite resolves every optional import in the rich entry, including
@@ -169,6 +183,17 @@ try {
       rendererTestRequire.resolve("playwright"),
     ],
     { cwd: consumer, stdio: "inherit", timeout: 60_000 },
+  );
+  const codeHighlightFixture = join(consumer, "code-highlight-browser-consumer.mjs");
+  copyFileSync(join(root, "tools/code-highlight-browser-consumer.mjs"), codeHighlightFixture);
+  execFileSync(
+    process.execPath,
+    [
+      codeHighlightFixture,
+      rendererTestRequire.resolve("vite"),
+      rendererTestRequire.resolve("playwright"),
+    ],
+    { cwd: consumer, stdio: "inherit", timeout: 120_000 },
   );
   const contentManifest = readJson(join(modules, "@topik/content/package.json"));
   if (contentManifest.dependencies?.["linkify-it"]) {
@@ -302,7 +327,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 const modulePrefix = new URL("./node_modules/", import.meta.url).href;
 const topikPrefix = new URL("./node_modules/@topik/", import.meta.url).href;
-for (const specifier of ["@topik/remark-tags", "@topik/content", "@topik/core", "@topik/core/wiki-navigation", "@topik/core/course-navigation", "@topik/content-react", "@topik/content-react/rich", "@topik/content-react/theme", "@topik/schema/guide/v1.json"]) {
+for (const specifier of ["@topik/remark-tags", "@topik/content", "@topik/core", "@topik/core/wiki-navigation", "@topik/core/course-navigation", "@topik/content-react", "@topik/content-react/preview-assets", "@topik/content-react/rich", "@topik/content-react/theme", "@topik/schema/guide/v1.json"]) {
   assert.ok(import.meta.resolve(specifier).startsWith(topikPrefix), specifier + " resolved outside the packed cohort");
 }
 assert.ok(import.meta.resolve("react-dom/server").startsWith(modulePrefix), "react-dom resolved outside the clean consumer");
@@ -498,9 +523,16 @@ function verifyDeclarations(consumer) {
 import { validateTopikContent } from "@topik/content";
 import { validateResources } from "@topik/core";
 import { renderTopikMarkdown } from "@topik/content-react";
-import { RichTopikContentProvider } from "@topik/content-react/rich";
+import { RichTopikContentProvider, type RichTopikContentProviderProps } from "@topik/content-react/rich";
 import { TopikContent } from "@topik/content-react/theme";
+import { createPreviewAssetAdapter, type PreviewAssetAdapter, type PreviewAssetInventory } from "@topik/content-react/preview-assets";
+import type { PreviewAssetAdapter as RootPreviewAssetAdapter } from "@topik/content-react";
 
+const engine: RichTopikContentProviderProps["codeHighlightEngine"] = "javascript";
+const inventory: PreviewAssetInventory = { sessionId: "s", generation: 1, resources: [], payloads: [] };
+const adapter: RootPreviewAssetAdapter = createPreviewAssetAdapter({ origin: "http://localhost:1", snapshot: inventory }) satisfies PreviewAssetAdapter;
+void engine;
+void adapter;
 const guide: Guide = { apiVersion: "v1", type: "Guide", name: "packed", spec: { title: "Packed", slug: "packed", content: { format: "topik", value: "# Packed" } } };
 validateTopikContent(guide.spec.content.value);
 validateResources([guide]);

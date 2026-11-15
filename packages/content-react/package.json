@@ -29,6 +29,7 @@
   ],
   "exports": {
     ".": "./dist/index.mjs",
+    "./preview-assets": "./dist/preview-assets.mjs",
     "./rich": "./dist/rich.mjs",
     "./theme": "./dist/theme.mjs",
     "./package.json": "./package.json",

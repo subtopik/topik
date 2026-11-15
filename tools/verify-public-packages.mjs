@@ -113,6 +113,13 @@ try {
         timeout: 30_000,
       },
     );
+  const chunkFixture = join(consumer, "content-chunk-consumer.mjs");
+  copyFileSync(join(root, "tools/content-chunk-consumer.mjs"), chunkFixture);
+  execFileSync(process.execPath, [chunkFixture, rendererTestRequire.resolve("vite")], {
+    cwd: consumer,
+    stdio: "inherit",
+    timeout: 60_000,
+  });
   const serverComponentFixture = join(consumer, "react-server-consumer.mjs");
   copyFileSync(join(root, "tools/react-server-consumer.mjs"), serverComponentFixture);
   for (const runtime of runtimeNodes)

@@ -2,6 +2,9 @@ import { defineConfig } from "vite-plus";
 
 export default defineConfig({
   pack: {
+    // Keep syntax, mdast conversion and serialization in separate modules so
+    // consumer bundlers can split them across chunks.
+    unbundle: true,
     dts: true,
     exports: true,
     deps: {

@@ -266,3 +266,38 @@ describe("explicit Markdown links", () => {
     },
   );
 });
+
+describe("autolink spelling", () => {
+  test.each([
+    "<https://example.test/path>",
+    "<person@example.com>",
+    "<mailto:person@example.com>",
+    "<https://example.test/a*b*c>",
+    "<https://a.test/x_y_>",
+    "<https://例え.jp/道>",
+    "**<https://example.test>** and *<a@b.test>*",
+    "> - <https://example.test/item>",
+    "| Link                        |\n| --------------------------- |\n| <https://example.test/cell> |",
+    "[https://example.test](https://example.test)",
+    "[person@example.com](mailto:person@example.com)",
+    "[mailto:a@b.test](mailto:a@b.test)",
+  ])("formatting keeps the authored link form: %s", (spelling) => {
+    const source = `${spelling}\n`;
+    expect(formatTopikContent(source)).toMatchObject({ ok: true, formatted: source });
+    expect(writeDocument(parse(source))).toBe(source);
+  });
+
+  test("an edited autolink label is written as an ordinary link", () => {
+    const document = parse("<https://example.test/a>\n");
+    const paragraph = document.children[0];
+    if (paragraph.type !== "paragraph" || paragraph.children[0].type !== "link")
+      throw new Error("Expected an autolink");
+    paragraph.children[0].children = [{ type: "text", value: "Example" }];
+    expect(writeDocument(document)).toBe("[Example](https://example.test/a)\n");
+  });
+
+  test("trees without positions keep the canonical resource form", () => {
+    const document = withoutPositions(parse("<https://example.test/a>\n")) as ContentDocument;
+    expect(writeDocument(document)).toBe("[https://example.test/a](https://example.test/a)\n");
+  });
+});

@@ -7,6 +7,7 @@ interface AssetIssue {
   id: string;
   type: string;
   lines: number[];
+  column?: number;
 }
 
 /** Custom assets share URL admission, but do not extend the compiler's closed slot protocol. */
@@ -38,6 +39,7 @@ export function validateCustomAssetReferences(
             : "TOPIK_ASSET_PATH_INVALID",
         type: `${node.name}.${name}`,
         lines: node.position ? [node.position.start.line] : [],
+        ...(node.position ? { column: node.position.start.column } : {}),
       });
     }
   }

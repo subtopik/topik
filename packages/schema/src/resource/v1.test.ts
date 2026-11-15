@@ -107,7 +107,8 @@ describe("Resource/v1 schema", () => {
             // A fixture with another resource's `type` is checked as that resource.
             const selected =
               Object.values(resourceSchemas).find(
-                (schema) => schema.properties.type.const === (data as { type?: unknown }).type,
+                (schema) =>
+                  schema.properties.type.const === (data as { type?: unknown } | null)?.type,
               )?.$id ?? schemaId;
             expect(describeErrors(unionErrors)).toEqual(describeErrors(errorsFor(selected, data)));
           }

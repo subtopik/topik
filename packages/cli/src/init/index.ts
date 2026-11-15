@@ -1,4 +1,4 @@
-import { lstat, mkdir, stat, unlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, stat, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { command, positional, string } from "@drizzle-team/brocli";
 import { parseTopikManifest, TOPIK_MANIFEST_FILENAME } from "@topik/core";
@@ -48,7 +48,7 @@ export function initProjectFiles(options: InitProjectOptions = {}): [string, str
 
 /**
  * Create the project files in `dir`, creating the directory if needed. Nothing is written when
- * any of the files already exists, and each file is created exclusively (`wx`), so a file that
+ * any of the files already exists, and each file is opened exclusively (`wx`), so a file that
  * appears meanwhile, or a symbolic link in its place, is never followed or replaced.
  */
 export async function initProject(
@@ -69,8 +69,14 @@ export async function initProject(
   const created: string[] = [];
   try {
     for (const [name, content] of files) {
-      await writeFile(join(dir, name), content, { flag: "wx" });
+      const handle = await open(join(dir, name), "wx");
+      // Recorded once it exists, so a failed write below is rolled back too.
       created.push(name);
+      try {
+        await handle.writeFile(content);
+      } finally {
+        await handle.close();
+      }
     }
   } catch (error) {
     // Leave the directory as it was: remove only files this run created.

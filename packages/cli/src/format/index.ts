@@ -164,6 +164,9 @@ async function replaceFile(
     temporary = join(parent, `.${name}.topik-format-${randomUUID()}`);
     const output = await open(temporary, CREATE_FLAGS, before.mode & 0o666);
     try {
+      // The creation mode is filtered by the umask; restore the original read/write bits.
+      // Execute bits never apply: the reader refuses executable files.
+      await output.chmod(before.mode & 0o666);
       await output.writeFile(next);
       await output.sync();
     } finally {

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { CliError } from "../errors";
+import { PORTABLE_READS_NOTICE } from "../file-safety";
 import { lint, lintJsonReport } from "./index";
 
 type LintCommand = {
@@ -90,7 +91,8 @@ describe("lint command", () => {
       errors: 1,
       warnings: 0,
     });
-    expect(error).not.toHaveBeenCalled();
+    // Native macOS and Windows runs print only the portable-read notice on stderr.
+    expect(error.mock.calls.filter(([line]) => line !== PORTABLE_READS_NOTICE)).toEqual([]);
     expect(warn).not.toHaveBeenCalled();
   });
 

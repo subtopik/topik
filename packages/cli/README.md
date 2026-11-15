@@ -51,8 +51,12 @@ default is the current directory). It rewrites each file with the
 formatter and prints the files it changed. A file that does not compile cleanly is
 left untouched and its diagnostics are printed; the command then exits 1. `--check`
 writes nothing, prints the files that would change, and exits 1 if there are any. A
-file is replaced atomically, and only if it still holds the bytes that were
-formatted. Hard-linked files are left alone.
+file is replaced by renaming a complete new copy over it, so it never holds partial
+output. Before that, format checks that the file still holds the bytes it formatted
+and still has the same identity, size and modification time, keeping its permission
+bits. This makes a lost edit unlikely but cannot rule it out: an edit saved between
+the last check and the rename is overwritten, so do not run `topik format` while an
+editor is saving the same files. Hard-linked files are left alone.
 
 `topik lint --json` prints one JSON document on stdout instead of the text
 diagnostics, and exits as without the flag (1 when there are errors):

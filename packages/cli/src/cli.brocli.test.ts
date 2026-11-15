@@ -8,10 +8,13 @@ import { promisify } from "node:util";
 import { command } from "@drizzle-team/brocli";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import packageJson from "../package.json";
+import { PORTABLE_READS_NOTICE } from "./file-safety";
 
 const SENTINEL = "PRIVATE_VALUE";
 const execFileAsync = promisify(execFile);
 const builtCli = fileURLToPath(new URL("../dist/cli.mjs", import.meta.url));
+/** What a project-reading command prints on stderr before its own output on this platform. */
+const NATIVE_NOTICE = process.platform === "linux" ? "" : `${PORTABLE_READS_NOTICE}\n`;
 
 // Keep real brocli: only replace one command with a handler that fails like a raw
 // Node.js filesystem or socket error.
@@ -315,9 +318,12 @@ describe.skipIf(!existsSync(builtCli))("built topik binary", () => {
       stderr: "",
     });
     const compiled = await runBuilt(["compile", project, "--validate"]);
-    expect(compiled).toMatchObject({ code: 0, stderr: "" });
+    expect(compiled).toMatchObject({ code: 0, stderr: NATIVE_NOTICE });
     expect(compiled.stdout).toMatch(/^Compiled 2 resources and 0 payloads to /u);
-    expect(await runBuilt(["format", project, "--check"])).toMatchObject({ code: 0, stderr: "" });
+    expect(await runBuilt(["format", project, "--check"])).toMatchObject({
+      code: 0,
+      stderr: NATIVE_NOTICE,
+    });
     expect(await runBuilt(["init", project])).toMatchObject({
       code: 1,
       stdout: "",
@@ -336,7 +342,7 @@ describe.skipIf(!existsSync(builtCli))("built topik binary", () => {
 
     const result = await runBuilt(["lint", dir, "--json"]);
 
-    expect(result).toMatchObject({ code: 1, stderr: "Lint found errors.\n" });
+    expect(result).toMatchObject({ code: 1, stderr: `${NATIVE_NOTICE}Lint found errors.\n` });
     expect(JSON.parse(result.stdout)).toEqual({
       diagnostics: [
         {

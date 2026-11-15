@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { formatTopikContent } from "@topik/content";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
+import { PORTABLE_READS_NOTICE } from "../file-safety";
 import { discoverFormatTargets, runFormat } from "./index";
 
 const UNFORMATTED = "# Title\n\n- one\n* two\n";
@@ -32,7 +33,9 @@ describe("format command", () => {
       log.push(values.map(String).join(" "));
     });
     vi.spyOn(console, "error").mockImplementation((...values) => {
-      errors.push(values.map(String).join(" "));
+      const line = values.map(String).join(" ");
+      // Native macOS and Windows runs print the portable-read notice first; it is tested elsewhere.
+      if (line !== PORTABLE_READS_NOTICE) errors.push(line);
     });
   });
 
@@ -82,6 +85,23 @@ describe("format command", () => {
     expect(log).toEqual(["guide/page.md", "Formatted 1 of 2 file(s)"]);
     expect(errors).toEqual([]);
   });
+
+  test.skipIf(process.platform === "win32")(
+    "keeps permission bits the umask would mask",
+    async () => {
+      await writeFile(join(dir, "page.md"), UNFORMATTED);
+      await chmod(join(dir, "page.md"), 0o666);
+      const umask = process.umask(0o077);
+      try {
+        await run(join(dir, "page.md"));
+      } finally {
+        process.umask(umask);
+      }
+
+      expect(await readFile(join(dir, "page.md"), "utf8")).toBe(FORMATTED);
+      expect((await stat(join(dir, "page.md"))).mode & 0o777).toBe(0o666);
+    },
+  );
 
   test("formats one explicit file and labels it by name", async () => {
     await writeFile(join(dir, "page.md"), UNFORMATTED);

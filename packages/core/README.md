@@ -33,7 +33,11 @@ console.log(result.resources.map((resource) => `${resource.type}/${resource.name
 Use `compile` for the sources declared in `.topik.yaml` and `compileGuides` for a
 standalone guide collection. The result also contains asset payloads,
 diagnostics, and compilation inventories. Navigation helpers are available from
-`@topik/core/wiki-navigation` and `@topik/core/course-navigation`.
+`@topik/core/wiki-navigation` and `@topik/core/course-navigation`; their link
+resolution contract is in the
+[navigation guide](https://github.com/subtopik/topik/blob/main/docs/resources/navigation.md#wiki-resolver-contract).
+Local preview types, including `PreviewState`, are available from the
+browser-safe `@topik/core/preview`.
 
 ## Documentation
 
@@ -41,6 +45,7 @@ diagnostics, and compilation inventories. Navigation helpers are available from
 - [Project manifest](https://github.com/subtopik/topik/blob/main/docs/resources/manifest.md)
 - [Navigation](https://github.com/subtopik/topik/blob/main/docs/resources/navigation.md)
 - [Assets](https://github.com/subtopik/topik/blob/main/docs/resources/assets.md)
+- [Local preview protocol](https://github.com/subtopik/topik/blob/main/docs/preview-protocol.md)
 
 Topik is alpha software; keep `@topik/*` packages on matching releases.
 

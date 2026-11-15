@@ -3,46 +3,60 @@
 import { resolve } from "node:path";
 import { boolean, command, positional, run } from "@drizzle-team/brocli";
 import { version } from "../package.json";
-import { isDirectory, runMintlify } from "./runner";
+import { isMigrationInput, runMintlify } from "./runner";
 
 const mintlify = command({
   name: "mintlify",
   desc: "Convert supported Mintlify components to Topik content directives",
   options: {
-    dir: positional("dir").desc("Path to the Mintlify content directory").default("."),
+    dir: positional("path")
+      .desc("Path to the Mintlify content directory, or to a single .md or .mdx file")
+      .default("."),
     dryRun: boolean("dry-run").desc("Preview changes without writing files").default(false),
+    diff: boolean("diff")
+      .desc("Print a unified diff of the changes without writing files")
+      .default(false),
     keepExtension: boolean("keep-extension")
       .desc("Keep .mdx file extension after conversion (default: rename to .md)")
       .default(false),
   },
   handler: async (options) => {
     const dir = resolve(options.dir);
-    if (!(await isDirectory(dir))) {
-      console.error(`Not a directory: ${dir}`);
+    if (!(await isMigrationInput(dir))) {
+      console.error("Not a directory or a .md or .mdx file");
       process.exit(1);
     }
 
+    const diff = options.diff === true;
     const summary = await runMintlify({
       dir,
       dryRun: options.dryRun,
       keepExtension: options.keepExtension,
+      diff,
     });
 
-    const dry = options.dryRun;
+    const dry = options.dryRun || diff;
+    // With --diff, stdout carries only the patch, so progress moves to stderr.
+    const log = diff ? console.error : console.log;
     for (const file of summary.files) {
+      if (file.diff) process.stdout.write(file.diff);
       const rename = file.newRelativePath ? ` → ${file.newRelativePath}` : "";
       if (file.changed && file.contentChanged)
-        console.log(`  ${dry ? "would convert" : "converted"} ${file.relativePath}${rename}`);
+        log(`  ${dry ? "would convert" : "converted"} ${file.relativePath}${rename}`);
       else if (file.changed)
-        console.log(`  ${dry ? "would rename" : "renamed"} ${file.relativePath}${rename}`);
+        log(`  ${dry ? "would rename" : "renamed"} ${file.relativePath}${rename}`);
       else if (file.error !== undefined || file.warnings.length > 0) {
         const details = [
           ...(file.error !== undefined ? ["error"] : []),
           ...(file.warnings.length > 0 ? [`${file.warnings.length} warning(s)`] : []),
         ];
-        console.log(`  skipped ${file.relativePath} (${details.join(", ")})`);
+        log(`  skipped ${file.relativePath} (${details.join(", ")})`);
       }
     }
+    const navigation = summary.navigation;
+    if (navigation?.diff) process.stdout.write(navigation.diff);
+    if (navigation?.changed)
+      log(`  ${dry ? "would write" : "wrote"} ${navigation.output} from ${navigation.source}`);
 
     let errors = 0;
     for (const file of summary.files) {
@@ -56,13 +70,19 @@ const mintlify = command({
         );
       }
     }
+    if (navigation?.error !== undefined) {
+      console.error(`✗ ${navigation.output} — ${navigation.error}`);
+      errors++;
+    }
+    for (const warning of navigation?.warnings ?? [])
+      console.error(`⚠ ${navigation?.source} — ${warning}`);
 
     for (const notice of summary.notices) console.error(`ℹ ${notice}`);
 
     const tense = dry ? "would convert" : "converted";
-    console.log(`${errors === 0 ? "✓ " : ""}${tense} ${summary.filesChanged} file(s)`);
+    log(`${errors === 0 ? "✓ " : ""}${tense} ${summary.filesChanged} file(s)`);
     if (summary.warnings > 0) {
-      console.log(`⚠ ${summary.warnings} warning(s)`);
+      log(`⚠ ${summary.warnings} warning(s)`);
     }
     if (errors > 0) {
       console.error(`✗ ${errors} file(s) failed`);

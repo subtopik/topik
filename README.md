@@ -2,8 +2,8 @@
 
 Topik is a Markdown content format and a set of TypeScript libraries for
 validating, compiling, and rendering it. Use it for a single document or
-organize many documents into guides, wikis, and courses. Applications keep
-editing, storage, publishing, and access control.
+organize many documents into guides, wikis, and courses. Topik does not provide
+editing, storage, publishing, or access control; your application does.
 
 > [!NOTE]
 > Topik is alpha software. Keep related `@topik/*` packages on matching releases
@@ -64,9 +64,9 @@ npx topik validate ./handbook/.topik/resources
 ## Documentation
 
 - [Overview](docs/index.md)
-- [Content format](docs/content/content-design.md) and [links](docs/content/autolinks.md)
+- [Content format](docs/content/content-design.md), [links](docs/content/autolinks.md), [templates](docs/content/templates.md), and [code presentation](docs/content/code-presentation.md)
 - [Rendering in React](docs/content/rendering.md)
-- [Resources and compilation](docs/resources/index.md), [navigation](docs/resources/navigation.md), and [assets](docs/resources/assets.md)
+- [Resources and compilation](docs/resources/index.md), [project manifest](docs/resources/manifest.md), [navigation](docs/resources/navigation.md), [source writing](docs/resources/source-writing.md), and [assets](docs/resources/assets.md)
 - [`@topik/content` API reference](packages/content/README.md)
 
 ## Development

@@ -174,9 +174,12 @@ expanded code regions is kept. Pass component functions that are defined once,
 outside render: a new component function is a different component to React and
 remounts its content.
 
-To inspect a result before rendering, compile explicitly:
+To inspect a result before rendering, compile explicitly. This example passes the
+complete themed map, so it is a client component:
 
 ```tsx
+"use client";
+
 import { compileTopikContent, renderTopikContent } from "@topik/content-react";
 import { defaultTopikComponents } from "@topik/content-react/theme";
 

@@ -94,6 +94,57 @@ failing file, resource, and JSON pointer. When walking a directory it skips
 compilation output directory, it validates the envelopes under `resources/` and
 skips the `materialization.json` and `semantic.json` inventories.
 
+By default `topik validate` checks each resource against its schema on its own.
+Two opt-in flags add more checks, and both can be combined:
+
+- `--graph` checks the loaded resources as one complete set. Each `type/name`
+  must be unique, and each by-name reference must name a resource in the set:
+  a Wiki navigation `page` entry to its `WikiPage`, a `WikiPage` `spec.wiki` to
+  its `Wiki`, a `CourseModule` `spec.course` to its `Course`, a `CoursePage`
+  `spec.module` to its `CourseModule`, and each `spec.authors` entry of a
+  `Course`, `CoursePage` or `Guide` to a `Person`. Use it on a whole compilation
+  output; a directory that holds only part of a project reports every reference
+  to a resource it leaves out.
+- `--content` checks the `spec.content.value` of each `CoursePage`, `Guide` and
+  `WikiPage` whose content format is `topik`, with the same source checks that
+  compilation applies, and reports each content error with its line.
+
+These problems are reported like schema errors, with the file, resource and
+JSON pointer, and make the command exit with status 1.
+
+`--json` prints one JSON document on stdout instead of the human-readable
+report. The exit status is unchanged: 0 when everything is valid, 1 otherwise,
+with a one-line summary on stderr. The document has this shape (version 1):
+
+```json
+{
+  "version": 1,
+  "valid": false,
+  "resources": 2,
+  "checks": ["schema", "graph"],
+  "diagnostics": [
+    {
+      "check": "graph",
+      "id": "reference-unresolved",
+      "file": "resources/CoursePage/welcome.json",
+      "resource": "CoursePage/welcome",
+      "pointer": "/spec/authors/0",
+      "message": "must reference a Person in the resource set; Person/alice is missing"
+    }
+  ]
+}
+```
+
+`resources` counts the resources that were loaded and validated, and `checks`
+lists the checks that ran. Every diagnostic has all six fields. `check` is
+`read` for a file or target that could not be read or parsed (its `resource`
+and `pointer` are `null`, and `file` is `null` when the target itself failed),
+or `schema`, `graph` or `content`. `id` is a stable identifier such as
+`resource-invalid`, `resource-duplicate`, `reference-unresolved`,
+`content-invalid` or `resource-json-invalid`, or `null` when there is none.
+Files, resource labels, pointers and messages are reduced to the same safe
+labels as the human-readable report.
+
 Compilation validates source and unresolved internal wiki links by default.
 `--dry-run` lists output paths without writing files; `--out-dir` chooses a
 separate output directory, which may already exist if it is empty. A non-empty
@@ -165,7 +216,10 @@ the semantic and materialization inventories. The library returns these in
 memory; the CLI writes the complete output tree.
 
 `validateResources` checks resource envelopes, not every filesystem byte or every
-possible application relationship. Keep the generated inventories and payloads
+possible application relationship. `validateResourceGraph(resources)` adds the
+`--graph` checks for a complete set; each of its errors also carries the `index`
+of its resource in the list. `validateResourceContent(resources)` adds the
+`--content` checks. Both return errors in the same shape as `validateResources`. Keep the generated inventories and payloads
 with the resources when transferring a compilation. [Assets](./assets.md#compiled-output)
 explains that output boundary.
 

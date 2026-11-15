@@ -71,7 +71,15 @@ export {
 export { CompileError } from "./compile";
 export type { Resource, ResourceType, SourceResource } from "./resource";
 
-export { validateResources, type ValidationError, type ValidationResult } from "./validate";
+export {
+  validateResourceContent,
+  validateResourceGraph,
+  validateResources,
+  type ResourceGraphError,
+  type ResourceGraphResult,
+  type ValidationError,
+  type ValidationResult,
+} from "./validate";
 
 export {
   findFirstWikiPage,

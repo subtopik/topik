@@ -1,6 +1,6 @@
 import { sanitizeTopikDiagnosticFile } from "@topik/content";
 import type { ValidationError } from "@topik/core";
-import { formatPublicCliError } from "./errors";
+import { formatPublicCliError, PublicCliError } from "./errors";
 
 /** A validation error, optionally located in the resource file it was read from. */
 export interface LocatedValidationError extends ValidationError {
@@ -34,6 +34,64 @@ export function formatValidationFailure(
 /** Render a resource file that could not be read or parsed, with its safe label. */
 export function formatUnreadableResourceFile(file: string, error: unknown): string {
   return `${safeFileLabel(file)}: ${formatPublicCliError(error)}`;
+}
+
+/** The check that produced a `topik validate --json` diagnostic. */
+export type ValidationCheck = "read" | "schema" | "graph" | "content";
+
+/** One `topik validate --json` diagnostic. Every field is always present. */
+export interface ValidationDiagnosticJson {
+  check: ValidationCheck;
+  /** Stable diagnostic identifier, or `null` when there is none. */
+  id: string | null;
+  /** Target-relative resource file, or `null` when no file applies. */
+  file: string | null;
+  /** Resource `type/name`, or `null` for a file that could not be read. */
+  resource: string | null;
+  /** JSON pointer into the resource, or `null` for a file that could not be read. */
+  pointer: string | null;
+  message: string;
+}
+
+/** The `topik validate --json` document, version 1. */
+export interface ValidationReportJson {
+  version: 1;
+  valid: boolean;
+  /** Number of resources that were loaded and validated. */
+  resources: number;
+  /** Checks that ran, always starting with `schema`. */
+  checks: ValidationCheck[];
+  diagnostics: ValidationDiagnosticJson[];
+}
+
+/** A validation error as a JSON diagnostic, reduced to the same safe labels as terminal output. */
+export function toValidationDiagnosticJson(
+  error: LocatedValidationError,
+  check: Exclude<ValidationCheck, "read">,
+): ValidationDiagnosticJson {
+  return {
+    check,
+    id: error.id ?? null,
+    file: error.file === undefined ? null : safeFileLabel(error.file),
+    resource: safeResourceLabel(error.resource),
+    pointer: safePointer(error.path),
+    message: safeMessage(error),
+  };
+}
+
+/** A file or target that could not be read or parsed as a JSON diagnostic. */
+export function toReadDiagnosticJson(
+  file: string | undefined,
+  error: unknown,
+): ValidationDiagnosticJson {
+  return {
+    check: "read",
+    id: error instanceof PublicCliError ? error.id : null,
+    file: file === undefined ? null : safeFileLabel(file),
+    resource: null,
+    pointer: null,
+    message: formatPublicCliError(error),
+  };
 }
 
 function safeFileLabel(file: string): string {

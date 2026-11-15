@@ -6,8 +6,193 @@ import { formatPublicCliError, PublicCliError } from "../errors";
 import { validate } from "./index";
 
 type ValidateCommand = {
-  handler?: (options: { path: string }) => Promise<void>;
+  handler?: (options: {
+    path: string;
+    graph?: boolean;
+    content?: boolean;
+    json?: boolean;
+  }) => Promise<void>;
 };
+
+const wiki = {
+  apiVersion: "v1",
+  type: "Wiki",
+  name: "docs",
+  spec: { title: "Docs", navigation: [{ type: "page", page: "docs-intro", slug: "" }] },
+};
+const wikiPage = {
+  apiVersion: "v1",
+  type: "WikiPage",
+  name: "docs-intro",
+  spec: { wiki: "docs", title: "Intro", content: { format: "topik", value: "# Intro\n" } },
+};
+
+describe("validate command opt-in checks", () => {
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "topik-cli-validate-checks-"));
+    await mkdir(join(dir, "Wiki"));
+    await mkdir(join(dir, "WikiPage"));
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  test("leaves graph and content problems alone unless asked", async () => {
+    await writeFile(join(dir, "Wiki", "docs.json"), JSON.stringify(wiki));
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await expect((validate as ValidateCommand).handler?.({ path: dir })).resolves.toBeUndefined();
+    expect(log).toHaveBeenCalledWith("Validated 1 resources");
+  });
+
+  test("--graph reports dangling references and duplicates with their files", async () => {
+    await writeFile(join(dir, "Wiki", "docs.json"), JSON.stringify(wiki));
+    await writeFile(join(dir, "Wiki", "copy.json"), JSON.stringify(wiki));
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect(
+      (validate as ValidateCommand).handler?.({ path: dir, graph: true }),
+    ).rejects.toMatchObject({ id: "resource-validation-failed" });
+    expect(error.mock.calls.map((call) => call.join(" ")).join("\n")).toBe(
+      [
+        "Wiki/copy.json: Wiki/docs: /spec/navigation/0/page must reference a WikiPage in the resource set; WikiPage/docs-intro is missing",
+        "Wiki/docs.json: Wiki/docs: /name must be unique: another resource has the same type and name",
+        "",
+        "2 validation error(s) in 2 resources while validating resources",
+      ].join("\n"),
+    );
+  });
+
+  test("--graph accepts a complete set", async () => {
+    await writeFile(join(dir, "Wiki", "docs.json"), JSON.stringify(wiki));
+    await writeFile(join(dir, "WikiPage", "docs-intro.json"), JSON.stringify(wikiPage));
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await expect(
+      (validate as ValidateCommand).handler?.({ path: dir, graph: true, content: true }),
+    ).resolves.toBeUndefined();
+  });
+
+  test("--content reports Topik content errors", async () => {
+    await writeFile(
+      join(dir, "WikiPage", "docs-intro.json"),
+      JSON.stringify({
+        ...wikiPage,
+        spec: {
+          ...wikiPage.spec,
+          content: { format: "topik", value: "# Intro\n\n<div>x</div>\n" },
+        },
+      }),
+    );
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    await expect((validate as ValidateCommand).handler?.({ path: dir })).resolves.toBeUndefined();
+
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await expect(
+      (validate as ValidateCommand).handler?.({ path: dir, content: true }),
+    ).rejects.toMatchObject({ id: "resource-validation-failed" });
+    expect(error.mock.calls[0]?.[0]).toMatch(
+      /^WikiPage\/docs-intro\.json: WikiPage\/docs-intro: \/spec\/content\/value line 3: /u,
+    );
+  });
+
+  test("--json prints one stable document on stdout and keeps the exit status", async () => {
+    const sentinel = "PRIVATE VALUE";
+    await writeFile(join(dir, "Wiki", "docs.json"), JSON.stringify(wiki));
+    await writeFile(join(dir, "WikiPage", "broken.json"), "{");
+    await writeFile(
+      join(dir, "WikiPage", "docs-intro.json"),
+      JSON.stringify({ ...wikiPage, spec: { ...wikiPage.spec, title: 1 }, [sentinel]: true }),
+    );
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect(
+      (validate as ValidateCommand).handler?.({ path: dir, graph: true, json: true }),
+    ).rejects.toMatchObject({ id: "resource-validation-failed" });
+    expect(error).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledTimes(1);
+    const output = String(log.mock.calls[0]?.[0]);
+    expect(output).not.toContain(sentinel);
+    expect(output).not.toContain(dir);
+    expect(JSON.parse(output)).toEqual({
+      version: 1,
+      valid: false,
+      resources: 2,
+      checks: ["schema", "graph"],
+      diagnostics: [
+        {
+          check: "read",
+          id: "resource-json-invalid",
+          file: "WikiPage/broken.json",
+          resource: null,
+          pointer: null,
+          message: "JSON resource input could not be parsed.",
+        },
+        {
+          check: "schema",
+          id: "resource-invalid",
+          file: "WikiPage/docs-intro.json",
+          resource: "WikiPage/docs-intro",
+          pointer: "/",
+          message: "must NOT have additional properties",
+        },
+        {
+          check: "schema",
+          id: "resource-invalid",
+          file: "WikiPage/docs-intro.json",
+          resource: "WikiPage/docs-intro",
+          pointer: "/spec/title",
+          message: "must be string",
+        },
+      ],
+    });
+  });
+
+  test("--json reports success and a target that cannot be read", async () => {
+    await writeFile(
+      join(dir, "Wiki", "docs.json"),
+      JSON.stringify({ ...wiki, spec: { title: "Docs" } }),
+    );
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await expect(
+      (validate as ValidateCommand).handler?.({ path: dir, json: true }),
+    ).resolves.toBeUndefined();
+    expect(JSON.parse(String(log.mock.calls[0]?.[0]))).toEqual({
+      version: 1,
+      valid: true,
+      resources: 1,
+      checks: ["schema"],
+      diagnostics: [],
+    });
+
+    log.mockClear();
+    await expect(
+      (validate as ValidateCommand).handler?.({ path: join(dir, "missing"), json: true }),
+    ).rejects.toMatchObject({ id: "resource-access-failed" });
+    expect(JSON.parse(String(log.mock.calls[0]?.[0]))).toEqual({
+      version: 1,
+      valid: false,
+      resources: 0,
+      checks: ["schema"],
+      diagnostics: [
+        {
+          check: "read",
+          id: "resource-access-failed",
+          file: null,
+          resource: null,
+          pointer: null,
+          message: "Resource input could not be accessed.",
+        },
+      ],
+    });
+  });
+});
 
 describe("validate command", () => {
   let dir: string;

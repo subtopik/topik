@@ -10,6 +10,7 @@ import {
   RichTopikMathInline,
   RichTopikMermaid,
   RichTopikThemeProvider,
+  type RichTopikCodeHighlightEngine,
   type RichTopikTheme,
   useRichTopikComponents,
 } from "./rich/components";
@@ -22,6 +23,12 @@ export interface RichTopikContentProviderProps extends Omit<
   children: ReactNode;
   components?: Partial<TopikComponentMap>;
   theme?: RichTopikTheme;
+  /**
+   * Shiki regular-expression engine for code highlighting. `"oniguruma"` (the default) uses
+   * WebAssembly and needs `'wasm-unsafe-eval'` in a Content-Security-Policy `script-src`.
+   * `"javascript"` never loads WebAssembly; a grammar it cannot run leaves that block plain.
+   */
+  codeHighlightEngine?: RichTopikCodeHighlightEngine;
 }
 
 export function getRichTopikComponents(
@@ -34,12 +41,13 @@ export function RichTopikContentProvider({
   children,
   components,
   theme,
+  codeHighlightEngine,
   ...props
 }: RichTopikContentProviderProps) {
   const mergedComponents = useRichTopikComponents(components);
   return (
     // Without an explicit theme, rich output follows the enclosing content root's color scheme.
-    <RichTopikThemeProvider theme={theme}>
+    <RichTopikThemeProvider theme={theme} codeHighlightEngine={codeHighlightEngine}>
       <TopikContentProvider {...props} components={mergedComponents}>
         {children}
       </TopikContentProvider>
@@ -55,5 +63,6 @@ export {
   RichTopikMermaid,
   RichTopikThemeProvider,
   useRichTopikComponents,
+  type RichTopikCodeHighlightEngine,
   type RichTopikTheme,
 };

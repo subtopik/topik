@@ -27,11 +27,18 @@ export function Article() {
 }
 ```
 
-| Entry point                  | Provides                                                             |
-| ---------------------------- | -------------------------------------------------------------------- |
-| `@topik/content-react`       | `renderTopikMarkdown` and `renderTopikContent` with your components. |
-| `@topik/content-react/theme` | `TopikContent` and the default themed components.                    |
-| `@topik/content-react/rich`  | `RichTopikContentProvider` for Shiki, KaTeX, and Pele rendering.     |
+| Entry point                           | Provides                                                                      |
+| ------------------------------------- | ----------------------------------------------------------------------------- |
+| `@topik/content-react`                | `renderTopikMarkdown` and `renderTopikContent` with your components.          |
+| `@topik/content-react/theme`          | `TopikContent` and the default themed components.                             |
+| `@topik/content-react/rich`           | `RichTopikContentProvider` for Shiki, KaTeX, and Pele rendering.              |
+| `@topik/content-react/preview-assets` | `createPreviewAssetAdapter` alone, without the Markdown compiler or renderer. |
+
+Rich code highlighting uses Shiki's WebAssembly engine by default, which needs
+`'wasm-unsafe-eval'` in a Content-Security-Policy `script-src`. Pass
+`codeHighlightEngine="javascript"` to `RichTopikContentProvider` to use Shiki's
+JavaScript regular-expression engine instead; it never loads WebAssembly, and a
+grammar it cannot run leaves that block as plain code.
 
 ## Documentation
 

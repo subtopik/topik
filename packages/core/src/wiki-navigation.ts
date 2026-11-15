@@ -207,9 +207,12 @@ export function findWikiPageAncestors(
  * With `sourceVersion: 1`, relative links and links ending in `.md`, `.mdx` or `.markdown`
  * address source paths; extensionless root-relative links address public routes, an exact route
  * first and then the `index` alias. Without it, those links are matched against public routes
- * derived from the source-relative path, with the extension and a trailing `index` removed. In both, a folder link (a path ending in `/`, `.` or
- * `..`, or naming a declared folder) selects that folder's single `index` or `README` page and
- * returns `null` when there is none or more than one.
+ * derived from the source-relative path, with the extension and a trailing `index` removed.
+ *
+ * In both, a folder link (a path ending in `/`, `.` or `..`, or naming a declared folder) selects
+ * that folder's single `index` or `README` page and returns `null` when there is none or more
+ * than one. An extensionless root-relative link such as `/folder` is a public-route link first:
+ * a page with exactly that route wins, and the folder rule applies only when no route matches.
  *
  * Href paths are percent-decoded once before matching, so `next%20page.md` and `next page.md`
  * name the same source; source paths may themselves contain `%`, `#`, `?` or spaces.

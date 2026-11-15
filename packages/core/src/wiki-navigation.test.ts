@@ -377,6 +377,21 @@ test("source-relative links follow the source version", () => {
     expect(resolveWikiContentHref("/b", "a", navigation)?.page.page).toBe("b");
 });
 
+test("an extensionless root link prefers an exact public route over a folder landing", () => {
+  const resolved = resolveWikiNavigation(
+    [
+      { type: "page", page: "start", slug: "start", sourcePath: "start" },
+      { type: "page", page: "landing", slug: "folder", sourcePath: "folder/index" },
+      { type: "page", page: "readme", slug: "readme", sourcePath: "folder/README" },
+    ],
+    { sourceVersion: 1 },
+  );
+  expect(resolveWikiContentHref("/folder", "start", resolved)?.page.page).toBe("landing");
+  // The explicit folder spellings still see two landing candidates.
+  expect(resolveWikiContentHref("/folder/", "start", resolved)).toBeNull();
+  expect(resolveWikiContentHref("./folder", "start", resolved)).toBeNull();
+});
+
 test("source paths may contain reserved characters and href paths decode once", () => {
   const resolved = resolveWikiNavigation(
     [

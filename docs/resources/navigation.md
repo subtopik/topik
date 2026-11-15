@@ -263,6 +263,9 @@ A folder link, ending in `/`, `.` or `..` or naming a declared folder, selects t
 folder's single `index` or `README` page by the [folder landing
 rules](#folder-landing-pages) and returns `null` when there is none or more than
 one. An explicit Markdown filename such as `./files.md` still selects that file.
+An extensionless root link such as `/folder` is a public-route link first: a page
+with exactly that route wins, and the folder rule applies only when no route
+matches. `/folder/` and `./folder` always use the folder rule.
 
 Href paths are percent-decoded once before matching, so `next%20page.md` and
 `next page.md` name the same source. Source paths may contain `%`, `#`, `?` or

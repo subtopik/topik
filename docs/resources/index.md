@@ -178,7 +178,9 @@ reads each file through the same handle.
 
 Canonical aliases above the source directory, such as macOS's `/var` path or a
 symlinked `/home`, are accepted on every platform; the source directory itself and
-everything below it must not be symlinks. A dangling symlink, or a file removed
+everything below it must not be symlinks. A name the volume stores in another
+Unicode normalization form (for example decomposed on macOS HFS+) is accepted;
+a name that differs in case is not. A dangling symlink, or a file removed
 while the directory is read, is reported like any other non-regular entry.
 
 On Linux, these reads also open every component of the canonical path through

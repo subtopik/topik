@@ -287,20 +287,29 @@ export function validateResourceGraph(resources: readonly unknown[]): ResourceGr
   return { valid: errors.length === 0, errors };
 }
 
-/** Call `visit` with the JSON pointer and page name of each page entry in a navigation tree. */
+/**
+ * Call `visit` with the JSON pointer and page name of each page entry in a navigation tree.
+ * An array that contains itself (a circular YAML alias) is entered once per path.
+ */
 function visitWikiNavigationPages(
   nodes: readonly unknown[],
   pointer: string,
   visit: (path: string, page: string) => void,
+  active = new Set<readonly unknown[]>(),
 ): void {
+  if (active.has(nodes)) return;
+  active.add(nodes);
   nodes.forEach((node, position) => {
     if (!isRecord(node) || Array.isArray(node)) return;
     const path = `${pointer}/${position}`;
     const page = ownValue(node, "page");
     if (ownValue(node, "type") === "page" && typeof page === "string") visit(`${path}/page`, page);
     const children = ownValue(node, "children");
-    if (Array.isArray(children)) visitWikiNavigationPages(children, `${path}/children`, visit);
+    if (Array.isArray(children)) {
+      visitWikiNavigationPages(children, `${path}/children`, visit, active);
+    }
   });
+  active.delete(nodes);
 }
 
 const CONTENT_RESOURCE_TYPES = new Set(["CoursePage", "Guide", "WikiPage"]);

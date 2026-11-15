@@ -372,6 +372,24 @@ describe("validateResourceGraph", () => {
     });
   });
 
+  test("visits a circular navigation array once and a shared one on every path", () => {
+    const shared = [{ type: "page", page: "gone", slug: "" }];
+    const navigation: unknown[] = [
+      { type: "group", title: "One", children: shared },
+      { type: "group", title: "Two", children: shared },
+    ];
+    navigation.push({ type: "group", title: "Loop", children: navigation });
+
+    const result = validateResourceGraph([
+      { ...graphResources[5], spec: { title: "Docs", navigation } },
+    ]);
+
+    expect(result.errors.map(({ path }) => path)).toEqual([
+      "/spec/navigation/0/children/0/page",
+      "/spec/navigation/1/children/0/page",
+    ]);
+  });
+
   test("reports dangling references with JSON pointers", () => {
     // The Person, Course, Wiki and WikiPage that the others reference are left out.
     const result = validateResourceGraph([

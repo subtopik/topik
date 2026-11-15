@@ -28,8 +28,11 @@ import {
 } from "../assets/diagnostics";
 import {
   classifyPortableNavigationPath,
+  createPortableReadSession,
   readPortableAssetFile,
+  readPortableAssetFileInSession,
   readPortableAssetFileWithReadHookForTest,
+  type PortableReadSession,
 } from "../assets/files";
 import {
   createTopikAssetSemanticRecord,
@@ -108,7 +111,17 @@ export class AssetCompilationError extends Error {
 export async function compileAssetResources(
   input: CompileAssetResourcesInput,
 ): Promise<AssetCompilationResult> {
-  return compileAssetResourcesWithReader(input, readPortableAssetFile);
+  return compileAssetResourcesInSession(createPortableReadSession(), input);
+}
+
+/** @internal Asset compilation sharing repository evidence with the rest of a build. */
+export async function compileAssetResourcesInSession(
+  session: PortableReadSession,
+  input: CompileAssetResourcesInput,
+): Promise<AssetCompilationResult> {
+  return compileAssetResourcesWithReader(input, (options) =>
+    readPortableAssetFileInSession(session, options),
+  );
 }
 
 /** @internal Deterministic file-read race seam; not re-exported from the package root. */
@@ -116,8 +129,9 @@ export async function compileAssetResourcesWithReadHookForTest(
   input: CompileAssetResourcesInput,
   afterFileRead: () => void | Promise<void>,
 ): Promise<AssetCompilationResult> {
+  const session = createPortableReadSession();
   return compileAssetResourcesWithReader(input, (options) =>
-    readPortableAssetFileWithReadHookForTest(options, afterFileRead),
+    readPortableAssetFileWithReadHookForTest(options, afterFileRead, session),
   );
 }
 
@@ -178,6 +192,17 @@ async function compileAssetResourcesWithReader(
   }
 
   const readCache = new Map<string, Awaited<ReturnType<typeof requireAssetFile>>>();
+  // Generic links are probed once per path, however many occurrences link to it.
+  const navigationProbes = new Map<
+    string,
+    Awaited<ReturnType<typeof requireAssetFile>> | undefined
+  >();
+  const probeNavigationCandidate = async (path: string) => {
+    if (navigationProbes.has(path)) return navigationProbes.get(path);
+    const proof = await readGenericNavigationCandidate(readAssetFile, input.rootDir, path);
+    navigationProbes.set(path, proof);
+    return proof;
+  };
   const localPathByGeneratedName = new Map<GeneratedAssetName, string>();
   const generatedNameByPath = new Map<string, GeneratedAssetName>();
   const replacements = new Map<string, Map<string, string>>();
@@ -249,11 +274,7 @@ async function compileAssetResourcesWithReader(
               throw error;
             }
             if (protectedPaths.has(parsedPath)) continue;
-            const proof = await readGenericNavigationCandidate(
-              readAssetFile,
-              input.rootDir,
-              parsedPath,
-            );
+            const proof = await probeNavigationCandidate(parsedPath);
             if (proof !== undefined) {
               throw referenceError(
                 "Proven download reference is not canonical",
@@ -293,11 +314,7 @@ async function compileAssetResourcesWithReader(
         );
       }
       if (ordinaryNavigation) {
-        const proof = await readGenericNavigationCandidate(
-          readAssetFile,
-          input.rootDir,
-          normalizedPath,
-        );
+        const proof = await probeNavigationCandidate(normalizedPath);
         if (proof === undefined) continue;
         readCache.set(normalizedPath, proof);
       }

@@ -122,6 +122,11 @@ describe("topik-path-v1 boundaries", () => {
       diagnostics: [{ id: "TOPIK_ASSET_PATH_COLLISION" }],
     });
     expect(validateTopikPathSet(["a", "a/b"])).toMatchObject({ ok: false });
+    const repeated = validateTopikPathSet(["A.txt", "a.txt", "a.txt"]);
+    expect(repeated.ok).toBe(false);
+    expect(repeated.diagnostics).toEqual([
+      expect.objectContaining({ id: "TOPIK_ASSET_PATH_COLLISION", location: { path: "a.txt" } }),
+    ]);
   });
 
   test.each([
@@ -378,6 +383,64 @@ describe("descriptor-anchored filesystem reads", () => {
       diagnostics: [{ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" }],
     });
   });
+
+  test.each([
+    [
+      "recursive LFS track",
+      "design/**/*.png filter=lfs diff=lfs merge=lfs -text\n",
+      "design/a/b/hero.png",
+    ],
+    ["middle double star", "design/**/hero.png filter=lfs\n", "design/hero.png"],
+    ["character class", "[h]ero.png filter=lfs\n", "hero.png"],
+    ["escaped pattern", "hero\\.png filter=lfs\n", "hero.png"],
+    ["quoted pattern", '"hero.png" filter=lfs\n', "hero.png"],
+    ["filtering macro", "[attr]stored filter=lfs\n*.png stored\n", "hero.png"],
+    ["macro defined after use", "*.png stored\n[attr]stored filter=lfs\n", "hero.png"],
+    [
+      "macro chain defined after use",
+      "*.png outer\n[attr]outer inner\n[attr]inner filter=lfs\n",
+      "hero.png",
+    ],
+    ["quoted supplementary-plane pattern", '"\u{1F4F7}.png" filter=lfs\n', "\u{1F4F7}.png"],
+    ["POSIX character class", "[[:alpha:]]ero.png filter=lfs\n", "hero.png"],
+  ])("rejects a %s that can match the file", async (_name, attributes, path) => {
+    const root = await mkdtemp(join(tmpdir(), "topik-attribute-match-"));
+    roots.push(root);
+    await mkdir(join(root, ...path.split("/").slice(0, -1)), { recursive: true });
+    await writeFile(join(root, ".gitattributes"), attributes);
+    await writeFile(join(root, ...path.split("/")), PNG_BYTES);
+    expect(await readPortableAssetFile({ root, path })).toMatchObject({
+      ok: false,
+      diagnostics: [{ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" }],
+    });
+  });
+
+  test.each([
+    ["recursive LFS track", "design/**/*.psd filter=lfs diff=lfs merge=lfs -text\n"],
+    ["character class", "[a-z]*.psd filter=lfs\n"],
+    ["escaped pattern", "art\\.png filter=lfs\n"],
+    ["quoted pattern", '"other file.png" filter=lfs\n'],
+    ["negative pattern", "!hero.png filter=lfs\n"],
+    ["filtering macro", "[attr]stored filter=lfs\n*.psd stored\n"],
+    ["POSIX character class", "[[:alpha:]]ero.psd filter=lfs\n"],
+  ])("ignores a %s that cannot match the file", async (_name, attributes) => {
+    const root = await mkdtemp(join(tmpdir(), "topik-attribute-unrelated-"));
+    roots.push(root);
+    await writeFile(join(root, ".gitattributes"), attributes);
+    await writeFile(join(root, "hero.png"), PNG_BYTES);
+    expect(await readPortableAssetFile({ root, path: "hero.png" })).toMatchObject({ ok: true });
+  });
+
+  test("matches many-wildcard patterns against long names in bounded time", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topik-attribute-wildcards-"));
+    roots.push(root);
+    const name = `${"a".repeat(200)}.png`;
+    await writeFile(join(root, ".gitattributes"), `${"*a".repeat(8)}*b.png filter=lfs\n`);
+    await writeFile(join(root, name), PNG_BYTES);
+    const started = performance.now();
+    expect(await readPortableAssetFile({ root, path: name })).toMatchObject({ ok: true });
+    expect(performance.now() - started).toBeLessThan(1000);
+  }, 20_000);
 
   test("accepts only explicit nested resets to unspecified", async () => {
     const root = await mkdtemp(join(tmpdir(), "topik-attribute-reset-"));

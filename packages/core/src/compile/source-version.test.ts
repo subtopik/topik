@@ -135,7 +135,11 @@ test("versioned Wiki source ambiguity is rejected instead of selecting an extens
   await file("wiki.yaml", "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation: [intro]\n");
   await file("intro.md", "# One\n");
   await file("intro.mdx", "# Two\n");
-  await expect(compileManifest({ dir })).rejects.toMatchObject({ id: "wiki-page-ambiguous" });
+  await expect(compileManifest({ dir })).rejects.toMatchObject({
+    id: "wiki-page-ambiguous",
+    location: "intro.md",
+    relatedLocation: "intro.mdx",
+  });
 });
 
 test("versioned metadata refuses invalid types and oversized fields without truncation", async () => {

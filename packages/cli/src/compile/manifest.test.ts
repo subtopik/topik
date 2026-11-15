@@ -113,9 +113,19 @@ test("manifest diagnostics show the safe offending field and conflicting file", 
   ).toMatch(
     /^\.topik\.yaml sources\[1\] \(collection\) guides\/foo\.mdx \(conflicts with guides\/foo\.md\): /,
   );
+  expect(
+    formatPublicCliError(
+      new ManifestSourceError("config-read-failed", 0, "wiki", "wiki.yaml", {
+        reason: "executable",
+      }),
+    ),
+  ).toBe(
+    ".topik.yaml sources[0] (wiki) wiki.yaml: Configuration file could not be read safely. The file has executable permission bits; clear them, for example with chmod a-x.",
+  );
   const tampered = new ManifestSourceError("config-invalid", 0, "wiki", "wiki.yaml");
   Object.defineProperty(tampered, "field", { value: "PRIVATE value: /tmp" });
   Object.defineProperty(tampered, "relatedLocation", { value: "/private/secret.md" });
+  Object.defineProperty(tampered, "reason", { value: "PRIVATE /tmp" });
   expect(formatPublicCliError(tampered)).toBe(
     ".topik.yaml sources[0] (wiki) wiki.yaml: Configuration is invalid.",
   );

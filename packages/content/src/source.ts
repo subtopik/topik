@@ -98,7 +98,12 @@ export function prepareSource(
     );
   }
   function failure(): PreparedSource {
-    const unique = [...new Map(errors.map((error) => [JSON.stringify(error), error])).values()];
+    // One report per problem and line; the first occurrence keeps its column.
+    const seen = new Set<string>();
+    const unique = errors.filter((error) => {
+      const key = JSON.stringify({ ...error, column: undefined });
+      return !seen.has(key) && Boolean(seen.add(key));
+    });
     return { ok: false, source, diagnostics: unique };
   }
   let config;

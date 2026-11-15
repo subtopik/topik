@@ -57,6 +57,7 @@ export {
   type CompiledResourceReference,
   type CompileResourceReferenceTarget,
   type PublicCompileErrorId,
+  type PublicCompileErrorReason,
   type LinkValidationPolicy,
   type LintResult,
   AssetCompilationError,
@@ -126,6 +127,7 @@ export {
 } from "./source/project";
 export {
   planSourceUpdates,
+  verifySharedEdits,
   type PlanSourceUpdatesInput,
   type SourceResourceOperation,
   type SourceWriteAuthority,
@@ -136,7 +138,13 @@ export {
   type SourcePlanResult,
   type SourcePlanDiagnostic,
 } from "./source/plan";
-export type { SourceByteRange, SourceByteEdit, SourceFieldEvidence } from "./source/syntax";
+export {
+  replaySourceByteEdits,
+  type SourceByteRange,
+  type SourceByteEdit,
+  type SourceFieldEvidence,
+} from "./source/syntax";
+export { SourcePlanningError, SourceTreeError } from "./source/diagnostics";
 export {
   initializeSourceProject,
   addSourceToProject,

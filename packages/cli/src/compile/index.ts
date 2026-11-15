@@ -17,7 +17,9 @@ import type { FileHandle } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { boolean, command, positional, string } from "@drizzle-team/brocli";
 import {
+  CompileError,
   compile as compileContent,
+  isErrorDiagnostic,
   parseStrictTopikJson,
   serializeTopikJson,
   validateTopikMaterializationRecord,
@@ -62,9 +64,16 @@ export const compile = command({
   handler: async (options) => {
     const dir = resolve(options.dir);
     const links = options.links as LinkValidationPolicy;
-    const outDir = options.outDir ? resolve(options.outDir) : join(dir, ".topik");
+    if (options.outDir === "") throw new PublicCliError("compilation-output-empty");
+    const outDir = options.outDir !== undefined ? resolve(options.outDir) : join(dir, ".topik");
     await assertCompilationOutputScope(dir, outDir);
-    const result = await compileContent({ dir, validation: { links } });
+    const result = await compileContent({ dir, validation: { links } }).catch((error: unknown) => {
+      if (!(error instanceof CompileError)) throw error;
+      // The diagnostics are sanitized by CompileError; print them as lint does.
+      printDiagnostics(error.diagnostics);
+      console.error(`${error.diagnostics.filter(isErrorDiagnostic).length} compile error(s)`);
+      throw new PublicCliError("compilation-failed", { cause: error });
+    });
     const { diagnostics, materialization, payloads, resources, semantic } = result;
     printDiagnostics(diagnostics);
 

@@ -172,15 +172,20 @@ configurations must stay within their source directory and be regular files. The
 lexical and resolved paths, rejects symlinked source entries, and validates and
 reads each file through the same handle.
 
-On Linux, these reads also open every path component through held directory
-descriptors with no-follow flags. This prevents a directory replaced with a
-symlink during traversal from redirecting the read. Linux requires accessible
-`/proc/self/fd`; if descriptor traversal is unavailable, compilation fails with
-`file-safe-read-unsupported` instead of falling back to pathname reads.
+Canonical aliases above the source directory, such as macOS's `/var` path or a
+symlinked `/home`, are accepted on every platform; the source directory itself and
+everything below it must not be symlinks. A dangling symlink, or a file removed
+while the directory is read, is reported like any other non-regular entry.
+
+On Linux, these reads also open every component of the canonical path through
+held directory descriptors with no-follow flags. This prevents a directory
+replaced with a symlink during traversal from redirecting the read. Linux
+requires accessible `/proc/self/fd`; if descriptor traversal is unavailable,
+compilation fails with `file-safe-read-unsupported` instead of falling back to
+pathname reads.
 
 On macOS, Windows, and other non-Linux systems, the compiler uses portable
-pathname checks and verifies the opened file's identity. Canonical aliases above
-the source directory, such as macOS's `/var` path, are accepted. These checks
+pathname checks and verifies the opened file's identity. These checks
 reject ordinary traversal and static symlink escapes, but cannot guarantee
 containment against malicious concurrent filesystem mutation. Compile from a
 trusted workspace; compilation is not a security boundary against another
@@ -190,8 +195,11 @@ traversal also does not provide an immutable snapshot of file contents.
 [Manifest and explicitly selected configuration files](./manifest.md), Course
 configurations, and
 [local assets](./assets.md#file-and-output-constraints) retain their separate,
-stricter file rules, including their current Linux requirement. The portable
-reader does not extend support for those operations.
+stricter file rules, including their current Linux requirement and the
+[Git checkout rules](./manifest.md#inside-a-git-checkout). The portable
+reader does not extend support for those operations. Link resolution does not
+need them: on any platform, an extensionless link such as `[Next](./next)`
+resolves to a declared page when no file named `next` exists.
 
 ## Multi-source projects
 

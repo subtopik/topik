@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, open, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { link, mkdir, mkdtemp, open, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
@@ -170,6 +170,28 @@ describe("compile config helpers", () => {
         id: "config-read-failed",
         location: "wiki.yml",
       });
+    },
+  );
+
+  test.skipIf(process.platform !== "linux")(
+    "keeps the reader's diagnostics as the cause of an exact config read failure",
+    async () => {
+      await writeFile(join(dir, "target.yaml"), "id: docs\ntitle: Docs\n");
+      await link(join(dir, "target.yaml"), join(dir, "wiki.yaml"));
+
+      const error = await readExactConfigFile(dir, "wiki.yaml").catch((caught: unknown) => caught);
+      expect(error).toMatchObject({
+        id: "config-read-failed",
+        location: "wiki.yaml",
+        reason: "hard-linked",
+        message:
+          "Configuration file could not be read safely. The file is hard-linked; replace the link with an independent copy.",
+      });
+      expect((error as Error).cause).toMatchObject({
+        errors: [{ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED", location: { path: "wiki.yaml" } }],
+      });
+      expect(Object.keys(error as object)).not.toContain("cause");
+      expect(JSON.stringify(error)).not.toContain(dir);
     },
   );
 

@@ -284,3 +284,18 @@ test.each([undefined, 1] as const)(
     }
   },
 );
+
+test("Wiki fragments use one encoded spelling for same-page and source-relative links", () => {
+  const resolved = resolveWikiNavigation(
+    [
+      { type: "page", page: "a", slug: "a", sourcePath: "a" },
+      { type: "page", page: "b", slug: "b", sourcePath: "b" },
+    ],
+    { sourceVersion: 1 },
+  );
+  const local = resolveWikiContentHref("#héllo wörld", "b", resolved);
+  const relative = resolveWikiContentHref("./b.md#héllo wörld", "a", resolved);
+  expect(local).toMatchObject({ page: { page: "b" }, hash: "h%C3%A9llo%20w%C3%B6rld" });
+  expect(relative?.hash).toBe(local?.hash);
+  expect(resolveWikiContentHref("#", "b", resolved)?.hash).toBe("");
+});

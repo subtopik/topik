@@ -28,6 +28,7 @@ import {
   type CompileResult,
 } from "./shared";
 import { compileResourceLinks, type CompileResourceReferenceTarget } from "./links";
+import { assertValidDocumentResource } from "./wiki";
 
 export interface CompileGuidesOptions {
   dir: string;
@@ -134,7 +135,11 @@ export async function discoverGuides(
         });
         continue;
       }
-      if (error instanceof FileNotRegularError) {
+      // A listed entry that vanished before it could be read is equally not a regular file.
+      if (
+        error instanceof FileNotRegularError ||
+        (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT"
+      ) {
         diagnostics.push({
           id: "guide-not-regular-file",
           type: "Guide",
@@ -221,6 +226,7 @@ export async function discoverGuides(
       },
     };
 
+    assertValidDocumentResource(guide, file);
     resources.push(guide);
     sourcePathsByResource[`Guide/${guide.name}`] = file;
   }

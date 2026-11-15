@@ -13,6 +13,19 @@ const CODE_SCAN_WEIGHT = 16;
 const LABEL_WEIGHT = 32;
 /** Reference labels are at most 999 characters, plus their brackets. */
 const REFERENCE_EXTENT = 1_003;
+/** Footnote lookups serialize and normalize the label: a few operations per character. */
+const SERIALIZE_WEIGHT = 4;
+/** Merging a data run moves the events after it in one shift, cheaper than a walk. */
+const MERGE_DIVISOR = 4;
+/** Tokens that end the GFM footnote tokenizer's backward search for a `![`. */
+const FOOTNOTE_STOPS = new Set([
+  "gfmFootnoteCall",
+  "image",
+  "label",
+  "labelImage",
+  "labelLink",
+  "link",
+]);
 
 /**
  * Every text construct code known to the Topik grammar: CommonMark, GFM
@@ -25,6 +38,12 @@ const GUARDED_CODES = [-5, -4, -3, 33, 38, 42, 60, 91, 92, 93, 95, 123, 126];
 interface TextState {
   /** Delimiter runs that may close, each walking and splicing every event. */
   closers: number;
+  /** Runs of adjacent data tokens, each merged by splicing the event list. */
+  merges: number;
+  /** Footnote search cursor: events scanned, the last of them and the latest stop. */
+  scanned: number;
+  last: unknown;
+  stop: number;
   /** Events tokenized by the latest guarded break. */
   events: number;
   /** Extent of the construct starting at that break, which may add unseen lines. */
@@ -134,6 +153,10 @@ function sourceIndex(source: string) {
  *   closer costs up to the final number of events in its paragraph.
  * - A code-span attempt scans to its closing run or the end of the paragraph.
  * - A label end serializes the label back to its unbalanced opening bracket.
+ * - The GFM footnote tokenizer walks back from every label end to the latest
+ *   label, link or image token, then may serialize from a balanced `![`.
+ * - Brackets and escapes that end up as text split data into runs, and text
+ *   resolution merges each run by splicing the event list.
  *
  * Event counts are read at every guarded break. Only the construct starting
  * at the latest break can add events unseen by the guard, so its extent is
@@ -151,12 +174,16 @@ export function parserLimitSyntax(source: string): Extension {
   >();
   // Text contexts are tokenized and resolved one at a time, in document order.
   let active: TextState | undefined;
-  const cost = (state: TextState, to: number) =>
-    state.closers *
-    (state.events +
-      MATCH_EVENTS * state.closers +
+  const cost = (state: TextState, to: number) => {
+    const events =
+      state.events +
       CONSTRUCT_EVENTS +
-      LINE_EVENTS * (to > state.from ? index.lineEndings(state.from, to) : 0));
+      LINE_EVENTS * (to > state.from ? index.lineEndings(state.from, to) : 0);
+    return (
+      state.closers * (events + MATCH_EVENTS * state.closers) +
+      Math.ceil((state.merges * events) / MERGE_DIVISOR)
+    );
+  };
   const spend = (amount: number) => {
     work += amount;
     if (work > CONTENT_LIMITS.parserSteps)
@@ -172,13 +199,24 @@ export function parserLimitSyntax(source: string): Extension {
       if (!state)
         texts.set(
           context,
-          (state = { closers: 0, events: 0, from: offset, to: offset, charged: 0 }),
+          (state = {
+            closers: 0,
+            merges: 0,
+            scanned: 0,
+            last: undefined,
+            stop: -1,
+            events: 0,
+            from: offset,
+            to: offset,
+            charged: 0,
+          }),
         );
+      const events = this.events;
       if (active !== state) {
         // The previous paragraph has been resolved and ends before this one
         // starts: keep only the lines its final construct actually covered.
-        const start = this.events[0]?.[1].start.offset ?? offset;
-        if (active?.closers) {
+        const start = events[0]?.[1].start.offset ?? offset;
+        if (active?.charged) {
           const actual = cost(active, Math.min(active.to, start));
           if (actual < active.charged) {
             work -= active.charged - actual;
@@ -187,6 +225,17 @@ export function parserLimitSyntax(source: string): Extension {
         }
         active = state;
       }
+      // Only the text initializer adds data, and only for a break that no
+      // construct took, so at most one data token is new since the last break.
+      // Count a run when it reaches a second token.
+      const length = events.length;
+      if (
+        length >= 4 &&
+        events[length - 1][1].type === "data" &&
+        events[length - 3][1].type === "data" &&
+        (length === 4 || events[length - 5][1].type !== "data")
+      )
+        state.merges++;
       let end = offset;
       if (code === 96) {
         // Code payloads remain opaque: only the attempt's scan is charged.
@@ -201,6 +250,22 @@ export function parserLimitSyntax(source: string): Extension {
         let open = starts ? starts.length - 1 : -1;
         while (open >= 0 && starts![open]._balanced) open--;
         if (open >= 0) spend(LABEL_WEIGHT * (offset - starts![open].end.offset));
+        // The footnote call tokenizer repeats this backward walk after every
+        // failed label end, so charge the walk it is about to make.
+        // Resolved links splice the tail, so resume only from an intact event.
+        let stop = length;
+        if (state.scanned && state.scanned <= length && events[state.scanned - 1] === state.last) {
+          stop = state.stop;
+          for (let event = state.scanned; event < length; event++)
+            if (FOOTNOTE_STOPS.has(events[event][1].type)) stop = event;
+        } else while (--stop >= 0 && !FOOTNOTE_STOPS.has(events[stop][1].type)) continue;
+        state.scanned = length;
+        state.last = events[length - 1];
+        state.stop = stop;
+        spend(length - stop);
+        const token = events[stop]?.[1];
+        if (token?.type === "labelImage" && token._balanced)
+          spend(SERIALIZE_WEIGHT * (offset - token.end.offset));
         // Resource titles may span lines up to the end of the paragraph.
         end =
           source.charCodeAt(offset + 1) === 40
@@ -220,10 +285,10 @@ export function parserLimitSyntax(source: string): Extension {
         }
         if (close) state.closers++;
       }
-      state.events = this.events.length;
+      state.events = length;
       state.from = offset;
       state.to = end;
-      const target = state.closers ? cost(state, end) : 0;
+      const target = state.closers || state.merges ? cost(state, end) : 0;
       if (target > state.charged) {
         spend(target - state.charged);
         state.charged = target;

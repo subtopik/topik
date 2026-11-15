@@ -8,7 +8,7 @@ export async function discoverSchemaTargets(packageDirectory) {
   const sourceDirectory = join(packageDirectory, "src");
   const resources = (await readdir(sourceDirectory, { withFileTypes: true }))
     .filter((entry) => entry.isDirectory())
-    .sort((left, right) => left.name.localeCompare(right.name));
+    .sort((left, right) => compareCodePoints(left.name, right.name));
   /** @type {Array<{ resource: string, version: string, schema: string, types: string }>} */
   const targets = [];
 
@@ -60,5 +60,10 @@ export async function discoverSchemaTargets(packageDirectory) {
 function compareVersions(left, right) {
   const leftNumber = left.slice(1);
   const rightNumber = right.slice(1);
-  return leftNumber.length - rightNumber.length || leftNumber.localeCompare(rightNumber);
+  return leftNumber.length - rightNumber.length || compareCodePoints(leftNumber, rightNumber);
+}
+
+/** Locale-independent ordering, so generated output is identical on every host. */
+function compareCodePoints(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
 }

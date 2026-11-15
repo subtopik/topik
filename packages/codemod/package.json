@@ -49,7 +49,6 @@
     "micromark-extension-frontmatter": "catalog:"
   },
   "devDependencies": {
-    "@types/bun": "catalog:",
     "@types/node": "catalog:",
     "micromark-util-types": "catalog:",
     "typescript": "catalog:",

@@ -35,9 +35,13 @@ complete destination; `validateTopikContent` and `compileTopikContent` apply the
 URL policy before publishing or rendering.
 
 Ordinary content links support credential-free HTTPS, `mailto:`, `tel:`, local
-page paths, and heading fragments. Script URLs, protocol-relative URLs, and
-credential-bearing URLs are refused. HTTP is refused for Markdown link
-and asset destinations; the text `http://example.com` is still valid plain text.
+page paths, and heading fragments. The link policy (`validateTopikHref`) refuses
+script URLs, protocol-relative URLs, and credential-bearing URLs; it does not
+refuse `http:` URLs. Source admission also checks every Markdown link, autolink,
+reference definition, and image destination as a possible asset reference, and
+that check accepts external URLs only over credential-free HTTPS. An `http:`
+destination is therefore refused with `TOPIK_EXTERNAL_REFERENCE_UNSAFE`, not a
+link policy error. The text `http://example.com` is still valid plain text.
 
 Images and downloadable files also follow the [asset rules](../resources/assets.md).
 Authors use local paths or HTTPS. The reserved `asset:` scheme identifies

@@ -193,6 +193,14 @@ describe("compile command", () => {
       }),
     );
 
+    const output: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...values) => {
+      output.push(values.map(String).join(" "));
+    });
+    vi.spyOn(console, "warn").mockImplementation((...values) => {
+      output.push(values.map(String).join(" "));
+    });
+
     let failure: unknown;
     try {
       await (compile as CompileCommand).handler?.({
@@ -205,14 +213,56 @@ describe("compile command", () => {
     } catch (error) {
       failure = error;
     }
-    expect(failure).toMatchObject({
-      diagnostics: expect.arrayContaining([
-        expect.objectContaining({ file: "intro.md" }),
-        expect.objectContaining({ file: "unsafe.md" }),
+    expect(failure).toMatchObject({ id: "compilation-failed" });
+    expect(formatPublicCliError(failure)).toBe("Compilation found errors.");
+    expect(output).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^intro\.md(:\d+)? error /u),
+        expect.stringMatching(/^unsafe\.md(:\d+)? error /u),
       ]),
+    );
+    const surfaces = `${output.join("\n")}\n${String(failure)}\n${JSON.stringify(failure)}`;
+    expect(surfaces).not.toContain(dir);
+    expect(surfaces).not.toContain(tmpdir());
+  });
+
+  test("prints located content diagnostics when compilation fails", async () => {
+    await writeFile(join(dir, "intro.md"), "# Intro\n\n[Missing](#missing)\n");
+    const errors: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...values) => {
+      errors.push(values.map(String).join(" "));
     });
-    expect(`${String(failure)}\n${JSON.stringify(failure)}`).not.toContain(dir);
-    expect(`${String(failure)}\n${JSON.stringify(failure)}`).not.toContain(tmpdir());
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await expect(
+      (compile as CompileCommand).handler?.({
+        dir,
+        format: "json",
+        dryRun: true,
+        validate: false,
+        links: "error",
+      }),
+    ).rejects.toMatchObject({ id: "compilation-failed" });
+
+    expect(errors).toEqual([
+      expect.stringMatching(/^intro\.md:3 error [a-z-]+: /u),
+      "1 compile error(s)",
+    ]);
+    expect(log).not.toHaveBeenCalled();
+  });
+
+  test("rejects an empty --out-dir instead of falling back to the default", async () => {
+    await expect(
+      (compile as CompileCommand).handler?.({
+        dir,
+        outDir: "",
+        format: "json",
+        dryRun: false,
+        validate: false,
+        links: "error",
+      }),
+    ).rejects.toMatchObject({ id: "compilation-output-empty" });
+    await expect(lstat(join(dir, ".topik"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   test("keeps invalid config bytes and machine paths out of CLI compile error output", async () => {

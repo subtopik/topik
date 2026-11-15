@@ -1,6 +1,11 @@
 import { join, posix, resolve } from "node:path";
 import { parse as parseYaml, parseDocument, isAlias, isNode, isMap, isSeq, isScalar } from "yaml";
-import { readPortableAssetFile } from "../assets/files";
+import {
+  createPortableReadSession,
+  portableReadFailureReason,
+  readPortableAssetFileInSession,
+  type PortableReadSession,
+} from "../assets/files";
 import { parseStrictTopikJson } from "../assets/json";
 import { isConfigurationPath, TOPIK_MANIFEST_LIMITS } from "../config/manifest";
 import { assertRegularFileWithinRoot, readRegularFileWithinRoot } from "./files";
@@ -35,7 +40,7 @@ export async function readOptionalConfigFileWithPath(
       if (error instanceof PublicCompileError && error.id === "file-safe-read-unsupported") {
         throw error;
       }
-      throw new PublicCompileError("config-read-failed", name);
+      throw new PublicCompileError("config-read-failed", name, { cause: error });
     }
 
     try {
@@ -66,9 +71,13 @@ export async function findConfigFile(dir: string, candidates: string[]): Promise
 }
 
 /** Load exactly one portable config, without conventional-name fallback. */
-export async function readExactConfigFile(dir: string, path: string): Promise<LoadedConfig> {
+export async function readExactConfigFile(
+  dir: string,
+  path: string,
+  session?: PortableReadSession,
+): Promise<LoadedConfig> {
   if (!isConfigurationPath(path)) throw new PublicCompileError("config-invalid", path);
-  const raw = await readConfigurationText(dir, path);
+  const raw = await readConfigurationText(dir, path, session);
   try {
     return {
       path: posix.basename(path),
@@ -92,8 +101,12 @@ export function configurationDirectory(dir: string, configFile?: string): string
   return resolve(dir, posix.dirname(configFile));
 }
 
-export async function readConfigurationText(dir: string, path: string): Promise<string> {
-  const result = await readPortableAssetFile({
+export async function readConfigurationText(
+  dir: string,
+  path: string,
+  session: PortableReadSession = createPortableReadSession(),
+): Promise<string> {
+  const result = await readPortableAssetFileInSession(session, {
     root: resolve(dir),
     path,
     maxBytes: TOPIK_MANIFEST_LIMITS.maxBytes,
@@ -102,7 +115,12 @@ export async function readConfigurationText(dir: string, path: string): Promise<
     const missing = result.diagnostics.some(
       (diagnostic) => diagnostic.id === "TOPIK_ASSET_FILE_MISSING",
     );
-    throw new PublicCompileError(missing ? "config-not-found" : "config-read-failed", path);
+    // Reader diagnostics are sanitized, but stay a non-enumerable debugging aid; the public
+    // error carries only a fixed reason category.
+    throw new PublicCompileError(missing ? "config-not-found" : "config-read-failed", path, {
+      cause: new AggregateError(result.diagnostics, "Portable configuration read failed"),
+      reason: missing ? undefined : portableReadFailureReason(result.diagnostics),
+    });
   }
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(result.value.bytes);

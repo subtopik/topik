@@ -1,6 +1,6 @@
 import { constants, type BigIntStats } from "node:fs";
 import { lstat, open, realpath, type FileHandle } from "node:fs/promises";
-import { isAbsolute, parse, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { PublicCompileError } from "./public-errors";
 
 // Linux O_PATH (asm-generic/fcntl.h); Node does not expose this flag. Directory
@@ -72,21 +72,26 @@ async function openRegularFileWithinRoot(filePath: string, rootDir: string): Pro
   } catch (error) {
     // A non-directory or looping ancestor component cannot name a regular input file.
     if (isNotRegularPathError(error)) throw new FileNotRegularError(filePath, rootDir);
+    // A dangling symlink is an entry that exists but is not a regular file.
+    if (isMissingPathError(error) && (await isSymbolicLink(filePath))) {
+      throw new FileNotRegularError(filePath, rootDir);
+    }
     throw error;
   }
   if (!isWithinRoot(canonicalRoot, canonicalFile)) {
     throw new FileOutsideCompilationRootError(filePath, rootDir);
   }
-  // Portable reads allow canonical aliases above the source root (such as macOS /var),
-  // but still reject a symlinked root or a path redirected within it. Linux traversal
-  // also rejects aliases above the root because it opens every authored component.
-  // Keep exact spelling below the canonical root: Windows path.relative folds case
-  // even when the filesystem contains distinct case-sensitive entries.
+  // Canonical aliases above the source root (such as macOS /var or a symlinked /home) are
+  // accepted, like the manifest and configuration reader, but a symlinked root or a path
+  // redirected within it is rejected. Keep exact spelling below the canonical root: Windows
+  // path.relative folds case even when the filesystem contains distinct case-sensitive entries.
   const expectedFile = resolve(canonicalRoot, relative(authoredRoot, authoredFile));
   if (
-    process.platform === "linux"
-      ? authoredRoot !== canonicalRoot || authoredFile !== canonicalFile
-      : !(await lstat(authoredRoot)).isDirectory() || expectedFile !== canonicalFile
+    expectedFile !== canonicalFile ||
+    (process.platform === "linux"
+      ? // The root itself is not a link when it keeps its name under its canonical parent.
+        canonicalRoot !== join(await realpath(dirname(authoredRoot)), basename(authoredRoot))
+      : !(await lstat(authoredRoot)).isDirectory())
   ) {
     throw new FileNotRegularError(filePath, rootDir);
   }
@@ -98,9 +103,23 @@ async function openRegularFileWithinRoot(filePath: string, rootDir: string): Pro
     throw new FileNotRegularError(filePath, rootDir);
   }
 
+  // Linux anchors the canonical path, which resolves the root's ancestors once up front;
+  // every component is then opened without following links.
   return process.platform === "linux"
-    ? openAnchoredLinuxFile(authoredFile, rootDir)
+    ? openAnchoredLinuxFile(canonicalFile, filePath, rootDir)
     : openPortableFile(filePath, rootDir, canonicalFile, initialStat);
+}
+
+async function isSymbolicLink(path: string): Promise<boolean> {
+  try {
+    return (await lstat(path)).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+function isMissingPathError(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException).code === "ENOENT";
 }
 
 async function openPortableFile(
@@ -133,14 +152,18 @@ async function openPortableFile(
   }
 }
 
-async function openAnchoredLinuxFile(filePath: string, rootDir: string): Promise<FileHandle> {
+async function openAnchoredLinuxFile(
+  anchoredPath: string,
+  filePath: string,
+  rootDir: string,
+): Promise<FileHandle> {
   // Anchor every component, including the ancestors of the compilation root. Pathname
   // checks above provide diagnostics only: no later open traverses a mutable ancestor.
   const directories: FileHandle[] = [];
   let handle: FileHandle | undefined;
   try {
-    const filesystemRoot = parse(filePath).root;
-    const components = relative(filesystemRoot, filePath).split(sep);
+    const filesystemRoot = parse(anchoredPath).root;
+    const components = relative(filesystemRoot, anchoredPath).split(sep);
     const directoryFlags = LINUX_O_PATH | constants.O_DIRECTORY | constants.O_NOFOLLOW;
     directories.push(await open(filesystemRoot, directoryFlags));
     // Node has no openat API. Linux procfs lets us resolve a single child against a held

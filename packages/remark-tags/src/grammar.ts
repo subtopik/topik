@@ -1,5 +1,5 @@
 import type { TagAttributeValue, TagDeclarations, TagSyntaxOptions } from "./types.js";
-import { parseTextTemplate } from "./templates.js";
+import { parseTextTemplate, TemplateSyntaxError } from "./templates.js";
 
 export function validateDeclarations(
   declarations: TagDeclarations,
@@ -36,6 +36,14 @@ export function hasControlCharacter(value: string, escapedWhitespace = false): b
       return true;
   }
   return false;
+}
+
+/** Whether a declared string attribute decodes escaped whitespace; tag names are untrusted keys. */
+export function escapesWhitespace(options: TagSyntaxOptions, name: string, key: string): boolean {
+  const attributes = options.escapedWhitespace;
+  return attributes !== undefined && Object.hasOwn(attributes, name)
+    ? attributes[name].includes(key)
+    : false;
 }
 
 export function invalidCodeTemplateHeader(lang: unknown, meta: unknown): boolean {
@@ -78,6 +86,8 @@ export interface TagParseFailure {
   kind: "error";
   id: string;
   message: string;
+  /** The name of a component tag whose opening marker failed, so its closer can still match. */
+  opening?: string;
 }
 
 function failure(message: string, id: string): TagParseFailure {
@@ -113,12 +123,16 @@ export function parseTag(raw: string, options: TagSyntaxOptions): ParsedTag | Ta
   const nameMatch = /^[a-z][A-Za-z0-9-]*/.exec(inner.slice(index));
   if (!nameMatch) return failure("Invalid or unsupported tag", "tag-name-invalid");
   const name = nameMatch[0];
+  // A failed opening marker (not a closer or a self-closing tag) still names its scope.
+  const opening = close || inner.endsWith("/") ? undefined : name;
+  const fail = (message: string, id: string): TagParseFailure =>
+    opening === undefined ? failure(message, id) : { ...failure(message, id), opening };
   index += name.length;
   const attributes: Record<string, TagAttributeValue> = Object.create(null);
   let selfClosing = false;
   while (index < inner.length) {
     if (!/\s/.test(inner[index]))
-      return failure(`Invalid attributes on ${name}`, "attribute-syntax-invalid");
+      return fail(`Invalid attributes on ${name}`, "attribute-syntax-invalid");
     while (/\s/.test(inner[index] ?? "")) index++;
     if (index === inner.length) break;
     if (inner[index] === "/" && index === inner.length - 1) {
@@ -126,15 +140,14 @@ export function parseTag(raw: string, options: TagSyntaxOptions): ParsedTag | Ta
       break;
     }
     const keyMatch = /^[a-z][A-Za-z0-9-]*/.exec(inner.slice(index));
-    if (!keyMatch) return failure(`Invalid attribute on ${name}`, "attribute-syntax-invalid");
+    if (!keyMatch) return fail(`Invalid attribute on ${name}`, "attribute-syntax-invalid");
     const key = keyMatch[0];
     index += key.length;
     if (inner[index++] !== "=")
-      return failure(`Attribute ${key} requires a value`, "attribute-syntax-invalid");
+      return fail(`Attribute ${key} requires a value`, "attribute-syntax-invalid");
     let value: TagAttributeValue;
     const template = options.expressions && inner[index] === "t" && inner[index + 1] === '"';
-    const escapedWhitespace =
-      !template && options.escapedWhitespace?.[name]?.includes(key) === true;
+    const escapedWhitespace = !template && escapesWhitespace(options, name, key);
     if (template) index++;
     if (inner[index] === '"') {
       index++;
@@ -143,7 +156,7 @@ export function parseTag(raw: string, options: TagSyntaxOptions): ParsedTag | Ta
       while (index < inner.length) {
         const char = inner[index++];
         if (!template && hasControlCharacter(char))
-          return failure(`Control character in ${key}`, "attribute-value-invalid");
+          return fail(`Control character in ${key}`, "attribute-value-invalid");
         if (char === '"') {
           ended = true;
           break;
@@ -161,33 +174,38 @@ export function parseTag(raw: string, options: TagSyntaxOptions): ParsedTag | Ta
             escaped !== "[" &&
             escaped !== "]"
           )
-            return failure(`Invalid escape in ${key}`, "attribute-syntax-invalid");
+            return fail(`Invalid escape in ${key}`, "attribute-syntax-invalid");
           literal += escaped;
         } else literal += char;
       }
-      if (!ended) return failure(`Unterminated attribute ${key}`, "attribute-syntax-invalid");
+      if (!ended) return fail(`Unterminated attribute ${key}`, "attribute-syntax-invalid");
       if (!template && hasControlCharacter(literal, escapedWhitespace))
-        return failure(`Control character in ${key}`, "attribute-value-invalid");
-      value = template ? parseTextTemplate(literal) : literal;
+        return fail(`Control character in ${key}`, "attribute-value-invalid");
+      try {
+        value = template ? parseTextTemplate(literal) : literal;
+      } catch (error) {
+        if (!(error instanceof TemplateSyntaxError)) throw error;
+        return fail(error.message, error.id);
+      }
     } else {
       const match = /^(?:true|false|[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)/.exec(
         inner.slice(index),
       );
       if (!match)
-        return failure(
+        return fail(
           `Attribute ${key} must be quoted or a finite number/boolean`,
           "attribute-syntax-invalid",
         );
       index += match[0].length;
       value = match[0] === "true" ? true : match[0] === "false" ? false : Number(match[0]);
       if (typeof value === "number" && !Number.isFinite(value))
-        return failure(`Attribute ${key} must be finite`, "attribute-syntax-invalid");
+        return fail(`Attribute ${key} must be finite`, "attribute-syntax-invalid");
     }
     if (Object.hasOwn(attributes, key))
-      return failure(`Duplicate attribute ${key}`, "duplicate-attribute");
+      return fail(`Duplicate attribute ${key}`, "duplicate-attribute");
     attributes[key] = value;
   }
   if (close && (selfClosing || Object.keys(attributes).length))
-    return failure(`Invalid closing tag ${name}`, "tag-closing-invalid");
+    return fail(`Invalid closing tag ${name}`, "tag-closing-invalid");
   return { kind: "component", name, close, selfClosing, attributes };
 }

@@ -538,6 +538,21 @@ describe("compileGuides", () => {
     });
   });
 
+  test.each([
+    ["description", `---\ndescription: ${"x".repeat(5000)}\n---\n# Post\n`],
+    ["title", `---\ntitle: ${"x".repeat(5000)}\n---\n# Post\n`],
+    ["title", `# ${"x".repeat(5000)}\n`],
+  ])("refuses a schema-invalid unversioned %s at the Guide file", async (field, source) => {
+    await writeCollectionConfig("id: blog\ntitle: Blog\n");
+    await writeGuide("post", source);
+
+    await expect(compileGuides({ dir })).rejects.toMatchObject({
+      id: "frontmatter-invalid",
+      location: "post.md",
+      field,
+    });
+  });
+
   test("names the invalid versioned frontmatter field", async () => {
     await writeCollectionConfig("id: blog\ntitle: Blog\nsourceVersion: 1\n");
     await writeGuide("post", "---\nslug: Not A Slug\n---\n# Post\n");

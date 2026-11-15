@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import {
   publishDigestSnapshot,
   removeDigestSnapshot,
@@ -125,6 +125,52 @@ describe("Astro static Asset publication", () => {
       expect(await readdir(output.pathname)).toEqual(["blobs"]);
     },
   );
+});
+
+describe("Astro static Asset publication without descriptor-anchored containment", () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "topik-astro-publication-platform-"));
+    vi.spyOn(process, "platform", "get").mockReturnValue("darwin");
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await rm(root, { force: true, recursive: true });
+  });
+
+  test("an empty snapshot with no prior output is a no-op", async () => {
+    const missing = outputUrl(join(root, "missing"));
+    const empty = outputUrl(join(root, "empty"));
+    await mkdir(empty.pathname);
+
+    await removeDigestSnapshot(missing);
+    await removeDigestSnapshot(empty);
+    await publishDigestSnapshot(missing, []);
+    await publishDigestSnapshot(empty, []);
+
+    await expect(readdir(join(root, "missing"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readdir(empty.pathname)).toEqual([]);
+  });
+
+  test("refuses to publish Assets with a clear Linux requirement", async () => {
+    const output = outputUrl(join(root, "dist"));
+
+    await expect(publishDigestSnapshot(output, snapshot("asset"))).rejects.toThrow(
+      /^Topik Asset publication requires Linux/u,
+    );
+    await expect(readdir(join(root, "dist"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  test("refuses to remove or replace an existing digest tree", async () => {
+    const output = outputUrl(join(root, "prior"));
+    await mkdir(join(output.pathname, "blobs"), { recursive: true });
+
+    await expect(removeDigestSnapshot(output)).rejects.toThrow(/requires Linux/u);
+    await expect(publishDigestSnapshot(output, [])).rejects.toThrow(/requires Linux/u);
+    expect(await readdir(output.pathname)).toEqual(["blobs"]);
+  });
 });
 
 function snapshot(label: string): DigestSnapshotFile[] {

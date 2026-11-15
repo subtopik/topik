@@ -46,6 +46,7 @@ export {
   publicCompileErrorMessage,
   PublicCompileError,
   type PublicCompileErrorId,
+  type PublicCompileErrorReason,
 } from "./public-errors";
 
 export interface CompileOptions {

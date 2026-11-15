@@ -5,18 +5,18 @@ import { command, positional } from "@drizzle-team/brocli";
 import { validateResources } from "@topik/core";
 import { parseAllDocuments } from "yaml";
 import { PublicCliError } from "../errors";
-import { formatValidationFailure } from "../validation-output";
+import { formatUnreadableResourceFile, formatValidationFailure } from "../validation-output";
 
 function parseJson(content: string): unknown {
   try {
-    return JSON.parse(content);
+    return JSON.parse(stripByteOrderMark(content));
   } catch {
     throw new PublicCliError("resource-json-invalid");
   }
 }
 
 function parseJsonl(content: string): unknown[] {
-  return content
+  return stripByteOrderMark(content)
     .split("\n")
     .filter((line) => line.trim().length > 0)
     .map((line) => {
@@ -26,6 +26,11 @@ function parseJsonl(content: string): unknown[] {
         throw new PublicCliError("resource-jsonl-invalid");
       }
     });
+}
+
+/** Accept a leading UTF-8 byte order mark, as the YAML parser already does. */
+function stripByteOrderMark(content: string): string {
+  return content.startsWith("\uFEFF") ? content.slice(1) : content;
 }
 
 function parseYaml(content: string): unknown[] {
@@ -74,6 +79,17 @@ async function readLocatedResourceFile(path: string, file: string): Promise<Load
   return (await readResourceFile(path)).map((resource) => ({ file, resource }));
 }
 
+/** A resource file in a directory tree that could not be read or parsed. */
+export interface UnreadableResourceFile {
+  file: string;
+  error: unknown;
+}
+
+export interface LoadedResourceTree {
+  resources: LoadedResource[];
+  unreadable: UnreadableResourceFile[];
+}
+
 async function readDirectoryEntries(path: string): Promise<Dirent[]> {
   return readdir(path, { withFileTypes: true }).catch(() => {
     throw new PublicCliError("resource-read-failed");
@@ -114,14 +130,18 @@ async function collectResourceFiles(
   }
 }
 
-/** Load resources from a file, a directory tree, or a `topik compile` output directory. */
-export async function loadLocatedResources(path: string): Promise<LoadedResource[]> {
+/**
+ * Load resources from a file, a directory tree, or a `topik compile` output directory.
+ * A single file target fails on its own error; in a directory, each file that cannot
+ * be read or parsed is recorded and the remaining files are still loaded.
+ */
+export async function loadLocatedResources(path: string): Promise<LoadedResourceTree> {
   const info = await stat(path).catch(() => {
     throw new PublicCliError("resource-access-failed");
   });
 
   if (info.isFile()) {
-    return readLocatedResourceFile(path, basename(path));
+    return { resources: await readLocatedResourceFile(path, basename(path)), unreadable: [] };
   }
 
   const rootEntries = await readDirectoryEntries(path);
@@ -134,14 +154,18 @@ export async function loadLocatedResources(path: string): Promise<LoadedResource
   }
   files.sort((left, right) => Buffer.compare(Buffer.from(left), Buffer.from(right)));
 
-  const resources = await Promise.all(
-    files.map((file) => readLocatedResourceFile(join(path, ...file.split("/")), file)),
+  const results = await Promise.all(
+    files.map((file) =>
+      readLocatedResourceFile(join(path, ...file.split("/")), file).then(
+        (resources) => ({ resources }),
+        (error: unknown) => ({ unreadable: { file, error } }),
+      ),
+    ),
   );
-  return resources.flat();
-}
-
-export async function loadResources(path: string): Promise<unknown[]> {
-  return (await loadLocatedResources(path)).map(({ resource }) => resource);
+  return {
+    resources: results.flatMap((result) => ("resources" in result ? result.resources : [])),
+    unreadable: results.flatMap((result) => ("unreadable" in result ? [result.unreadable] : [])),
+  };
 }
 
 export const validate = command({
@@ -154,22 +178,34 @@ export const validate = command({
   },
   handler: async (options) => {
     const target = resolve(options.path);
-    const loaded = await loadLocatedResources(target);
+    const { resources: loaded, unreadable } = await loadLocatedResources(target);
 
-    if (loaded.length === 0) {
+    if (loaded.length === 0 && unreadable.length === 0) {
       console.log("No resource files found.");
       return;
+    }
+
+    for (const { file, error } of unreadable) {
+      console.error(formatUnreadableResourceFile(file, error));
     }
 
     const errors = loaded.flatMap(({ file, resource }) =>
       validateResources([resource]).errors.map((error) => ({ ...error, file })),
     );
 
-    if (errors.length === 0) {
+    if (errors.length === 0 && unreadable.length === 0) {
       console.log(`Validated ${loaded.length} resources`);
       return;
     }
-    console.error(formatValidationFailure(errors, loaded.length, "validating resources"));
+    if (errors.length > 0) {
+      console.error(formatValidationFailure(errors, loaded.length, "validating resources"));
+    }
+    if (unreadable.length > 0) {
+      console.error(
+        `${unreadable.length} resource file(s) could not be read or parsed; ` +
+          `${loaded.length} resources were validated`,
+      );
+    }
     throw new PublicCliError("resource-validation-failed");
   },
 });

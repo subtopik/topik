@@ -39,10 +39,38 @@ export const collections = {
 };
 ```
 
-The integration serves compiled asset payloads in development and publishes them
-with the build. `createTopikLinkResolver` maps Topik resource references to
-application routes.
+`createTopikLinkResolver` maps Topik resource references to application routes.
 
-## License
+## Navigation
 
-MIT
+A wiki loader's `getNavigation()` compiles the wiki directory and resolves to its
+`navigation` tree (`WikiNavNode[]`), for rendering a sidebar:
+
+```astro
+---
+import { wikiLoader } from "../../topik-loaders.mjs";
+const navigation = await wikiLoader.getNavigation();
+---
+```
+
+## Assets
+
+Local images and downloads referenced from Markdown compile to `asset:<name>`
+references in entry bodies. Each loader exposes the current compiler snapshot:
+
+- `loader.resolveAsset(name)` returns the payload URL (`<base>blobs/<sha256>`),
+  or `undefined` for a name the compilation did not emit.
+- `loader.getAssets()` returns the compiled Asset descriptors.
+
+The integration serves these payloads from memory in development and in server
+output (`Cache-Control: no-cache` in development; `public, max-age=31536000, immutable`
+in production, since paths are content-addressed). Opaque downloads
+(`application/octet-stream`) are sent with `Content-Disposition: attachment`; the
+compiler already rejects active media such as HTML and SVG. A build also writes the
+payloads to `blobs/` in the static (client) output directory.
+
+Reading local Asset files and writing `blobs/` require Linux, where both stay
+anchored to opened directory descriptors. On other platforms a site without local
+Assets builds normally; a local Asset reference fails compilation, and a build that
+would publish or replace a `blobs/` directory fails with
+`Topik Asset publication requires Linux`.

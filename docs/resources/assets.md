@@ -260,14 +260,29 @@ Local files must satisfy the compiler's path, media, and size rules. Paths canno
 escape the compilation directory or collide under normalization or case folding.
 The compiler refuses symlinks, hard links, executable or special files, protected
 compiler inputs, unsupported media, active content, and files that change during
-inspection. An image needs meaningful alternative text; a download needs a
-meaningful label.
+inspection. Inside a Git checkout, files with an effective Git content filter
+or working-tree encoding are refused too; see
+[Inside a Git checkout](./manifest.md#inside-a-git-checkout) for what the
+compiler needs from Git. An image needs meaningful alternative text; a download
+needs a meaningful label.
 
-The compiler detects media types from file bytes, not extensions. Text that
-starts with an HTML tag, or that contains a script, frame, embed, form, meta,
-link, base, style, or document element, an event-handler attribute, or a
-`javascript:` URL, counts as active content; other text, such as code with
-`Array<string>`, remains a download. Git LFS pointer files (small files whose first
+The compiler detects media types from file bytes, not extensions. It recognizes
+PNG, JPEG, GIF, WebP, AVIF, HEIC/HEIF, BMP, and ICO images; MP3, WAV, Ogg, FLAC,
+and MP4 audio; MP4, QuickTime, and 3GPP video; and PDF, ZIP, and gzip files.
+Other safe bytes, including plain text, are opaque `application/octet-stream`
+downloads. An image slot needs a recognized image type. SVG is active content,
+so it is refused both as an image and as a download.
+
+Text that starts with an HTML tag, or that contains a script, frame, embed, form,
+meta, link, base, style, or document element, an event-handler attribute inside a
+tag, or a `javascript:` URL in an `href` or `src` attribute, counts as active
+content, as does text that starts with an `<svg>` element or contains one with its
+closing tag. A document that opens with an `<?xml ...?>` declaration and a root
+element other than HTML or SVG, such as a property list, is data when it contains
+none of these and names no XHTML or SVG namespace. Other text, such as code with
+`Array<string>`, `i<n` comparisons, or prose that mentions `<svg>`, remains a
+download. ELF, Mach-O, and PE (Windows) executables, scripts that start with an
+interpreter line such as `#!/bin/sh`, and WebAssembly modules are refused. Git LFS pointer files (small files whose first
 line is a Git LFS `version` line) are refused; run `git lfs pull` first.
 
 The CLI stages a complete output generation before replacing the previous one.

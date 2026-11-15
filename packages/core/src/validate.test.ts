@@ -162,6 +162,7 @@ describe("validateResources", () => {
 
     expect(result.valid).toBe(false);
     expect(result.errors).toContainEqual({
+      id: "resource-unsupported-type",
       resource: "Unknown/something",
       path: "/type",
       message: "Unsupported resource type: Unknown",
@@ -174,7 +175,13 @@ describe("validateResources", () => {
       expect(() => validateResources([{ type }])).not.toThrow();
       expect(validateResources([{ type }])).toMatchObject({
         valid: false,
-        errors: [{ path: "/type", message: `Unsupported resource type: ${type}` }],
+        errors: [
+          {
+            id: "resource-unsupported-type",
+            path: "/type",
+            message: `Unsupported resource type: ${type}`,
+          },
+        ],
       });
     },
   );
@@ -185,14 +192,45 @@ describe("validateResources", () => {
     expect(result.valid).toBe(false);
     expect(result.errors).toEqual([
       {
+        id: "resource-invalid",
         resource: "unknown/unknown",
         path: "/",
         message: "Resource must be an object",
       },
       {
+        id: "resource-invalid",
         resource: "unknown/unknown",
         path: "/",
         message: "Resource must be an object",
+      },
+    ]);
+  });
+
+  test("reports every schema violation in a resource with a typed id", () => {
+    const result = validateResources([
+      { apiVersion: "v1", type: "Wiki", spec: { title: 1 } },
+      { type: "Wiki", name: "docs" },
+    ]);
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toEqual([
+      {
+        id: "resource-invalid",
+        resource: "Wiki/unknown",
+        path: "/",
+        message: "must have required property 'name'",
+      },
+      {
+        id: "resource-invalid",
+        resource: "Wiki/unknown",
+        path: "/spec/title",
+        message: "must be string",
+      },
+      {
+        id: "resource-invalid",
+        resource: "Wiki/docs",
+        path: "/apiVersion",
+        message: "Resource apiVersion must be a string",
       },
     ]);
   });

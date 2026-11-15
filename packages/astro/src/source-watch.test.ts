@@ -286,6 +286,25 @@ test("generated Astro files do not refresh sources or hide similarly named direc
   }
 });
 
+test("topik compile output below the source root does not refresh sources", async () => {
+  await writeFile(join(dir, "collection.yaml"), "id: docs\ntitle: Docs\n");
+  const loader = topikGuidesLoader(options());
+  const ctx = context();
+  await loader.load(ctx.value);
+  for (const event of ["add", "change", "unlink", "addDir", "unlinkDir"]) {
+    changed(".topik/guides/docs.json", event);
+    changed(".topik-compilation-generation-0123/blobs/payload", event);
+    changed(".topik-compilation-prior-0123/manifest.json", event);
+  }
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  expect(compileGuides).toHaveBeenCalledTimes(1);
+  for (const path of [".topik-notes/intro.md", "notes.topik/intro.md"]) {
+    const calls = vi.mocked(compileGuides).mock.calls.length;
+    changed(path);
+    await vi.waitFor(() => expect(compileGuides).toHaveBeenCalledTimes(calls + 1));
+  }
+});
+
 test.each(
   [false, true].flatMap((watch) => [false, true].map((equivalent) => ({ watch, equivalent }))),
 )("collections sharing a logical source load independently: %j", async ({ watch, equivalent }) => {

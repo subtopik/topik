@@ -145,13 +145,18 @@ describe("unsupported Markdown nodes", () => {
   test.each([
     ["Paragraph\n\n<!-- note -->", "html", 3],
     ["<div>x</div>", "html", 1],
-    ["Text <b>bold</b>", "html", 1],
     ["> Quote\n>\n> <aside>x</aside>", "html", 3],
     ["{% callout %}\n<div>x</div>\n\n{% /callout %}", "html", 2],
     ["{% if $a %}\n<div>x</div>\n\n{% /if %}", "html", 2],
   ])("%s reports node-undefined at the node", (source, type, line) => {
     expect(validateTopikContent(source).errors).toEqual([
       expect.objectContaining({ id: "node-undefined", type, lines: [line] }),
+    ]);
+  });
+
+  test("inline HTML reports its line once, at the first column", () => {
+    expect(validateTopikContent("Text <b>bold</b>").errors).toEqual([
+      expect.objectContaining({ id: "node-undefined", type: "html", lines: [1], column: 6 }),
     ]);
   });
 

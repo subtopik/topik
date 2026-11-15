@@ -25,6 +25,7 @@ const PNG_BYTES = Buffer.from(
   "hex",
 );
 const PDF_BYTES = Buffer.from("%PDF-1.7\nmanual\n");
+const OPAQUE_BYTES = Buffer.from("plain notes\n");
 
 describe("Astro production Asset delivery", () => {
   const roots: string[] = [];
@@ -153,6 +154,8 @@ describe("Astro production Asset delivery", () => {
       expect(get.headers.get("content-type")).toBe(expectedMediaType);
       expect(get.headers.get("content-length")).toBe(String(bytes.byteLength));
       expect(get.headers.get("x-content-type-options")).toBe("nosniff");
+      expect(get.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+      expect(get.headers.get("content-disposition")).toBeNull();
 
       const head = await serverModule.fetch(
         new Request(`http://example.test${url}`, { method: "HEAD" }),
@@ -217,9 +220,43 @@ describe("Astro production Asset delivery", () => {
       expect(response.status).toBe(404);
     }
   }, 15_000);
+
+  test("a real server build delivers opaque download payloads as attachments", async () => {
+    const root = await createFixture({ opaqueDownload: true, server: true });
+    roots.push(root);
+    await buildFixture(root);
+
+    const serverModule = (await import(
+      `${pathToFileURL(join(root, "dist/server/entry.mjs")).href}?test=${Date.now()}`
+    )) as { fetch: (request: Request) => Promise<Response> };
+    const html = await (await serverModule.fetch(new Request("http://example.test/"))).text();
+    const urls = new Set([...html.matchAll(/href="(\/blobs\/[0-9a-f]{64})"/gu)].map((m) => m[1]));
+    expect(urls.size).toBe(3);
+
+    let opaque = 0;
+    for (const url of urls) {
+      for (const method of ["GET", "HEAD"] as const) {
+        const response = await serverModule.fetch(
+          new Request(`http://example.test${url}`, { method }),
+        );
+        const contentType = response.headers.get("content-type");
+        expect(response.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+        expect(response.headers.get("content-disposition")).toBe(
+          contentType === "application/octet-stream" ? "attachment" : null,
+        );
+        if (contentType === "application/octet-stream" && method === "GET") {
+          expect(Buffer.from(await response.arrayBuffer())).toEqual(OPAQUE_BYTES);
+          opaque += 1;
+        }
+      }
+    }
+    expect(opaque).toBe(1);
+  }, 15_000);
 });
 
-async function createFixture(options: { server?: boolean; base?: string } = {}): Promise<string> {
+async function createFixture(
+  options: { opaqueDownload?: boolean; server?: boolean; base?: string } = {},
+): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "topik-astro-production-"));
   await symlink(WORKSPACE_NODE_MODULES, join(root, "node_modules"), "dir");
   await mkdir(join(root, "src/pages"), { recursive: true });
@@ -245,8 +282,11 @@ async function createFixture(options: { server?: boolean; base?: string } = {}):
   await symlink("shared", join(root, "content/guides/images"), "dir");
   await writeFile(
     join(root, "content/guides/intro.md"),
-    "# Guide\n\n![Guide image](hero.png)\n\n[Guide manual](manual.pdf)\n",
+    `# Guide\n\n![Guide image](hero.png)\n\n[Guide manual](manual.pdf)\n${options.opaqueDownload === true ? "\n[Guide notes](notes.txt)\n" : ""}`,
   );
+  if (options.opaqueDownload === true) {
+    await writeFile(join(root, "content/guides/notes.txt"), OPAQUE_BYTES);
+  }
   await writeFile(
     join(root, "content/wiki/wiki.yaml"),
     "id: docs\ntitle: Docs\nnavigation:\n  - intro\n",

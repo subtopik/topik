@@ -326,29 +326,33 @@ describe("root manifest compilation", () => {
     });
   });
 
-  test.each(["symlink", "hardlink", "executable", "directory", "oversized"])(
-    "rejects disallowed config input: %s",
-    async (kind) => {
-      const dir = await fixture({
-        ".topik.yaml": sources([{ kind: "wiki", config: "selected.yaml" }]),
-        "target.yaml": "id: docs\ntitle: Docs",
-      });
-      const path = join(dir, "selected.yaml");
-      if (kind === "symlink") await symlink("target.yaml", path);
-      if (kind === "hardlink") await link(join(dir, "target.yaml"), path);
-      if (kind === "directory") await mkdir(path);
-      if (kind === "executable") {
-        await writeFile(path, "id: docs\ntitle: Docs");
-        await chmod(path, 0o755);
-      }
-      if (kind === "oversized") await writeFile(path, "#".repeat(1_048_577));
-      await expect(compile({ dir })).rejects.toMatchObject({
-        id: "config-read-failed",
-        location: "selected.yaml",
-        sourceIndex: 0,
-      });
-    },
-  );
+  test.each([
+    ["symlink", "symbolic-link"],
+    ["hardlink", "hard-linked"],
+    ["executable", "executable"],
+    ["directory", "special-file"],
+    ["oversized", "too-large"],
+  ])("rejects disallowed config input: %s", async (kind, reason) => {
+    const dir = await fixture({
+      ".topik.yaml": sources([{ kind: "wiki", config: "selected.yaml" }]),
+      "target.yaml": "id: docs\ntitle: Docs",
+    });
+    const path = join(dir, "selected.yaml");
+    if (kind === "symlink") await symlink("target.yaml", path);
+    if (kind === "hardlink") await link(join(dir, "target.yaml"), path);
+    if (kind === "directory") await mkdir(path);
+    if (kind === "executable") {
+      await writeFile(path, "id: docs\ntitle: Docs");
+      await chmod(path, 0o755);
+    }
+    if (kind === "oversized") await writeFile(path, "#".repeat(1_048_577));
+    await expect(compile({ dir })).rejects.toMatchObject({
+      id: "config-read-failed",
+      location: "selected.yaml",
+      sourceIndex: 0,
+      reason,
+    });
+  });
 
   test("dangling root symlink fails instead of conventional fallback", async () => {
     const dir = await fixture({ "wiki.yaml": "id: docs\ntitle: Docs" });

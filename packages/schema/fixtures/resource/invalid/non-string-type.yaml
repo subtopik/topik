@@ -1,0 +1,7 @@
+# expect: /type type
+# expect: /type enum
+apiVersion: v1
+type: 1
+name: getting-started
+spec:
+  title: Getting started

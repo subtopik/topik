@@ -24,6 +24,11 @@ written as ordinary text stays text through parsing, formatting, and rendering.
 Angle-bracket links are CommonMark autolinks. Topik does not enable GFM literal
 autolinks or infer links from plain addresses. Code remains literal.
 
+Formatting keeps the form the author chose: `<https://example.com>` stays an
+autolink and `[https://example.com](https://example.com)` stays a link with a
+label. A link whose label was edited, or a tree built without parser positions,
+is written as `[label](destination)`.
+
 Markdown still applies to plain text: `https://example.com/a*b*c` contains
 emphasized `b`. Write `<https://example.com/a*b*c>` or
 `[Example](https://example.com/a*b*c)` to make the complete address a destination.

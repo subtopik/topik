@@ -3,6 +3,8 @@ export type TopikContentDiagnosticLevel = "debug" | "info" | "warning" | "error"
 export interface ContentValidationIssue {
   type: string;
   lines: number[];
+  /** One-based source column when available. */
+  column?: number;
   location?: { file?: string };
   error: { id: string; level: TopikContentDiagnosticLevel; message: string };
 }
@@ -262,6 +264,7 @@ export function toTopikContentDiagnostic(error: ContentValidationIssue): TopikCo
     level: error.error.level,
     message: error.error.message,
     lines: error.lines,
+    ...(error.column === undefined ? {} : { column: error.column }),
     ...(error.location?.file ? { file: error.location.file } : {}),
   });
 }

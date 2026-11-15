@@ -162,8 +162,9 @@ if (result.ok) {
 ```
 
 Each diagnostic has a stable `id`, a fixed `message` for that id, a `level`, and
-one-based `lines` when the source location is known. Messages never repeat
-authored text. Common source problems include:
+one-based `lines` and `column` when the source location is known. The column is
+where the reported node starts on its line. Messages never repeat authored text.
+Common source problems include:
 
 | ID                                                | Problem                                                       |
 | ------------------------------------------------- | ------------------------------------------------------------- |
@@ -187,7 +188,9 @@ and other equivalent Markdown spelling. It preserves text, marks, structure,
 properties, code and formula payloads, destinations, reference bindings, and
 every conditional branch.
 Successful output is validated and reparsed before it is returned. Repeated
-formatting is stable for the same format version and configuration.
+formatting is stable for the same format version and configuration. If the
+output would change the document's meaning, formatting fails with
+`topik-write-failed`, located at the first authored node that would change.
 
 ### Inline mark nesting
 

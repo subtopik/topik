@@ -26,6 +26,8 @@ export interface TopikContentLink {
   href: string;
   kind: TopikContentLinkKind;
   lines: number[];
+  /** One-based source column of the link or card, when available. */
+  column?: number;
 }
 
 export interface TopikAnalyzedHeading extends TopikHeading {
@@ -85,7 +87,7 @@ export function analyzeDocument(
         type: "heading",
         level: "error",
         message: `Explicit heading ID '${id}' is used more than once in this document.`,
-        ...locationFields(node, file),
+        ...sourceLocation(node, file),
       });
     }
   }
@@ -101,7 +103,7 @@ export function analyzeDocument(
         : isReference(node)
           ? index.resolve(node)?.url
           : resource.url;
-    if (typeof href === "string") links.push({ href, kind, ...locationFields(node, file) });
+    if (typeof href === "string") links.push({ href, kind, ...sourceLocation(node, file) });
   }
 
   return {
@@ -198,6 +200,17 @@ function linkKind(node: TreeNode): TopikContentLinkKind | undefined {
 
 function locationFields(node: TreeNode, file?: string): { file?: string; lines: number[] } {
   return { ...(file ? { file } : {}), lines: node.position ? [node.position.start.line] : [] };
+}
+
+/** Line and column of a node's start, for diagnostics and the links they refer to. */
+function sourceLocation(
+  node: TreeNode,
+  file?: string,
+): { file?: string; lines: number[]; column?: number } {
+  return {
+    ...locationFields(node, file),
+    ...(node.position ? { column: node.position.start.column } : {}),
+  };
 }
 
 function linkError(id: string): ValidationError {

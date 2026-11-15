@@ -44,6 +44,22 @@ if (!validate(guide)) throw new Error(JSON.stringify(validate.errors));
 [`@topik/core`](https://github.com/subtopik/topik/tree/main/packages/core) also
 validates resource envelopes with `validateResources`.
 
+## Wiki theme
+
+`Wiki.spec.theme` is optional. In `theme.colors`, `light` and `dark` name the
+display mode a color is shown in, not the shade of the color:
+
+| Field                | Meaning                                                               |
+| -------------------- | --------------------------------------------------------------------- |
+| `colors.primary`     | Base brand color, required when `colors` is present.                  |
+| `colors.light`       | Brand color shown in light mode. Falls back to `primary` when absent. |
+| `colors.dark`        | Brand color shown in dark mode. Falls back to `primary` when absent.  |
+| `appearance.default` | Mode a reader sees before choosing one: `light`, `dark` or `system`.  |
+
+`system` follows the reader's device setting. The schema checks only that each
+color is a six-digit hex value such as `#1d4ed8`; it does not validate
+legibility, and renderers are responsible for readable output.
+
 ## Documentation
 
 - [Resources](https://github.com/subtopik/topik/blob/main/docs/resources/index.md)

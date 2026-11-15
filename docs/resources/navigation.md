@@ -222,6 +222,52 @@ Course's module/page routes while retaining older source-path and route links.
 See [Rendering](../content/rendering.md#integrate-with-application-urls) for the
 React link hooks and the browser-URL requirement.
 
+### Wiki resolver contract
+
+These rules hold for the same functions imported from `@topik/core` or the
+browser-safe `@topik/core/wiki-navigation`.
+
+`resolveWikiNavigation` throws when two pages share a page name, a public route or
+a source path. A page without `sourcePath` derives one from its slugs, with an
+empty slug read as `index`, and that derived path counts too. Each lookup map
+(`pageByName`, `pageByRoute`, `pageBySourcePath`) must name exactly one page so
+that a reference, a public URL and a source-relative link each identify one
+target. The check is therefore stricter than one on names and routes alone.
+
+`resolveWikiContentHref` resolves `ref://wiki-page/<name>` itself, by page name,
+whatever the current page and source version are; other `ref://` types return
+`null`. Other hrefs resolve from the current page, and return `null` when it is
+unknown. A result has these fields:
+
+| Field    | Meaning                                                                         |
+| -------- | ------------------------------------------------------------------------------- |
+| `page`   | The resolved page: name, navigation node, route, source path and ancestors.     |
+| `route`  | The page's canonical public route, without a leading slash (`""` for the root). |
+| `search` | The query with its leading `?`, or `""` when it is absent or empty.             |
+| `hash`   | The fragment without its `#`, or `""`. Percent-encoded for every href form.     |
+
+`search` keeps existing percent-escapes byte-for-byte, including non-UTF-8 and
+malformed ones such as `?mode=%FF` or `?q=%`. Characters a URL cannot hold raw are
+percent-encoded as the WHATWG URL parser encodes them, so `./page.md?a=é` gives
+`?a=%C3%A9`. A `ref://` link whose fragment does not decode as UTF-8, such as
+`#%FF`, is rejected.
+
+With `sourceVersion: 1`, relative links and links ending in `.md`, `.mdx` or
+`.markdown` match source paths, and extensionless root links match public
+routes. Without a source version, the same source-relative links match the public
+route derived from their path, with the extension and a trailing `index` removed,
+so they resolve only where routes mirror the source layout. Pass the Wiki's
+`spec.sourceVersion` to `resolveWikiNavigation`.
+
+A folder link, ending in `/`, `.` or `..` or naming a declared folder, selects the
+folder's single `index` or `README` page by the [folder landing
+rules](#folder-landing-pages) and returns `null` when there is none or more than
+one. An explicit Markdown filename such as `./files.md` still selects that file.
+
+Href paths are percent-decoded once before matching, so `next%20page.md` and
+`next page.md` name the same source. Source paths may contain `%`, `#`, `?` or
+spaces. A path with a malformed escape, such as `/%ZZ`, returns `null`.
+
 Astro loaders expose resource names as entry IDs and publishing routes as
 `entry.data.slug`. Build a route resolver from entries without treating slugs as
 resource identities:

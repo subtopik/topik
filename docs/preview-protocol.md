@@ -23,6 +23,10 @@ import { TOPIK_PREVIEW_PROTOCOL, type PreviewState } from "@topik/core/preview";
 ```
 
 This subpath is browser-safe. The main `@topik/core` entry includes Node APIs.
+It also exports `Resource`, the union of the schema-generated resource types that
+`resources` holds by default. A client that validates each resource itself can
+name its own type instead, as in `PreviewState<ValidatedResource>`; every other
+field keeps its type.
 
 | Field              | Meaning                                                                                |
 | ------------------ | -------------------------------------------------------------------------------------- |
@@ -37,10 +41,27 @@ This subpath is browser-safe. The main `@topik/core` entry includes Node APIs.
 | `courseNavigation` | Explicit authored declaration positions from the same generation                       |
 
 The existing `/resources.resources` and `/resources.payloads` array shapes remain.
-Legacy `sync` (keyed inventories) and `update` (individual resources) events remain
-for existing clients. They do not provide the complete-state guarantees. Select
-one protocol per connection; a capable client must ignore legacy events so an
-individual update cannot overwrite a complete accepted generation. Consumers of
+
+### Legacy events
+
+`GET /events` also sends two legacy events for existing clients. They are frozen:
+they will not gain fields or new event types, and they do not provide the
+complete-state guarantees.
+
+| Event    | When                                                                 | Data                                                              |
+| -------- | -------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `sync`   | Once per connection, after the first `preview-state`                 | `resources` and `payloads` keyed inventories as of the connection |
+| `update` | After each successful generation, once per added or changed resource | `{ key, resource }`, with `key` as `<type>/<name>`                |
+
+Legacy events never signal a deletion. When a source file is deleted or a resource
+disappears from a generation, nothing is sent on the legacy stream, so a legacy
+client keeps showing the removed resource until it reconnects and receives a new
+`sync`. Failed generations send no legacy event either. Clients that need correct
+deletions must consume the complete `preview-state` snapshots, where a deletion is
+absence from `resources`.
+
+Select one protocol per connection; a capable client must ignore legacy events so
+an individual update cannot overwrite a complete accepted generation. Consumers of
 older feeds can keep existing resource previews while explaining that Course
 previews need the new capability.
 
@@ -67,6 +88,13 @@ directory, so a project may itself live inside such a directory.
 Listener exceptions are isolated: a throwing `preview-state` or `update` listener
 does not change compile state or skip other listeners, and its error is passed to
 `error` listeners (exceptions thrown by `error` listeners are dropped).
+
+`watch()` resolves only after the first compilation has finished, whether it
+succeeded or failed, so `watcher.state` is then `ready` or `error` rather than the
+initial `compiling` state. Events from that first compilation are published before
+`on()` can be called; pass `onError` to receive its error. The exception is a
+`signal` aborted before the first compilation finishes: `watch()` then resolves
+with a closed watcher whose state may still be the initial one.
 
 Compilations are serialized and filesystem notifications coalesced. A candidate
 invalidated by a notification during compilation is discarded before publication.

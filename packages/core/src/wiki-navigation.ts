@@ -43,9 +43,21 @@ export type ResolvedWikiNavigation = {
 };
 
 export type ResolvedWikiContentLink = {
+  /** The resolved target page. */
   page: ResolvedWikiPage;
+  /** The target page's canonical public route, without a leading slash (`""` for the root). */
   route: string;
+  /**
+   * Fragment without its leading `#`, or `""`. Percent-encoded for every href form, so
+   * `#héllo` and `./page.md#héllo` both give `h%C3%A9llo`.
+   */
   hash: string;
+  /**
+   * Query including its leading `?`, or `""` when there is none or it is empty. Existing
+   * percent-escapes are kept byte-for-byte, including non-UTF-8 and malformed ones such as
+   * `?mode=%FF` or `?q=%`; characters a URL cannot hold raw are percent-encoded as the WHATWG
+   * URL parser encodes them.
+   */
   search: string;
 };
 
@@ -91,7 +103,22 @@ export function isExternalWikiDropdown(node: WikiNavNode): node is WikiExternalD
   return node.type === "dropdown" && "href" in node;
 }
 
-/** Resolves page routes, source paths, and navigation ancestry from a compiled Wiki tree. */
+/**
+ * Resolves page routes, source paths, and navigation ancestry from a compiled Wiki tree.
+ *
+ * Each page's route joins the slugs of its internal containers and its own slug. Its source
+ * path is the node's `sourcePath`, or else the same joined slugs with an empty slug read as
+ * `index`. External tabs, dropdowns and links contribute no pages.
+ *
+ * Throws when two pages share a page name, a route or a source path, including a source path
+ * derived from slugs. Each of `pageByName`, `pageByRoute` and `pageBySourcePath` must name
+ * exactly one page so that a reference, a public URL and a source-relative link each identify
+ * one target. This is stricter than checking names and routes alone: pages with distinct names
+ * and routes can still be rejected for sharing a source path.
+ *
+ * `options.sourceVersion` is the Wiki's `spec.sourceVersion`. It is returned unchanged and
+ * selects how {@link resolveWikiContentHref} reads source-relative links.
+ */
 export function resolveWikiNavigation(
   navigation: WikiNavigation | readonly WikiNavNode[],
   options: { sourceVersion?: 1 } = {},
@@ -166,7 +193,27 @@ export function findWikiPageAncestors(
   return resolved.pageByName.get(pageName)?.ancestors ?? [];
 }
 
-/** Resolves compiled WikiPage references by name, or legacy links against their source context. */
+/**
+ * Resolves compiled WikiPage references by name, or legacy links against their source context.
+ *
+ * - `ref://wiki-page/<name>` resolves by page name, whatever `currentPageName` and
+ *   `sourceVersion` are. Other `ref://` types, unknown names and references whose fragment
+ *   does not decode as UTF-8 return `null`.
+ * - `#fragment` targets the current page.
+ * - Other hrefs resolve from the current page's source path; an unknown current page, an
+ *   `asset:` href, another origin and a path that escapes the Wiki or holds a malformed escape
+ *   return `null`.
+ *
+ * With `sourceVersion: 1`, relative links and links ending in `.md`, `.mdx` or `.markdown`
+ * address source paths; extensionless root-relative links address public routes, an exact route
+ * first and then the `index` alias. Without it, those links are matched against public routes
+ * derived from the source-relative path, with the extension and a trailing `index` removed. In both, a folder link (a path ending in `/`, `.` or
+ * `..`, or naming a declared folder) selects that folder's single `index` or `README` page and
+ * returns `null` when there is none or more than one.
+ *
+ * Href paths are percent-decoded once before matching, so `next%20page.md` and `next page.md`
+ * name the same source; source paths may themselves contain `%`, `#`, `?` or spaces.
+ */
 export function resolveWikiContentHref(
   href: string,
   currentPageName: string,

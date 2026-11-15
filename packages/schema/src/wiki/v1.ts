@@ -139,12 +139,30 @@ export interface WikiExternalTabNavNode {
  * via the `definition` "theme".
  */
 export interface WikiTheme {
+  /**
+   * Brand colors as six-digit hex values. `light` and `dark` name the display mode a color is shown in, not the shade of the color: `light` is used in light mode, `dark` in dark mode, and `primary` wherever the color for the current mode is absent. The schema checks only the hex format; it does not validate legibility, and renderers are responsible for readable output.
+   */
   colors?: {
+    /**
+     * Base brand color. Used in any display mode whose own color (`light` or `dark`) is absent.
+     */
     primary: string;
+    /**
+     * Brand color shown in light mode. Falls back to `primary` when absent.
+     */
     light?: string;
+    /**
+     * Brand color shown in dark mode. Falls back to `primary` when absent.
+     */
     dark?: string;
   };
+  /**
+   * Display mode settings for readers.
+   */
   appearance?: {
+    /**
+     * Display mode a reader sees before choosing one. `system` follows the reader's device setting.
+     */
     default?: "light" | "dark" | "system";
   };
 }

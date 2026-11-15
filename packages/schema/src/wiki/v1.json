@@ -392,17 +392,21 @@
       "type": "object",
       "properties": {
         "colors": {
+          "description": "Brand colors as six-digit hex values. `light` and `dark` name the display mode a color is shown in, not the shade of the color: `light` is used in light mode, `dark` in dark mode, and `primary` wherever the color for the current mode is absent. The schema checks only the hex format; it does not validate legibility, and renderers are responsible for readable output.",
           "type": "object",
           "properties": {
             "primary": {
+              "description": "Base brand color. Used in any display mode whose own color (`light` or `dark`) is absent.",
               "type": "string",
               "pattern": "^#[0-9a-fA-F]{6}$"
             },
             "light": {
+              "description": "Brand color shown in light mode. Falls back to `primary` when absent.",
               "type": "string",
               "pattern": "^#[0-9a-fA-F]{6}$"
             },
             "dark": {
+              "description": "Brand color shown in dark mode. Falls back to `primary` when absent.",
               "type": "string",
               "pattern": "^#[0-9a-fA-F]{6}$"
             }
@@ -411,9 +415,11 @@
           "additionalProperties": false
         },
         "appearance": {
+          "description": "Display mode settings for readers.",
           "type": "object",
           "properties": {
             "default": {
+              "description": "Display mode a reader sees before choosing one. `system` follows the reader's device setting.",
               "type": "string",
               "enum": ["light", "dark", "system"]
             }

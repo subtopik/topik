@@ -30,6 +30,15 @@ const PUBLIC_CLI_ERROR_MESSAGES = Object.freeze({
   "dev-server-listen-failed": "Dev server could not listen on the requested port.",
   "dev-source-access-failed":
     "Dev server source directory does not exist or could not be accessed.",
+  "format-check-failed": "Some files are not formatted. Run topik format to rewrite them.",
+  "format-failed": "Some files could not be formatted.",
+  "format-target-access-failed": "Format target does not exist or could not be accessed.",
+  "format-target-unsupported":
+    "Format targets must be Markdown files (.md or .mdx) or directories.",
+  "init-file-exists": "Project files already exist. topik init does not overwrite files.",
+  "init-namespace-invalid": "Project namespace must be nonempty portable text.",
+  "init-target-access-failed": "Project directory could not be created or accessed.",
+  "init-write-failed": "Project files could not be written.",
   "lint-failed": "Lint found errors.",
   "project-platform-unsupported":
     "--file-safety anchored requires descriptor-anchored file reads, which only Linux provides. Use --file-safety portable on a workspace you trust, or run on Linux, for example in WSL 2 or a Linux container.",

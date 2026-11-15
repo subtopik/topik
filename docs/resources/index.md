@@ -222,6 +222,7 @@ Off Linux, `topik compile --out-dir` publishes in the same portable mode: it sta
 the complete generation in a sibling temporary directory, verifies it, proves an
 existing output is a previous compilation, and renames it into place, refusing a
 symlinked or foreign target. Linux keeps its descriptor-anchored publication.
+The Astro integration writes its `blobs/` build output through the same code.
 
 ## Multi-source projects
 

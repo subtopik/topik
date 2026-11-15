@@ -127,7 +127,7 @@ describe("Astro static Asset publication", () => {
   );
 });
 
-describe("Astro static Asset publication without descriptor-anchored containment", () => {
+describe("Astro static Asset publication with anchored file safety off Linux", () => {
   let root: string;
 
   beforeEach(async () => {
@@ -145,10 +145,10 @@ describe("Astro static Asset publication without descriptor-anchored containment
     const empty = outputUrl(join(root, "empty"));
     await mkdir(empty.pathname);
 
-    await removeDigestSnapshot(missing);
-    await removeDigestSnapshot(empty);
-    await publishDigestSnapshot(missing, []);
-    await publishDigestSnapshot(empty, []);
+    await removeDigestSnapshot(missing, "anchored");
+    await removeDigestSnapshot(empty, "anchored");
+    await publishDigestSnapshot(missing, [], "anchored");
+    await publishDigestSnapshot(empty, [], "anchored");
 
     await expect(readdir(join(root, "missing"))).rejects.toMatchObject({ code: "ENOENT" });
     expect(await readdir(empty.pathname)).toEqual([]);
@@ -157,7 +157,7 @@ describe("Astro static Asset publication without descriptor-anchored containment
   test("refuses to publish Assets with a clear Linux requirement", async () => {
     const output = outputUrl(join(root, "dist"));
 
-    await expect(publishDigestSnapshot(output, snapshot("asset"))).rejects.toThrow(
+    await expect(publishDigestSnapshot(output, snapshot("asset"), "anchored")).rejects.toThrow(
       /^Topik Asset publication requires Linux/u,
     );
     await expect(readdir(join(root, "dist"))).rejects.toMatchObject({ code: "ENOENT" });
@@ -167,11 +167,109 @@ describe("Astro static Asset publication without descriptor-anchored containment
     const output = outputUrl(join(root, "prior"));
     await mkdir(join(output.pathname, "blobs"), { recursive: true });
 
-    await expect(removeDigestSnapshot(output)).rejects.toThrow(/requires Linux/u);
-    await expect(publishDigestSnapshot(output, [])).rejects.toThrow(/requires Linux/u);
+    await expect(removeDigestSnapshot(output, "anchored")).rejects.toThrow(/requires Linux/u);
+    await expect(publishDigestSnapshot(output, [], "anchored")).rejects.toThrow(/requires Linux/u);
     expect(await readdir(output.pathname)).toEqual(["blobs"]);
   });
 });
+
+describe.each(["darwin", "win32"] as const)(
+  "Astro static Asset publication with portable file safety on simulated %s",
+  (platform) => {
+    let root: string;
+
+    beforeEach(async () => {
+      root = await mkdtemp(join(tmpdir(), "topik-astro-publication-portable-"));
+      vi.spyOn(process, "platform", "get").mockReturnValue(platform);
+    });
+
+    afterEach(async () => {
+      vi.restoreAllMocks();
+      await rm(root, { force: true, recursive: true });
+    });
+
+    test("publishes, replaces, and removes snapshots by default", async () => {
+      const output = outputUrl(join(root, "dist"));
+      const first = snapshot("first");
+      const second = snapshot("second");
+
+      await publishDigestSnapshot(output, first);
+      expect(await readFile(targetFile(output, first[0].digest))).toEqual(first[0].bytes);
+
+      await publishDigestSnapshot(output, second);
+      expect(await readdir(join(output.pathname, "blobs"))).toEqual([second[0].digest]);
+      expect(await readdir(output.pathname)).toEqual(["blobs"]);
+
+      await publishDigestSnapshot(output, []);
+      expect(await readdir(output.pathname)).toEqual([]);
+
+      await publishDigestSnapshot(output, first);
+      await removeDigestSnapshot(output);
+      expect(await readdir(output.pathname)).toEqual([]);
+    });
+
+    test.skipIf(process.platform === "win32")(
+      "publishes world-traversable directories and readable files",
+      async () => {
+        const outputPath = join(root, "served", "dist");
+        const files = snapshot("served");
+
+        await publishDigestSnapshot(outputUrl(outputPath), files);
+
+        expect((await stat(join(outputPath, "blobs"))).mode & 0o777).toBe(0o755);
+        expect((await stat(join(outputPath, "blobs", files[0].digest))).mode & 0o777).toBe(0o444);
+      },
+    );
+
+    test("replaces and removes an empty blobs directory", async () => {
+      const output = outputUrl(join(root, "empty-target"));
+      await mkdir(join(output.pathname, "blobs"), { recursive: true });
+      await publishDigestSnapshot(output, snapshot("into-empty"));
+      expect(await readdir(join(output.pathname, "blobs"))).toHaveLength(1);
+
+      await rm(join(output.pathname, "blobs"), { recursive: true });
+      await mkdir(join(output.pathname, "blobs"));
+      await removeDigestSnapshot(output);
+      expect(await readdir(output.pathname)).toEqual([]);
+    });
+
+    test("rejects a symlinked digest target without following or changing its destination", async () => {
+      const output = outputUrl(join(root, "target-link"));
+      const outside = join(root, "outside-target");
+      await mkdir(output.pathname, { recursive: true });
+      await mkdir(outside);
+      await writeFile(join(outside, "author.txt"), "preserve me");
+      await symlink(outside, join(output.pathname, "blobs"), "dir");
+
+      await expect(publishDigestSnapshot(output, snapshot("blocked"))).rejects.toThrow(
+        /link or non-directory collision/u,
+      );
+      await expect(removeDigestSnapshot(output)).rejects.toThrow(
+        /link or non-directory collision/u,
+      );
+      expect(await readFile(join(outside, "author.txt"), "utf8")).toBe("preserve me");
+      expect(await readdir(output.pathname)).toEqual(["blobs"]);
+    });
+
+    test.each(["noncanonical", "digest-mismatch", "subdirectory"] as const)(
+      "refuses to replace or remove a foreign blobs directory (%s)",
+      async (kind) => {
+        const output = outputUrl(join(root, `foreign-${kind}`));
+        const target = join(output.pathname, "blobs");
+        await mkdir(target, { recursive: true });
+        if (kind === "noncanonical") await writeFile(join(target, "author.txt"), "preserve me");
+        else if (kind === "digest-mismatch") {
+          await writeFile(join(target, "0".repeat(64)), "different bytes");
+        } else await mkdir(join(target, "0".repeat(64)));
+
+        await expect(publishDigestSnapshot(output, snapshot("next"))).rejects.toThrow(/unsafe/u);
+        await expect(removeDigestSnapshot(output)).rejects.toThrow(/unsafe/u);
+        expect(await readdir(output.pathname)).toEqual(["blobs"]);
+        expect(await readdir(target)).toHaveLength(1);
+      },
+    );
+  },
+);
 
 function snapshot(label: string): DigestSnapshotFile[] {
   const bytes = Buffer.from(label);

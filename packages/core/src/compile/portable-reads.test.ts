@@ -244,6 +244,34 @@ describe("Git repository evidence", () => {
     });
   });
 
+  gitTest("keeps repository evidence separate per configured Git executable", async () => {
+    const tools = await temporaryDirectory("topik-git-session-tools-");
+    const trusted = join(tools, "git");
+    await symlink(GIT, trusted);
+    const writable = join(tools, "writable-git");
+    await writeFile(writable, "#!/bin/sh\n");
+    await chmod(writable, 0o777);
+    const dir = await temporaryDirectory("topik-git-session-");
+    await collectionProject(dir, 1);
+    git(dir, "init", "-q");
+    const read = (session: ReturnType<typeof createPortableReadSession>, gitExecutable: string) =>
+      readPortableAssetFileInSession(session, { root: dir, path: "manual.pdf", gitExecutable });
+    const refused = {
+      ok: false,
+      diagnostics: [{ message: "Configured Git executable was not found or is not trusted" }],
+    };
+
+    // A failure under an untrusted executable is not reused for a trusted one.
+    const first = createPortableReadSession();
+    expect(await read(first, writable)).toMatchObject(refused);
+    expect(await read(first, trusted)).toMatchObject({ ok: true });
+    // Evidence proven with a trusted executable does not excuse an untrusted one.
+    const second = createPortableReadSession();
+    expect(await read(second, trusted)).toMatchObject({ ok: true });
+    expect(await read(second, writable)).toMatchObject(refused);
+    expect(spawned.executables).not.toContain(writable);
+  });
+
   test.each(["git", "", "relative/git", "/usr/bin/git\0", 42])(
     "rejects the malformed Git executable %j",
     async (gitExecutable) => {

@@ -928,13 +928,19 @@ async function sessionRepositoryEvidence(
   git: string | undefined,
 ): Promise<RepositoryEvidence> {
   const key = resolve(root);
-  const cached = session.repositories.get(key);
+  const cacheKey = repositoryCacheKey(key, git);
+  const cached = session.repositories.get(cacheKey);
   if (cached !== undefined && (!cached.ok || (await isCurrentRepositoryEvidence(key, cached)))) {
     return cached;
   }
   const evidence = await computeRepositoryEvidence(key, git);
-  session.repositories.set(key, evidence);
+  session.repositories.set(cacheKey, evidence);
   return evidence;
+}
+
+/** Evidence, including a failure, holds only for the Git executable that produced it. */
+function repositoryCacheKey(root: string, git: string | undefined): string {
+  return `${git ?? ""}\0${root}`;
 }
 
 /** Fail when the repository evidence a read relied on no longer holds after the read. */
@@ -949,7 +955,7 @@ async function verifyRepositoryEvidence(
   // evidence itself before failing.
   const key = resolve(root);
   const after = await computeRepositoryEvidence(key, git);
-  session.repositories.set(key, after);
+  session.repositories.set(repositoryCacheKey(key, git), after);
   if (!after.ok) return after.failure;
   const same =
     after.kind === before.kind &&

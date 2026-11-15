@@ -261,16 +261,18 @@ describe("watch", () => {
     });
 
     await delay(500);
-    const firstEdit = performance.now();
+    let lastEdit = 0;
     for (const body of ["One.", "Two.", "Three."]) {
+      lastEdit = performance.now();
       await writeFile(join(dir, "intro.md"), `# Intro\n\n${body}\n`);
       await delay(200);
     }
 
     expect(await updated).toHaveProperty("spec.content.value", "# Intro\n\nThree.\n");
     expect(compiling).toHaveLength(1);
-    // The timer restarts on each notification, so compilation starts a full interval later.
-    expect(compiling[0] - firstEdit).toBeGreaterThanOrEqual(debounceMs);
+    // The timer restarts on each notification, so compilation starts a full interval after
+    // the last edit, not after the first. Only a lower bound: a loaded machine may be slower.
+    expect(compiling[0] - lastEdit).toBeGreaterThanOrEqual(debounceMs);
   }, 15_000);
 
   test("accepts a zero debounce interval", async () => {

@@ -647,4 +647,90 @@
     margin-top: 0.85rem;
     padding-top: 0.85rem;
   }
+
+  /* Print on light paper: no interactive chrome, collapsed content shown, tidy page breaks. */
+  @media print {
+    .topik-content,
+    .topik-content[data-theme="dark"],
+    .dark .topik-content:not([data-theme="light"]) {
+      --topik-color-canvas: #ffffff;
+      --topik-color-text: #1d2939;
+      --topik-color-muted: #667085;
+      --topik-color-border: #d0d5dd;
+      --topik-color-panel: #f8fafc;
+      --topik-color-accent: #0f766e;
+      --topik-color-accent-soft: #ccfbf1;
+
+      background: none;
+    }
+
+    .topik-content .topik-callout {
+      --topik-callout-heading: var(--topik-color-text);
+    }
+
+    .topik-code-block__controls,
+    .topik-code-block__fold {
+      display: none;
+    }
+
+    .topik-code-block__region[hidden] {
+      display: block;
+    }
+
+    /* Syntax themes may be dark; print code as dark text on the page. */
+    .topik-code-block pre.shiki {
+      background: none !important;
+      color: #1d2939 !important;
+    }
+
+    .topik-code-block pre.shiki span {
+      color: inherit !important;
+    }
+
+    .topik-code-block pre {
+      overflow: visible;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+    }
+
+    .topik-code-block__row {
+      width: 100%;
+    }
+
+    .topik-code-group,
+    .topik-table {
+      overflow: visible;
+    }
+
+    .topik-code-group__tabs,
+    .topik-tabs__list {
+      flex-wrap: wrap;
+      overflow: visible;
+    }
+
+    /* Closed accordions print open where the engine exposes their content box. */
+    .topik-accordion::details-content {
+      content-visibility: visible;
+      display: block;
+    }
+
+    .topik-math,
+    .topik-mermaid {
+      overflow: visible;
+      white-space: pre-wrap;
+    }
+
+    .topik-content :where(h1, h2, h3, h4) {
+      break-after: avoid;
+    }
+
+    .topik-callout,
+    .topik-card,
+    .topik-figure,
+    .topik-step,
+    .topik-question,
+    .topik-table tr {
+      break-inside: avoid;
+    }
+  }
 }

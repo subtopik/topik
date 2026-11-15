@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://topik.dev/schemas/resource/v1.json",
+  "title": "Resource",
+  "description": "Any v1 Topik resource envelope. `type` selects the resource schema, which is referenced rather than copied: load the referenced resource schemas alongside this one.",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "Asset",
+        "Course",
+        "CourseModule",
+        "CoursePage",
+        "Guide",
+        "Person",
+        "Wiki",
+        "WikiPage"
+      ]
+    }
+  },
+  "required": ["type"],
+  "allOf": [
+    {
+      "if": { "properties": { "type": { "const": "Asset" } }, "required": ["type"] },
+      "then": { "$ref": "../asset/v1.json" }
+    },
+    {
+      "if": { "properties": { "type": { "const": "Course" } }, "required": ["type"] },
+      "then": { "$ref": "../course/v1.json" }
+    },
+    {
+      "if": { "properties": { "type": { "const": "CourseModule" } }, "required": ["type"] },
+      "then": { "$ref": "../course-module/v1.json" }
+    },
+    {
+      "if": { "properties": { "type": { "const": "CoursePage" } }, "required": ["type"] },
+      "then": { "$ref": "../course-page/v1.json" }
+    },
+    {
+      "if": { "properties": { "type": { "const": "Guide" } }, "required": ["type"] },
+      "then": { "$ref": "../guide/v1.json" }
+    },
+    {
+      "if": { "properties": { "type": { "const": "Person" } }, "required": ["type"] },
+      "then": { "$ref": "../person/v1.json" }
+    },
+    {
+      "if": { "properties": { "type": { "const": "Wiki" } }, "required": ["type"] },
+      "then": { "$ref": "../wiki/v1.json" }
+    },
+    {
+      "if": { "properties": { "type": { "const": "WikiPage" } }, "required": ["type"] },
+      "then": { "$ref": "../wiki-page/v1.json" }
+    }
+  ]
+}

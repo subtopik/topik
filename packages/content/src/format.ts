@@ -1,5 +1,5 @@
 import { serializeDocument } from "./writer.js";
-import { sameDocumentMeaning } from "./document-meaning.js";
+import { locateMeaningDifference, sameDocumentMeaning } from "./document-meaning.js";
 import { prepareSource, writeFailure } from "./source.js";
 import type { TopikContentDiagnostic } from "./diagnostics";
 import { type ValidateTopikContentOptions } from "./validate";
@@ -39,6 +39,10 @@ export function formatTopikContent(
   const output = prepareSource(formatted, { ...options, config: prepared.config });
   if (!output.ok) return { ok: false, source, diagnostics: output.diagnostics };
   if (!sameDocumentMeaning(prepared.document, output.document))
-    return writeFailure(source, options.file);
+    return writeFailure(
+      source,
+      options.file,
+      locateMeaningDifference(prepared.document, output.document),
+    );
   return { ok: true, source, diagnostics: [], formatted };
 }

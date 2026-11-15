@@ -7,7 +7,7 @@ import {
 } from "@topik/content";
 import type { Resource } from "../resource";
 import { resolveWikiContentHref, resolveWikiNavigation } from "../wiki-navigation";
-import { SourcePlanningError } from "./diagnostics";
+import { failSourcePlan } from "./diagnostics";
 import { withSourceScratch, type SourceDocumentProvenance, type SourceProject } from "./project";
 import { compileResourceLinks } from "../compile/links";
 import {
@@ -149,11 +149,11 @@ export function prepareSourceResourceReferences(
     { allowCompiledAssetReferences: true },
   );
   if (!rewritten.ok)
-    throw new SourcePlanningError({
-      code: "reference-unrepresentable",
-      message: "Source resource references cannot be interpreted faithfully.",
-      resource: `${resource.type}/${resource.name}`,
-    });
+    failSourcePlan(
+      "reference-unrepresentable",
+      "Source resource references cannot be interpreted faithfully.",
+      `${resource.type}/${resource.name}`,
+    );
   resource.spec.content.value = rewritten.content;
   if (!document || !supplied.length) return document;
   return {
@@ -302,11 +302,11 @@ export function restoreSourceResourceReferences(
       if (!identity) return undefined;
       const targetKey = `${identity.type}/${identity.name}`;
       if (base.has(targetKey) && !desired.has(targetKey))
-        throw new SourcePlanningError({
-          code: "reference-target-removed",
-          message: "A resource reference still targets a removed resource.",
-          resource: key,
-        });
+        failSourcePlan(
+          "reference-target-removed",
+          "A resource reference still targets a removed resource.",
+          key,
+        );
       const matches = (saved: SourceDocumentProvenance["references"][number]) =>
         !used.has(saved) &&
         saved.kind === reference.kind &&
@@ -405,10 +405,10 @@ export function restoreSourceResourceReferences(
     { allowCompiledAssetReferences: true },
   );
   if (!rewritten.ok)
-    throw new SourcePlanningError({
-      code: "reference-unrepresentable",
-      message: "Source resource references cannot be written faithfully.",
-      resource: key,
-    });
+    failSourcePlan(
+      "reference-unrepresentable",
+      "Source resource references cannot be written faithfully.",
+      key,
+    );
   return { content: rewritten.content, repairs };
 }

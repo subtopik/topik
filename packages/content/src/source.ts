@@ -33,9 +33,11 @@ export type PreparedSource =
       diagnostics: TopikContentDiagnostic[];
     };
 
+/** `at` is the source start of the authored node that could not be written, when known. */
 export function writeFailure(
   source: string,
   file?: string,
+  at?: { line: number; column: number },
 ): Extract<PreparedSource, { ok: false }> {
   return {
     ok: false,
@@ -46,7 +48,8 @@ export function writeFailure(
         type: "document",
         level: "error",
         message: "",
-        lines: [],
+        lines: at ? [at.line] : [],
+        ...(at ? { column: at.column } : {}),
         ...(file === undefined ? {} : { file }),
       }),
     ],
@@ -133,13 +136,14 @@ export function prepareSource(
       options.allowCompiledAssetReferences === true,
       index,
     ))
-      add(issue.id, issue.type, issue.lines);
+      add(issue.id, issue.type, issue.lines, undefined, issue.column);
 
     const analysis = analyzeDocument(parsed.document, options.file, index);
     errors.push(...analysis.diagnostics);
     for (const link of analysis.links) {
       const validate = link.kind === "card" ? validateTopikNavigationHref : validateTopikHref;
-      for (const issue of validate(link.href)) add(issue.id, link.kind, link.lines);
+      for (const issue of validate(link.href))
+        add(issue.id, link.kind, link.lines, undefined, link.column);
     }
     for (const { occurrence, node } of locateDocumentAssetOccurrences(
       parsed.document,
@@ -170,6 +174,8 @@ export function prepareSource(
             : "TOPIK_ASSET_PATH_INVALID",
         occurrence.slot,
         node.position ? [node.position.start.line] : [],
+        undefined,
+        node.position?.start.column,
       );
     }
     if (errors.length === 0)

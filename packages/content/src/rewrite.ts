@@ -3,7 +3,7 @@ import { rewriteDocumentAssetOccurrences } from "./asset-references.js";
 import { prepareSource, writeFailure } from "./source.js";
 import { serializeDocument } from "./writer.js";
 import { FORMAT_VERSION } from "./parser.js";
-import { sameDocumentMeaning } from "./document-meaning.js";
+import { locateMeaningDifference, sameDocumentMeaning } from "./document-meaning.js";
 import type { TopikContentDiagnostic } from "./diagnostics";
 import { type ValidateTopikContentOptions } from "./validate";
 
@@ -55,6 +55,10 @@ export function rewriteTopikAssetOccurrences(
   });
   if (!output.ok) return { ok: false, source, diagnostics: output.diagnostics };
   if (!sameDocumentMeaning(prepared.document, output.document))
-    return writeFailure(source, options.file);
+    return writeFailure(
+      source,
+      options.file,
+      locateMeaningDifference(prepared.document, output.document),
+    );
   return { ok: true, source, diagnostics: [], content };
 }

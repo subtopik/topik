@@ -19,8 +19,47 @@ export function sameDocumentMeaning(left: ContentDocument, right: ContentDocumen
   );
 }
 
-function meaning(node: TreeNode): Record<string, unknown> {
+/**
+ * Start of the first authored node in `left` whose meaning differs from `right`:
+ * the deepest differing node that carries a source position. Undefined when the
+ * documents agree or no differing node or ancestor has a position.
+ */
+export function locateMeaningDifference(
+  left: ContentDocument,
+  right: ContentDocument,
+): { line: number; column: number } | undefined {
+  const origins = new WeakMap<object, TreeNode>();
+  let expected = meaning(canonicalizeInlineMarks(left) as TreeNode, origins);
+  let actual = meaning(canonicalizeInlineMarks(right) as TreeNode);
+  let located: TreeNode | undefined;
+  const locate = (fields: unknown) => {
+    const node = origins.get(fields as object);
+    if (node?.position && node.type !== "root") located = node;
+  };
+  for (;;) {
+    locate(expected);
+    const { children: expectedChildren = [], ...expectedFields } = expected;
+    const { children: actualChildren = [], ...actualFields } = actual;
+    if (!equal(expectedFields, actualFields)) break;
+    const authored = expectedChildren as Record<string, unknown>[];
+    const written = actualChildren as Record<string, unknown>[];
+    const index = authored.findIndex((child, at) => !equal(child, written[at]));
+    // Content only the written side has is located at its parent.
+    if (index === -1) break;
+    if (index >= written.length) {
+      locate(authored[index]);
+      break;
+    }
+    expected = authored[index];
+    actual = written[index];
+  }
+  const start = located?.position?.start;
+  return start && { line: start.line, column: start.column };
+}
+
+function meaning(node: TreeNode, origins?: WeakMap<object, TreeNode>): Record<string, unknown> {
   const fields: Record<string, unknown> = { ...node };
+  origins?.set(fields, node);
   delete fields.position;
   delete fields.data;
   delete fields.children;
@@ -78,7 +117,7 @@ function meaning(node: TreeNode): Record<string, unknown> {
   if (node.children) {
     const children: Record<string, unknown>[] = [];
     for (const child of node.children) {
-      const next = meaning(child);
+      const next = meaning(child, origins);
       const previous = children.at(-1);
       if (previous?.type === "text" && next.type === "text")
         previous.value = String(previous.value) + String(next.value);

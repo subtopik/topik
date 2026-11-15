@@ -69,6 +69,19 @@ export {
   type ContentBearingResource,
 } from "./compile";
 export { CompileError } from "./compile";
+
+/** @internal Safe publication of generated output, shared by the CLI and the Astro integration. */
+export {
+  OutputPublicationError,
+  publishOutputDirectory,
+  removeOutputDirectory,
+  type OutputDirectoryOptions,
+  type OutputOwnershipPredicate,
+  type OutputPublicationErrorReason,
+  type OutputPublicationFile,
+  type OutputPublicationOptions,
+  type OwnedOutputEntry,
+} from "./compile/publication";
 export type { Resource, ResourceType, SourceResource } from "./resource";
 
 export { validateResources, type ValidationError, type ValidationResult } from "./validate";
@@ -137,6 +150,7 @@ export {
   type SourceUpdatePlan,
   type SourcePlanResult,
   type SourcePlanDiagnostic,
+  type SourcePlanDiagnosticCode,
 } from "./source/plan";
 export {
   replaySourceByteEdits,

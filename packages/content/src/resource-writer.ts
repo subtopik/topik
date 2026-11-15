@@ -31,14 +31,50 @@ function title(value: string | null | undefined, state: State): string {
   }
 }
 
-/** A CommonMark autolink is the only lossless source form for some literal URLs. */
+// CommonMark autolink grammar: a URI autolink, and an email autolink without `mailto:`.
+const URI_AUTOLINK = /^[a-z][a-z\d+.-]{1,31}:[^\p{Cc}\s<>]*$/iu;
+const EMAIL_AUTOLINK =
+  /^[a-z\d_.!#$%&'*+/=?^`{|}~-]+@[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?(?:\.[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?)*$/iu;
+
+/**
+ * Parser positions show an angle-bracket autolink: its only text child spans
+ * the whole link except the two brackets. A resource link `[url](url)` also
+ * ends with its destination, so it never matches. Trees without positions, or
+ * whose label no longer equals the destination, are written as resources.
+ */
+function authoredAutolink(node: Link, label: Link["children"][number]): boolean {
+  const start = node.position?.start.offset;
+  const end = node.position?.end.offset;
+  const labelStart = label.position?.start.offset;
+  const labelEnd = label.position?.end.offset;
+  return (
+    start !== undefined &&
+    end !== undefined &&
+    labelStart === start + 1 &&
+    labelEnd === end - 1 &&
+    labelEnd > labelStart
+  );
+}
+
+/**
+ * Keep the author's angle-bracket autolink spelling, which is also the only
+ * lossless source form for some literal URLs.
+ */
 function autolink(node: Link, state: State): string | undefined {
   if (node.title != null || node.children.length !== 1 || node.children[0].type !== "text") return;
   const label = node.children[0].value;
-  if (label !== node.url || !/^[a-z][a-z\d+.-]{1,31}:[^\s<>]*$/iu.test(node.url)) return;
-  if (decodeString(node.url) === node.url) return;
-  if (state.stack.includes("tableCell") && node.url.includes("|")) return;
-  return `<${node.url}>`;
+  if (state.stack.includes("tableCell") && label.includes("|")) return;
+  if (label === node.url && URI_AUTOLINK.test(node.url)) {
+    if (decodeString(node.url) !== node.url || authoredAutolink(node, node.children[0]))
+      return `<${node.url}>`;
+    return;
+  }
+  if (
+    node.url === `mailto:${label}` &&
+    EMAIL_AUTOLINK.test(label) &&
+    authoredAutolink(node, node.children[0])
+  )
+    return `<${label}>`;
 }
 
 export function resourceWriterExtension(): NonNullable<Options["extensions"]>[number] {
@@ -78,7 +114,10 @@ export function resourceWriterExtension(): NonNullable<Options["extensions"]>[nu
     exit();
     return result;
   };
-  Object.assign(link, { peek: () => "[" });
+  Object.assign(link, {
+    peek: (node: Link, _parent: unknown, state: State) =>
+      autolink(node, state) === undefined ? "[" : "<",
+  });
   Object.assign(image, { peek: () => "!" });
   return { handlers: { link, image, definition } };
 }

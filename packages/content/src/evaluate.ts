@@ -20,6 +20,7 @@ export class ContentEvaluationError extends Error {
 /** @internal Expected evaluation failures retain their public diagnostic identity. */
 export class TemplateEvaluationError extends ContentEvaluationError {
   readonly lines: number[];
+  readonly column: number | undefined;
   readonly type: string;
 
   constructor(
@@ -32,6 +33,7 @@ export class TemplateEvaluationError extends ContentEvaluationError {
     super(message);
     this.name = "TemplateEvaluationError";
     this.lines = node.position ? [node.position.start.line] : [];
+    this.column = node.position?.start.column;
     this.type = node.type;
   }
 }

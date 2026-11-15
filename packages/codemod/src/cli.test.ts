@@ -157,6 +157,83 @@ describe("codemod CLI file results", () => {
     );
   });
 
+  test("prints only the patch on stdout with --diff and writes nothing", async () => {
+    const write = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await writeFile(join(dir, "good.mdx"), "<Note>Good.</Note>\n");
+    const docsJson = JSON.stringify({ name: "Docs", navigation: { pages: ["good"] } });
+    await writeFile(join(dir, "docs.json"), docsJson);
+    runMock.mockImplementationOnce(async ([command]) => {
+      await command.handler({ dir, dryRun: false, keepExtension: false, diff: true });
+    });
+    await import("./cli");
+
+    const patch = write.mock.calls.map(([chunk]) => String(chunk)).join("");
+    expect(patch).toBe(
+      [
+        "diff --git a/good.mdx b/good.md",
+        "rename from good.mdx",
+        "rename to good.md",
+        "--- a/good.mdx",
+        "+++ b/good.md",
+        "@@ -1,1 +1,3 @@",
+        "-<Note>Good.</Note>",
+        '+{% callout variant="info" %}',
+        "+Good.",
+        "+{% /callout %}",
+        "diff --git a/wiki.yaml b/wiki.yaml",
+        "new file mode 100644",
+        "--- /dev/null",
+        "+++ b/wiki.yaml",
+        "@@ -0,0 +1,4 @@",
+        "+id: docs",
+        "+title: Docs",
+        "+navigation:",
+        "+  - good",
+        "",
+      ].join("\n"),
+    );
+    expect(console.log).not.toHaveBeenCalled();
+    expect(console.error).toHaveBeenCalledWith("  would convert good.mdx → good.md");
+    expect(console.error).toHaveBeenCalledWith("  would write wiki.yaml from docs.json");
+    expect(console.error).toHaveBeenCalledWith("✓ would convert 1 file(s)");
+    expect((await readdir(dir)).sort()).toEqual(["docs.json", "good.mdx"]);
+    expect(await readFile(join(dir, "good.mdx"), "utf-8")).toBe("<Note>Good.</Note>\n");
+    expect(await readFile(join(dir, "docs.json"), "utf-8")).toBe(docsJson);
+  });
+
+  test("reports navigation warnings against the Mintlify configuration", async () => {
+    await writeFile(join(dir, "good.mdx"), "# Good\n");
+    await writeFile(
+      join(dir, "docs.json"),
+      JSON.stringify({ name: "Docs", navigation: { pages: ["good", "gone"] } }),
+    );
+
+    await runCli();
+
+    expect(console.log).toHaveBeenCalledWith("  wrote wiki.yaml from docs.json");
+    expect(console.error).toHaveBeenCalledWith(
+      '⚠ docs.json — navigation.pages[1]: page "gone" has no .md or .mdx file in the directory; not converted',
+    );
+    expect(console.log).toHaveBeenCalledWith("⚠ 1 warning(s)");
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  test("rejects a path that is neither a directory nor a Markdown file", async () => {
+    const exit = vi.spyOn(process, "exit").mockImplementation((() => {
+      throw new Error("exit");
+    }) as never);
+    await writeFile(join(dir, "notes.txt"), "text\n");
+    runMock.mockImplementationOnce(async ([command]) => {
+      await expect(
+        command.handler({ dir: join(dir, "notes.txt"), dryRun: false, keepExtension: false }),
+      ).rejects.toThrow("exit");
+    });
+    await import("./cli");
+
+    expect(console.error).toHaveBeenCalledWith("Not a directory or a .md or .mdx file");
+    expect(exit).toHaveBeenCalledWith(1);
+  });
+
   test("lists skipped files with their warning count", async () => {
     await writeFile(join(dir, "unsupported.md"), '<Icon icon="star" />\n');
 

@@ -29,7 +29,7 @@ import {
   type TopikMaterializationRecordV1,
 } from "@topik/core";
 import { printDiagnostics } from "../diagnostics";
-import { CliError, PublicCliError } from "../errors";
+import { CliError, PublicCliError, withProjectPlatformRequirement } from "../errors";
 import { formatValidationFailure } from "../validation-output";
 
 const COMPILATION_GENERATION_PREFIX = ".topik-compilation-generation-";
@@ -41,7 +41,7 @@ const ownedDescriptorEncoder = new TextEncoder();
 
 export const compile = command({
   name: "compile",
-  desc: "Compile project content into Topik resource files",
+  desc: "Compile project content into Topik resource files. Requires Linux.",
   options: {
     dir: positional("dir").desc("Project directory containing .topik.yaml").default("."),
     outDir: string("out-dir").alias("o").desc("Output directory for compiled resources"),
@@ -68,7 +68,7 @@ export const compile = command({
     const outDir = options.outDir !== undefined ? resolve(options.outDir) : join(dir, ".topik");
     await assertCompilationOutputScope(dir, outDir);
     const result = await compileContent({ dir, validation: { links } }).catch((error: unknown) => {
-      if (!(error instanceof CompileError)) throw error;
+      if (!(error instanceof CompileError)) throw withProjectPlatformRequirement(error);
       // The diagnostics are sanitized by CompileError; print them as lint does.
       printDiagnostics(error.diagnostics);
       console.error(`${error.diagnostics.filter(isErrorDiagnostic).length} compile error(s)`);

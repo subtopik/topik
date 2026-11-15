@@ -14,7 +14,7 @@ import {
 import { version } from "../../package.json";
 
 import { printDiagnostics } from "../diagnostics";
-import { formatPublicCliError, PublicCliError } from "../errors";
+import { formatPublicCliError, PublicCliError, withProjectPlatformRequirement } from "../errors";
 
 const DEV_HOST = "127.0.0.1";
 const DEFAULT_ALLOWED_ORIGIN = "https://write.subtopik.com";
@@ -304,12 +304,27 @@ export async function startDevServer(options: {
   await assertSourceDirectory(dir);
 
   console.log("Watching content for changes...");
+  let initialCompile = true;
+  let platformFailure: PublicCliError | undefined;
   const watcher = await watch({
     dir,
     validation: { links: options.links ?? "error" },
     // Registered before the initial compile so its failure is reported too.
-    onError: reportWatchError,
+    onError: (error) => {
+      const platformError = withProjectPlatformRequirement(error);
+      if (initialCompile && platformError instanceof PublicCliError) {
+        platformFailure = platformError;
+        return;
+      }
+      reportWatchError(error);
+    },
   });
+  initialCompile = false;
+  // No later edit can make this platform readable: stop instead of serving an error state.
+  if (platformFailure !== undefined) {
+    await watcher.close();
+    throw platformFailure;
+  }
   if (watcher.state.status !== "error") console.log(`Compiled ${watcher.resources.size} resources`);
 
   watcher.on("update", (key: string) => {
@@ -388,7 +403,7 @@ function reportWatchError(error: Error): void {
     printDiagnostics(error.diagnostics);
     return;
   }
-  console.error("Compile error:", formatPublicCliError(error));
+  console.error("Compile error:", formatPublicCliError(withProjectPlatformRequirement(error)));
 }
 
 async function assertSourceDirectory(dir: string): Promise<void> {
@@ -398,7 +413,7 @@ async function assertSourceDirectory(dir: string): Promise<void> {
 
 export const dev = command({
   name: "dev",
-  desc: "Start a development server that watches for content changes",
+  desc: "Start a development server that watches for content changes. Requires Linux.",
   options: {
     dir: positional("dir").desc("Project directory containing .topik.yaml").default("."),
     port: string("port").alias("p").desc("Port to listen on").default("50001"),

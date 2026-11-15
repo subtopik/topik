@@ -30,6 +30,8 @@ const PUBLIC_CLI_ERROR_MESSAGES = Object.freeze({
   "dev-source-access-failed":
     "Dev server source directory does not exist or could not be accessed.",
   "lint-failed": "Lint found errors.",
+  "project-platform-unsupported":
+    "topik compile, lint and dev currently require Linux, because this platform cannot read project files safely. Run them on Linux, for example in WSL 2 or a Linux container; topik validate works on any platform.",
   "resource-access-failed": "Resource input could not be accessed.",
   "resource-format-unsupported": "Resource input format is unsupported.",
   "resource-json-invalid": "JSON resource input could not be parsed.",
@@ -56,6 +58,17 @@ function publicCliErrorMessage(id: unknown): string | undefined {
   return typeof id === "string" && Object.hasOwn(PUBLIC_CLI_ERROR_MESSAGES, id)
     ? PUBLIC_CLI_ERROR_MESSAGES[id as PublicCliErrorId]
     : undefined;
+}
+
+/**
+ * Replace core's sanitized `platform-unsupported` read failure with the command-level
+ * platform requirement. Project commands read `.topik.yaml` through core's Linux-only
+ * anchored reader first, so on other platforms this is their first and only failure.
+ */
+export function withProjectPlatformRequirement(error: unknown): unknown {
+  return error instanceof PublicCompileError && error.reason === "platform-unsupported"
+    ? new PublicCliError("project-platform-unsupported", { cause: error })
+    : error;
 }
 
 export function formatPublicCliError(error: unknown): string {

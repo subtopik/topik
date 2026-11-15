@@ -2,11 +2,11 @@ import { resolve } from "node:path";
 import { command, positional, string } from "@drizzle-team/brocli";
 import { isErrorDiagnostic, lint as lintContent, type LinkValidationPolicy } from "@topik/core";
 import { printDiagnostics } from "../diagnostics";
-import { PublicCliError } from "../errors";
+import { PublicCliError, withProjectPlatformRequirement } from "../errors";
 
 export const lint = command({
   name: "lint",
-  desc: "Lint Topik source content without writing compiled resources",
+  desc: "Lint Topik source content without writing compiled resources. Requires Linux.",
   options: {
     dir: positional("dir").desc("Project directory containing .topik.yaml").default("."),
     links: string("links")
@@ -19,6 +19,8 @@ export const lint = command({
     const { diagnostics } = await lintContent({
       dir: resolve(options.dir),
       validation: { links },
+    }).catch((error: unknown) => {
+      throw withProjectPlatformRequirement(error);
     });
     printDiagnostics(diagnostics);
 

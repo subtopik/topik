@@ -99,8 +99,11 @@ Compilation validates source and unresolved internal wiki links by default.
 separate output directory, which may already exist if it is empty. A non-empty
 directory is replaced only when it holds a previous compilation. Published
 directories are mode `0755` and files `0644`, so another user, such as a web
-server, can read them. Writing compilation output with the current CLI requires
-Linux.
+server, can read them. `topik compile` (including `--dry-run`), `topik lint` and
+`topik dev` currently require Linux: they read `.topik.yaml` first, through the
+[Linux-only manifest reader](./manifest.md), and writing compilation output also
+requires Linux. On other platforms they exit with a message that names the
+requirement. `topik validate` works on any platform.
 
 Use [Navigation](./navigation.md) to add folders, groups, page links, and routes.
 If the source includes local assets, see [Assets](./assets.md) for project

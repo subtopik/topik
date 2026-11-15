@@ -582,6 +582,26 @@ describe("dev command", () => {
     );
     expect(log).not.toHaveBeenCalled();
   });
+
+  test.each(["darwin", "win32"] as const)(
+    "stops with the platform requirement on %s instead of serving an error state",
+    async (platform) => {
+      vi.spyOn(process, "platform", "get").mockReturnValue(platform);
+      vi.spyOn(console, "log").mockImplementation(() => undefined);
+      const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+      const failure = await startDevServer({ dir, port: 0 }).then(
+        () => undefined,
+        (reason: unknown) => reason,
+      );
+
+      expect(failure).toMatchObject({ id: "project-platform-unsupported" });
+      expect(formatPublicCliError(failure)).toBe(
+        "topik compile, lint and dev currently require Linux, because this platform cannot read project files safely. Run them on Linux, for example in WSL 2 or a Linux container; topik validate works on any platform.",
+      );
+      expect(error).not.toHaveBeenCalled();
+    },
+  );
 });
 
 test("HTTP and SSE share complete state; reconnect receives existing failure; health binds session", async () => {

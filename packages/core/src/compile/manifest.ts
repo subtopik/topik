@@ -7,7 +7,8 @@ import {
   type TopikManifest,
   type TopikManifestSource,
 } from "../config/manifest";
-import { compileAssetResources } from "./assets";
+import { createPortableReadSession, type PortableReadSession } from "../assets/files";
+import { compileAssetResourcesInSession } from "./assets";
 import { createProjectAssetNameGenerator } from "./asset-names";
 import { readConfigurationText, parseSafeConfigurationYaml, readExactConfigFile } from "./config";
 import { discoverGuides, validateGuideAuthors, type CompileResourceDiscovery } from "./guide";
@@ -21,7 +22,7 @@ import {
 import { throwOnCompileErrors, type CompileResult } from "./shared";
 import type { SourceResource } from "../resource";
 import type { CompileOptions } from "./index";
-import { compileResourceLinks } from "./links";
+import { compileResourceLinksInSession } from "./links";
 
 export interface ManifestSourceDescriptor extends TopikManifestSource {
   /** Zero-based declaration index, used only for provenance and diagnostics. */
@@ -82,6 +83,7 @@ function manifestSourceFailure(
     {
       cause: error,
       field: error.field,
+      reason: error.reason,
       relatedLocation:
         error.relatedLocation === undefined
           ? undefined
@@ -92,6 +94,13 @@ function manifestSourceFailure(
 
 /** Explicit loading requires the canonical file in exactly the supplied root. */
 export async function loadTopikManifest(dir: string): Promise<TopikManifest> {
+  return loadTopikManifestInSession(dir, createPortableReadSession());
+}
+
+async function loadTopikManifestInSession(
+  dir: string,
+  session: PortableReadSession,
+): Promise<TopikManifest> {
   try {
     await lstat(join(dir, TOPIK_MANIFEST_FILENAME));
   } catch (error) {
@@ -102,7 +111,7 @@ export async function loadTopikManifest(dir: string): Promise<TopikManifest> {
       TOPIK_MANIFEST_FILENAME,
     );
   }
-  const raw = await readConfigurationText(dir, TOPIK_MANIFEST_FILENAME);
+  const raw = await readConfigurationText(dir, TOPIK_MANIFEST_FILENAME, session);
   let value: unknown;
   try {
     value = parseSafeConfigurationYaml(raw);
@@ -155,7 +164,9 @@ function manifestSourceDescriptors(manifest: TopikManifest): ManifestSourceDescr
 /** Compile only declared sources, sharing the existing local compiler and Asset pipeline. */
 export async function compileManifest(options: CompileOptions): Promise<ManifestCompileResult> {
   const root = resolve(options.dir);
-  const manifest = await loadTopikManifest(root);
+  // One session shares Git repository evidence across every portable read of this build.
+  const session = createPortableReadSession();
+  const manifest = await loadTopikManifestInSession(root, session);
   const sources = manifestSourceDescriptors(manifest);
   const provenance: ManifestSourceProvenance[] = [];
   const diagnostics: CompileResult["diagnostics"] = [];
@@ -172,7 +183,7 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
     let selected;
     try {
       // Read against the project root so every config path component is checked.
-      selected = await readExactConfigFile(root, source.config);
+      selected = await readExactConfigFile(root, source.config, session);
     } catch (error) {
       throw manifestSourceFailure(error, source, "");
     }
@@ -236,7 +247,7 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
     resources,
     Object.assign({}, ...provenance.map((source) => source.sourcePathsByResource)),
   );
-  const linked = await compileResourceLinks({
+  const linked = await compileResourceLinksInSession(session, {
     rootDir: root,
     resources,
     sourcePathsByResource,
@@ -246,7 +257,7 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
   });
   diagnostics.push(...linked.diagnostics);
   throwOnCompileErrors(diagnostics);
-  const compiled = await compileAssetResources({
+  const compiled = await compileAssetResourcesInSession(session, {
     rootDir: root,
     resources: linked.resources,
     sourcePathsByResource,

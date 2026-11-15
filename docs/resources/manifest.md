@@ -14,7 +14,7 @@ sources:
     config: handbook/reference/wiki.yaml
 ```
 
-The manifest declares the project namespace and points to existing configurations. Wiki identity, navigation and settings stay in each Wiki configuration; collection settings stay in each collection configuration. Markdown, frontmatter and ordinary media remain the source files. Generated JSON resources belong in compiler output. A Git checkout is not required.
+The manifest declares the project namespace and points to existing configurations. Wiki identity, navigation and settings stay in each Wiki configuration; collection settings stay in each collection configuration. Markdown, frontmatter and ordinary media remain the source files. Generated JSON resources belong in compiler output. A Git checkout is not required; see [Inside a Git checkout](#inside-a-git-checkout) for what applies when there is one.
 
 `version: 1` versions only manifest syntax. It does not enable the extended content
 metadata. Sources support `wiki`, `collection` and `course`. [Source writing](./source-writing.md)
@@ -34,9 +34,25 @@ Run `topik compile ./project`. Only `.topik.yaml` in that exact directory is loa
 
 Each source contains exactly `kind` and `config`. The declared kind selects the existing local schema, regardless of filename. For example, `config: docs/handbook.yml` selects that exact file without reading a neighboring `wiki.yaml`. YAML, YML and JSON configurations are supported. Local schemas may overlap; a configuration valid under the declared kind is accepted under that kind.
 
-Configuration paths use normalized, portable, manifest-relative `/` spelling. Absolute paths, URLs, traversal, duplicate declarations, case/Unicode aliases and unsafe file types are rejected. Directory overlap is allowed. Files must satisfy the existing portable file rules: regular non-executable files without symlinks, hardlinks or content filters. Safe file loading currently requires Linux descriptor-anchored traversal.
+Configuration paths use normalized, portable, manifest-relative `/` spelling. Absolute paths, URLs, traversal, duplicate declarations, case/Unicode aliases and unsafe file types are rejected. Directory overlap is allowed. Files must satisfy the existing portable file rules: regular non-executable files without symlinks, hardlinks or content filters. Safe file loading currently requires Linux descriptor-anchored traversal; other platforms fail with reason `platform-unsupported`.
 
 Paths inside each configuration remain relative to that configuration's directory; Markdown media references remain relative to their document. Both retain their existing local containment rules. Changing the working directory does not change resolution. The location for new media is a local configuration setting: see [New media destination](./assets.md#new-media-destination).
+
+A read failure keeps the stable `config-read-failed` ID and adds a fixed explanation, available as the error's `reason`: `executable`, `hard-linked`, `symbolic-link`, `special-file`, `too-large`, `git-lfs-pointer`, `git-filtered`, `git-submodule`, `git-evidence-unavailable`, `git-repository-untrusted`, `platform-unsupported` or `changed-during-read`. The message never includes absolute paths.
+
+### Inside a Git checkout
+
+A checkout is optional, but when the project directory or any ancestor contains a `.git` entry, the compiler asks Git to prove that each manifest, configuration and local asset file is a plain worktree file:
+
+- Git must be installed at `/usr/bin/git`, `/bin/git`, `/usr/local/bin/git`, `/run/current-system/sw/bin/git` or `/nix/var/nix/profiles/default/bin/git`, owned by root or the current user and not group- or world-writable. `PATH` is not searched. Otherwise reads fail with `git-evidence-unavailable`.
+- Git must accept the repository. A checkout owned by another user, common in containers and CI, fails with `git-repository-untrusted` until you compile as its owner or add it to Git's `safe.directory` setting. An ancestor `.git` directory that Git does not recognize as a repository is ignored, as Git ignores it.
+- Inherited variables that redirect Git, such as `GIT_DIR`, `GIT_WORK_TREE` or `GIT_INDEX_FILE`, are removed for these checks; `GIT_CONFIG_GLOBAL` and similar configuration variables still apply. Each Git command is limited to 30 seconds.
+- Files read must have no effective `filter` (including Git LFS) or `working-tree-encoding` attribute, as reported by `git check-attr`. Unrelated `.gitattributes` rules, such as `design/**/*.psd filter=lfs`, do not affect other files.
+- Files must not be inside a submodule or nested worktree.
+
+Outside a checkout, `.gitattributes` files in the project are still evaluated. A rule whose pattern the compiler cannot evaluate exactly (bracket expressions, escapes or macros) fails only for files it could match.
+
+The compiler queries the repository once per compilation and then one `git check-attr` per file read. Every file must still be a regular, non-executable file with a single hard link, reached without symbolic links below the project directory. Symbolic links above the project directory, such as `/home` linking to `/var/home`, are allowed.
 
 The manifest and explicitly selected configurations are limited to 1 MiB each, with at most 1,000 sources and 32 levels of configuration nesting. YAML uses core data types; duplicate keys, aliases and custom tags are rejected. Unknown fields and kinds, unsupported versions and missing sources fail visibly. Config failures identify the zero-based `sources[index]`, declared kind and safe manifest-relative config path. A failure in a source's own files, such as invalid page frontmatter, keeps that file's manifest-relative path and any offending field instead. No nearby config is substituted.
 

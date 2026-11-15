@@ -260,8 +260,11 @@ Local files must satisfy the compiler's path, media, and size rules. Paths canno
 escape the compilation directory or collide under normalization or case folding.
 The compiler refuses symlinks, hard links, executable or special files, protected
 compiler inputs, unsupported media, active content, and files that change during
-inspection. An image needs meaningful alternative text; a download needs a
-meaningful label.
+inspection. Inside a Git checkout, files with an effective Git content filter
+or working-tree encoding are refused too; see
+[Inside a Git checkout](./manifest.md#inside-a-git-checkout) for what the
+compiler needs from Git. An image needs meaningful alternative text; a download
+needs a meaningful label.
 
 The compiler detects media types from file bytes, not extensions. It recognizes
 PNG, JPEG, GIF, WebP, AVIF, HEIC/HEIF, BMP, and ICO images; MP3, WAV, Ogg, FLAC,

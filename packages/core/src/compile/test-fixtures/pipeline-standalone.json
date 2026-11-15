@@ -1,0 +1,319 @@
+{
+  "wiki": {
+    "diagnostics": [
+      {
+        "id": "link-page-not-found",
+        "type": "link",
+        "level": "warning",
+        "message": "Internal link target page was not found.",
+        "lines": [3],
+        "file": "index.md"
+      },
+      {
+        "id": "link-page-not-found",
+        "type": "link",
+        "level": "warning",
+        "message": "Internal link target page was not found.",
+        "lines": [3],
+        "file": "index.md"
+      }
+    ],
+    "references": [],
+    "courseNavigation": {},
+    "resources": [
+      {
+        "apiVersion": "v1",
+        "type": "Wiki",
+        "name": "handbook",
+        "spec": {
+          "title": "Handbook",
+          "navigation": [
+            {
+              "type": "page",
+              "page": "handbook-1bc04b5291c26a46",
+              "slug": "",
+              "sourcePath": "index"
+            },
+            {
+              "type": "page",
+              "page": "handbook-d9298a10d1b07358",
+              "slug": "other",
+              "sourcePath": "other"
+            }
+          ]
+        }
+      },
+      {
+        "apiVersion": "v1",
+        "type": "WikiPage",
+        "name": "handbook-1bc04b5291c26a46",
+        "spec": {
+          "wiki": "handbook",
+          "title": "Handbook",
+          "content": {
+            "format": "topik",
+            "value": "# Handbook\n\nSee [other](other.md#more) and [nothing](none.md).\n"
+          }
+        }
+      },
+      {
+        "apiVersion": "v1",
+        "type": "WikiPage",
+        "name": "handbook-d9298a10d1b07358",
+        "spec": {
+          "wiki": "handbook",
+          "title": "Other",
+          "content": {
+            "format": "topik",
+            "value": "## More\n\nText.\n"
+          }
+        }
+      }
+    ],
+    "payloads": [],
+    "semantic": {
+      "descriptor": "topik-asset-semantic-v1",
+      "assetNames": [],
+      "references": []
+    },
+    "materialization": {
+      "descriptor": "topik-materialization-v1",
+      "resources": [
+        {
+          "resource": "Wiki/handbook",
+          "path": "resources/Wiki/handbook.json",
+          "size": 409,
+          "sha256": "5c1e639c3e73f1a14c7e7a45ab23bd07d64592f7c88487388c9632c1b3a4d646"
+        },
+        {
+          "resource": "WikiPage/handbook-1bc04b5291c26a46",
+          "path": "resources/WikiPage/handbook-1bc04b5291c26a46.json",
+          "size": 284,
+          "sha256": "3f5ca69a20e22559276ee99921d57d81e58637f8aa37f00cc08d977210fea840"
+        },
+        {
+          "resource": "WikiPage/handbook-d9298a10d1b07358",
+          "path": "resources/WikiPage/handbook-d9298a10d1b07358.json",
+          "size": 233,
+          "sha256": "5b81078f0645ee0207c370a27f50ce6c8f188e50b330ee6f21ff2bf788ac4121"
+        }
+      ],
+      "payloads": []
+    }
+  },
+  "guides": {
+    "diagnostics": [],
+    "references": [
+      {
+        "resource": "Guide/notes-alpha",
+        "sourcePath": "alpha.md",
+        "href": "beta.md",
+        "kind": "link",
+        "position": "1/0",
+        "reference": {
+          "type": "Guide",
+          "name": "notes-beta",
+          "search": "",
+          "hash": ""
+        },
+        "status": "verified"
+      }
+    ],
+    "courseNavigation": {},
+    "resources": [
+      {
+        "apiVersion": "v1",
+        "type": "Guide",
+        "name": "notes-alpha",
+        "spec": {
+          "title": "Alpha",
+          "slug": "alpha",
+          "tags": ["a", "b"],
+          "content": {
+            "format": "topik",
+            "value": "# Alpha\n\n[Beta](ref://guide/notes-beta)\n"
+          }
+        }
+      },
+      {
+        "apiVersion": "v1",
+        "type": "Guide",
+        "name": "notes-beta",
+        "spec": {
+          "title": "Beta",
+          "slug": "beta",
+          "tags": ["a"],
+          "content": {
+            "format": "topik",
+            "value": "Beta has no heading.\n"
+          }
+        }
+      }
+    ],
+    "payloads": [],
+    "semantic": {
+      "descriptor": "topik-asset-semantic-v1",
+      "assetNames": [],
+      "references": []
+    },
+    "materialization": {
+      "descriptor": "topik-materialization-v1",
+      "resources": [
+        {
+          "resource": "Guide/notes-alpha",
+          "path": "resources/Guide/notes-alpha.json",
+          "size": 280,
+          "sha256": "4f3020aa4cab54d65d4564ed31074435159dd0aa9eeeed663bae7af6884b9d43"
+        },
+        {
+          "resource": "Guide/notes-beta",
+          "path": "resources/Guide/notes-beta.json",
+          "size": 245,
+          "sha256": "65beaa5cc4cf6c9c37a36eca8eade36c9232dc297656ea0fd71955576d415802"
+        }
+      ],
+      "payloads": []
+    }
+  },
+  "course": {
+    "diagnostics": [],
+    "references": [
+      {
+        "resource": "CoursePage/welcome",
+        "sourcePath": "pages/welcome.md",
+        "href": "next.md#details",
+        "kind": "link",
+        "position": "1/0",
+        "reference": {
+          "type": "CoursePage",
+          "name": "next",
+          "search": "",
+          "hash": "details"
+        },
+        "status": "verified"
+      },
+      {
+        "resource": "CoursePage/welcome",
+        "sourcePath": "pages/welcome.md",
+        "href": "/getting-started/destination",
+        "kind": "link",
+        "position": "1/2",
+        "reference": {
+          "type": "CoursePage",
+          "name": "next",
+          "search": "",
+          "hash": ""
+        },
+        "status": "verified"
+      }
+    ],
+    "courseNavigation": {
+      "learning": {
+        "modules": [
+          {
+            "name": "basics",
+            "declarationIndex": 0,
+            "pages": [
+              {
+                "name": "welcome",
+                "declarationIndex": 0
+              },
+              {
+                "name": "next",
+                "declarationIndex": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "resources": [
+      {
+        "apiVersion": "v1",
+        "type": "Course",
+        "name": "learning",
+        "spec": {
+          "title": "Learning",
+          "slug": "public-course"
+        }
+      },
+      {
+        "apiVersion": "v1",
+        "type": "CourseModule",
+        "name": "basics",
+        "spec": {
+          "course": "learning",
+          "title": "Basics",
+          "slug": "getting-started",
+          "order": 1
+        }
+      },
+      {
+        "apiVersion": "v1",
+        "type": "CoursePage",
+        "name": "next",
+        "spec": {
+          "module": "basics",
+          "title": "Next",
+          "slug": "destination",
+          "order": 2,
+          "content": {
+            "format": "topik",
+            "value": "# Next\n\n## Details\n"
+          }
+        }
+      },
+      {
+        "apiVersion": "v1",
+        "type": "CoursePage",
+        "name": "welcome",
+        "spec": {
+          "module": "basics",
+          "title": "Welcome",
+          "slug": "introduction",
+          "order": 1,
+          "content": {
+            "format": "topik",
+            "value": "# Welcome\n\n[Next](ref://course-page/next#details) and [route](ref://course-page/next).\n"
+          }
+        }
+      }
+    ],
+    "payloads": [],
+    "semantic": {
+      "descriptor": "topik-asset-semantic-v1",
+      "assetNames": [],
+      "references": []
+    },
+    "materialization": {
+      "descriptor": "topik-materialization-v1",
+      "resources": [
+        {
+          "resource": "Course/learning",
+          "path": "resources/Course/learning.json",
+          "size": 137,
+          "sha256": "8ce156f7dd629cb36e556ea770c5371f3cd32fb7c3898e2802af4ee62cf43d41"
+        },
+        {
+          "resource": "CourseModule/basics",
+          "path": "resources/CourseModule/basics.json",
+          "size": 183,
+          "sha256": "fd5d51393d634a5bdf9cf25cd346536b2a31c612a23cdfb4b3165bd3c5a7e42b"
+        },
+        {
+          "resource": "CoursePage/next",
+          "path": "resources/CoursePage/next.json",
+          "size": 260,
+          "sha256": "e0d3ca3bf2c3872e48939f74419bf3f98f786202ed4b807c7a8cd1401da9331f"
+        },
+        {
+          "resource": "CoursePage/welcome",
+          "path": "resources/CoursePage/welcome.json",
+          "size": 335,
+          "sha256": "9ce44d54f59a7ea77aa0f09347672fa9b1165ccdc4f0105677ddedb41bde0e3d"
+        }
+      ],
+      "payloads": []
+    }
+  }
+}

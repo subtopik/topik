@@ -158,6 +158,35 @@ describe("convertMintlifyNavigation", () => {
     ]);
   });
 
+  test("a rejected surface claims no routes from the entries kept after it", () => {
+    const result = convertMintlifyNavigation(
+      "docs.json",
+      {
+        name: "Acme",
+        navigation: {
+          dropdowns: [
+            {
+              dropdown: "Docs",
+              tabs: [{ tab: "Nested", pages: ["quickstart"] }],
+              groups: [{ group: "Start", pages: ["quickstart"] }],
+            },
+          ],
+          groups: [{ group: "Mixed", pages: ["index"] }],
+          pages: ["index"],
+        },
+      },
+      pages,
+    );
+    expect(result.warnings).toEqual([
+      "navigation.dropdowns[0].tabs: tabs cannot appear here in Topik; not converted",
+      "navigation.groups: groups and pages cannot be mixed with dropdowns at one level; not converted",
+      "navigation.pages: groups and pages cannot be mixed with dropdowns at one level; not converted",
+    ]);
+    expect(result.yaml).toContain(
+      "        title: Start\n        children:\n          - quickstart\n",
+    );
+  });
+
   test("writes no configuration without a usable site name", () => {
     expect(convertMintlifyNavigation("docs.json", { navigation: {} }, pages)).toEqual({
       warnings: ["name: a site name of 1 to 256 characters is required; no wiki.yaml written"],

@@ -24,11 +24,14 @@ Run `topik-codemod mintlify --help` for every flag, and review the result with
 
 `--diff` prints a unified diff of every change and writes nothing. Only the patch
 goes to standard output, with the per-file summary on standard error, so you can
-save it with `npx topik-codemod mintlify ./docs --diff > migration.patch`.
+save it with `npx topik-codemod mintlify ./docs --diff > migration.patch` and
+apply it later with `git apply migration.patch`. The patch uses git headers, so
+renames from `.mdx` to `.md` apply too, and CRLF line endings are kept.
 
 Pass a single `.md` or `.mdx` file instead of a directory to convert just that
 page. Other pages are not inspected, so they may link to it, and the file keeps
-its `.mdx` extension. Run the codemod on the directory to rename it.
+its `.mdx` extension. Run the codemod on the directory to rename it. A file
+argument must not be a symbolic link; a directory argument may be one.
 
 ## Navigation
 

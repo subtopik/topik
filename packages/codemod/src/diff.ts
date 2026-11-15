@@ -5,9 +5,12 @@ const CONTEXT_LINES = 3;
 type Operation = { kind: " " | "-" | "+"; line: string };
 
 /**
- * Render a unified diff between two texts. Lines keep their own terminators, so
- * line-ending changes are differences. `oldName` is `null` for a new file. Returns
- * just the file headers for a rename without content changes, and `""` when nothing changes.
+ * Render a unified diff between two texts that `git apply` accepts. Lines end at
+ * LF only, so a CR before it (or a lone CR) stays in the line, byte for byte.
+ * Each file starts with a `diff --git` header. `oldName` is `null` for a new file
+ * (`new file mode`). A rename carries `rename from`/`rename to`, with
+ * `similarity index 100%` and no hunk when the content is unchanged.
+ * Returns `""` when nothing changes.
  */
 export function unifiedDiff(
   oldName: string | null,
@@ -16,14 +19,36 @@ export function unifiedDiff(
   newText: string,
 ): string {
   if (oldName === newName && oldText === newText) return "";
-  const header = [`--- ${oldName === null ? "/dev/null" : `a/${oldName}`}`, `+++ b/${newName}`];
-  if (oldText === newText) return `${header.join("\n")}\n`;
+  // Every section has a git header: git reads a section up to the next one.
+  const header = [
+    `diff --git ${quotePath(`a/${oldName ?? newName}`)} ${quotePath(`b/${newName}`)}`,
+  ];
+  if (oldName === null) header.push("new file mode 100644");
+  else if (oldName !== newName) {
+    header.push(
+      ...(oldText === newText ? ["similarity index 100%"] : []),
+      `rename from ${quotePath(oldName)}`,
+      `rename to ${quotePath(newName)}`,
+    );
+    if (oldText === newText) return `${header.join("\n")}\n`;
+  }
+  header.push(
+    `--- ${oldName === null ? "/dev/null" : quotePath(`a/${oldName}`)}`,
+    `+++ ${quotePath(`b/${newName}`)}`,
+  );
   const operations = diffLines(splitLines(oldText), splitLines(newText));
   return `${[...header, ...hunks(operations)].join("\n")}\n`;
 }
 
 function splitLines(text: string): string[] {
-  return text.match(/[^\r\n]*(?:\r\n|\r|\n)|[^\r\n]+$/g) ?? [];
+  return text.match(/[^\n]*\n|[^\n]+$/g) ?? [];
+}
+
+/** Git's C-style quoting for paths with quotes, backslashes or control characters. */
+function quotePath(path: string): string {
+  if (!/["\\\p{Cc}]/u.test(path)) return path;
+  const escapes: Record<string, string> = { '"': '\\"', "\\": "\\\\", "\t": "\\t", "\n": "\\n" };
+  return `"${path.replace(/["\\\p{Cc}]/gu, (character) => escapes[character] ?? `\\${character.charCodeAt(0).toString(8).padStart(3, "0")}`)}"`;
 }
 
 function diffLines(a: readonly string[], b: readonly string[]): Operation[] {
@@ -136,7 +161,8 @@ function hunks(operations: readonly Operation[]): string[] {
     const newStart = positions[start].newLine + (newCount ? 1 : 0);
     lines.push(`@@ -${oldStart},${oldCount} +${newStart},${newCount} @@`);
     for (const operation of slice) {
-      const body = operation.line.replace(/(?:\r\n|\r|\n)$/, "");
+      // Strip only the LF separator; a preceding CR is part of the line's bytes.
+      const body = operation.line.replace(/\n$/, "");
       lines.push(`${operation.kind}${body}`);
       if (body === operation.line) lines.push("\\ No newline at end of file");
     }

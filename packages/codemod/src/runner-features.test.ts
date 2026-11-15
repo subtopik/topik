@@ -26,6 +26,9 @@ describe("diff", () => {
     const byPath = Object.fromEntries(summary.files.map((file) => [file.relativePath, file]));
     expect(byPath["note.mdx"]?.diff).toBe(
       [
+        "diff --git a/note.mdx b/note.md",
+        "rename from note.mdx",
+        "rename to note.md",
         "--- a/note.mdx",
         "+++ b/note.md",
         "@@ -1,3 +1,5 @@",
@@ -38,7 +41,9 @@ describe("diff", () => {
         "",
       ].join("\n"),
     );
-    expect(byPath["plain.mdx"]?.diff).toBe("--- a/plain.mdx\n+++ b/plain.md\n");
+    expect(byPath["plain.mdx"]?.diff).toBe(
+      "diff --git a/plain.mdx b/plain.md\nsimilarity index 100%\nrename from plain.mdx\nrename to plain.md\n",
+    );
     expect(byPath["kept.md"]?.diff).toBeUndefined();
     expect((await readdir(dir)).sort()).toEqual(["kept.md", "note.mdx", "plain.mdx"]);
     expect(await readFile(join(dir, "note.mdx"), "utf8")).toBe("# Note\n\n<Note>Hi.</Note>\n");
@@ -87,6 +92,31 @@ describe("single-file input", () => {
     expect(await isMigrationInput(join(dir, "link.mdx"))).toBe(false);
     expect(await isMigrationInput(join(dir, "missing.mdx"))).toBe(false);
   });
+
+  test.skipIf(process.platform === "win32")(
+    "accepts a symbolic link to a directory, as before, without following links inside it",
+    async () => {
+      await mkdir(join(dir, "real"));
+      await mkdir(join(dir, "outside"));
+      await writeFile(join(dir, "real/page.mdx"), "<Tip>In.</Tip>\n");
+      await writeFile(join(dir, "outside/page.mdx"), "<Tip>Out.</Tip>\n");
+      await symlink(join(dir, "real"), join(dir, "linked"));
+      await symlink(join(dir, "outside"), join(dir, "real/nested"));
+
+      expect(await isMigrationInput(join(dir, "linked"))).toBe(true);
+      const summary = await runMintlify({
+        dir: join(dir, "linked"),
+        dryRun: false,
+        keepExtension: false,
+      });
+
+      expect(summary.files.map((file) => file.relativePath)).toEqual(["page.mdx"]);
+      expect(summary.notices).toContainEqual(
+        expect.stringMatching(/^Skipped 1 symbolic link\(s\), which are not followed: nested$/),
+      );
+      expect(await readFile(join(dir, "outside/page.mdx"), "utf8")).toBe("<Tip>Out.</Tip>\n");
+    },
+  );
 });
 
 describe("navigation", () => {
@@ -157,7 +187,7 @@ describe("navigation", () => {
     expect(dry.navigation?.changed).toBe(true);
     const diff = await runMintlify({ dir, dryRun: false, keepExtension: false, diff: true });
     expect(diff.navigation?.diff).toMatch(
-      /^--- \/dev\/null\n\+\+\+ b\/wiki\.yaml\n@@ -0,0 \+1,\d+ @@\n\+id: acme-docs\n/,
+      /^diff --git a\/wiki\.yaml b\/wiki\.yaml\nnew file mode 100644\n--- \/dev\/null\n\+\+\+ b\/wiki\.yaml\n@@ -0,0 \+1,\d+ @@\n\+id: acme-docs\n/,
     );
     expect(await readdir(dir)).not.toContain("wiki.yaml");
   });

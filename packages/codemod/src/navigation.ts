@@ -119,49 +119,38 @@ class Converter {
   ): NavNode[] {
     const nodes: NavNode[] = [];
     let surface: Surface | undefined;
-    const add = (key: string, kind: Surface, converted: NavNode[]) => {
-      if (!converted.length) return;
-      if (!allowed.has(kind)) {
-        this.warn(`${path}.${key}`, `${plural(kind)} cannot appear here in Topik; not converted`);
-        return;
-      }
-      surface ??= kind;
-      if (kind !== surface) {
-        this.warn(
-          `${path}.${key}`,
-          `${plural(kind)} cannot be mixed with ${plural(surface)} at one level; not converted`,
-        );
-        return;
-      }
-      nodes.push(...converted);
-    };
     for (const [key, child] of Object.entries(value)) {
       if (handled.has(key)) continue;
       const at = `${path}.${key}`;
-      const list = () => {
-        if (Array.isArray(child)) return child;
-        this.warn(at, "is not a list; not converted");
-        return [];
+      // Reject a surface before converting it, so a dropped subtree claims no routes.
+      const add = (kind: Surface, convert: (items: readonly unknown[]) => NavNode[]) => {
+        if (Array.isArray(child) && !child.length) return;
+        if (!allowed.has(kind))
+          return this.warn(at, `${plural(kind)} cannot appear here in Topik; not converted`);
+        if (surface !== undefined && kind !== surface)
+          return this.warn(
+            at,
+            `${plural(kind)} cannot be mixed with ${plural(surface)} at one level; not converted`,
+          );
+        if (!Array.isArray(child)) return this.warn(at, "is not a list; not converted");
+        const converted = convert(child);
+        if (!converted.length) return;
+        surface = kind;
+        nodes.push(...converted);
       };
       if (key === "tabs")
-        add(
-          key,
-          "tab",
-          this.each(list(), at, depth, (item, itemPath) => this.tab(item, itemPath, depth)),
+        add("tab", (items) =>
+          this.each(items, at, depth, (item, itemPath) => this.tab(item, itemPath, depth)),
         );
       else if (key === "dropdowns")
-        add(
-          key,
-          "dropdown",
-          this.each(list(), at, depth, (item, itemPath) => this.dropdown(item, itemPath, depth)),
+        add("dropdown", (items) =>
+          this.each(items, at, depth, (item, itemPath) => this.dropdown(item, itemPath, depth)),
         );
       else if (key === "groups")
-        add(
-          key,
-          "sidebar",
-          this.each(list(), at, depth, (item, itemPath) => this.group(item, itemPath, depth)),
+        add("sidebar", (items) =>
+          this.each(items, at, depth, (item, itemPath) => this.group(item, itemPath, depth)),
         );
-      else if (key === "pages") add(key, "sidebar", this.pageList(list(), at, depth));
+      else if (key === "pages") add("sidebar", (items) => this.pageList(items, at, depth));
       else if (key === "icon") this.warn(at, "icons are dropped");
       else if (key !== "$schema") this.warn(at, "has no Topik equivalent; not converted");
     }

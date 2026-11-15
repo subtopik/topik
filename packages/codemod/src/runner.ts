@@ -306,11 +306,17 @@ async function* selectFile(
   else yield path;
 }
 
-/** Whether a path names a directory or a regular `.md` or `.mdx` file the codemod can migrate. */
+/**
+ * Whether a path names a directory or a regular `.md` or `.mdx` file the codemod can migrate.
+ * A directory argument may be a symbolic link, as before single-file input existed; links
+ * inside it are still not followed. A file argument must not be a link, because publishing
+ * replaces the path itself.
+ */
 export async function isMigrationInput(path: string): Promise<boolean> {
   try {
+    if (await isDirectory(path)) return true;
     const info = await lstat(path);
-    return (await isDirectory(path)) || (info.isFile() && (isMdx(path) || isMarkdown(path)));
+    return info.isFile() && (isMdx(path) || isMarkdown(path));
   } catch {
     return false;
   }

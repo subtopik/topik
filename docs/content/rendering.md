@@ -89,6 +89,19 @@ renderer cannot observe the application's theme class. Applications with a theme
 switch should pass the selected scheme as `colorScheme` so that text, panels,
 figures and rich output always agree.
 
+### Printing
+
+The theme stylesheet includes print styles. Printed content always uses the light
+colors and no canvas background, whatever the screen scheme. Copy and wrap
+buttons and code fold toggles are hidden, collapsed code lines are printed, and
+long code lines wrap. Tabs and code groups print their selected panel, so a
+reader's choice (for example a package manager) carries over to paper. Closed
+accordions print open in browsers that support `::details-content`; elsewhere
+they print as they are. Headings stay with the content after them, and callouts,
+cards, figures, steps, questions and table rows avoid page breaks inside them.
+With `rich/styles.css`, syntax-highlighted code prints as dark text and dark
+diagrams print with light diagram colors.
+
 ## Variables
 
 Supply reader values through `config.variables`:
@@ -233,7 +246,9 @@ import "katex/dist/katex.min.css";
 Rich components load their peers in the browser. Server rendering emits the
 initial fallback or loading state; hydration completes the rich presentation.
 Code and math retain plain fallbacks if rendering fails. Mermaid displays a
-loading state and falls back to diagram source on failure. The authored `mermaid` fences and public `TopikMermaid` / `RichTopikMermaid`
+loading state and falls back to diagram source on failure. When diagram source
+changes, the previous diagram stays visible, marked `aria-busy`, until the new
+one is ready. A theme change only recolors the existing diagram. The authored `mermaid` fences and public `TopikMermaid` / `RichTopikMermaid`
 components are unchanged; replace the optional `mermaid` installation with `pele@1.13.0`.
 
 Pele uses its own layouts and CSS colors, so output differs from Mermaid.js.

@@ -52,11 +52,14 @@ export function PreviewMedia({
   const [failed, setFailed] = useState<TopikComponentProps>();
   const mounted = useRef(true);
   const currentAttributes = useRef(media);
-  // Downloads act for the exact committed content, including changed link text.
-  const currentSource = useRef(source);
+  // Downloads act for the exact committed content, including changed link text. Every committed
+  // change bumps the revision, so content that changes and then changes back still cancels.
+  const committedSource = useRef({ source, revision: 0 });
   useLayoutEffect(() => {
     currentAttributes.current = media;
-    currentSource.current = source;
+    const committed = committedSource.current;
+    if (committed.source !== source)
+      committedSource.current = { source, revision: committed.revision + 1 };
   }, [media, source]);
   useLayoutEffect(() => {
     mounted.current = true;
@@ -104,11 +107,11 @@ export function PreviewMedia({
         type="button"
         onClick={() => {
           const clicked = media;
-          const clickedSource = source;
+          const clickedRevision = committedSource.current.revision;
           const current = () =>
             mounted.current &&
             currentAttributes.current === clicked &&
-            currentSource.current === clickedSource &&
+            committedSource.current.revision === clickedRevision &&
             download.state.active();
           void download.state.load(download.name, download.slot).then(
             (url) => {

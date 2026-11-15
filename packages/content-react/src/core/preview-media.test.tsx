@@ -9,6 +9,7 @@ import { defaultTopikComponents } from "../theme/components";
 import { compileTopikContent, renderTrustedTopikTree } from "./render";
 import { createPreviewAssetAdapter, type PreviewAssetAdapter } from "./preview-assets";
 const name = `auto-v1-${"a".repeat(52)}`;
+const otherName = `auto-v1-${"b".repeat(51)}a`;
 const bytes = new Uint8Array([1, 2, 3]);
 const digest = createHash("sha256").update(bytes).digest("hex");
 let root: Root;
@@ -31,25 +32,23 @@ function setup() {
     snapshot: {
       sessionId: "one",
       generation: 1,
-      resources: [
-        {
-          type: "Asset",
-          name,
-          spec: {
-            uri: `blobs/${digest}`,
-            integrity: `sha256:${digest}`,
-            size: 3,
-            mediaType: "image/png",
-          },
+      resources: [name, otherName].map((assetName) => ({
+        type: "Asset",
+        name: assetName,
+        spec: {
+          uri: `blobs/${digest}`,
+          integrity: `sha256:${digest}`,
+          size: 3,
+          mediaType: "image/png",
         },
-      ],
+      })),
       payloads: [
         {
           path: `blobs/${digest}`,
           integrity: `sha256:${digest}`,
           size: 3,
           mediaType: "image/png",
-          assetNames: [name],
+          assetNames: [name, otherName],
         },
       ],
     },
@@ -140,7 +139,7 @@ test.each(["success", "failure"] as const)(
   },
 );
 
-test.each(["unchanged", "suspended", "rerendered", "replaced", "unmounted"] as const)(
+test.each(["unchanged", "suspended", "rerendered", "replaced", "restored", "unmounted"] as const)(
   "a delayed download respects committed content: %s",
   async (lifecycle) => {
     setup();
@@ -194,6 +193,11 @@ test.each(["unchanged", "suspended", "rerendered", "replaced", "unmounted"] as c
     } else if (lifecycle === "replaced") {
       await act(async () => root.render(<Page replacement />));
       expect(container.querySelector("button")?.textContent).toBe("Changed page");
+    } else if (lifecycle === "restored") {
+      // Content changed in between, even though it now matches the clicked content again.
+      await act(async () => root.render(<Page replacement />));
+      await act(async () => root.render(<Page />));
+      expect(container.querySelector("button")?.textContent).toBe("Download");
     } else if (lifecycle === "unmounted") {
       await act(async () => root.render(null));
       expect(container.querySelector("button")).toBeNull();
@@ -207,6 +211,30 @@ test.each(["unchanged", "suspended", "rerendered", "replaced", "unmounted"] as c
     );
   },
 );
+
+test("a delayed download is cancelled when only its child image Asset changes", async () => {
+  setup();
+  const finishes: ((value: Response) => void)[] = [];
+  const requests: URL[] = [];
+  vi.stubGlobal("fetch", (url: URL) => {
+    requests.push(url);
+    return new Promise<Response>((resolve) => finishes.push(resolve));
+  });
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  const page = (image: string) => (
+    <TopikContent content={`[![Hero](asset:${image})](asset:${name})`} previewAssets={adapter} />
+  );
+  await act(async () => root.render(page(name)));
+  await act(async () => container.querySelector("button")!.click());
+  const pending = finishes.length;
+  await act(async () => root.render(page(otherName)));
+  await act(async () => {
+    for (const [index, finish] of finishes.entries()) finish(mediaResponse(requests[index]));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  expect(pending).toBeGreaterThan(0);
+  expect(click).not.toHaveBeenCalled();
+});
 
 function mediaResponse(url: URL) {
   const result = new Response(bytes, { headers: { "content-type": "image/png" } });

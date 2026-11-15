@@ -33,11 +33,12 @@ export function Article() {
 
 The root `@topik/content-react` entry point also exports `renderTopikMarkdown`
 and `renderTopikContent` for applications that own their component mapping.
-These functions, and `compileTopikContent`, can be imported from React Server
-Components; the provider, hooks and the `theme` and `rich` entry points are client
-modules. Pass themed components when using those functions to render the built-in tags:
+Pass themed components when using those functions to render the built-in tags.
+In a client component, pass the complete themed map:
 
 ```tsx
+"use client";
+
 import { renderTopikMarkdown } from "@topik/content-react";
 import { defaultTopikComponents } from "@topik/content-react/theme";
 
@@ -47,6 +48,27 @@ export function ArticleWithComponents() {
   });
 }
 ```
+
+`renderTopikMarkdown`, `renderTopikContent` and `compileTopikContent` can also be
+imported from React Server Components. The provider, hooks and the `theme` and
+`rich` entry points are client modules, so a server component receives their
+exports as opaque client references: it can render an imported component, but it
+cannot read properties of `defaultTopikComponents` or `getRichTopikComponents()`.
+Assemble the map on the server from the components the content uses:
+
+```tsx
+import { renderTopikMarkdown } from "@topik/content-react";
+import { TopikCallout, TopikCodeBlock, TopikLink } from "@topik/content-react/theme";
+
+export function ServerArticle({ source }: { source: string }) {
+  return renderTopikMarkdown(source, {
+    components: { TopikCallout, TopikCodeBlock, TopikLink },
+  });
+}
+```
+
+Tags without a supplied component render their children without the themed
+wrapper.
 
 ### Color scheme
 

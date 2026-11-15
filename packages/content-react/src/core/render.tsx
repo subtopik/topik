@@ -144,8 +144,7 @@ export function renderTrustedTopikTree(
           key={elementKey}
           component={component as import("./components").TopikComponent}
           attributes={node.attributes}
-          // Tokens serialize as empty objects, so this keys on authored content alone.
-          source={JSON.stringify(node)}
+          source={serializeResolvedContent(node)}
         >
           {children}
         </PreviewMedia>
@@ -158,6 +157,17 @@ export function renderTrustedTopikTree(
     );
   }
   return render(resolved);
+}
+
+/**
+ * Key resolved content on meaning, not identity: fresh preview tokens for the same Asset and slot
+ * serialize equally, while a different Asset anywhere in the subtree changes the result.
+ */
+function serializeResolvedContent(node: RenderableTreeNode): string {
+  return JSON.stringify(node, (_key, value: unknown) => {
+    const token = getPreviewAssetToken(value);
+    return token ? { previewAsset: token.name, slot: token.slot } : value;
+  });
 }
 
 /** Task-list markers are read-only checkboxes; name them by their state for assistive technology. */

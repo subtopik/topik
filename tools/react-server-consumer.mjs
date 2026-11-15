@@ -16,11 +16,16 @@ export async function load(url, context, nextLoad) {
     .map((entry) => entry.trim().split(/\\s+as\\s+/).at(-1))
     .filter(Boolean);
   if (names.length === 0) throw new Error("Client module without named exports: " + url);
+  // Like bundler proxies, a client reference is opaque: dotting into it fails on the server.
+  const reference = (id) =>
+    "new Proxy(function () { throw new Error('Client reference called on the server'); }, { get(target, key) {" +
+    " if (key === '$$typeof') return Symbol.for('react.client.reference');" +
+    " if (key === '$$id') return " + JSON.stringify(id) + ";" +
+    " if (typeof key === 'symbol' || ['name', 'displayName', 'defaultProps', 'toJSON', 'then', '$$async'].includes(key)) return undefined;" +
+    " throw new Error('Cannot access ' + key + ' on a client reference from the server'); } })";
   const stub = names
-    .map((name) => "export const " + (name === "default" ? "__default" : name) +
-      " = Object.defineProperties(function () { throw new Error('Client reference called on the server'); }, " +
-      "{ $$typeof: { value: Symbol.for('react.client.reference') }, $$id: { value: " +
-      JSON.stringify(url + "#" + name) + " } });" + (name === "default" ? " export default __default;" : ""))
+    .map((name) => "export const " + (name === "default" ? "__default" : name) + " = " +
+      reference(url + "#" + name) + ";" + (name === "default" ? " export default __default;" : ""))
     .join("\\n");
   return { format: "module", source: stub, shortCircuit: true };
 }
@@ -51,6 +56,18 @@ assert.equal(typeof root.getTopikComponents().TopikCallout, "function");
 // Stateful exports cross the boundary as client references instead of failing to import.
 assert.equal(root.TopikContentProvider.$$typeof, clientReference);
 assert.equal(root.useTopikComponents.$$typeof, clientReference);
+
+// Server components assemble their map from individually imported themed components:
+// each is a client reference React can render, while the theme's map object is opaque.
+const theme = await import("@topik/content-react/theme");
+assert.throws(
+  () => root.renderTopikMarkdown("# Map", { components: theme.defaultTopikComponents }),
+  /client reference/,
+);
+const serverTree = root.renderTopikMarkdown("{% callout %}\nServer\n{% /callout %}", {
+  components: { TopikCallout: theme.TopikCallout },
+});
+assert.equal(serverTree.props.children.type, theme.TopikCallout);
 
 for (const specifier of ["@topik/content-react/theme", "@topik/content-react/rich"]) {
   const entry = await import(specifier);

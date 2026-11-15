@@ -102,6 +102,40 @@ describe("Pele SVG boundary", () => {
     const svg = safeDiagramSvg(render(source, { links: false, images: false }).svg);
     expect(svg).not.toMatch(/<a\b|href=|<image\b|onclick=/);
   });
+  it("keeps author classes out of the host document while keeping their styles", () => {
+    const source = [
+      "flowchart LR",
+      " A:::hidden --> B",
+      " class B topik-content",
+      " C:::inset-0",
+      " classDef hot fill:#f00,stroke:#333,stroke-width:4px",
+      " D:::hot",
+    ].join("\n");
+    const svg = safeDiagramSvg(render(source, { links: false, images: false }).svg);
+    const tokens = [...svg.matchAll(/\sclass="([^"]*)"/g)].flatMap(([, value]) =>
+      value.split(/\s+/),
+    );
+    expect(tokens).toContain("pele-node");
+    expect(tokens.filter((token) => !/^pele(?:-|$)/.test(token))).toEqual([]);
+    expect(svg).toContain("fill:#f00");
+  });
+  it("bounds layout styles to the renderer's presentation properties", () => {
+    const svg = safeDiagramSvg(
+      '<svg xmlns="http://www.w3.org/2000/svg" class="pele" style="position:fixed;inset:0;z-index:2147483647;max-width:100%;height:auto;--_fg:var(--pele-fg,#1f1f1f)"><rect class="x pele-node" style="fill:#f00;Transform:scale(99);stroke-width:2px"/></svg>',
+    );
+    expect(svg).not.toMatch(/position|inset|z-index|transform/i);
+    expect(svg).toContain('style="max-width:100%;height:auto;--_fg:var(--pele-fg,#1f1f1f)"');
+    expect(svg).toContain('class="pele-node" style="fill:#f00;stroke-width:2px"');
+  });
+  it.each(["max-width:200vw", "height:100vh", "width:9999px"])(
+    "drops unbounded root sizing %s",
+    (declaration) => {
+      const svg = safeDiagramSvg(
+        `<svg xmlns="http://www.w3.org/2000/svg" style="${declaration}"></svg>`,
+      );
+      expect(svg).not.toContain(declaration);
+    },
+  );
   it("rejects malformed source", () => {
     expect(() => render("not a diagram")).toThrow();
   });

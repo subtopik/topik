@@ -738,6 +738,7 @@ describe("content-react core", () => {
             "",
             "- First",
             "- [x] Literal task marker",
+            "- [ ] Open task",
             "",
             "Hard break  ",
             "continues here.",
@@ -748,7 +749,7 @@ describe("content-react core", () => {
 
     expect(html).toContain('<h1 id="checklist">Checklist</h1>');
     expect(html).toContain(
-      '<ul><li>First</li><li><input type="checkbox" disabled="" checked=""/>Literal task marker</li></ul>',
+      '<ul><li>First</li><li><input type="checkbox" disabled="" aria-label="Completed" checked=""/>Literal task marker</li><li><input type="checkbox" disabled="" aria-label="Not completed"/>Open task</li></ul>',
     );
     expect(html).toContain("Hard break<br/>continues here.");
     expect(html).not.toContain("Metadata only");

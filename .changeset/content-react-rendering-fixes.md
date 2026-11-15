@@ -1,0 +1,17 @@
+---
+"@topik/content-react": patch
+---
+
+Fix several rendering issues. A `colorScheme` on `TopikContent` now selects the
+Shiki and diagram theme inside `RichTopikContentProvider` unless the rich
+provider sets `theme`. The root entry marks its provider, hooks and preview media
+as client modules in the build, so `renderTopikMarkdown`, `renderTopikContent`
+and `compileTopikContent` import under the `react-server` condition. A pending
+preview download is no longer dropped when the parent re-renders with inline
+resolvers. `onDiagnostic` reports thrown content once, from a layout effect
+before the error, instead of repeatedly during render. `RichTopikCodeBlock`
+renders string children like `TopikCodeBlock`. The Mermaid loading placeholder is
+a `status` with announced text, and task-list checkboxes have accessible names.
+The diagram boundary drops author class names outside Pele's `pele-*` namespace
+and style declarations other than presentation properties. An explicit
+`undefined` in a components map falls back to the default component.

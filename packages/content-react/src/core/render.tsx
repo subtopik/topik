@@ -144,14 +144,44 @@ export function renderTrustedTopikTree(
           key={elementKey}
           component={component as import("./components").TopikComponent}
           attributes={node.attributes}
+          source={serializeResolvedContent(node)}
         >
           {children}
         </PreviewMedia>
       );
     }
-    return React.createElement(component, { ...node.attributes, key: elementKey }, ...children);
+    return React.createElement(
+      component,
+      { ...node.attributes, ...taskMarkerLabel(node), key: elementKey },
+      ...children,
+    );
   }
   return render(resolved);
+}
+
+/**
+ * Key resolved content on meaning, not identity: fresh preview tokens for the same Asset and slot
+ * serialize equally, while a different Asset anywhere in the subtree changes the result.
+ */
+function serializeResolvedContent(node: RenderableTreeNode): string {
+  return JSON.stringify(node, (_key, value: unknown) => {
+    const token = getPreviewAssetToken(value);
+    return token ? { previewAsset: token.name, slot: token.slot } : value;
+  });
+}
+
+/** Task-list markers are read-only checkboxes; name them by their state for assistive technology. */
+function taskMarkerLabel(node: ContentTag): { "aria-label"?: string } {
+  const { attributes } = node;
+  if (
+    node.name !== "input" ||
+    attributes.type !== "checkbox" ||
+    attributes.disabled !== true ||
+    Object.hasOwn(attributes, "aria-label") ||
+    Object.hasOwn(attributes, "aria-labelledby")
+  )
+    return {};
+  return { "aria-label": attributes.checked === true ? "Completed" : "Not completed" };
 }
 
 function renderInvalidTopikContent(Placeholder: React.ComponentType | undefined): React.ReactNode {

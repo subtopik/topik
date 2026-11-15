@@ -87,6 +87,11 @@ npx topik compile ./handbook --validate
 npx topik validate ./handbook/.topik
 ```
 
+`npx topik init ./handbook` writes exactly these three files (pass `--namespace`
+for another project namespace) and refuses to overwrite any existing file.
+`npx topik format ./handbook` rewrites the Markdown in the canonical form; with
+`--check` it only lists the files that would change.
+
 `--validate` checks the generated resource envelopes. `topik validate` accepts
 resource files or directories containing JSON, JSONL, or YAML, and reports each
 failing file, resource, and JSON pointer. When walking a directory it skips
@@ -99,8 +104,8 @@ Compilation validates source and unresolved internal wiki links by default.
 separate output directory, which may already exist if it is empty. A non-empty
 directory is replaced only when it holds a previous compilation. Published
 directories are mode `0755` and files `0644`, so another user, such as a web
-server, can read them. `topik compile`, `topik lint`, `topik dev` and
-`topik validate` run on Linux, macOS and Windows. Off Linux, project files are
+server, can read them. `topik compile`, `topik lint`, `topik format`, `topik dev`
+and `topik validate` run on Linux, macOS and Windows. Off Linux, project files are
 read and output is published with the weaker
 [portable file safety](#source-filesystem-safety), and the CLI prints one notice
 saying so; pass `--file-safety anchored` to refuse instead, which exits with a

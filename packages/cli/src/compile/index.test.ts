@@ -1023,6 +1023,24 @@ describe.each(["darwin", "win32"] as const)("portable publication on simulated %
     expect(await readdir(join(root, "served"))).toEqual(["out"]);
   });
 
+  test.skipIf(process.platform === "win32")(
+    "makes created parents traversable under a restrictive umask, leaving existing ones",
+    async () => {
+      await mkdir(join(root, "existing"), { mode: 0o700 });
+      const outDir = join(root, "existing", "served", "nested", "out");
+      const previous = process.umask(0o077);
+      try {
+        await replaceCompilationTree(outDir, ownedFiles("first"));
+      } finally {
+        process.umask(previous);
+      }
+      expect((await lstat(join(root, "existing"))).mode & 0o777).toBe(0o700);
+      expect((await lstat(join(root, "existing", "served"))).mode & 0o777).toBe(0o755);
+      expect((await lstat(join(root, "existing", "served", "nested"))).mode & 0o777).toBe(0o755);
+      expect((await treeModes(outDir))[""]).toBe(0o755);
+    },
+  );
+
   test("publishes into a pre-existing empty directory", async () => {
     const outDir = join(root, "precreated");
     await mkdir(outDir);

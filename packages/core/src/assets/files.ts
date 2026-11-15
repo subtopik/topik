@@ -176,6 +176,11 @@ export interface ReadPortableAssetFileOptions {
   fileSafety?: FileSafety;
 }
 
+/** @internal True when no project file can be read on this platform under `fileSafety`. */
+export function refusesProjectFileReads(fileSafety: FileSafety = DEFAULT_FILE_SAFETY): boolean {
+  return !hasAnchoredTraversal() && !usesPortableFileReads(fileSafety);
+}
+
 /** True when reads on this platform use the weaker by-path mode under `fileSafety`. */
 export function usesPortableFileReads(fileSafety: FileSafety = DEFAULT_FILE_SAFETY): boolean {
   return process.platform !== "linux" && fileSafety === "portable";
@@ -353,16 +358,16 @@ async function readPortableAssetFileAnchored(
         afterFileRead,
       );
     }
+    // Refuse before looking for the file: a missing file must not hide that no read can
+    // ever succeed here (portable reads report missing files themselves).
     return {
       ok: false,
       diagnostics: [
-        (await isPortablePathMissing(options))
-          ? missingFile(options.path)
-          : unsupportedPath(
-              options.path,
-              "This platform cannot prove descriptor-anchored no-follow traversal",
-              "platform-unsupported",
-            ),
+        unsupportedPath(
+          options.path,
+          "This platform cannot prove descriptor-anchored no-follow traversal",
+          "platform-unsupported",
+        ),
       ],
     };
   }
@@ -712,8 +717,12 @@ async function readPortableAssetFileByPath(
     if (unsafeFile !== undefined) return fail(unsafeFile);
     // A link or junction anywhere in the authored path (including a case or alias spelling
     // the lexical checks missed) makes the resolved path differ from the lexical one.
+    // Compare in NFC: HFS+ (and APFS for names created decomposed) returns the stored
+    // decomposed spelling for an NFC-authored name. This cannot redirect a read: every
+    // component the kernel resolved was already lstat-checked by its authored name and is
+    // not a link, and the opened handle is that inspected entry.
     const [canonicalRoot, canonicalFile] = await Promise.all([realpath(root), realpath(filePath)]);
-    if (canonicalFile !== resolve(canonicalRoot, ...components)) {
+    if (canonicalFile.normalize("NFC") !== resolve(canonicalRoot, ...components).normalize("NFC")) {
       return fail({
         message: "File path resolves through a link below the resource root",
         reason: "symbolic-link",

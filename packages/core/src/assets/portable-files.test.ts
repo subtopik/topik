@@ -29,10 +29,16 @@ import {
 
 // Swap a file between the reader's inspection and its open, without changing what is read.
 const openSwap = vi.hoisted(() => ({ target: "", replacement: "" }));
+// Report resolved paths decomposed, as HFS+ (and APFS for NFD-created names) does.
+const realpathForm = vi.hoisted(() => ({ decompose: false }));
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
   return {
     ...actual,
+    realpath: (async (...args: Parameters<typeof actual.realpath>) => {
+      const resolved = String(await actual.realpath(...args));
+      return realpathForm.decompose ? resolved.normalize("NFD") : resolved;
+    }) as typeof actual.realpath,
     open: (async (...args: Parameters<typeof actual.open>) => {
       if (openSwap.target !== "" && String(args[0]) === openSwap.target) {
         await actual.rename(openSwap.replacement, openSwap.target);
@@ -53,6 +59,7 @@ const roots: string[] = [];
 
 afterEach(async () => {
   openSwap.target = "";
+  realpathForm.decompose = false;
   vi.restoreAllMocks();
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
@@ -207,6 +214,50 @@ describe.each(PLATFORMS)("portable reads on %s", (platform) => {
       ok: false,
       diagnostics: [{ message: "A directory on the file path changed while the file was read" }],
     });
+  });
+
+  test("reports anchored refusal before absence", async () => {
+    const root = await fixture();
+    expect(
+      reasonOf(await readPortableAssetFile({ root, path: "none.yaml", fileSafety: "anchored" })),
+    ).toBe("platform-unsupported");
+  });
+
+  test("accepts an NFC-authored name that the volume resolves decomposed", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "assets", "caf\u00e9.png"), "accent\n");
+    realpathForm.decompose = true;
+    expect(await readPortableAssetFile({ root, path: "assets/caf\u00e9.png" })).toMatchObject({
+      ok: true,
+    });
+  });
+
+  test("cannot be redirected through an entry differing only by normalization", async (context) => {
+    const root = await fixture();
+    const outside = await realpath(await mkdtemp(join(tmpdir(), "topik-portable-nfd-")));
+    roots.push(outside);
+    await writeFile(join(outside, "secret.png"), "outside\n");
+    // Only normalization-sensitive filesystems (ext4, NTFS) keep both spellings apart.
+    await writeFile(join(root, "assets", "cafe\u0301.png"), "decomposed\n");
+    try {
+      await writeFile(join(root, "assets", "caf\u00e9.png"), "composed\n", { flag: "wx" });
+    } catch {
+      return context.skip();
+    }
+    const read = async () => readPortableAssetFile({ root, path: "assets/caf\u00e9.png" });
+    const composed = await read();
+    expect(composed.ok && Buffer.from(composed.value.bytes ?? []).toString()).toBe("composed\n");
+
+    // The composed name becomes a link while its decomposed twin stays a regular file.
+    await rm(join(root, "assets", "caf\u00e9.png"));
+    if (!(await trySymlink(join(outside, "secret.png"), join(root, "assets", "caf\u00e9.png")))) {
+      return context.skip();
+    }
+    realpathForm.decompose = true;
+    expect(reasonOf(await read())).toBe("symbolic-link");
+    await rm(join(root, "assets", "caf\u00e9.png"));
+    await trySymlink(join(root, "assets", "cafe\u0301.png"), join(root, "assets", "caf\u00e9.png"));
+    expect(reasonOf(await read())).toBe("symbolic-link");
   });
 
   test("keeps the hard-link, size and Git attribute checks", async () => {

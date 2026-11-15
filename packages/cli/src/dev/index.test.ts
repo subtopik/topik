@@ -611,6 +611,10 @@ describe("dev command", () => {
       );
 
       expect(failure).toMatchObject({ id: "project-platform-unsupported" });
+      await rm(join(dir, ".topik.yaml"));
+      await expect(startDevServer({ dir, port: 0, fileSafety: "anchored" })).rejects.toMatchObject({
+        id: "project-platform-unsupported",
+      });
       expect(formatPublicCliError(failure)).toBe(
         "--file-safety anchored requires descriptor-anchored file reads, which only Linux provides. Use --file-safety portable on a workspace you trust, or run on Linux, for example in WSL 2 or a Linux container.",
       );

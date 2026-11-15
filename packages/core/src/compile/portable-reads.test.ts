@@ -9,7 +9,7 @@ import {
   findTrustedGitExecutable,
   readPortableAssetFileInSession,
 } from "../assets/files";
-import { compile } from "./index";
+import { compile, lint } from "./index";
 import { compileGuides } from "./guide";
 import { compileWiki } from "./wiki";
 import { PublicCompileError } from "./public-errors";
@@ -290,6 +290,15 @@ describe("portable read diagnostics", () => {
         location: ".topik.yaml",
         reason: "platform-unsupported",
       });
+      // Refused before the manifest is looked for, so a missing manifest cannot mask it.
+      const empty = await temporaryDirectory("topik-portable-empty-");
+      for (const run of [compile, lint]) {
+        await expect(run({ dir: empty, fileSafety: "anchored" })).rejects.toMatchObject({
+          id: "config-read-failed",
+          location: ".topik.yaml",
+          reason: "platform-unsupported",
+        });
+      }
     },
   );
 });

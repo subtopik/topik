@@ -913,7 +913,24 @@ interface PortableOutputTree {
 /** Create missing parents, then use the canonical parent so aliases above it are allowed. */
 function preparePortableOutputParent(absolutePath: string): string {
   try {
-    mkdirSync(absolutePath, { recursive: true, mode: PUBLISHED_DIRECTORY_MODE });
+    const firstCreated = mkdirSync(absolutePath, {
+      recursive: true,
+      mode: PUBLISHED_DIRECTORY_MODE,
+    });
+    // The umask narrows mkdir's mode. Like the anchored path, widen only the directories
+    // created here so other users (a web server) can reach the output; existing ones keep
+    // their permissions.
+    if (firstCreated !== undefined) {
+      const created = [resolve(absolutePath)];
+      while (created[0] !== resolve(firstCreated) && dirname(created[0]) !== created[0]) {
+        created.unshift(dirname(created[0]));
+      }
+      for (const directory of created) {
+        const stat = lstatSync(directory);
+        if (!stat.isDirectory() || stat.isSymbolicLink()) throw new TypeError("Not a directory");
+        chmodSync(directory, PUBLISHED_DIRECTORY_MODE);
+      }
+    }
     const canonical = realpathSync.native(absolutePath);
     const stat = lstatSync(canonical);
     if (!stat.isDirectory() || stat.isSymbolicLink()) throw new TypeError("Not a directory");

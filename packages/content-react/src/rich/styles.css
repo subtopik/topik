@@ -99,5 +99,9 @@
       break-inside: avoid;
       overflow: visible;
     }
+
+    .topik-rich-code-block__frame pre {
+      overflow: visible;
+    }
   }
 }

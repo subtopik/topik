@@ -1363,4 +1363,15 @@ describe("theme print styles", () => {
       /\.topik-rich-mermaid\[data-theme="dark"\]\s*\{[^}]*--pele-bg:\s*#fff;/u,
     );
   });
+
+  it("prints rich code blocks without a scroll container", () => {
+    // The rich screen rule sets `overflow-x: auto` on the same element and is imported after the
+    // theme, so the rich print block must reset it itself.
+    const screenRule = richStyles.indexOf(".topik-rich-code-block__frame pre {");
+    const start = richStyles.indexOf("@media print {");
+    expect(start).toBeGreaterThan(screenRule);
+    expect(richStyles.slice(start)).toMatch(
+      /\.topik-rich-code-block__frame pre\s*\{[^}]*overflow:\s*visible;/u,
+    );
+  });
 });

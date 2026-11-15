@@ -80,4 +80,24 @@
     white-space: nowrap;
     width: 1px;
   }
+
+  /* Diagrams print with light colors on paper, whatever the screen theme. */
+  @media print {
+    .topik-rich-mermaid[data-theme="dark"] {
+      --pele-bg: #fff;
+      --pele-fg: #1f1f1f;
+      --pele-muted: #6e6e6e;
+      --pele-line: #1f1f1f;
+      --pele-surface: #f3f3f3;
+      --pele-surface-alt: #e6e6e6;
+      --pele-border: #8a8a8a;
+      --pele-accent: #5b7bd5;
+    }
+
+    .topik-rich-mermaid,
+    .topik-rich-math {
+      break-inside: avoid;
+      overflow: visible;
+    }
+  }
 }

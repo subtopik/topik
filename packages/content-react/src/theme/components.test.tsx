@@ -1209,3 +1209,158 @@ describe("theme component fallbacks, accessibility and right-to-left layout", ()
     });
   });
 });
+
+describe("shared tablist markup", () => {
+  it.each([
+    [
+      "code group",
+      <TopikCodeGroup key="group">
+        <TopikCodeTab icon="P" title="pnpm">
+          one
+        </TopikCodeTab>
+        <TopikCodeTab>two</TopikCodeTab>
+      </TopikCodeGroup>,
+      {
+        root: "topik-code-group",
+        list: "topik-code-group__tabs",
+        listLabel: "Code examples",
+        tab: "topik-code-group__tab",
+        panel: "topik-code-group__panel",
+        tabId: /-code-tab-(\d)$/u,
+        panelId: /-code-panel-(\d)$/u,
+        labels: ["Ppnpm", "Code 2"],
+        icons: 1,
+      },
+    ],
+    [
+      "tabs",
+      <TopikTabs key="tabs">
+        <TopikTab icon="P" title="First">
+          one
+        </TopikTab>
+        <TopikTab>two</TopikTab>
+      </TopikTabs>,
+      {
+        root: "topik-tabs",
+        list: "topik-tabs__list",
+        listLabel: "Tabs",
+        tab: "topik-tabs__tab",
+        panel: "topik-tabs__panel",
+        tabId: /-tab-(\d)$/u,
+        panelId: /-panel-(\d)$/u,
+        labels: ["First", "Tab 2"],
+        icons: 0,
+      },
+    ],
+  ])("keeps the %s classes, ids and ARIA wiring", (_name, element, expected) => {
+    const dom = mount(element);
+    const rootElement = dom.firstElementChild!;
+    expect(rootElement.className).toBe(expected.root);
+    const list = rootElement.querySelector(':scope > [role="tablist"]')!;
+    expect(list.className).toBe(expected.list);
+    expect(list.getAttribute("aria-label")).toBe(expected.listLabel);
+    const tabs = [...list.querySelectorAll<HTMLButtonElement>(':scope > [role="tab"]')];
+    const panels = [...rootElement.querySelectorAll<HTMLElement>(':scope > [role="tabpanel"]')];
+    expect(tabs.map((tab) => tab.textContent)).toEqual(expected.labels);
+    expect(rootElement.querySelectorAll("span")).toHaveLength(expected.icons);
+    for (const [index, tab] of tabs.entries()) {
+      const panel = panels[index];
+      expect(tab.className).toBe(expected.tab);
+      expect(tab.getAttribute("type")).toBe("button");
+      expect(expected.tabId.exec(tab.id)?.[1]).toBe(String(index));
+      expect(expected.panelId.exec(panel.id)?.[1]).toBe(String(index));
+      expect(tab.getAttribute("aria-controls")).toBe(panel.id);
+      expect(panel.getAttribute("aria-labelledby")).toBe(tab.id);
+      expect(panel.className).toBe(expected.panel);
+      expect(panel.tabIndex).toBe(0);
+    }
+  });
+});
+
+describe("theme print styles", () => {
+  const printBlock = (() => {
+    const start = themeStyles.indexOf("@media print {");
+    if (start < 0) throw new Error("Missing print styles");
+    let depth = 0;
+    for (let index = themeStyles.indexOf("{", start); index < themeStyles.length; index++) {
+      if (themeStyles[index] === "{") depth++;
+      else if (themeStyles[index] === "}" && --depth === 0) {
+        return themeStyles.slice(start, index + 1);
+      }
+    }
+    throw new Error("Unterminated print styles");
+  })();
+  const printRules = [
+    ...printBlock.slice(printBlock.indexOf("{") + 1).matchAll(/([^{}]+)\{([^}]*)\}/gu),
+  ].map(([, selector, body]) => ({ selector: selector.trim(), body }));
+  const matchingBodies = (markup: string, target: string) => {
+    const host = document.createElement("div");
+    host.innerHTML = markup;
+    const element = host.querySelector(target)!;
+    return printRules
+      .filter(({ selector }) => !selector.includes("::") && element.matches(selector))
+      .map(({ body }) => body)
+      .join("\n");
+  };
+
+  it("stays inside the components cascade layer", () => {
+    expect(themeStyles.indexOf("@media print")).toBeGreaterThan(themeStyles.indexOf("@layer"));
+    expect(themeStyles.indexOf(printBlock) + printBlock.length).toBeLessThan(
+      themeStyles.trimEnd().length,
+    );
+  });
+
+  it.each([
+    '<div class="topik-content" data-theme="dark">',
+    '<div class="dark"><div class="topik-content">',
+    '<div class="topik-content">',
+  ])("prints %s with light colors and no background", (markup) => {
+    const bodies = matchingBodies(markup, ".topik-content");
+    expect(bodies).toContain("--topik-color-canvas: #ffffff");
+    expect(bodies).toContain("--topik-color-text: #1d2939");
+    expect(bodies).toMatch(/background:\s*none/u);
+  });
+
+  it.each([
+    [
+      '<div class="topik-code-block__controls"><button>Copy</button></div>',
+      ".topik-code-block__controls",
+    ],
+    [
+      '<span class="topik-code-block__fold"><button>Show</button></span>',
+      ".topik-code-block__fold",
+    ],
+  ])("hides interactive code chrome: %s", (markup, target) => {
+    expect(matchingBodies(markup, target)).toMatch(/display:\s*none/u);
+  });
+
+  it("prints collapsed code regions, closed accordions and wrapped code", () => {
+    expect(
+      matchingBodies(
+        '<span class="topik-code-block__region" hidden></span>',
+        ".topik-code-block__region",
+      ),
+    ).toMatch(/display:\s*block/u);
+    expect(printBlock).toMatch(/\.topik-accordion::details-content\s*\{[^}]*display:\s*block/u);
+    expect(matchingBodies('<div class="topik-code-block"><pre></pre></div>', "pre")).toMatch(
+      /white-space:\s*pre-wrap/u,
+    );
+  });
+
+  it("avoids breaks inside callouts and after headings", () => {
+    expect(matchingBodies('<aside class="topik-callout"></aside>', ".topik-callout")).toMatch(
+      /break-inside:\s*avoid/u,
+    );
+    expect(matchingBodies('<div class="topik-content"><h2></h2></div>', "h2")).toMatch(
+      /break-after:\s*avoid/u,
+    );
+  });
+
+  it("prints dark rich diagrams with light diagram colors", () => {
+    const start = richStyles.indexOf("@media print {");
+    expect(start).toBeGreaterThan(0);
+    expect(richStyles.slice(start)).toMatch(
+      /\.topik-rich-mermaid\[data-theme="dark"\]\s*\{[^}]*--pele-bg:\s*#fff;/u,
+    );
+  });
+});

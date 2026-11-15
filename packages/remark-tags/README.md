@@ -1,15 +1,21 @@
 # @topik/remark-tags
 
 Declare inline and block tags in Markdown using `{% name %}` syntax. This package
-provides a remark plugin and the underlying micromark/mdast extensions. It parses
-and writes syntax; component schemas, expression evaluation, and rendering belong
-to the application.
+provides a remark plugin and the underlying micromark and mdast extensions. Use it
+when you need to parse and write tag syntax in a unified or mdast pipeline. It
+handles syntax only: component schemas, expression evaluation, and rendering
+belong to your application. For a complete content model with validation and
+rendering, use `@topik/content`, which is built on this package.
+
+This is an ESM package and requires Node.js 22.22 or later.
 
 ## Install and use
 
 ```sh
 npm install @topik/remark-tags unified remark-parse remark-stringify
 ```
+
+Declare each tag name with its placement, then add the plugin to a processor:
 
 ```js
 import { unified } from "unified";
@@ -31,75 +37,23 @@ Available {% badge %}**today**{% /badge %}.
 console.log(String(file));
 ```
 
-The default export and named `remarkTags` export refer to the same plugin. This is
-an ESM package requiring Node.js 22.22 or later.
+The default export and the named `remarkTags` export are the same plugin.
 
-Contributor tooling uses the workspace's `.node-version` and requires
-`^22.23.4 || ^24.11.0 || >=26.0.0` for Vite+, Vitest, and Astro integration
-tests. CI verifies the built library on Node.js 22.22 separately from the test runner.
+## Options
 
-## Syntax
+Pass options as the plugin's third `.use()` argument, or as the second argument
+to each extension.
 
-- Declare each tag's placement as `inline` or `block`. Unknown names are errors.
-- Block opening and closing tags occupy their own lines, including inside lists
-  and blockquotes. An inline tag on its own line stays in the surrounding paragraph.
-- Use `{% badge /%}` for a self-closing tag or
-  `{% badge %}Markdown children{% /badge %}` for a paired tag.
-- Names start with a lowercase ASCII letter, followed by letters, digits, or
-  hyphens. Names are case-sensitive; camelCase is supported.
-- Attributes use `key=value` with double-quoted strings, finite numbers, or
-  booleans: `title="Preview" columns=2 open=true`. Strings support `\\`, `\"`,
-  `\|`, `\[`, and `\]` escapes. Empty strings are preserved; control characters
-  are refused. Applications can explicitly admit `\n`, `\r` and `\t`
-  for named ordinary string attributes with
-  `escapedWhitespace: { component: ["attribute"] }`;
-  raw control characters and all other control escapes remain refused.
-  The writer escapes brackets in attributes inside Markdown labels,
-  including native directive labels, to preserve their surrounding structure.
-- Tag-looking text in code, escaped openers, and raw HTML blocks remains literal.
-- Tags nest within Markdown boundaries. Opening inside emphasis and closing
-  outside it, or opening an inline tag in one paragraph and closing it in another,
-  is an error.
+| Option              | Type                       | Effect                                                                                                                           |
+| ------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `expressions`       | `boolean`                  | Enables variables, conditions, text templates, and code templates; see [Optional expression syntax](#optional-expression-syntax) |
+| `escapedWhitespace` | `Record<string, string[]>` | Names, per tag, the ordinary string attributes that accept `\n`, `\r` and `\t` escapes, for example `{ math: ["text"] }`         |
+| `fencedCodeHeaders` | `WeakMap<Node, string>`    | Receives the raw opening-fence header of each fenced code block, including code templates, keyed by its node                     |
 
-This is Markdoc-style syntax, not a complete Markdoc implementation. Standard
-remark directives (`:name`, `::name`, `:::name`) remain independent. GFM and other
-Markdown features are enabled through their own plugins.
+## Work with mdast directly
 
-The writer sorts attribute names by code unit, escapes values, and normalizes
-spacing. It preserves an empty block container as a container; empty inline tags
-normalize to self-closing tags. Null and undefined attribute values in constructed
-trees are omitted. Caller-built attribute maps must be plain objects (including
-null-prototype objects) with enumerable own data properties; accessors and custom
-prototypes are refused without invoking their getters. Formatting preserves
-supported tree meaning, not source bytes.
-HTML blocks remain separated from following tag markers by a blank line. Blank
-lines inside a block tag do not make its enclosing list item loose; blank lines
-between the item's direct block children still do.
-Literal tag openers are escaped without changing URL or email autolinks. When
-emphasis or strong marks nest across inline tags, their delimiters alternate to
-keep the tag boundaries intact; the surrounding writer's preferences are restored
-after each tag.
-
-## AST and extensions
-
-| Node              | Meaning                                                               |
-| ----------------- | --------------------------------------------------------------------- |
-| `tagText`         | Inline tag with phrasing children; self-closing tags have no children |
-| `tagLeaf`         | Self-closing block tag with no children                               |
-| `tagContainer`    | Paired block tag with block/definition children                       |
-| `tagVariable`     | Opt-in variable reference with a string `path`                        |
-| `tagConditional`  | Opt-in conditional containing one or two `tagBranch` nodes            |
-| `tagBranch`       | Flow children with a condition string, or `null` for the else branch  |
-| `tagCodeTemplate` | Opt-in fenced code with literal language/metadata and a text template |
-
-Component nodes contain `name` and `attributes`. Parsed nodes retain source
-positions. Exported node interfaces augment mdast's node maps for TypeScript users.
-Branch positions span from the `if` or `else` marker through the last child,
-excluding the following marker and trailing blank lines. Empty branches cover
-only their opening marker.
-
-Use the same declarations and options with all three extensions when working
-directly with mdast:
+When you use the extensions without unified, pass the same declarations and
+options to all three:
 
 ```js
 import { fromMarkdown } from "mdast-util-from-markdown";
@@ -114,10 +68,45 @@ const tree = fromMarkdown('{% badge label="Preview" /%}', {
 const source = toMarkdown(tree, { extensions: [tagToMarkdown(tags)] });
 ```
 
+## Syntax
+
+This is Markdoc-style syntax, not a complete Markdoc implementation.
+
+- Declare each tag's placement as `inline` or `block`. Undeclared names are
+  errors.
+- Write `{% badge /%}` for a self-closing tag or
+  `{% badge %}Markdown children{% /badge %}` for a paired tag.
+- Block opening and closing tags occupy their own lines, including inside lists
+  and blockquotes. An inline tag on its own line is part of the surrounding
+  paragraph.
+- Names start with a lowercase ASCII letter, followed by letters, digits, or
+  hyphens. Names are case-sensitive; camelCase is supported.
+- Tags nest within Markdown boundaries. Opening a tag inside emphasis and
+  closing it outside, or opening an inline tag in one paragraph and closing it
+  in another, is an error.
+- Tag-looking text in code, escaped openers, and raw HTML blocks is literal
+  text.
+
+### Attributes
+
+Attributes use `key=value` with double-quoted strings, finite numbers, or
+booleans: `title="Preview" columns=2 open=true`.
+
+- Strings support the `\\`, `\"`, `\|`, `\[`, and `\]` escapes.
+- Empty strings are kept as empty strings.
+- Control characters are refused. The `escapedWhitespace` option admits the
+  `\n`, `\r` and `\t` escapes for the attributes it names; raw control
+  characters and all other control escapes are refused everywhere.
+
+### Other Markdown syntax
+
+Standard remark directives (`:name`, `::name`, `:::name`) are a separate syntax
+and work alongside tags. GFM and other Markdown features come from their own
+plugins.
+
 ## Optional expression syntax
 
-Pass `{ expressions: true }` as the plugin's third `.use()` argument, or as the
-second argument to each extension, to enable:
+Set `{ expressions: true }` to enable variables and conditions:
 
 ```md
 Hello {% $student.name %}.
@@ -129,15 +118,17 @@ Student instructions.
 {% /if %}
 ```
 
-Variable paths are dot-separated identifiers. Conditions are preserved as opaque
-source strings with balanced quotes and safe delimiters; this package neither
-evaluates them nor validates an expression language. Applications must supply that
-behavior. `if` and `else` are reserved declaration names when expressions are
-enabled. Conditions are block-only, with at most one else branch.
+- Variable paths are dot-separated identifiers.
+- Conditions are block-only, with at most one else branch.
+- `if` and `else` are reserved: declaring a tag with either name throws.
+- Conditions are kept as opaque source strings with balanced quotes and safe
+  delimiters. This package does not evaluate them or validate an expression
+  language; your application supplies that behaviour.
 
 ### Explicit text templates
 
-The same option enables `t"..."` attribute values and paired code-template scopes:
+The same option enables `t"..."` attribute values and paired code-template
+scopes:
 
 ````md
 {% panel title=t"Install {% $package.name %}" %}
@@ -152,23 +143,36 @@ echo '{%% $literal.example %}'
 {% /panel %}
 ````
 
-Ordinary quoted attributes and ordinary code blocks retain their literal meaning.
-Inside an explicit template, `{% $path %}` is a reference and `{%%` produces the
-literal opener `{%`. Escape processing runs once: `{%%%` produces `{%%`. Code
-backslashes stay literal; attribute templates use the usual quoted-string escapes
-before scanning their references. Attribute template literals cannot contain
-controls or line breaks. Code literals cannot contain NUL or carriage returns;
-source line endings normalize to LF. Template paths use dot-separated ASCII
-identifiers and refuse `__proto__`, `prototype`, and `constructor` segments.
+Only explicit templates are interpolated: ordinary quoted attributes and
+ordinary code blocks are literal.
 
-Code scope markers occupy their own block lines and contain exactly one closed
-fenced block in the same Markdown parent. They can appear inside lists,
-blockquotes, declared block tags, and conditional branches. Extra content,
-nested scopes, indented code, missing closers, and interpreted `mermaid` code are
-refused. Language and metadata stay literal. The special two-word markers leave
-custom tags named `template` and `codeTemplate` available.
+Template rules:
 
-Template attributes contain an exported `TagTextTemplate` value:
+- Inside a template, `{% $path %}` is a variable reference and `{%%` produces
+  the literal opener `{%`.
+- Escapes are processed once: `{%%%` produces `{%%`.
+- Backslashes in code are literal. Attribute templates apply the usual
+  quoted-string escapes before references are scanned.
+- Attribute template literals cannot contain control characters or line breaks.
+- Code literals cannot contain NUL or carriage returns; source line endings are
+  normalized to LF.
+- Template paths use dot-separated ASCII identifiers and refuse `__proto__`,
+  `prototype`, and `constructor` segments.
+
+Code scope rules:
+
+- The `{% template code %}` and `{% /template code %}` markers occupy their own
+  block lines and contain exactly one closed fenced block in the same Markdown
+  parent.
+- Scopes can appear inside lists, blockquotes, declared block tags, and
+  conditional branches.
+- Extra content, nested scopes, indented code, missing closers, and interpreted
+  `mermaid` code are refused.
+- The fence language and metadata are literal.
+- The markers are two-word forms, so they do not conflict with custom tags
+  named `template` or `codeTemplate`.
+
+A template attribute's value is an exported `TagTextTemplate`:
 
 ```ts
 {
@@ -180,19 +184,62 @@ Template attributes contain an exported `TagTextTemplate` value:
 }
 ```
 
-`tagCodeTemplate` is a leaf with `lang`, `meta`, and `template`; it has no ordinary
-`value` or children. Empty and literal-only templates keep their template identity.
-The writer merges adjacent literal segments, escapes literal openers, and chooses
-a fence that preserves the payload. It preserves decoded fence metadata through
-character references when needed, including tabs and leading spaces. Applications
-choose eligible attribute slots, resolve references, and render the resulting text;
-this package preserves the authored structure without evaluating it.
+A code template parses to a `tagCodeTemplate` leaf with `lang`, `meta`, and
+`template`; it has no ordinary `value` or children. An empty or literal-only
+template is still a template, not an ordinary string or code block.
+
+`writeTextTemplate(template)` returns a template's source text, with variable
+references and escaped openers; pass `true` as the second argument for a code
+payload.
+
+Your application chooses which attribute slots accept templates, resolves the
+references, and renders the resulting text. This package preserves the authored
+structure without evaluating it.
+
+## AST
+
+| Node              | Meaning                                                               |
+| ----------------- | --------------------------------------------------------------------- |
+| `tagText`         | Inline tag with phrasing children; self-closing tags have no children |
+| `tagLeaf`         | Self-closing block tag with no children                               |
+| `tagContainer`    | Paired block tag with block/definition children                       |
+| `tagVariable`     | Opt-in variable reference with a string `path`                        |
+| `tagConditional`  | Opt-in conditional containing one or two `tagBranch` nodes            |
+| `tagBranch`       | Flow children with a condition string, or `null` for the else branch  |
+| `tagCodeTemplate` | Opt-in fenced code with literal language/metadata and a text template |
+
+- Component nodes contain `name` and `attributes`.
+- Parsed nodes carry source positions.
+- The exported node interfaces augment mdast's node maps for TypeScript users.
+- A branch's position spans from its `if` or `else` marker through its last
+  child, excluding the following marker and trailing blank lines. An empty
+  branch covers only its opening marker.
+
+## Writing Markdown
+
+The writer produces canonical output: formatting preserves the meaning of a
+supported tree, not its source bytes.
+
+- Attribute names are sorted by code unit, values are escaped, and spacing is
+  normalized.
+- An empty block container is written as a container; an empty inline tag is
+  written as a self-closing tag.
+- `null` and `undefined` attribute values in constructed trees are omitted.
+- Attribute maps you build must be plain objects (null-prototype objects are
+  allowed) with enumerable own data properties. Accessors and custom prototypes
+  are refused without invoking their getters.
+
+For template output, the writer merges adjacent literal segments, escapes
+literal openers, and chooses a fence that preserves the payload. Decoded fence
+metadata, including tabs and leading spaces, is written with character
+references when needed so that it parses back unchanged.
 
 ## Diagnostics and limits
 
-Malformed source throws `TagSyntaxError`. Its `diagnostics` array contains a
-`message`, a stable `id`, and, when available, one-based `line` and `column`.
-Invalid declarations and unsupported writer inputs throw ordinary errors.
+Malformed source throws `TagSyntaxError`. Its `diagnostics` array contains
+entries with a `message`, a stable `id`, and, when available, a one-based `line`
+and `column`. Invalid declarations and unsupported writer inputs throw ordinary
+errors.
 
 | ID                                                        | Problem                                                 |
 | --------------------------------------------------------- | ------------------------------------------------------- |
@@ -211,15 +258,39 @@ Invalid declarations and unsupported writer inputs throw ordinary errors.
 | `topik-expression-invalid`, `topik-conditional-placement` | Invalid `if` source, or a block `if` inside text        |
 | `topik-variable-path`, `topik-variable-placement`         | An invalid variable path, or a variable outside text    |
 
-Template syntax uses stable `topik-template-syntax`, `topik-variable-path`,
+Template syntax reports the `topik-template-syntax`, `topik-variable-path`,
 `topik-template-control`, `topik-code-template-structure`, and
 `topik-code-template-language` diagnostic IDs.
 
-`TAG_LIMITS` bounds both the incoming Markdown tree and the converted tag tree to
-depth 128 and 50,000 nodes, counting template objects and segments in the converted
-tree. It also bounds each template's decoded input payload and generated source
-value to 1,000,000 UTF-16 units. Quoted template output counts the `t` prefix,
-quotes, and surrounding Markdown escape rules; code output counts generated
-fences and scope markers.
-These limits do not bound an entire source document. Host applications remain
-responsible for their own input limits and rendering policy.
+`TAG_LIMITS` sets these bounds:
+
+- `treeDepth` 128 and `treeNodes` 50,000, for both the incoming Markdown tree
+  and the converted tag tree. The converted tree's count includes template
+  objects and segments.
+- `templateLength` 1,000,000 UTF-16 units, for each template's decoded input
+  payload and for its generated source. Generated source for a quoted template
+  counts the `t` prefix, the quotes, and the surrounding Markdown escapes; for
+  a code template it counts the generated fences and scope markers.
+
+These limits do not bound a whole source document. Your application sets its own
+input limits and rendering policy.
+
+## Edge cases
+
+- A blank line separates an HTML block from a following tag marker in written
+  output.
+- Blank lines inside a block tag do not make the enclosing list item loose;
+  blank lines between the item's direct block children do.
+- Literal tag openers are escaped without changing URL or email autolinks.
+- When emphasis or strong marks nest across inline tags, the writer alternates
+  their delimiters to keep the tag boundaries intact, then restores the
+  surrounding writer's preferences after each tag.
+- Brackets in attributes inside Markdown labels, including native directive
+  labels, are escaped so that the label structure survives.
+
+## Contributing
+
+Contributor tooling uses the workspace's `.node-version` and requires Node.js
+`^22.23.4 || ^24.11.0 || >=26.0.0` for Vite+, Vitest, and Astro integration
+tests. CI verifies the built library on Node.js 22.22 separately from the test
+runner.

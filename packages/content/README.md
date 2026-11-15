@@ -1,9 +1,11 @@
 # @topik/content
 
-Portable Markdown with declarative components, variables, and conditions. This
-package provides an mdast authoring tree, validation, lossless source operations,
-and a framework-independent render tree. React rendering lives in
-`@topik/content-react`; applications own editing, storage, and synchronization.
+Portable Markdown with declarative components, variables, and conditions. Use
+this package to validate, format, evaluate, and compile Topik content in any
+JavaScript runtime: it provides an mdast authoring tree, validation, lossless
+source operations, and a framework-independent render tree. For React rendering,
+use `@topik/content-react`. Editing, storage, and synchronization belong to your
+application.
 
 The package is ESM and requires Node.js 22.22 or later. Install it with your
 package manager:
@@ -14,15 +16,8 @@ npm install @topik/content
 
 ## Validate, format, and render
 
-`compileTopikContent` validates source and produces a reader tree in one pipeline.
-It accepts canonical compiler-generated asset references as well as authored
-content. Parsing alone checks neither URL nor asset admission policies, so admit
-untrusted source with `compileTopikContent` or `validateTopikContent`. As defence
-in depth, `transformTopikContent` omits link, image, card, and asset attribute
-URLs that fail the `validateTopikHref` scheme and shape policy (for example
-`javascript:` or `data:`); it does not apply the stricter asset admission rules.
-Formatting validates input and output and checks that serialization preserves the
-authored content. Failures retain the exact input.
+Format the authored source, then compile it into a render tree. Store the
+authored source and pass the derived tree to your renderer.
 
 ```ts
 import { formatTopikContent, compileTopikContent } from "@topik/content";
@@ -38,47 +33,66 @@ const tree = compiled.tree;
 if (tree === null) throw new Error("Expected rendered content");
 ```
 
+- `compileTopikContent` validates source and produces the render tree in one
+  pipeline. It accepts authored content and the canonical asset references that
+  the compiler generates.
+- `formatTopikContent` validates both its input and its output, and checks that
+  serialization preserves the authored content. Every result carries the exact
+  input as `source`, so a failure never alters what the author wrote.
+
+## Choose an API
+
+| Task                                        | API                                                              |
+| ------------------------------------------- | ---------------------------------------------------------------- |
+| Admit untrusted source                      | `validateTopikContent` or `compileTopikContent`                  |
+| Format source canonically                   | `formatTopikContent`                                             |
+| Compile source into a render tree           | `compileTopikContent`                                            |
+| Render an already-parsed tree               | `transformTopikContent`                                          |
+| Parse, check, and write the authoring tree  | `parseDocument`, `validateDocument`, `writeDocument`             |
+| Select branches and insert variable values  | `evaluateDocument`                                               |
+| Compare two admitted documents              | `sameDocumentMeaning`                                            |
+| Find and replace asset references           | `extractTopikAssetOccurrences`, `rewriteTopikAssetOccurrences`   |
+| Read and write `ref://` resource identities | `parseTopikResourceReference`, `serializeTopikResourceReference` |
+| Check a custom component configuration      | `mergeTopikContentConfig`                                        |
+
 `parseDocument` and `validateDocument` check tree structure and component rules.
-`writeDocument` serializes a supported authoring tree. ASTs must contain plain
-data with independent node objects: cycles, shared nodes, accessors, and executable
-values are refused. Use `validateTopikContent` for source admission, including
-navigation and asset policies.
+They do not apply URL, navigation, or asset admission policies, so admit
+untrusted source with `validateTopikContent` or `compileTopikContent`.
 
-`sameDocumentMeaning(left, right)` compares already-admitted authoring trees. It
-ignores source positions, cosmetic spelling and derived metadata while retaining
-explicit heading IDs, reference bindings, ordered content and every conditional
-branch. It does not validate arbitrary trees or treat application editor defaults
-as authored defaults.
-
-Inline marks compare as a set on each piece of content, as rich-text editors
-store them: `**[a](u)**` equals `[**a**](u)`, `***a***` equals `**_a_**`, and
-`**a****b**` equals `**ab**`. Text, link identity, and which spaces are marked
-still count, so `**a** **b**` differs from `**a b**`, and one link differs from
-two adjacent links. `writeDocument` and formatting emit one canonical nesting for
-each such set; see
-[inline mark nesting](https://github.com/subtopik/topik/blob/main/docs/content/content-design.md#inline-mark-nesting).
-Parsing keeps the authored nesting, and asset and navigation rewrites keep it too,
-so tree positions of unchanged content stay stable.
+`writeDocument` serializes a supported authoring tree. Trees passed to the
+document APIs must be plain data with independent node objects: cycles, shared
+nodes, accessors, and executable values are refused.
 
 ## Markdown and components
 
-Supported Markdown includes headings, emphasis, strong and strikethrough marks,
-code, lists and task lists, blockquotes, hard breaks, links, images, reference
-definitions, tables, and leading YAML frontmatter. Frontmatter is retained but
-not rendered. Raw HTML and footnotes are refused. URLs and email addresses remain
-text unless expressed as explicit Markdown links or angle-bracket autolinks.
+Supported Markdown:
 
-Portable document destinations use `ref://wiki-page/<name>`, `ref://guide/<name>`,
-or `ref://course-page/<name>`, where the name is the target resource identity.
-`parseTopikResourceReference` and `serializeTopikResourceReference` retain its
-query and fragment separately from publishing routes. Renderers must resolve
-these identities to browser URLs; see the
+- headings, emphasis, strong and strikethrough marks, and code
+- lists and task lists, blockquotes, and hard breaks
+- links, images, and reference definitions
+- tables
+- leading YAML frontmatter, which is kept in the source but not rendered
+
+Raw HTML and footnotes are refused. Bare URLs and email addresses are text; to
+make a link, write an explicit Markdown link or an angle-bracket autolink.
+
+### Links between resources
+
+A portable document destination is a resource identity:
+`ref://wiki-page/<name>`, `ref://guide/<name>`, or `ref://course-page/<name>`,
+where `<name>` is the target resource's name. `parseTopikResourceReference` and
+`serializeTopikResourceReference` keep the query and fragment separate from any
+publishing route. Your renderer resolves these identities to browser URLs; see
+the
 [resource-link reference](https://github.com/subtopik/topik/blob/main/docs/resources/navigation.md#links-between-pages).
 
-Block tags occupy their own lines; inline tags appear inside prose. Properties
-are literal strings, numbers, and booleans; selected built-in text properties also
-accept explicit templates. Unsupported syntax is diagnosed instead of silently
-discarded.
+### Components
+
+Components are written as tags. Block tags occupy their own lines; inline tags
+appear inside prose. Properties are literal strings, numbers, and booleans;
+selected built-in text properties also accept explicit templates (see
+[Text and code templates](#text-and-code-templates)). Unsupported syntax is
+reported as a diagnostic, never silently discarded.
 
 | Component                                   | Content and principal properties                                                                    |
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------- |
@@ -94,27 +108,35 @@ discarded.
 | `underline` (alias `u`)                     | Inline content                                                                                      |
 | `quiz`, `question`, `choice`, `explanation` | Questions with at least two choices; `type` selects single/multiple choice, `correct` marks answers |
 
-Math `content` preserves line breaks and tabs using `\n`, `\r` and `\t`
-escapes. Other attributes continue to refuse control characters. These escapes
-remain literal formula data; they do not add Markdown blocks or inline nodes.
+The exported `components` registry contains the complete property, placement,
+and child constraints. Defaults apply when content is read or rendered; writing
+a document does not add properties the author left out.
 
-The exported `components` registry contains complete property, placement, and
-child constraints. Defaults are applied when reading or rendering; absent authored
-properties remain absent when writing.
+Math `content` can encode line breaks and tabs with the `\n`, `\r`, and `\t`
+escapes. These escapes are literal formula data: they do not create Markdown
+blocks or inline nodes. All other attributes refuse control characters.
+
+### Code blocks
 
 Fenced code accepts presentation attributes such as `filename="Client.java"`,
-`lines`, `highlight="2"` and `collapse="3-4,8-9"`. Selections use closed physical-row
-ranges and normalize to sorted, merged intervals. Each collapsed interval has an
-independent inline control; Copy always retains the full exact code, and every row
-remains visible before hydration or without JavaScript. See the
+`lines`, `highlight="2"` and `collapse="3-4,8-9"`:
+
+- Line selections are closed ranges of physical rows. They are normalized to
+  sorted, merged intervals.
+- Each collapsed interval has its own inline control.
+- Copy always copies the full, exact code.
+- Every row is visible before hydration and without JavaScript.
+
+See the
 [code presentation reference](https://github.com/subtopik/topik/blob/main/docs/content/code-presentation.md)
 for options, limits and source-preservation rules.
 
 ## Variables and conditions
 
-Evaluation selects branches and inserts variable values as literal text. It does
-not execute JavaScript or interpret interpolated Markdown. Save the authored
-document to retain variables and every branch.
+`evaluateDocument` selects condition branches and inserts variable values as
+literal text. It never executes JavaScript or interprets an inserted value as
+Markdown. The evaluated document is a derived result: save the authored document
+to keep its variables and every branch.
 
 ```ts
 import { evaluateDocument, parseDocument, writeDocument } from "@topik/content";
@@ -135,45 +157,38 @@ const evaluated = evaluateDocument(parsed.document, {
 if (writeDocument(evaluated) !== "Hello Ada.\n") throw new Error("Unexpected evaluation");
 ```
 
-Expressions support scalar literals, variable paths, `equals`, `and`, `or`, and
-`not`. Only `false` and `null` are false; `and` and `or` short-circuit. Missing
-variables in evaluated paths throw `ContentEvaluationError`. `compileTopikContent`
-reports body and condition variable failures as `topik-variable-missing`,
-`topik-variable-type`, or `topik-variable-control` (non-scalar `equals` operands
-as `topik-expression-type`), with the source line and bounded `variable` path but
-never the supplied value. Conditions control presentation and do not enforce
-authorization.
+Conditions control presentation only; they do not enforce authorization.
 
-Null and empty strings insert no text. Evaluation omits empty paragraphs, empty
-marks, and empty components that require inline children. It also removes terminal
-hard breaks exposed by those omissions so the evaluated document remains writable.
+Expression rules:
 
-`evaluateDocument` verifies that its result can be written faithfully. If evaluation
-creates an unrepresentable structure, such as an empty task item, it throws
-`ContentEvaluationError` and leaves the authored document untouched. Marks that
-evaluation brings together merge instead: `~~a~~{% $e %}~~b~~` with an empty `e`
-writes `~~ab~~`. Rendering through `transformTopikContent` does not require a
-Markdown representation and retains those structures in its derived render tree.
+- Expressions contain scalar literals, variable paths, `equals`, `and`, `or`,
+  and `not`.
+- Only `false` and `null` are false. `and` and `or` short-circuit.
+- Null and empty strings insert no text.
 
-Rendering assigns heading IDs using all authored headings before selecting
-branches or interpolating text, matching `analyzeTopikContent`. Hidden headings
-still reserve their IDs. Use explicit IDs, such as `## Hello {% $name %} {% #hello %}`,
-when a stable descriptive anchor is needed for a variable heading.
+Errors:
+
+- `evaluateDocument` throws `ContentEvaluationError` when an evaluated path names
+  a missing variable.
+- `compileTopikContent` reports variable failures in the body and in conditions
+  as `topik-variable-missing`, `topik-variable-type`, or
+  `topik-variable-control`, and non-scalar `equals` operands as
+  `topik-expression-type`. Each diagnostic carries the source line and the
+  bounded `variable` path, never the supplied value.
+
+For how evaluation treats empty output and variable headings, see
+[Evaluation output](#evaluation-output) and [Heading IDs](#heading-ids).
 
 ## Text and code templates
 
-Use `t"..."` to interpolate `title` on `callout`, `accordion`, `card`, `tab`,
-`step`, and `codeTab`, or `alt`/`caption` on `figure`. Ordinary quoted properties
-stay literal. Empty and literal-only templates retain their template identity;
-an evaluated empty template remains a present empty value.
+Templates insert variable values into property text and code blocks. Ordinary
+quoted properties and code blocks are always literal; only explicit templates
+are interpolated.
 
-Wrap exactly one fenced code block in `{% template code %}` and
-`{% /template code %}` on their own block lines. The markers and fence must share
-one logical parent, including a `codeTab` body. Empty payloads are valid; nested,
-missing, crossing, multi-fence, or indented-code scopes are refused. Language and
-metadata remain literal. Templated `mermaid` fences are refused before diagram
-dispatch; unknown languages remain ordinary code. Inline code and unwrapped code
-blocks stay literal.
+- **Text templates.** Write `t"..."` for `title` on `callout`, `accordion`,
+  `card`, `tab`, `step`, and `codeTab`, or for `alt` and `caption` on `figure`.
+- **Code templates.** Wrap exactly one fenced code block between
+  `{% template code %}` and `{% /template code %}`, each on its own block line.
 
 ```ts
 import { compileTopikContent, formatTopikContent } from "@topik/content";
@@ -197,33 +212,50 @@ if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
 if (compiled.source !== source) throw new Error("Authoring source changed");
 ```
 
-Inside templates, `{% $path %}` inserts a scalar and `{%%` writes a literal `{%`
-opener. Scanning is single-pass: inserted values and escaped literals are never
-interpreted as new tokens. Code backslashes are unchanged; attribute templates
-retain ordinary quoted-string escapes. Dotted paths use identifier segments;
-expressions, functions, defaults, and bracket paths are unsupported.
+Formatting preserves unevaluated templates and every branch; evaluation produces
+a separate derived result.
 
-Strings, finite numbers, and booleans become raw text; null and empty strings
-become empty text. Missing/incompatible values and injected C0/DEL controls,
-including newlines and tabs, fail visibly. Each substitution is single-line.
-Values create no Markdown/HTML structure and receive normal renderer escaping;
-authors supply any shell/JSON/language quoting. Inactive branches validate source
-without resolving their variables.
+Template syntax:
 
-URLs, image sources, icons, math, enums, and custom component properties remain
-literal-only. Formatting preserves unevaluated templates and every branch;
-evaluation produces a separate derived result. See the [template
-reference](https://github.com/subtopik/topik/blob/main/docs/content/templates.md)
-for complete scope, escape, diagnostic, and source-storage rules.
+- `{% $path %}` inserts a scalar value, and `{%%` writes a literal `{%`.
+- Scanning is single-pass: inserted values and escaped literals are never read
+  as new tokens.
+- Backslashes in code are unchanged. Attribute templates use the ordinary
+  quoted-string escapes.
+- Paths are dotted identifier segments. Expressions, functions, defaults, and
+  bracket paths are not supported.
+
+Inserted values:
+
+- Strings, finite numbers, and booleans are inserted as raw text; null and empty
+  strings insert nothing.
+- Each substitution must be a single line. Missing or incompatible values, and
+  values containing C0 or DEL control characters (including newlines and tabs),
+  fail with a diagnostic.
+- Values never create Markdown or HTML structure and receive normal renderer
+  escaping. Authors supply any shell, JSON, or language quoting themselves.
+- Inactive branches are validated as source without resolving their variables.
+
+Code template rules:
+
+- The markers and the fence must share one logical parent, which can be a
+  `codeTab` body.
+- An empty payload is valid. Nested, missing, crossing, multi-fence, and
+  indented-code scopes are refused.
+- The fence language and metadata are literal.
+- Templated `mermaid` fences are refused before diagram handling; unknown
+  languages are ordinary code.
+- Inline code and code blocks outside a template scope are literal.
+
+URLs, image sources, icons, math, enum properties, and custom component
+properties accept literal values only. See the
+[template reference](https://github.com/subtopik/topik/blob/main/docs/content/templates.md)
+for the complete scope, escape, diagnostic, and source-storage rules.
 
 ## Custom components
 
-Add declarative schemas through `config.components`. Built-in schemas cannot be
-overridden; `if` and `else` are reserved for conditions and cannot be component names.
-Custom runtime functions, partials, and executable property values
-are unsupported. Supply the corresponding render component in your application.
-Use `ComponentSchema` to type a reusable custom schema; `ComponentDefinition`
-additionally describes the built-in validators used by the runtime registry.
+Add declarative component schemas through `config.components`, and supply the
+matching render component in your application.
 
 ```ts
 import {
@@ -248,33 +280,56 @@ if (!validateTopikContent(source, { config }).valid) throw new Error("Invalid no
 transformTopikContent(parseTopikContent(source, { config }), config);
 ```
 
-`mergeTopikContentConfig` throws an error whose message names the invalid
-component, attribute, or field, for example
-`Content configuration is invalid: component "notice" attribute "title" required must be a boolean`.
-Names in `allowedParents` and `children.components` must be registered
-components. Source APIs report every configuration failure as the fixed
-`topik-config-invalid` diagnostic.
+Rules:
 
-## Diagnostics
+- Built-in schemas cannot be overridden.
+- `if` and `else` are reserved for conditions and cannot be component names.
+- Names in `allowedParents` and `children.components` must be registered
+  components.
+- Custom runtime functions, partials, and executable property values are not
+  supported.
+- A `string` attribute with `escapedWhitespace: true` accepts the `\n`, `\r`,
+  and `\t` escapes, as math `content` does.
 
-Source diagnostics have stable IDs with fixed messages. Tag syntax problems use
-`missing-closing`, `missing-opening`, `tag-unterminated`, `tag-name-invalid`,
-`attribute-syntax-invalid`, `duplicate-attribute`, `tag-closing-invalid`,
-`tag-placement-invalid`, `tag-undefined`, `topik-else-placement`, and
-`topik-else-syntax`. An unsupported condition expression reports one
-`topik-expression-invalid`. Unsupported Markdown, such as raw HTML, comments, and
-footnotes, reports `node-undefined` at the node's line with its Markdown node
-`type`; a heading ID that does not end its heading reports
-`topik-heading-id-placement`. Rules derived from custom schemas, such as
-`topik-<name>-children`, `topik-<name>-requires-<child>`,
-`topik-<parent>-parent-required`, and `topik-<attribute>-range`, use a fixed
-message for each rule family.
+Use `ComponentSchema` to type a reusable custom schema. `ComponentDefinition`
+also describes the built-in validators used by the runtime registry.
+
+Configuration errors:
+
+- `mergeTopikContentConfig` throws an error whose message names the invalid
+  component, attribute, or field, for example
+  `Content configuration is invalid: component "notice" attribute "title" required must be a boolean`.
+- Source APIs report every configuration failure as the fixed
+  `topik-config-invalid` diagnostic.
+
+## Compare documents
+
+`sameDocumentMeaning(left, right)` reports whether two already-admitted
+authoring trees mean the same thing.
+
+- It ignores source positions, cosmetic spelling, and derived metadata.
+- It compares explicit heading IDs, reference bindings, content order, and every
+  conditional branch.
+- It does not validate arbitrary trees, and it does not treat an application
+  editor's defaults as authored values.
+
+Inline marks compare as a set on each piece of content, the way rich-text
+editors store them: `**[a](u)**` equals `[**a**](u)`, `***a***` equals
+`**_a_**`, and `**a****b**` equals `**ab**`. Text, link identity, and which
+spaces are marked all count, so `**a** **b**` differs from `**a b**`, and one
+link differs from two adjacent links.
+
+`writeDocument` and formatting emit one canonical nesting for each set of marks;
+see
+[inline mark nesting](https://github.com/subtopik/topik/blob/main/docs/content/content-design.md#inline-mark-nesting).
+Parsing, asset rewrites, and navigation rewrites keep the authored nesting, so
+the tree positions of unchanged content are stable.
 
 ## Asset rewriting
 
-Rewriting checks all authored branches and retains the original source on failure.
-Callbacks run after input admission; exceptions propagate. Keep callbacks free
-of side effects because a later replacement can invalidate the entire operation.
+`extractTopikAssetOccurrences` lists the asset references in a document, and
+`rewriteTopikAssetOccurrences` replaces them through a callback that returns the
+new reference, or `undefined` to leave one unchanged.
 
 ```ts
 import { extractTopikAssetOccurrences, rewriteTopikAssetOccurrences } from "@topik/content";
@@ -288,17 +343,63 @@ if (extractTopikAssetOccurrences(result.content)[0]?.reference !== "new.png") {
 }
 ```
 
-Images and figure sources accept canonical relative paths or credential-free
-HTTPS URLs. Compiler-generated `asset:` references are accepted in rewritten
-output; source admission requires `allowCompiledAssetReferences: true` to accept
-them. Generic download links require explicit candidate selection or proven file
-paths. Custom asset attributes share validation policies but do not extend the
-compiler's closed asset-occurrence protocol.
+Rewriting rules:
 
-## Content limits
+- Rewriting checks every authored branch. On failure it returns diagnostics and
+  the original, unchanged `source`.
+- Callbacks run after the input is admitted, and exceptions they throw
+  propagate.
+- Keep callbacks free of side effects: a later replacement can invalidate the
+  whole operation.
+
+Accepted references:
+
+- Images and figure sources accept canonical relative paths or credential-free
+  HTTPS URLs.
+- Compiler-generated `asset:` references are accepted in rewritten output.
+  Source admission accepts them only with `allowCompiledAssetReferences: true`.
+- Generic links count as download assets only when their decoded file path is
+  listed in `provenDownloadPaths`, or when `includeGenericLinkCandidates` asks
+  for every candidate.
+- Custom component attributes declared as assets are validated with the same
+  policy, but they are not part of the compiler's closed set of asset
+  occurrences, so extraction and rewriting do not report them.
+
+## Rules and limits
+
+### URL safety
+
+Source admission (`validateTopikContent` and `compileTopikContent`) applies the
+URL, navigation, and asset policies. Parsing alone applies none of them.
+
+As defence in depth for trees that never passed admission,
+`transformTopikContent` omits link, image, card, and asset attribute URLs that
+fail the `validateTopikHref` scheme and shape policy, for example `javascript:`
+or `data:` URLs. It also omits a card `href` that is an `asset:` reference. It
+does not apply the stricter asset admission rules.
+
+### Diagnostics
+
+Source diagnostics have stable IDs with fixed messages.
+
+| Problem                          | IDs                                                                                                                                                                                              |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Tag syntax                       | `missing-closing`, `missing-opening`, `tag-unterminated`, `tag-name-invalid`, `attribute-syntax-invalid`, `duplicate-attribute`, `tag-closing-invalid`, `tag-placement-invalid`, `tag-undefined` |
+| `else` placement and syntax      | `topik-else-placement`, `topik-else-syntax`                                                                                                                                                      |
+| Unsupported condition expression | `topik-expression-invalid` (reported once)                                                                                                                                                       |
+| Unsupported Markdown             | `node-undefined`, at the node's line, with its Markdown node `type`; covers raw HTML, comments, and footnotes                                                                                    |
+| Misplaced heading ID             | `topik-heading-id-placement`, for a heading ID that does not end its heading                                                                                                                     |
+| Custom schema rules              | `topik-<name>-children`, `topik-<name>-requires-<child>`, `topik-<parent>-parent-required`, `topik-<attribute>-range`, each with a fixed message per rule family                                 |
+| Content limits                   | `topik-content-limit`                                                                                                                                                                            |
+| Configuration                    | `topik-config-invalid`                                                                                                                                                                           |
+
+Variable diagnostics are listed under
+[Variables and conditions](#variables-and-conditions).
+
+### Content limits
 
 Admission refuses oversized or pathological input with a `topik-content-limit`
-diagnostic and retains the exact source. The fixed values are exported as
+diagnostic and returns the exact source. The values are exported as
 `CONTENT_LIMITS`; lengths are measured in UTF-16 code units.
 
 | Limit                      | Value        | Bounds                                                          |
@@ -314,16 +415,56 @@ diagnostic and retains the exact source. The fixed values are exported as
 | `expressionNodes`          | 256          | Nodes in one expression                                         |
 | `presentationOutputLength` | 8,000,000    | Escaped code-presentation output                                |
 
-Ordinary prose, intraword underscores, matched code spans and links cost no
-parser work, so long reference pages and changelogs are limited by source and
-tree size rather than by markup density. The parser budget charges only syntax
-whose resolution can grow faster than its paragraph: every possible closing
-emphasis or strikethrough delimiter costs the number of parser events in its
-paragraph, unmatched code-span attempts cost the text they rescan, label ends
-cost the label text they reread and the events since the latest label, and each
-run of brackets or escapes left as text costs a fraction of its paragraph's
-events. In practice a single paragraph can hold a few thousand emphasis
-delimiters or unmatched brackets; split denser text into separate paragraphs.
+In practice a single paragraph can hold a few thousand emphasis delimiters or
+unmatched brackets; split denser text into separate paragraphs. Ordinary prose,
+intraword underscores, matched code spans, and links cost no parser work, so
+long reference pages and changelogs are limited by source and tree size, not by
+markup density.
+
+The `parserSteps` budget charges only syntax whose resolution can grow faster
+than its paragraph:
+
+- every possible closing emphasis or strikethrough delimiter costs the number of
+  parser events in its paragraph
+- an unmatched code-span attempt costs the text it rescans
+- a label end costs the label text it rereads plus the events since the latest
+  label
+- each run of brackets or escapes left as text costs a fraction of its
+  paragraph's events
+
+## Edge cases
+
+### Evaluation output
+
+Evaluation omits empty paragraphs, empty marks, and empty components that
+require inline children. It also removes any terminal hard break that those
+omissions leave at the end of a block, so the evaluated document can be written.
+
+`evaluateDocument` checks that its result can be written faithfully. If
+evaluation would produce a structure Markdown cannot represent, such as an empty
+task item, it throws `ContentEvaluationError` and leaves the authored document
+untouched.
+
+Marks that evaluation brings together merge: `~~a~~{% $e %}~~b~~` with an empty
+`e` writes `~~ab~~`.
+
+`transformTopikContent` does not need a Markdown representation, so its render
+tree keeps structures that `evaluateDocument` would refuse.
+
+### Heading IDs
+
+Rendering assigns heading IDs from all authored headings before it selects
+branches or inserts variable values, matching `analyzeTopikContent`. Headings
+in unselected branches therefore also reserve their IDs.
+
+For a stable, descriptive anchor on a heading that contains a variable, write
+an explicit ID, such as `## Hello {% $name %} {% #hello %}`.
+
+### Templates
+
+- An empty or literal-only template is still a template, not an ordinary
+  string.
+- An empty template evaluates to a present, empty value.
 
 ## Further documentation
 
@@ -333,7 +474,11 @@ delimiters or unmatched brackets; split denser text into separate paragraphs.
 - [Explicit links and plain URLs](https://github.com/subtopik/topik/blob/main/docs/content/autolinks.md)
 - [Rendering and migration from content-schema](https://github.com/subtopik/topik/blob/main/docs/content/rendering.md)
 
-The schema version is `0.2.2` and `FORMAT_VERSION` is `1`. This package is alpha
-software. Review canonical output when upgrading and keep compiler and renderer
-versions aligned. The package verifier type-checks and executes every TypeScript
-example above against the published-package layout.
+## Versions and upgrading
+
+This package is alpha software. The content schema version is `0.2.2`
+(`TOPIK_CONTENT_SCHEMA_VERSION`), and `FORMAT_VERSION` is `1`. When you upgrade,
+review the canonical output and keep compiler and renderer versions aligned.
+
+The package verifier type-checks and executes every TypeScript example in this
+README against the published-package layout.

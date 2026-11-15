@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import {
   publishDigestSnapshot,
@@ -32,10 +32,10 @@ describe("Astro static Asset publication", () => {
 
     await publishDigestSnapshot(output, second);
     expect(await readFile(targetFile(output, second[0].digest))).toEqual(second[0].bytes);
-    expect(await readdir(output.pathname)).toEqual(["blobs"]);
+    expect(await readdir(fileURLToPath(output))).toEqual(["blobs"]);
 
     await removeDigestSnapshot(output);
-    expect(await readdir(output.pathname)).toEqual([]);
+    expect(await readdir(fileURLToPath(output))).toEqual([]);
   });
 
   test.skipIf(process.platform === "win32")(
@@ -92,23 +92,23 @@ describe("Astro static Asset publication", () => {
   test("rejects a symlinked digest target without following or changing its destination", async () => {
     const output = outputUrl(join(root, "target-link"));
     const outside = join(root, "outside-target");
-    await mkdir(output.pathname, { recursive: true });
+    await mkdir(fileURLToPath(output), { recursive: true });
     await mkdir(outside);
     await writeFile(join(outside, "author.txt"), "preserve me");
-    await symlink(outside, join(output.pathname, "blobs"), "dir");
+    await symlink(outside, join(fileURLToPath(output), "blobs"), "dir");
 
     await expect(publishDigestSnapshot(output, snapshot("blocked"))).rejects.toThrow(
       /link or non-directory collision/u,
     );
     expect(await readFile(join(outside, "author.txt"), "utf8")).toBe("preserve me");
-    expect(await readdir(output.pathname)).toEqual(["blobs"]);
+    expect(await readdir(fileURLToPath(output))).toEqual(["blobs"]);
   });
 
   test.each(["noncanonical", "digest-mismatch", "special"] as const)(
     "rejects an unsafe pre-existing digest tree (%s) before replacement",
     async (kind) => {
       const output = outputUrl(join(root, `unsafe-${kind}`));
-      const target = join(output.pathname, "blobs");
+      const target = join(fileURLToPath(output), "blobs");
       await mkdir(target, { recursive: true });
       if (kind === "noncanonical") {
         await writeFile(join(target, "author.txt"), "preserve me");
@@ -122,7 +122,7 @@ describe("Astro static Asset publication", () => {
       await expect(publishDigestSnapshot(output, snapshot("next"))).rejects.toThrow(
         /non-canonical|digest|unsafe/u,
       );
-      expect(await readdir(output.pathname)).toEqual(["blobs"]);
+      expect(await readdir(fileURLToPath(output))).toEqual(["blobs"]);
     },
   );
 });
@@ -143,7 +143,7 @@ describe("Astro static Asset publication with anchored file safety off Linux", (
   test("an empty snapshot with no prior output is a no-op", async () => {
     const missing = outputUrl(join(root, "missing"));
     const empty = outputUrl(join(root, "empty"));
-    await mkdir(empty.pathname);
+    await mkdir(fileURLToPath(empty));
 
     await removeDigestSnapshot(missing, "anchored");
     await removeDigestSnapshot(empty, "anchored");
@@ -151,7 +151,7 @@ describe("Astro static Asset publication with anchored file safety off Linux", (
     await publishDigestSnapshot(empty, [], "anchored");
 
     await expect(readdir(join(root, "missing"))).rejects.toMatchObject({ code: "ENOENT" });
-    expect(await readdir(empty.pathname)).toEqual([]);
+    expect(await readdir(fileURLToPath(empty))).toEqual([]);
   });
 
   test("refuses to publish Assets with a clear Linux requirement", async () => {
@@ -165,11 +165,11 @@ describe("Astro static Asset publication with anchored file safety off Linux", (
 
   test("refuses to remove or replace an existing digest tree", async () => {
     const output = outputUrl(join(root, "prior"));
-    await mkdir(join(output.pathname, "blobs"), { recursive: true });
+    await mkdir(join(fileURLToPath(output), "blobs"), { recursive: true });
 
     await expect(removeDigestSnapshot(output, "anchored")).rejects.toThrow(/requires Linux/u);
     await expect(publishDigestSnapshot(output, [], "anchored")).rejects.toThrow(/requires Linux/u);
-    expect(await readdir(output.pathname)).toEqual(["blobs"]);
+    expect(await readdir(fileURLToPath(output))).toEqual(["blobs"]);
   });
 });
 
@@ -197,15 +197,15 @@ describe.each(["darwin", "win32"] as const)(
       expect(await readFile(targetFile(output, first[0].digest))).toEqual(first[0].bytes);
 
       await publishDigestSnapshot(output, second);
-      expect(await readdir(join(output.pathname, "blobs"))).toEqual([second[0].digest]);
-      expect(await readdir(output.pathname)).toEqual(["blobs"]);
+      expect(await readdir(join(fileURLToPath(output), "blobs"))).toEqual([second[0].digest]);
+      expect(await readdir(fileURLToPath(output))).toEqual(["blobs"]);
 
       await publishDigestSnapshot(output, []);
-      expect(await readdir(output.pathname)).toEqual([]);
+      expect(await readdir(fileURLToPath(output))).toEqual([]);
 
       await publishDigestSnapshot(output, first);
       await removeDigestSnapshot(output);
-      expect(await readdir(output.pathname)).toEqual([]);
+      expect(await readdir(fileURLToPath(output))).toEqual([]);
     });
 
     test.skipIf(process.platform === "win32")(
@@ -223,23 +223,23 @@ describe.each(["darwin", "win32"] as const)(
 
     test("replaces and removes an empty blobs directory", async () => {
       const output = outputUrl(join(root, "empty-target"));
-      await mkdir(join(output.pathname, "blobs"), { recursive: true });
+      await mkdir(join(fileURLToPath(output), "blobs"), { recursive: true });
       await publishDigestSnapshot(output, snapshot("into-empty"));
-      expect(await readdir(join(output.pathname, "blobs"))).toHaveLength(1);
+      expect(await readdir(join(fileURLToPath(output), "blobs"))).toHaveLength(1);
 
-      await rm(join(output.pathname, "blobs"), { recursive: true });
-      await mkdir(join(output.pathname, "blobs"));
+      await rm(join(fileURLToPath(output), "blobs"), { recursive: true });
+      await mkdir(join(fileURLToPath(output), "blobs"));
       await removeDigestSnapshot(output);
-      expect(await readdir(output.pathname)).toEqual([]);
+      expect(await readdir(fileURLToPath(output))).toEqual([]);
     });
 
     test("rejects a symlinked digest target without following or changing its destination", async () => {
       const output = outputUrl(join(root, "target-link"));
       const outside = join(root, "outside-target");
-      await mkdir(output.pathname, { recursive: true });
+      await mkdir(fileURLToPath(output), { recursive: true });
       await mkdir(outside);
       await writeFile(join(outside, "author.txt"), "preserve me");
-      await symlink(outside, join(output.pathname, "blobs"), "dir");
+      await symlink(outside, join(fileURLToPath(output), "blobs"), "dir");
 
       await expect(publishDigestSnapshot(output, snapshot("blocked"))).rejects.toThrow(
         /link or non-directory collision/u,
@@ -248,14 +248,14 @@ describe.each(["darwin", "win32"] as const)(
         /link or non-directory collision/u,
       );
       expect(await readFile(join(outside, "author.txt"), "utf8")).toBe("preserve me");
-      expect(await readdir(output.pathname)).toEqual(["blobs"]);
+      expect(await readdir(fileURLToPath(output))).toEqual(["blobs"]);
     });
 
     test.each(["noncanonical", "digest-mismatch", "subdirectory"] as const)(
       "refuses to replace or remove a foreign blobs directory (%s)",
       async (kind) => {
         const output = outputUrl(join(root, `foreign-${kind}`));
-        const target = join(output.pathname, "blobs");
+        const target = join(fileURLToPath(output), "blobs");
         await mkdir(target, { recursive: true });
         if (kind === "noncanonical") await writeFile(join(target, "author.txt"), "preserve me");
         else if (kind === "digest-mismatch") {
@@ -264,7 +264,7 @@ describe.each(["darwin", "win32"] as const)(
 
         await expect(publishDigestSnapshot(output, snapshot("next"))).rejects.toThrow(/unsafe/u);
         await expect(removeDigestSnapshot(output)).rejects.toThrow(/unsafe/u);
-        expect(await readdir(output.pathname)).toEqual(["blobs"]);
+        expect(await readdir(fileURLToPath(output))).toEqual(["blobs"]);
         expect(await readdir(target)).toHaveLength(1);
       },
     );
@@ -281,5 +281,5 @@ function outputUrl(path: string): URL {
 }
 
 function targetFile(output: URL, digest: string): string {
-  return join(output.pathname, "blobs", digest);
+  return join(fileURLToPath(output), "blobs", digest);
 }

@@ -1,4 +1,4 @@
-import { renameSync } from "node:fs";
+import { lstatSync, renameSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,7 +12,11 @@ import {
 
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
-  return { ...actual, renameSync: vi.fn(actual.renameSync) };
+  return {
+    ...actual,
+    lstatSync: vi.fn(actual.lstatSync),
+    renameSync: vi.fn(actual.renameSync),
+  };
 });
 
 /** Owned when every file is named `owned-*`. */
@@ -44,6 +48,7 @@ describe.each(["linux", "darwin"] as const)("output publication (%s)", (platform
     vi.restoreAllMocks();
     const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
     vi.mocked(renameSync).mockReset().mockImplementation(actual.renameSync);
+    vi.mocked(lstatSync).mockReset().mockImplementation(actual.lstatSync);
     await rm(root, { recursive: true, force: true });
   });
 
@@ -80,6 +85,54 @@ describe.each(["linux", "darwin"] as const)("output publication (%s)", (platform
       publishOutputDirectory(target, [], { ...options, removePriorOnFailure: true }),
     ).rejects.toBe(failure);
     expect(await readdir(root)).toEqual([]);
+  });
+
+  it("refuses to move aside a directory swapped in after ownership was proven", async () => {
+    const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+    const moved = join(root, "moved");
+    let swapped = false;
+    vi.mocked(lstatSync).mockImplementation(((path: string, ...rest: never[]) => {
+      // Swap the target just before the backup name is checked, after staging completed.
+      if (!swapped && String(path).includes(".test-prior-")) {
+        swapped = true;
+        actual.renameSync(target, moved);
+        actual.mkdirSync(target);
+        actual.writeFileSync(join(target, "foreign.txt"), "keep");
+      }
+      return actual.lstatSync(path, ...rest);
+    }) as typeof lstatSync);
+
+    await expect(
+      publishOutputDirectory(target, [{ path: "data/owned-2", bytes: "second" }], options),
+    ).rejects.toThrow(/changed after its ownership was proven/u);
+    expect(swapped).toBe(true);
+    expect(await readdir(target)).toEqual(["foreign.txt"]);
+    expect(await readdir(join(moved, "data"))).toEqual(["owned-1"]);
+    expect((await readdir(root)).sort()).toEqual(["moved", "out"]);
+  });
+
+  it("never follows a directory replaced by a link while removing the previous output", async () => {
+    const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+    const outside = join(root, "outside");
+    await mkdir(outside);
+    await writeFile(join(outside, "owned-1"), "outside file");
+    let prior = "";
+    vi.mocked(renameSync).mockImplementation((from, to) => {
+      if (String(from) === target || String(from).endsWith(`/${"out"}`)) prior = String(to);
+      actual.renameSync(from, to);
+      if (String(from).includes(".test-generation-")) {
+        // After publication, before the previous output is removed.
+        actual.renameSync(join(prior, "data"), join(root, "displaced"));
+        actual.symlinkSync(outside, join(prior, "data"), "dir");
+      }
+    });
+
+    await expect(
+      publishOutputDirectory(target, [{ path: "data/owned-2", bytes: "second" }], options),
+    ).rejects.toThrow();
+    expect(prior).not.toBe("");
+    expect(await readFile(join(outside, "owned-1"), "utf8")).toBe("outside file");
+    expect(await readdir(join(target, "data"))).toEqual(["owned-2"]);
   });
 
   it("removes an owned or empty output and ignores a missing one", async () => {

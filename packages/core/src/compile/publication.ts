@@ -172,6 +172,7 @@ export async function publishOutputDirectory(
     if (existing !== undefined) {
       const priorName = `${options.priorPrefix}${randomUUID()}`;
       assertOutputPathAbsent(procFdChild(parent.fd, priorName));
+      assertTargetStillBindsOwned(parent, target, existing);
       renameSync(targetPath, procFdChild(parent.fd, priorName));
       existing.name = priorName;
     }
@@ -255,6 +256,7 @@ export async function removeOutputDirectory(
     } else {
       const priorName = `${options.priorPrefix}${randomUUID()}`;
       assertOutputPathAbsent(procFdChild(parent.fd, priorName));
+      assertTargetStillBindsOwned(parent, target, existing);
       renameSync(procFdChild(parent.fd, target), procFdChild(parent.fd, priorName));
       existing.name = priorName;
       cleanupOutputDirectory(parent, existing);
@@ -364,13 +366,77 @@ function cleanupOutputDirectory(
   parent: FileHandle,
   directory: Pick<OwnedTemporaryDirectory, "handle" | "name" | "tree">,
 ): void {
+  const directories = new Map(
+    directory.tree.entries
+      .filter((entry) => entry.kind === "directory")
+      .map((entry) => [entry.path, entry.identity] as const),
+  );
   for (const entry of [...directory.tree.entries].reverse()) {
     if (entry.path.length === 0) continue;
-    const path = `${procFd(directory.handle.fd)}/${entry.path}`;
-    if (entry.kind === "file") unlinkSync(path);
-    else rmdirSync(path);
+    const components = entry.path.split("/");
+    const name = components.pop() ?? "";
+    // Remove each entry relative to its own parent, reached without following links and
+    // proven to be the inspected directory, so a swapped component cannot redirect it.
+    const parentFd = openBoundDirectorySync(directory.handle.fd, components, directories);
+    try {
+      if (entry.kind === "file") unlinkSync(procFdChild(parentFd, name));
+      else rmdirSync(procFdChild(parentFd, name));
+    } finally {
+      closeSync(parentFd);
+    }
   }
   rmdirSync(procFdChild(parent.fd, directory.name));
+}
+
+function openBoundDirectorySync(
+  rootFd: number,
+  components: readonly string[],
+  directories: ReadonlyMap<string, BoundOutputIdentity>,
+): number {
+  // The root descriptor itself is the inspected directory; reopen it to own a descriptor.
+  let fd = openSync(procFd(rootFd), constants.O_RDONLY | constants.O_DIRECTORY);
+  try {
+    for (let index = 0; index < components.length; index++) {
+      let child: number;
+      try {
+        child = openSync(
+          procFdChild(fd, components[index] ?? ""),
+          constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+        );
+      } catch {
+        throw new OutputPublicationError("cleanup entry changed while it was removed");
+      }
+      closeSync(fd);
+      fd = child;
+      const expected = directories.get(components.slice(0, index + 1).join("/"));
+      const actual = fstatSync(fd, { bigint: true });
+      if (expected === undefined || actual.dev !== expected.dev || actual.ino !== expected.ino) {
+        throw new OutputPublicationError("cleanup entry changed while it was removed");
+      }
+    }
+    return fd;
+  } catch (error) {
+    closeSync(fd);
+    throw error;
+  }
+}
+
+/** The directory about to be moved aside must still be the one whose ownership was proven. */
+function assertTargetStillBindsOwned(
+  parent: FileHandle,
+  target: string,
+  existing: OwnedOutputDirectory,
+): void {
+  const owned = fstatSync(existing.handle.fd, { bigint: true });
+  let actual: BigIntStats;
+  try {
+    actual = lstatSync(procFdChild(parent.fd, target), { bigint: true });
+  } catch {
+    throw new OutputPublicationError("output changed after its ownership was proven");
+  }
+  if (!actual.isDirectory() || actual.dev !== owned.dev || actual.ino !== owned.ino) {
+    throw new OutputPublicationError("output changed after its ownership was proven");
+  }
 }
 
 function assertOutputPathAbsent(path: string): void {
@@ -1002,9 +1068,9 @@ function movePortableTreeAside(
   existing: PortableOutputTree,
   priorPrefix: string,
 ): void {
-  assertPortableTreeRoot(existing);
   const priorPath = join(parent, `${priorPrefix}${randomUUID()}`);
   assertOutputPathAbsent(priorPath);
+  assertPortableTreeRoot(existing);
   renameSync(existing.path, priorPath);
   existing.path = priorPath;
 }

@@ -7,7 +7,11 @@ import {
   type TopikManifest,
   type TopikManifestSource,
 } from "../config/manifest";
-import { createPortableReadSession, type PortableReadSession } from "../assets/files";
+import {
+  createPortableReadSession,
+  refusesProjectFileReads,
+  type PortableReadSession,
+} from "../assets/files";
 import { compileAssetResourcesInSession } from "./assets";
 import { createProjectAssetNameGenerator } from "./asset-names";
 import { readConfigurationText, parseSafeConfigurationYaml, readExactConfigFile } from "./config";
@@ -101,6 +105,13 @@ async function loadTopikManifestInSession(
   dir: string,
   session: PortableReadSession,
 ): Promise<TopikManifest> {
+  // Refuse the platform before looking for the manifest, so its absence cannot hide that
+  // no project file is readable here (and `dev` does not serve a project it can never read).
+  if (refusesProjectFileReads(session.fileSafety)) {
+    throw new PublicCompileError("config-read-failed", TOPIK_MANIFEST_FILENAME, {
+      reason: "platform-unsupported",
+    });
+  }
   try {
     await lstat(join(dir, TOPIK_MANIFEST_FILENAME));
   } catch (error) {
@@ -165,7 +176,7 @@ function manifestSourceDescriptors(manifest: TopikManifest): ManifestSourceDescr
 export async function compileManifest(options: CompileOptions): Promise<ManifestCompileResult> {
   const root = resolve(options.dir);
   // One session shares Git repository evidence across every portable read of this build.
-  const session = createPortableReadSession();
+  const session = createPortableReadSession(options.fileSafety);
   const manifest = await loadTopikManifestInSession(root, session);
   const sources = manifestSourceDescriptors(manifest);
   const provenance: ManifestSourceProvenance[] = [];

@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { TopikContentProvider, type TopikContentProviderProps } from "./core/context";
-import type { TopikComponentMap } from "./core/components";
+import { mergeTopikComponentOverrides, type TopikComponentMap } from "./core/components";
 import {
   richTopikComponents,
   RichTopikCodeBlock,
@@ -27,7 +27,7 @@ export interface RichTopikContentProviderProps extends Omit<
 export function getRichTopikComponents(
   overrides: Partial<TopikComponentMap> = {},
 ): TopikComponentMap {
-  return getDefaultTopikComponents({ ...richTopikComponents, ...overrides });
+  return getDefaultTopikComponents(mergeTopikComponentOverrides(richTopikComponents, overrides));
 }
 
 export function RichTopikContentProvider({
@@ -38,8 +38,8 @@ export function RichTopikContentProvider({
 }: RichTopikContentProviderProps) {
   const mergedComponents = useRichTopikComponents(components);
   return (
-    // Rich output follows the content color scheme unless a rich theme is given explicitly.
-    <RichTopikThemeProvider theme={theme ?? props.colorScheme}>
+    // Without an explicit theme, rich output follows the enclosing content root's color scheme.
+    <RichTopikThemeProvider theme={theme}>
       <TopikContentProvider {...props} components={mergedComponents}>
         {children}
       </TopikContentProvider>

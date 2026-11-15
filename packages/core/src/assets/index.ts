@@ -57,8 +57,11 @@ export {
   type ParsedAsset,
 } from "./asset";
 export {
+  DEFAULT_FILE_SAFETY,
   looksLikeGitLfsPointer,
   readPortableAssetFile,
+  usesPortableFileReads,
+  type FileSafety,
   validatePortableAssetFile,
   validatePortableAssetTree,
   type PortableAssetFileDescriptor,

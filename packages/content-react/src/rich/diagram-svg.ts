@@ -132,7 +132,8 @@ export function safeDiagramSvg(svg: string): string {
     if (element.namespaceURI !== svgNamespace || !elements.has(element.localName)) {
       throw new Error("Unsupported diagram element");
     }
-    for (const attribute of element.attributes) {
+    // Snapshot: class and style may be rewritten or removed while iterating.
+    for (const attribute of Array.from(element.attributes)) {
       const { name, value } = attribute;
       if (!attributes.has(name) && !/^data-[\w-]+$/.test(name)) {
         throw new Error(`Unsupported diagram attribute: ${name}`);
@@ -159,13 +160,85 @@ export function safeDiagramSvg(svg: string): string {
         if (/url\s*\(|image|expression|javascript|@|\\|\/\*|[<>\u0000-\u001f]/i.test(local)) {
           throw new Error("Unsafe diagram style");
         }
+        if (name === "style") setOrRemove(element, name, presentationStyle(value));
       }
+      // Author classes (`:::name`, `class` statements) would otherwise match host CSS.
+      if (name === "class") setOrRemove(element, name, rendererClasses(value));
     }
   }
   return new XMLSerializer().serializeToString(root);
 }
 
-// Pele 1.8's MathML bridge is the only permitted foreignObject. Accept its
+function setOrRemove(element: Element, name: string, value: string): void {
+  if (value) element.setAttribute(name, value);
+  else element.removeAttribute(name);
+}
+
+function rendererClasses(value: string): string {
+  return value
+    .split(/\s+/)
+    .filter((token) => /^pele(?:-[\w-]+)?$/.test(token))
+    .join(" ");
+}
+
+// Diagrams paint within their own box: keep presentation properties, never layout or stacking.
+const styleProperties = new Set([
+  "alignment-baseline",
+  "color",
+  "direction",
+  "dominant-baseline",
+  "fill",
+  "fill-opacity",
+  "fill-rule",
+  "font",
+  "font-family",
+  "font-size",
+  "font-style",
+  "font-variant",
+  "font-weight",
+  "letter-spacing",
+  "opacity",
+  "paint-order",
+  "rx",
+  "ry",
+  "stroke",
+  "stroke-dasharray",
+  "stroke-dashoffset",
+  "stroke-linecap",
+  "stroke-linejoin",
+  "stroke-opacity",
+  "stroke-width",
+  "text-anchor",
+  "text-decoration",
+  "text-transform",
+  "vector-effect",
+  "word-spacing",
+]);
+// Pele's responsive root sizing, which only shrinks a diagram to fit its container.
+const boundedStyles = new Set(["max-width:100%", "height:auto"]);
+
+function presentationStyle(value: string): string {
+  return value
+    .split(";")
+    .map((declaration) => declaration.trim())
+    .filter((declaration) => {
+      const separator = declaration.indexOf(":");
+      if (separator <= 0) return false;
+      const property = declaration.slice(0, separator).trim().toLowerCase();
+      const normalized = `${property}:${declaration
+        .slice(separator + 1)
+        .trim()
+        .toLowerCase()}`;
+      return (
+        /^--[\w-]+$/.test(property) ||
+        styleProperties.has(property) ||
+        boundedStyles.has(normalized)
+      );
+    })
+    .join(";");
+}
+
+// Pele's MathML bridge is the only permitted foreignObject. Accept its
 // exact passive wrapper, never general HTML or mixed SVG/HTML descendants.
 function validateMathContainer(container: Element): void {
   const allowed = new Set(["class", "x", "y", "width", "height", "overflow", "color", "opacity"]);

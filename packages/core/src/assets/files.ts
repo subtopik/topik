@@ -147,11 +147,43 @@ export function validatePortableAssetTree(
     : { ok: false, value: files, diagnostics };
 }
 
+/**
+ * How project files are read on platforms without descriptor-anchored traversal (every
+ * platform except Linux). Linux always uses anchored reads, whatever this says.
+ *
+ * - `"portable"`: lexical and resolved containment checks, no symbolic links at or below the
+ *   root, and identity verification of the opened handle before and after the read. This
+ *   does not contain reads against another process concurrently mutating the source tree.
+ * - `"anchored"`: refuse to read (`platform-unsupported`) unless anchored traversal exists.
+ */
+export type FileSafety = "anchored" | "portable";
+
+/**
+ * Default {@link FileSafety}. Change this one constant to `"anchored"` to make portable
+ * reads opt-in; the CLI flag and its help text derive their default from it.
+ */
+export const DEFAULT_FILE_SAFETY: FileSafety = "portable";
+
 export interface ReadPortableAssetFileOptions {
   root: string;
   path: string;
   /** Optional tighter read limit; cannot exceed the portable asset maximum. */
   maxBytes?: number;
+  /**
+   * Whether a platform without anchored traversal may read by path. Defaults to
+   * {@link DEFAULT_FILE_SAFETY}; ignored on Linux.
+   */
+  fileSafety?: FileSafety;
+}
+
+/** @internal True when no project file can be read on this platform under `fileSafety`. */
+export function refusesProjectFileReads(fileSafety: FileSafety = DEFAULT_FILE_SAFETY): boolean {
+  return !hasAnchoredTraversal() && !usesPortableFileReads(fileSafety);
+}
+
+/** True when reads on this platform use the weaker by-path mode under `fileSafety`. */
+export function usesPortableFileReads(fileSafety: FileSafety = DEFAULT_FILE_SAFETY): boolean {
+  return process.platform !== "linux" && fileSafety === "portable";
 }
 
 /**
@@ -161,11 +193,14 @@ export interface ReadPortableAssetFileOptions {
  */
 export interface PortableReadSession {
   readonly repositories: Map<string, RepositoryEvidence>;
+  readonly fileSafety: FileSafety;
 }
 
 /** @internal */
-export function createPortableReadSession(): PortableReadSession {
-  return { repositories: new Map() };
+export function createPortableReadSession(
+  fileSafety: FileSafety = DEFAULT_FILE_SAFETY,
+): PortableReadSession {
+  return { repositories: new Map(), fileSafety };
 }
 
 export type PortableNavigationPathKind = "directory" | "missing" | "other";
@@ -177,6 +212,9 @@ export async function classifyPortableNavigationPath(
   const pathValidation = validateTopikPath(options.path);
   if (!pathValidation.ok) return "other";
   if (!hasAnchoredTraversal()) {
+    if (usesPortableFileReads(options.fileSafety)) {
+      return classifyPortableNavigationPathByPath(options.root, pathValidation.value.path);
+    }
     // Without anchored traversal only absence is reported; it is what link resolution needs
     // to treat a nonexistent file as a page route rather than as an unreadable download.
     return (await isPortablePathMissing(options)) ? "missing" : "other";
@@ -218,6 +256,26 @@ export async function classifyPortableNavigationPath(
   }
 }
 
+/** Portable classification: every component must be a real directory, never a link. */
+async function classifyPortableNavigationPathByPath(
+  root: string,
+  path: string,
+): Promise<PortableNavigationPathKind> {
+  try {
+    let current = resolve(root);
+    const rootStat = await lstat(current);
+    if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) return "other";
+    for (const component of path.split("/")) {
+      current = join(current, component);
+      const entry = await lstat(current);
+      if (entry.isSymbolicLink() || !entry.isDirectory()) return "other";
+    }
+    return "directory";
+  } catch (error) {
+    return isMissingFilesystemError(error) ? "missing" : "other";
+  }
+}
+
 function isMissingFilesystemError(error: unknown): boolean {
   return (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
 }
@@ -243,7 +301,7 @@ async function isPortablePathMissing(options: ReadPortableAssetFileOptions): Pro
 export async function readPortableAssetFile(
   options: ReadPortableAssetFileOptions,
 ): Promise<TopikAssetResult<PortableAssetFileDescriptor>> {
-  return readPortableAssetFileAnchored(options, createPortableReadSession());
+  return readPortableAssetFileAnchored(options, createPortableReadSession(options.fileSafety));
 }
 
 /** @internal Read with repository evidence shared across one compilation. */
@@ -289,16 +347,27 @@ async function readPortableAssetFileAnchored(
   }
 
   if (!hasAnchoredTraversal()) {
+    // Linux without anchored traversal still fails closed below; only other platforms may
+    // fall back to by-path reads, and only when the caller permits it.
+    if (usesPortableFileReads(options.fileSafety ?? session.fileSafety)) {
+      return readPortableAssetFileByPath(
+        options,
+        session,
+        maxBytes,
+        afterDirectoryOpened,
+        afterFileRead,
+      );
+    }
+    // Refuse before looking for the file: a missing file must not hide that no read can
+    // ever succeed here (portable reads report missing files themselves).
     return {
       ok: false,
       diagnostics: [
-        (await isPortablePathMissing(options))
-          ? missingFile(options.path)
-          : unsupportedPath(
-              options.path,
-              "This platform cannot prove descriptor-anchored no-follow traversal",
-              "platform-unsupported",
-            ),
+        unsupportedPath(
+          options.path,
+          "This platform cannot prove descriptor-anchored no-follow traversal",
+          "platform-unsupported",
+        ),
       ],
     };
   }
@@ -373,7 +442,7 @@ async function readPortableAssetFileAnchored(
       repository.kind === "none" ? { macros: new Set() } : undefined;
     if (attributes !== undefined) {
       const rootAttributeFailure = await applyGitAttributes(
-        rootHandle,
+        () => openAnchoredAttributes(rootHandle),
         components.join("/"),
         attributes,
       );
@@ -402,7 +471,7 @@ async function readPortableAssetFileAnchored(
       gitBoundaryFingerprints.push(gitBoundary.fingerprint);
       if (attributes !== undefined) {
         const attributeFailure = await applyGitAttributes(
-          child,
+          () => openAnchoredAttributes(child),
           components.slice(index + 1).join("/"),
           attributes,
         );
@@ -503,6 +572,292 @@ async function readPortableAssetFileAnchored(
   } finally {
     await fileHandle?.close().catch(() => undefined);
     await Promise.all(directoryHandles.map((handle) => handle.close().catch(() => undefined)));
+  }
+}
+
+const PORTABLE_READ_FLAGS =
+  constants.O_RDONLY |
+  (typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0) |
+  (typeof constants.O_NONBLOCK === "number" ? constants.O_NONBLOCK : 0);
+
+/**
+ * Portable reader for platforms without descriptor-anchored traversal, mirroring the Markdown
+ * reader's portable mode: every component at and below the root is inspected without
+ * following links, the opened handle must be the inspected file, the resolved path must equal
+ * the lexical one, and the whole path is inspected again after the read. These are pathname
+ * checks; they do not contain a read against another process concurrently swapping
+ * components between the checks. Git evidence and attribute handling are the anchored ones.
+ */
+async function readPortableAssetFileByPath(
+  options: ReadPortableAssetFileOptions,
+  session: PortableReadSession,
+  maxBytes: number,
+  afterDirectoryInspected?: (components: readonly string[]) => void | Promise<void>,
+  afterFileRead?: () => void | Promise<void>,
+): Promise<TopikAssetResult<PortableAssetFileDescriptor>> {
+  const fail = (failure: PortableReadFailure): TopikAssetResult<PortableAssetFileDescriptor> => ({
+    ok: false,
+    diagnostics: [unsupportedPath(options.path, failure.message, failure.reason)],
+  });
+  const changed = (message: string) => fail({ message, reason: "changed-during-read" });
+  let fileHandle: FileHandle | undefined;
+  try {
+    const repository = await sessionRepositoryEvidence(session, options.root);
+    if (!repository.ok) return fail(repository.failure);
+    const worktreePath =
+      repository.kind === "worktree"
+        ? [
+            ...(repository.rootFromWorktree === "" ? [] : [repository.rootFromWorktree]),
+            options.path,
+          ].join("/")
+        : undefined;
+    if (
+      worktreePath !== undefined &&
+      repository.kind === "worktree" &&
+      repository.gitlinks.some((gitlink) => isPathAtOrBelow(worktreePath, gitlink))
+    ) {
+      return fail({
+        message: "Asset path traverses a Gitlink index entry",
+        reason: "git-submodule",
+      });
+    }
+
+    const root = resolve(options.root);
+    const rootStat = await lstat(root, { bigint: true });
+    if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
+      return fail({
+        message: "Resource root is not a stable directory",
+        reason: rootStat.isSymbolicLink() ? "symbolic-link" : "special-file",
+      });
+    }
+    if (`${rootStat.dev}:${rootStat.ino}` !== repository.rootIdentity) {
+      return changed("Resource root changed after its Git repository evidence was derived");
+    }
+
+    const components = options.path.split("/");
+    const directories: { path: string; stats: BigIntStats }[] = [{ path: root, stats: rootStat }];
+    const gitBoundaryFingerprints: string[] = [];
+    const rootGitBoundary = await portableGitBoundaryFingerprint(root);
+    if (!rootGitBoundary.ok) return fail(rootGitBoundary.failure);
+    gitBoundaryFingerprints.push(rootGitBoundary.fingerprint);
+    const attributes: EffectiveGitAttributes | undefined =
+      repository.kind === "none" ? { macros: new Set() } : undefined;
+    if (attributes !== undefined) {
+      const failure = await applyGitAttributes(
+        () => openPortableEntry(join(root, ".gitattributes")),
+        components.join("/"),
+        attributes,
+      );
+      if (failure !== undefined) return fail(failure);
+    }
+    let current = root;
+    for (let index = 0; index < components.length - 1; index++) {
+      current = join(current, components[index]);
+      const stats = await lstat(current, { bigint: true });
+      if (stats.isSymbolicLink()) {
+        return fail({
+          message:
+            "Symbolic links cannot be read; replace the link with the file or directory it names",
+          reason: "symbolic-link",
+        });
+      }
+      if (!stats.isDirectory()) {
+        return fail({ message: "Non-directory traversal is unsupported", reason: "special-file" });
+      }
+      directories.push({ path: current, stats });
+      const gitBoundary = await portableGitBoundaryFingerprint(current);
+      if (!gitBoundary.ok) return fail(gitBoundary.failure);
+      if (gitBoundary.present) {
+        return fail({
+          message: "Nested Git worktree or submodule traversal is unsupported",
+          reason: "git-submodule",
+        });
+      }
+      gitBoundaryFingerprints.push(gitBoundary.fingerprint);
+      if (attributes !== undefined) {
+        const failure = await applyGitAttributes(
+          () => openPortableEntry(join(current, ".gitattributes")),
+          components.slice(index + 1).join("/"),
+          attributes,
+        );
+        if (failure !== undefined) return fail(failure);
+      }
+      await afterDirectoryInspected?.(components.slice(0, index + 1));
+    }
+    if (
+      attributes !== undefined &&
+      ((attributes.filter !== undefined && attributes.filter !== "unspecified") ||
+        (attributes.workingTreeEncoding !== undefined &&
+          attributes.workingTreeEncoding !== "unspecified"))
+    ) {
+      return fail({
+        message: "Effective Git content filters or working-tree encoding are not portable",
+        reason: "git-filtered",
+      });
+    }
+
+    const filePath = join(current, components.at(-1) ?? "");
+    const entry = await lstat(filePath, { bigint: true });
+    if (entry.isSymbolicLink()) {
+      return fail({
+        message:
+          "Symbolic links cannot be read; replace the link with the file or directory it names",
+        reason: "symbolic-link",
+      });
+    }
+    // Checked before opening so directories and special files cannot block the open.
+    const unsafeEntry = unsafeFilesystemFileReason(entry, maxBytes, portableFileChecks());
+    if (unsafeEntry !== undefined) return fail(unsafeEntry);
+    fileHandle = await open(filePath, PORTABLE_READ_FLAGS);
+    const before = await fileHandle.stat({ bigint: true });
+    if (before.dev !== entry.dev || before.ino !== entry.ino) {
+      return changed("File identity changed between inspection and open");
+    }
+    const unsafeFile = unsafeFilesystemFileReason(before, maxBytes, portableFileChecks());
+    if (unsafeFile !== undefined) return fail(unsafeFile);
+    // A link or junction anywhere in the authored path (including a case or alias spelling
+    // the lexical checks missed) makes the resolved path differ from the lexical one.
+    // Compare in NFC: HFS+ (and APFS for names created decomposed) returns the stored
+    // decomposed spelling for an NFC-authored name. This cannot redirect a read: every
+    // component the kernel resolved was already lstat-checked by its authored name and is
+    // not a link, and the opened handle is that inspected entry.
+    const [canonicalRoot, canonicalFile] = await Promise.all([realpath(root), realpath(filePath)]);
+    if (canonicalFile.normalize("NFC") !== resolve(canonicalRoot, ...components).normalize("NFC")) {
+      return fail({
+        message: "File path resolves through a link below the resource root",
+        reason: "symbolic-link",
+      });
+    }
+    const buffer = Buffer.alloc(Number(before.size) + 1);
+    let length = 0;
+    while (length < buffer.length) {
+      const { bytesRead } = await fileHandle.read(buffer, length, buffer.length - length, null);
+      if (bytesRead === 0) break;
+      length += bytesRead;
+    }
+    const bytes = buffer.subarray(0, length);
+    await afterFileRead?.();
+    const after = await fileHandle.stat({ bigint: true });
+    if (!hasStableFileIdentity(before, after))
+      return changed("File identity changed while hashing");
+    // The path must still name the handle that was read, through the same directories.
+    const finalEntry = await lstat(filePath, { bigint: true });
+    if (
+      finalEntry.isSymbolicLink() ||
+      finalEntry.dev !== after.dev ||
+      finalEntry.ino !== after.ino
+    ) {
+      return changed("File path no longer names the file that was read");
+    }
+    for (let index = 0; index < directories.length; index++) {
+      const directory = directories[index];
+      const again = await lstat(directory.path, { bigint: true });
+      if (
+        again.isSymbolicLink() ||
+        !again.isDirectory() ||
+        again.dev !== directory.stats.dev ||
+        again.ino !== directory.stats.ino
+      ) {
+        return changed("A directory on the file path changed while the file was read");
+      }
+      const gitBoundary = await portableGitBoundaryFingerprint(directory.path);
+      if (!gitBoundary.ok) return fail(gitBoundary.failure);
+      if (
+        gitBoundary.fingerprint !== gitBoundaryFingerprints[index] ||
+        (index > 0 && gitBoundary.present)
+      ) {
+        return changed("Git worktree boundary evidence changed while the file was read");
+      }
+    }
+    if (repository.kind === "worktree" && worktreePath !== undefined) {
+      const attributeFailure = await effectiveGitAttributeFailure(
+        repository.worktree,
+        worktreePath,
+      );
+      if (attributeFailure !== undefined) return fail(attributeFailure);
+    }
+    const repositoryFailure = await verifyRepositoryEvidence(session, options.root, repository);
+    if (repositoryFailure !== undefined) return fail(repositoryFailure);
+    return validatePortableAssetFile({
+      path: options.path,
+      type: "regular",
+      source: "filesystem",
+      mode: "100644",
+      bytes,
+      linkCount: Number(after.nlink),
+    });
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return { ok: false, diagnostics: [missingFile(options.path)] };
+    // O_NOFOLLOW (where the platform has it) refuses a final link swapped in after lstat.
+    if (code === "ELOOP") {
+      return fail({
+        message:
+          "Symbolic links cannot be read; replace the link with the file or directory it names",
+        reason: "symbolic-link",
+      });
+    }
+    return fail({ message: "File read failed without a portable path proof" });
+  } finally {
+    await fileHandle?.close().catch(() => undefined);
+  }
+}
+
+/** Open a regular entry by path, refusing links and verifying the handle is the inspected entry. */
+async function openPortableEntry(path: string): Promise<FileHandle> {
+  const entry = await lstat(path, { bigint: true });
+  if (entry.isSymbolicLink()) {
+    throw Object.assign(new Error("Entry is a symbolic link"), { code: "ELOOP" });
+  }
+  if (!entry.isFile()) {
+    throw Object.assign(new Error("Entry is not a regular file"), { code: "EFTYPE" });
+  }
+  const handle = await open(path, PORTABLE_READ_FLAGS);
+  const opened = await handle.stat({ bigint: true });
+  if (opened.dev !== entry.dev || opened.ino !== entry.ino) {
+    await handle.close().catch(() => undefined);
+    throw Object.assign(new Error("Entry changed before it was opened"), { code: "ESTALE" });
+  }
+  return handle;
+}
+
+/** Portable counterpart of {@link anchoredGitBoundaryFingerprint}, inspected without following links. */
+async function portableGitBoundaryFingerprint(
+  directory: string,
+): Promise<AnchoredGitBoundaryProof> {
+  try {
+    const entry = await lstat(join(directory, ".git"), { bigint: true });
+    if (entry.isSymbolicLink()) {
+      return {
+        ok: false,
+        failure: {
+          message: "Git boundary could not be inspected without following links",
+          reason: "symbolic-link",
+        },
+      };
+    }
+    if (!entry.isFile() && !entry.isDirectory()) {
+      return {
+        ok: false,
+        failure: {
+          message: "Git boundary is not a regular file or directory",
+          reason: "special-file",
+        },
+      };
+    }
+    // Directory timestamps change with every lock file Git creates; identity suffices.
+    return {
+      ok: true,
+      present: true,
+      fingerprint: `present:${entry.isDirectory() ? identityStamp(entry) : statStamp(entry)}`,
+    };
+  } catch (error) {
+    return isMissingFilesystemError(error)
+      ? { ok: true, present: false, fingerprint: "absent" }
+      : {
+          ok: false,
+          failure: { message: "Git boundary could not be inspected without following links" },
+        };
   }
 }
 
@@ -801,19 +1156,34 @@ const GIT_TIMEOUT_MS = 30_000;
  * relative or project-local entries, and evidence about a source tree must not come from an
  * executable that tree (or whoever controls `PATH`) supplies.
  */
-const TRUSTED_GIT_LOCATIONS = [
-  "/usr/bin/git",
-  "/bin/git",
-  "/usr/local/bin/git",
-  "/run/current-system/sw/bin/git",
-  "/nix/var/nix/profiles/default/bin/git",
-] as const;
+const TRUSTED_GIT_LOCATIONS: Readonly<Record<string, readonly string[]>> = {
+  linux: [
+    "/usr/bin/git",
+    "/bin/git",
+    "/usr/local/bin/git",
+    "/run/current-system/sw/bin/git",
+    "/nix/var/nix/profiles/default/bin/git",
+  ],
+  // Xcode command line tools, Homebrew (Apple silicon, Intel) and MacPorts.
+  darwin: ["/usr/bin/git", "/opt/homebrew/bin/git", "/usr/local/bin/git", "/opt/local/bin/git"],
+  // Git for Windows' default per-machine install, writable only by administrators.
+  win32: ["C:\\Program Files\\Git\\cmd\\git.exe", "C:\\Program Files\\Git\\bin\\git.exe"],
+};
 
-let trustedGit: string | undefined;
+/** @internal Trusted Git locations for the current platform (POSIX defaults elsewhere). */
+export function trustedGitLocations(): readonly string[] {
+  return TRUSTED_GIT_LOCATIONS[process.platform] ?? TRUSTED_GIT_LOCATIONS.linux;
+}
 
-/** @internal First executable from `candidates` that is owned by root or the current user. */
+let trustedGit: { platform: string; path: string } | undefined;
+
+/**
+ * @internal First executable from `candidates` that is owned by root or the current user and
+ * not group- or world-writable. Windows has no POSIX owner or mode bits (they are synthesized
+ * by Node), so there only the fixed administrator-owned location is trusted.
+ */
 export async function findTrustedGitExecutable(
-  candidates: readonly string[] = TRUSTED_GIT_LOCATIONS,
+  candidates: readonly string[] = trustedGitLocations(),
 ): Promise<string | undefined> {
   const euid = typeof process.geteuid === "function" ? process.geteuid() : undefined;
   for (const candidate of candidates) {
@@ -821,9 +1191,10 @@ export async function findTrustedGitExecutable(
       const stats = await stat(candidate);
       if (
         stats.isFile() &&
-        (stats.mode & 0o111) !== 0 &&
-        (stats.mode & 0o022) === 0 &&
-        (stats.uid === 0 || stats.uid === euid)
+        (process.platform === "win32" ||
+          ((stats.mode & 0o111) !== 0 &&
+            (stats.mode & 0o022) === 0 &&
+            (stats.uid === 0 || stats.uid === euid)))
       ) {
         return candidate;
       }
@@ -844,8 +1215,10 @@ function gitEnvironment(): NodeJS.ProcessEnv {
   const environment: NodeJS.ProcessEnv = {};
   for (const [name, value] of Object.entries(process.env)) {
     if (value === undefined) continue;
-    if (name.startsWith("GIT_") && !isGitConfigurationVariable(name)) continue;
-    if (name === "LANG" || name === "LANGUAGE" || name.startsWith("LC_")) continue;
+    // Windows environment names are case-insensitive, so compare them in upper case.
+    const upper = name.toUpperCase();
+    if (upper.startsWith("GIT_") && !isGitConfigurationVariable(upper)) continue;
+    if (upper === "LANG" || upper === "LANGUAGE" || upper.startsWith("LC_")) continue;
     environment[name] = value;
   }
   // Stable wording for the failure classification below; no prompts or optional index writes.
@@ -871,8 +1244,11 @@ type GitResult =
   | { ok: false; notRepository: boolean; failure: PortableReadFailure };
 
 async function runGit(args: readonly string[], maxBuffer: number): Promise<GitResult> {
-  trustedGit ??= await findTrustedGitExecutable();
-  const git = trustedGit;
+  if (trustedGit?.platform !== process.platform) {
+    const path = await findTrustedGitExecutable();
+    trustedGit = path === undefined ? undefined : { platform: process.platform, path };
+  }
+  const git = trustedGit?.path;
   if (git === undefined) {
     return {
       ok: false,
@@ -1046,18 +1422,13 @@ interface EffectiveGitAttributes {
  * match `relativePath` and that match cannot be decided exactly.
  */
 async function applyGitAttributes(
-  directory: FileHandle,
+  openAttributes: () => Promise<FileHandle>,
   relativePath: string,
   state: EffectiveGitAttributes,
 ): Promise<PortableReadFailure | undefined> {
   let handle: FileHandle | undefined;
   try {
-    handle = await open(
-      procFdChild(directory.fd, ".gitattributes"),
-      constants.O_RDONLY |
-        constants.O_NOFOLLOW |
-        (typeof constants.O_NONBLOCK === "number" ? constants.O_NONBLOCK : 0),
-    );
+    handle = await openAttributes();
     const before = await handle.stat({ bigint: true });
     if (!before.isFile() || before.nlink !== 1n) {
       return {
@@ -1150,6 +1521,15 @@ async function applyGitAttributes(
   } finally {
     await handle?.close().catch(() => undefined);
   }
+}
+
+function openAnchoredAttributes(directory: FileHandle): Promise<FileHandle> {
+  return open(
+    procFdChild(directory.fd, ".gitattributes"),
+    constants.O_RDONLY |
+      constants.O_NOFOLLOW |
+      (typeof constants.O_NONBLOCK === "number" ? constants.O_NONBLOCK : 0),
+  );
 }
 
 /** Split a pattern from its attributes, decoding Git's C-style quoted patterns. */
@@ -1385,9 +1765,30 @@ export function looksLikeGitLfsPointer(bytes: Uint8Array): boolean {
   return GIT_LFS_POINTER_VERSION.test(firstLine);
 }
 
+/** File checks whose evidence a platform's `stat` reports meaningfully. */
+interface FileCheckSupport {
+  /** POSIX execute bits. Windows has none; Node synthesizes mode bits there. */
+  executableBit: boolean;
+  /**
+   * Allocated blocks smaller than the size. NTFS stores small files inside the MFT with no
+   * allocation, so Windows would report ordinary files as sparse.
+   */
+  allocatedBlocks: boolean;
+}
+
+const ANCHORED_FILE_CHECKS: FileCheckSupport = { executableBit: true, allocatedBlocks: true };
+
+/** @internal Checks applied by the portable reader on the current platform. */
+export function portableFileChecks(): FileCheckSupport {
+  return process.platform === "win32"
+    ? { executableBit: false, allocatedBlocks: false }
+    : ANCHORED_FILE_CHECKS;
+}
+
 function unsafeFilesystemFileReason(
   stats: BigIntStats,
   maxBytes: number,
+  checks: FileCheckSupport = ANCHORED_FILE_CHECKS,
 ): PortableReadFailure | undefined {
   if (!stats.isFile()) {
     return {
@@ -1401,7 +1802,7 @@ function unsafeFilesystemFileReason(
       reason: "hard-linked",
     };
   }
-  if ((stats.mode & 0o111n) !== 0n) {
+  if (checks.executableBit && (stats.mode & 0o111n) !== 0n) {
     return {
       message: "Executable files cannot be read; clear the executable permission bits",
       reason: "executable",
@@ -1410,7 +1811,7 @@ function unsafeFilesystemFileReason(
   if (stats.size > BigInt(maxBytes)) {
     return { message: "File exceeds the read size limit", reason: "too-large" };
   }
-  if (stats.size > 0n && stats.blocks * 512n < stats.size) {
+  if (checks.allocatedBlocks && stats.size > 0n && stats.blocks * 512n < stats.size) {
     return {
       message:
         "Sparse or filesystem-compressed files cannot be read; rewrite the file without holes",

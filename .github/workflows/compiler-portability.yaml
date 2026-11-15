@@ -49,4 +49,5 @@ jobs:
         working-directory: packages/core
         # Native cases use the host filesystem; Windows path models supplement them.
         # Linux descriptor traversal and procfs capability cases remain Linux-only.
-        run: vp test --run src/compile/files.test.ts src/compile/files-windows.test.ts src/compile/config.test.ts --maxWorkers=1 --fileParallelism=false --reporter=verbose
+        # portable-files.test.ts exercises the portable manifest/config/asset reader natively.
+        run: vp test --run src/compile/files.test.ts src/compile/files-windows.test.ts src/compile/config.test.ts src/assets/portable-files.test.ts --maxWorkers=1 --fileParallelism=false --reporter=verbose

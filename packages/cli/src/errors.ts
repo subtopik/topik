@@ -19,7 +19,8 @@ const PUBLIC_CLI_ERROR_MESSAGES = Object.freeze({
   "compilation-output-not-owned":
     "Existing compilation output is populated but is not recognized as owned. Choose a new or empty output directory.",
   "compilation-output-empty": "Compilation output directory must not be empty.",
-  "compilation-output-platform-unsupported": "Writing compilation output requires Linux.",
+  "compilation-output-platform-unsupported":
+    "Writing compilation output with --file-safety anchored requires Linux. Use --file-safety portable on a workspace you trust.",
   "compilation-publication-failed":
     "Compilation output publication failed after moving the existing output aside. For manual recovery, first stop concurrent writers, then inspect .topik-compilation-prior-* directories beside the output path. Verify the backup contents and do not overwrite an existing output path.",
   "compilation-source-access-failed": "Compilation source directory could not be accessed.",
@@ -30,6 +31,8 @@ const PUBLIC_CLI_ERROR_MESSAGES = Object.freeze({
   "dev-source-access-failed":
     "Dev server source directory does not exist or could not be accessed.",
   "lint-failed": "Lint found errors.",
+  "project-platform-unsupported":
+    "--file-safety anchored requires descriptor-anchored file reads, which only Linux provides. Use --file-safety portable on a workspace you trust, or run on Linux, for example in WSL 2 or a Linux container.",
   "resource-access-failed": "Resource input could not be accessed.",
   "resource-format-unsupported": "Resource input format is unsupported.",
   "resource-json-invalid": "JSON resource input could not be parsed.",
@@ -56,6 +59,17 @@ function publicCliErrorMessage(id: unknown): string | undefined {
   return typeof id === "string" && Object.hasOwn(PUBLIC_CLI_ERROR_MESSAGES, id)
     ? PUBLIC_CLI_ERROR_MESSAGES[id as PublicCliErrorId]
     : undefined;
+}
+
+/**
+ * Replace core's sanitized `platform-unsupported` read failure with the command-level
+ * platform requirement. With `--file-safety anchored`, project commands read `.topik.yaml`
+ * through core's Linux-only anchored reader first, so elsewhere this is their only failure.
+ */
+export function withProjectPlatformRequirement(error: unknown): unknown {
+  return error instanceof PublicCompileError && error.reason === "platform-unsupported"
+    ? new PublicCliError("project-platform-unsupported", { cause: error })
+    : error;
 }
 
 export function formatPublicCliError(error: unknown): string {

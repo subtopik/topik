@@ -9,7 +9,7 @@ import {
   findTrustedGitExecutable,
   readPortableAssetFileInSession,
 } from "../assets/files";
-import { compile } from "./index";
+import { compile, lint } from "./index";
 import { compileGuides } from "./guide";
 import { compileWiki } from "./wiki";
 import { PublicCompileError } from "./public-errors";
@@ -274,4 +274,31 @@ describe("portable read diagnostics", () => {
       expect.objectContaining({ href: "./other", status: "verified" }),
     ]);
   });
+
+  test.each(["darwin", "win32"] as const)(
+    "compiles a project with assets on %s and honours fileSafety",
+    async (platform) => {
+      vi.spyOn(process, "platform", "get").mockReturnValue(platform);
+      const dir = await temporaryDirectory("topik-portable-project-");
+      await collectionProject(dir, 2);
+      await writeFile(join(dir, "page-0.md"), "# Page 0\n\n[Manual](./manual.pdf)\n");
+
+      const result = await compile({ dir });
+      expect(result.resources.filter((resource) => resource.type === "Asset")).toHaveLength(1);
+      await expect(compile({ dir, fileSafety: "anchored" })).rejects.toMatchObject({
+        id: "config-read-failed",
+        location: ".topik.yaml",
+        reason: "platform-unsupported",
+      });
+      // Refused before the manifest is looked for, so a missing manifest cannot mask it.
+      const empty = await temporaryDirectory("topik-portable-empty-");
+      for (const run of [compile, lint]) {
+        await expect(run({ dir: empty, fileSafety: "anchored" })).rejects.toMatchObject({
+          id: "config-read-failed",
+          location: ".topik.yaml",
+          reason: "platform-unsupported",
+        });
+      }
+    },
+  );
 });

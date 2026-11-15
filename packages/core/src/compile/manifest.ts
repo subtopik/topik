@@ -176,7 +176,7 @@ function manifestSourceDescriptors(manifest: TopikManifest): ManifestSourceDescr
 export async function compileManifest(options: CompileOptions): Promise<ManifestCompileResult> {
   const root = resolve(options.dir);
   // One session shares Git repository evidence across every portable read of this build.
-  const session = createPortableReadSession(options.fileSafety);
+  const session = createPortableReadSession(options.fileSafety, options.gitExecutable);
   const manifest = await loadTopikManifestInSession(root, session);
   const sources = manifestSourceDescriptors(manifest);
   const provenance: ManifestSourceProvenance[] = [];

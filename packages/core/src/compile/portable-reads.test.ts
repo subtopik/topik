@@ -16,7 +16,7 @@ import { PublicCompileError } from "./public-errors";
 import { CompileError } from "./shared";
 
 // Count every Git process the compiler starts; the real command still runs.
-const spawned = vi.hoisted(() => ({ commands: [] as string[] }));
+const spawned = vi.hoisted(() => ({ commands: [] as string[], executables: [] as string[] }));
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>();
   return {
@@ -24,6 +24,7 @@ vi.mock("node:child_process", async (importOriginal) => {
     execFile: ((...args: Parameters<typeof actual.execFile>) => {
       const commandArgs = Array.isArray(args[1]) ? (args[1] as string[]) : [];
       spawned.commands.push(commandArgs[2] ?? String(args[0]));
+      spawned.executables.push(String(args[0]));
       return (actual.execFile as (...values: unknown[]) => unknown)(...args);
     }) as typeof actual.execFile,
   };
@@ -42,6 +43,7 @@ const roots: string[] = [];
 const savedEnvironment = { ...process.env };
 afterEach(async () => {
   spawned.commands.length = 0;
+  spawned.executables.length = 0;
   for (const name of Object.keys(process.env))
     if (!(name in savedEnvironment)) delete process.env[name];
   Object.assign(process.env, savedEnvironment);
@@ -199,6 +201,59 @@ describe("Git repository evidence", () => {
     expect(await findTrustedGitExecutable([join(dir, "missing"), writable, plain])).toBe(undefined);
     expect(await findTrustedGitExecutable([writable, plain, trusted])).toBe(trusted);
   });
+
+  gitTest("runs a configured Git executable for every Git command", async () => {
+    const tools = await temporaryDirectory("topik-git-tools-");
+    // A link elsewhere stands in for a Git installed outside the fixed locations.
+    const configured = join(tools, "git");
+    await symlink(GIT, configured);
+    const dir = await temporaryDirectory("topik-git-configured-");
+    await collectionProject(dir, 1);
+    git(dir, "init", "-q");
+    spawned.executables.length = 0;
+
+    await expect(compile({ dir, gitExecutable: configured })).resolves.toMatchObject({
+      diagnostics: [],
+    });
+    expect(spawned.executables.length).toBeGreaterThan(0);
+    expect(new Set(spawned.executables)).toEqual(new Set([configured]));
+  });
+
+  gitTest("refuses a configured Git executable that fails the trust checks", async () => {
+    const tools = await temporaryDirectory("topik-git-untrusted-");
+    const writable = join(tools, "git");
+    await writeFile(writable, "#!/bin/sh\n");
+    await chmod(writable, 0o777);
+    const dir = await temporaryDirectory("topik-git-configured-");
+    await collectionProject(dir, 1);
+    git(dir, "init", "-q");
+
+    const error = await compile({ dir, gitExecutable: writable }).catch((caught) => caught);
+    expect(error).toMatchObject({
+      id: "config-read-failed",
+      location: ".topik.yaml",
+      reason: "git-evidence-unavailable",
+    });
+    expect((error as Error).message).not.toContain(tools);
+    expect(spawned.executables).toEqual([]);
+    // Outside a checkout Git is never run, so the configured path is not consulted.
+    const plain = await temporaryDirectory("topik-git-none-");
+    await collectionProject(plain, 1);
+    await expect(compile({ dir: plain, gitExecutable: writable })).resolves.toMatchObject({
+      diagnostics: [],
+    });
+  });
+
+  test.each(["git", "", "relative/git", "/usr/bin/git\0", 42])(
+    "rejects the malformed Git executable %j",
+    async (gitExecutable) => {
+      const dir = await temporaryDirectory("topik-git-malformed-");
+      await collectionProject(dir, 1);
+      await expect(compile({ dir, gitExecutable: gitExecutable as string })).rejects.toThrow(
+        new TypeError("gitExecutable must be an absolute path to a Git executable"),
+      );
+    },
+  );
 });
 
 describe("portable read diagnostics", () => {

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 import { CompileError } from "./compile";
 import { pagePathToName } from "./compile/wiki";
-import { watch } from "./watch";
+import { DEFAULT_WATCH_DEBOUNCE_MS, watch } from "./watch";
 import type { Watcher } from "./watch";
 
 const PNG_BYTES = Buffer.from(
@@ -229,6 +229,61 @@ describe("watch", () => {
     expect(watcher.state.status).toBe("ready");
     expect(watcher.resources.has("Guide/guides-intro")).toBe(true);
   });
+
+  test.each([-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 2 ** 31, "100"])(
+    "rejects the debounce interval %j before watching",
+    async (debounceMs) => {
+      await expect(watch({ dir, debounceMs: debounceMs as number })).rejects.toThrow(
+        new RangeError(`Watch debounceMs must be an integer from 0 to 2147483647 milliseconds`),
+      );
+    },
+  );
+
+  test("rejects a malformed Git executable before watching", async () => {
+    await expect(watch({ dir, gitExecutable: "git" })).rejects.toThrow(
+      new TypeError("gitExecutable must be an absolute path to a Git executable"),
+    );
+  });
+
+  test("keeps the default debounce interval", () => {
+    expect(DEFAULT_WATCH_DEBOUNCE_MS).toBe(100);
+  });
+
+  test("waits for a quiet configured debounce interval and coalesces edits into one compile", async () => {
+    const debounceMs = 1_000;
+    watcher = await watch({ dir, debounceMs });
+    const compiling: number[] = [];
+    watcher.on("preview-state", (state) => {
+      if (state.status === "compiling") compiling.push(performance.now());
+    });
+    const updated = new Promise<unknown>((resolve) => {
+      watcher.on("update", (_key, resource) => resolve(resource));
+    });
+
+    await delay(500);
+    const firstEdit = performance.now();
+    for (const body of ["One.", "Two.", "Three."]) {
+      await writeFile(join(dir, "intro.md"), `# Intro\n\n${body}\n`);
+      await delay(200);
+    }
+
+    expect(await updated).toHaveProperty("spec.content.value", "# Intro\n\nThree.\n");
+    expect(compiling).toHaveLength(1);
+    // The timer restarts on each notification, so compilation starts a full interval later.
+    expect(compiling[0] - firstEdit).toBeGreaterThanOrEqual(debounceMs);
+  }, 15_000);
+
+  test("accepts a zero debounce interval", async () => {
+    watcher = await watch({ dir, debounceMs: 0 });
+    const updated = new Promise<unknown>((resolve) => {
+      watcher.on("update", (_key, resource) => resolve(resource));
+    });
+
+    await delay(500);
+    await writeFile(join(dir, "intro.md"), "# Intro\n\nImmediate.\n");
+
+    expect(await updated).toHaveProperty("spec.content.value", "# Intro\n\nImmediate.\n");
+  }, 10_000);
 });
 
 describe("authoritative preview state", () => {

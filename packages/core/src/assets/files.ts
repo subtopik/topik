@@ -174,6 +174,11 @@ export interface ReadPortableAssetFileOptions {
    * {@link DEFAULT_FILE_SAFETY}; ignored on Linux.
    */
   fileSafety?: FileSafety;
+  /**
+   * Absolute path of the Git executable used for repository evidence inside a checkout, in
+   * place of the fixed trusted locations. See {@link validateGitExecutableOption}.
+   */
+  gitExecutable?: string;
 }
 
 /** @internal True when no project file can be read on this platform under `fileSafety`. */
@@ -194,13 +199,20 @@ export function usesPortableFileReads(fileSafety: FileSafety = DEFAULT_FILE_SAFE
 export interface PortableReadSession {
   readonly repositories: Map<string, RepositoryEvidence>;
   readonly fileSafety: FileSafety;
+  /** Caller-configured Git executable; undefined searches the trusted locations. */
+  readonly gitExecutable?: string;
 }
 
-/** @internal */
+/** @internal Throws a `TypeError` for a malformed `gitExecutable`. */
 export function createPortableReadSession(
   fileSafety: FileSafety = DEFAULT_FILE_SAFETY,
+  gitExecutable?: string,
 ): PortableReadSession {
-  return { repositories: new Map(), fileSafety };
+  return {
+    repositories: new Map(),
+    fileSafety,
+    gitExecutable: validateGitExecutableOption(gitExecutable),
+  };
 }
 
 export type PortableNavigationPathKind = "directory" | "missing" | "other";
@@ -301,7 +313,10 @@ async function isPortablePathMissing(options: ReadPortableAssetFileOptions): Pro
 export async function readPortableAssetFile(
   options: ReadPortableAssetFileOptions,
 ): Promise<TopikAssetResult<PortableAssetFileDescriptor>> {
-  return readPortableAssetFileAnchored(options, createPortableReadSession(options.fileSafety));
+  return readPortableAssetFileAnchored(
+    options,
+    createPortableReadSession(options.fileSafety, options.gitExecutable),
+  );
 }
 
 /** @internal Read with repository evidence shared across one compilation. */
@@ -376,11 +391,12 @@ async function readPortableAssetFileAnchored(
     ok: false,
     diagnostics: [unsupportedPath(options.path, failure.message, failure.reason)],
   });
+  const git = gitExecutableFor(options, session);
   const directoryHandles: FileHandle[] = [];
   const gitBoundaryFingerprints: string[] = [];
   let fileHandle: FileHandle | undefined;
   try {
-    const repository = await sessionRepositoryEvidence(session, options.root);
+    const repository = await sessionRepositoryEvidence(session, options.root, git);
     if (!repository.ok) return fail(repository.failure);
     const worktreePath =
       repository.kind === "worktree"
@@ -540,10 +556,16 @@ async function readPortableAssetFileAnchored(
       const attributeFailure = await effectiveGitAttributeFailure(
         repository.worktree,
         worktreePath,
+        git,
       );
       if (attributeFailure !== undefined) return fail(attributeFailure);
     }
-    const repositoryFailure = await verifyRepositoryEvidence(session, options.root, repository);
+    const repositoryFailure = await verifyRepositoryEvidence(
+      session,
+      options.root,
+      repository,
+      git,
+    );
     if (repositoryFailure !== undefined) return fail(repositoryFailure);
     return validatePortableAssetFile({
       path: options.path,
@@ -600,9 +622,10 @@ async function readPortableAssetFileByPath(
     diagnostics: [unsupportedPath(options.path, failure.message, failure.reason)],
   });
   const changed = (message: string) => fail({ message, reason: "changed-during-read" });
+  const git = gitExecutableFor(options, session);
   let fileHandle: FileHandle | undefined;
   try {
-    const repository = await sessionRepositoryEvidence(session, options.root);
+    const repository = await sessionRepositoryEvidence(session, options.root, git);
     if (!repository.ok) return fail(repository.failure);
     const worktreePath =
       repository.kind === "worktree"
@@ -773,10 +796,16 @@ async function readPortableAssetFileByPath(
       const attributeFailure = await effectiveGitAttributeFailure(
         repository.worktree,
         worktreePath,
+        git,
       );
       if (attributeFailure !== undefined) return fail(attributeFailure);
     }
-    const repositoryFailure = await verifyRepositoryEvidence(session, options.root, repository);
+    const repositoryFailure = await verifyRepositoryEvidence(
+      session,
+      options.root,
+      repository,
+      git,
+    );
     if (repositoryFailure !== undefined) return fail(repositoryFailure);
     return validatePortableAssetFile({
       path: options.path,
@@ -896,13 +925,14 @@ type ProvenRepositoryEvidence = Extract<RepositoryEvidence, { ok: true }>;
 async function sessionRepositoryEvidence(
   session: PortableReadSession,
   root: string,
+  git: string | undefined,
 ): Promise<RepositoryEvidence> {
   const key = resolve(root);
   const cached = session.repositories.get(key);
   if (cached !== undefined && (!cached.ok || (await isCurrentRepositoryEvidence(key, cached)))) {
     return cached;
   }
-  const evidence = await computeRepositoryEvidence(key);
+  const evidence = await computeRepositoryEvidence(key, git);
   session.repositories.set(key, evidence);
   return evidence;
 }
@@ -912,12 +942,13 @@ async function verifyRepositoryEvidence(
   session: PortableReadSession,
   root: string,
   before: ProvenRepositoryEvidence,
+  git: string | undefined,
 ): Promise<PortableReadFailure | undefined> {
   if (await isCurrentRepositoryEvidence(resolve(root), before)) return undefined;
   // A stamp also changes for harmless updates such as an index stat refresh, so compare the
   // evidence itself before failing.
   const key = resolve(root);
-  const after = await computeRepositoryEvidence(key);
+  const after = await computeRepositoryEvidence(key, git);
   session.repositories.set(key, after);
   if (!after.ok) return after.failure;
   const same =
@@ -974,13 +1005,17 @@ async function canonicalRootIdentity(
   }
 }
 
-async function computeRepositoryEvidence(root: string): Promise<RepositoryEvidence> {
+async function computeRepositoryEvidence(
+  root: string,
+  git: string | undefined,
+): Promise<RepositoryEvidence> {
   // Git discovers repositories from the canonical directory, so evaluate the same one.
   const { canonicalRoot, rootIdentity } = await canonicalRootIdentity(root);
   const boundary = await gitBoundaryEvidence(canonicalRoot);
   if (!boundary.present)
     return { ok: true, kind: "none", canonicalRoot, rootIdentity, stamp: boundary.stamp };
   const revParse = await runGit(
+    git,
     [
       "-C",
       canonicalRoot,
@@ -1036,7 +1071,7 @@ async function computeRepositoryEvidence(root: string): Promise<RepositoryEviden
     };
   }
   const stamp = await worktreeStamp(boundary.stamp, worktree, indexPath);
-  const index = await runGit(["-C", worktree, "ls-files", "--stage", "-z"], 64 * 1024 * 1024);
+  const index = await runGit(git, ["-C", worktree, "ls-files", "--stage", "-z"], 64 * 1024 * 1024);
   if (!index.ok) return { ok: false, failure: index.failure };
   const gitlinks: string[] = [];
   for (const entry of index.stdout.split("\0")) {
@@ -1178,6 +1213,36 @@ export function trustedGitLocations(): readonly string[] {
 let trustedGit: { platform: string; path: string } | undefined;
 
 /**
+ * Validate a caller-configured Git executable path and return it unchanged: a non-empty
+ * absolute path without NUL characters. The file itself must pass the same checks as the
+ * fixed locations ({@link findTrustedGitExecutable}) before each Git command. Only the API
+ * caller sets it; it is never read from project files or the environment.
+ *
+ * @internal Throws a `TypeError` without echoing the value.
+ */
+export function validateGitExecutableOption(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.includes("\0") ||
+    !isAbsolute(value)
+  ) {
+    throw new TypeError("gitExecutable must be an absolute path to a Git executable");
+  }
+  return value;
+}
+
+function gitExecutableFor(
+  options: ReadPortableAssetFileOptions,
+  session: PortableReadSession,
+): string | undefined {
+  return options.gitExecutable === undefined
+    ? session.gitExecutable
+    : validateGitExecutableOption(options.gitExecutable);
+}
+
+/**
  * @internal First executable from `candidates` that is owned by root or the current user and
  * not group- or world-writable. Windows has no POSIX owner or mode bits (they are synthesized
  * by Node), so there only the fixed administrator-owned location is trusted.
@@ -1243,12 +1308,32 @@ type GitResult =
   | { ok: true; stdout: string }
   | { ok: false; notRepository: boolean; failure: PortableReadFailure };
 
-async function runGit(args: readonly string[], maxBuffer: number): Promise<GitResult> {
-  if (trustedGit?.platform !== process.platform) {
-    const path = await findTrustedGitExecutable();
-    trustedGit = path === undefined ? undefined : { platform: process.platform, path };
+async function runGit(
+  configured: string | undefined,
+  args: readonly string[],
+  maxBuffer: number,
+): Promise<GitResult> {
+  let git: string | undefined;
+  if (configured !== undefined) {
+    // Checked before every command: the caller chose the path, so nothing is cached.
+    git = await findTrustedGitExecutable([configured]);
+    if (git === undefined) {
+      return {
+        ok: false,
+        notRepository: false,
+        failure: {
+          message: "Configured Git executable was not found or is not trusted",
+          reason: "git-evidence-unavailable",
+        },
+      };
+    }
+  } else {
+    if (trustedGit?.platform !== process.platform) {
+      const path = await findTrustedGitExecutable();
+      trustedGit = path === undefined ? undefined : { platform: process.platform, path };
+    }
+    git = trustedGit?.path;
   }
-  const git = trustedGit?.path;
   if (git === undefined) {
     return {
       ok: false,
@@ -1259,10 +1344,11 @@ async function runGit(args: readonly string[], maxBuffer: number): Promise<GitRe
       },
     };
   }
+  const executable = git;
   const result = await new Promise<{ error: Error | null; stderr: string; stdout: string }>(
     (resolvePromise) => {
       execFile(
-        git,
+        executable,
         [...args],
         {
           encoding: "utf8",
@@ -1366,8 +1452,10 @@ async function anchoredGitBoundaryFingerprint(
 async function effectiveGitAttributeFailure(
   worktree: string,
   worktreePath: string,
+  git: string | undefined,
 ): Promise<PortableReadFailure | undefined> {
   const result = await runGit(
+    git,
     ["-C", worktree, "check-attr", "-z", "filter", "working-tree-encoding", "--", worktreePath],
     64 * 1024,
   );

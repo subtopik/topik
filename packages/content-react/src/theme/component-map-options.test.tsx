@@ -114,3 +114,38 @@ describe("full rich component map options", () => {
     },
   );
 });
+
+describe("explicit undefined component overrides", () => {
+  const source = '{% callout title="Note" %}\nBody\n{% /callout %}\n\n```js\nlet a\n```';
+  const Callout = ({ children }: { children?: ReactNode }) => (
+    <aside data-custom-callout="">{children}</aside>
+  );
+
+  it("fall back to the default component in TopikContent", () => {
+    const html = renderToStaticMarkup(
+      <TopikContent content={source} components={{ TopikCallout: undefined }} />,
+    );
+    expect(html).toContain('class="topik-callout');
+  });
+
+  it("fall back to the provider override in TopikContent", () => {
+    const html = renderToStaticMarkup(
+      <TopikContentProvider components={{ TopikCallout: Callout }}>
+        <TopikContent content={source} components={{ TopikCallout: undefined }} />
+      </TopikContentProvider>,
+    );
+    expect(html).toContain("data-custom-callout");
+  });
+
+  it("keep rich components in the rich provider and map", () => {
+    const html = renderToStaticMarkup(
+      <RichTopikContentProvider components={{ TopikCodeBlock: undefined }}>
+        <TopikContent content={source} />
+      </RichTopikContentProvider>,
+    );
+    expect(html).toContain("topik-rich-code-block");
+    expect(getRichTopikComponents({ TopikCodeBlock: undefined }).TopikCodeBlock).toBe(
+      getRichTopikComponents().TopikCodeBlock,
+    );
+  });
+});

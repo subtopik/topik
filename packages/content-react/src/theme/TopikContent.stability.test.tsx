@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 
-import { act, StrictMode, useEffect, useState, type ReactNode } from "react";
+import { act, Component, StrictMode, useEffect, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import * as content from "@topik/content";
-import type { TopikAssetResolutionDiagnostic } from "../core/render";
+import { InvalidTopikContentError, type TopikAssetResolutionDiagnostic } from "../core/render";
 import type { TopikComponentProps } from "../core/components";
 import { TopikContentProvider } from "../core/context";
 import { getRichTopikComponents } from "../rich";
@@ -101,6 +101,59 @@ describe("TopikContent diagnostics", () => {
     expect(onAssetDiagnostic).toHaveBeenCalledTimes(1);
     expect(onDiagnostic).toHaveBeenCalledTimes(1);
   });
+
+  it.each([false, true])(
+    "reports thrown content once, after commit and before the error (StrictMode %s)",
+    (strict) => {
+      const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+      const source = '{% mystery private="opaque" /%}';
+      const expected = content.compileTopikContent(source);
+      if (expected.ok) throw new Error("Expected invalid content");
+      const events: string[] = [];
+      class Boundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+        state = { failed: false };
+        static getDerivedStateFromError() {
+          return { failed: true };
+        }
+        componentDidCatch(error: unknown) {
+          events.push(error instanceof InvalidTopikContentError ? "error" : "unexpected");
+        }
+        render() {
+          return this.state.failed ? "Failed" : this.props.children;
+        }
+      }
+      function Parent() {
+        const [count, setCount] = useState(0);
+        return (
+          <Boundary>
+            <span>{count}</span>
+            <TopikContent
+              content={source}
+              onDiagnostic={(diagnostic) => {
+                events.push(diagnostic.id);
+                // Updating another component is only allowed outside render.
+                setCount((current) => current + 1);
+              }}
+            />
+          </Boundary>
+        );
+      }
+      const dom = mount(
+        strict ? (
+          <StrictMode>
+            <Parent />
+          </StrictMode>
+        ) : (
+          <Parent />
+        ),
+      );
+      expect(dom.textContent).toBe("Failed");
+      expect(events).toEqual([...expected.diagnostics.map((diagnostic) => diagnostic.id), "error"]);
+      expect(
+        errors.mock.calls.some((call) => String(call[0]).includes("while rendering a different")),
+      ).toBe(false);
+    },
+  );
 
   it("reports again only when the content changes", () => {
     const onAssetDiagnostic = vi.fn();

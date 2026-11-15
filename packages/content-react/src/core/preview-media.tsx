@@ -1,3 +1,5 @@
+"use client";
+
 import { createElement, useEffect, useLayoutEffect, useState, useRef, type ReactNode } from "react";
 import type { TopikComponent, TopikComponentProps } from "./components";
 import { getPreviewAssetToken } from "./preview-assets";
@@ -29,10 +31,13 @@ export function PreviewMedia({
   component,
   attributes: renderedAttributes,
   children,
+  source,
 }: {
   component: TopikComponent;
   attributes: TopikComponentProps;
   children: ReactNode;
+  /** Serialized resolved element, so re-resolving identical content keeps a pending download. */
+  source: string;
 }) {
   // Media state keys on the tokens' stable targets rather than on attribute object identity.
   const [attributes, setAttributes] = useState(renderedAttributes);
@@ -47,12 +52,15 @@ export function PreviewMedia({
   const [failed, setFailed] = useState<TopikComponentProps>();
   const mounted = useRef(true);
   const currentAttributes = useRef(media);
-  // Downloads act for the exact committed content, including changed link text.
-  const currentRender = useRef(renderedAttributes);
+  // Downloads act for the exact committed content, including changed link text. Every committed
+  // change bumps the revision, so content that changes and then changes back still cancels.
+  const committedSource = useRef({ source, revision: 0 });
   useLayoutEffect(() => {
     currentAttributes.current = media;
-    currentRender.current = renderedAttributes;
-  }, [media, renderedAttributes]);
+    const committed = committedSource.current;
+    if (committed.source !== source)
+      committedSource.current = { source, revision: committed.revision + 1 };
+  }, [media, source]);
   useLayoutEffect(() => {
     mounted.current = true;
     return () => {
@@ -98,19 +106,23 @@ export function PreviewMedia({
       <button
         type="button"
         onClick={() => {
-          const clicked = renderedAttributes;
+          const clicked = media;
+          const clickedRevision = committedSource.current.revision;
+          const current = () =>
+            mounted.current &&
+            currentAttributes.current === clicked &&
+            committedSource.current.revision === clickedRevision &&
+            download.state.active();
           void download.state.load(download.name, download.slot).then(
             (url) => {
-              if (!mounted.current || currentRender.current !== clicked || !download.state.active())
-                return;
+              if (!current()) return;
               const anchor = document.createElement("a");
               anchor.href = url;
               anchor.download = download.name;
               anchor.click();
             },
             () => {
-              if (mounted.current && currentRender.current === clicked && download.state.active())
-                setFailed(media);
+              if (current()) setFailed(media);
             },
           );
         }}

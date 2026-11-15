@@ -1,6 +1,6 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -110,7 +110,9 @@ describe.skipIf(!existsSync(builtCli))("built topik binary", () => {
 
   describe.each(["darwin", "win32"])("on %s", (platform) => {
     const PLATFORM_REQUIREMENT =
-      "topik compile, lint and dev currently require Linux, because this platform cannot read project files safely. Run them on Linux, for example in WSL 2 or a Linux container; topik validate works on any platform.\n";
+      "--file-safety anchored requires descriptor-anchored file reads, which only Linux provides. Use --file-safety portable on a workspace you trust, or run on Linux, for example in WSL 2 or a Linux container.\n";
+    const PORTABLE_NOTICE =
+      "Note: this platform cannot anchor file access to the project directory, so topik checks paths and file identity instead. Use it only on a workspace you trust; pass --file-safety anchored to refuse.\n";
     // Preloaded before the CLI so every platform check in core and the CLI sees it.
     const simulatePlatform = `--import=data:text/javascript,Object.defineProperty(process,"platform",{value:"${platform}"})`;
 
@@ -125,24 +127,100 @@ describe.skipIf(!existsSync(builtCli))("built topik binary", () => {
         "version: 1\nnamespace: a/b\nsources:\n  - kind: wiki\n    config: wiki.yaml\n",
       );
       await writeFile(join(dir, "wiki.yaml"), "id: w\ntitle: W\nnavigation: [index]\n");
-      await writeFile(join(dir, "index.md"), "# Index\n");
+      await writeFile(join(dir, "index.md"), "# Index\n\n[Guide](./guide.pdf)\n");
+      await writeFile(join(dir, "guide.pdf"), "%PDF-1.4\n%%EOF\n");
       return dir;
     }
+
+    test("compile --dry-run reads the project with one notice", async () => {
+      const result = await runOnPlatform(["compile", await project(), "--dry-run"]);
+
+      expect(result).toMatchObject({ code: 0, stderr: PORTABLE_NOTICE });
+      expect(result.stdout).toContain("3 resources and 1 payloads (dry run)\n");
+    });
+
+    test("compile publishes and replaces its own output", async () => {
+      const source = await project();
+      const out = join(source, "out");
+
+      for (let run = 0; run < 2; run++) {
+        const result = await runOnPlatform(["compile", source, "--out-dir", out]);
+        expect(result).toMatchObject({ code: 0, stderr: PORTABLE_NOTICE });
+        expect(result.stdout).toMatch(/^Compiled 3 resources and 1 payloads to /u);
+      }
+      expect(JSON.parse(await readFile(join(out, "semantic.json"), "utf8"))).toBeTypeOf("object");
+      expect(
+        (await readdir(source)).filter((name) => name.startsWith(".topik-compilation")),
+      ).toEqual([]);
+    });
+
+    test("compile refuses to replace a directory it does not own", async () => {
+      const source = await project();
+      const out = join(source, "out");
+      await mkdir(out);
+      await writeFile(join(out, "keep.txt"), "mine\n");
+
+      const result = await runOnPlatform(["compile", source, "--out-dir", out]);
+
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain(
+        "Existing compilation output is populated but is not recognized as owned.",
+      );
+      expect(await readFile(join(out, "keep.txt"), "utf8")).toBe("mine\n");
+    });
+
+    test("lint passes with one notice", async () => {
+      const result = await runOnPlatform(["lint", await project()]);
+
+      expect(result).toMatchObject({ code: 0, stdout: "Lint passed\n", stderr: PORTABLE_NOTICE });
+    });
+
+    test("dev serves with one notice", async () => {
+      const source = await project();
+      const child = spawn(
+        process.execPath,
+        [simulatePlatform, builtCli, "dev", source, "--port", "0"],
+        { stdio: ["ignore", "pipe", "pipe"] },
+      );
+      let stdout = "";
+      let stderr = "";
+      child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+      try {
+        await new Promise<void>((resolveListening, reject) => {
+          child.stdout.on("data", (chunk: Buffer) => {
+            stdout += chunk.toString();
+            if (stdout.includes("Dev server listening on http://localhost:")) resolveListening();
+          });
+          child.on("exit", (code) => reject(new Error(`dev exited with ${code}: ${stderr}`)));
+        });
+      } finally {
+        child.kill("SIGTERM");
+      }
+      expect(stdout).toContain("Compiled 3 resources\n");
+      expect(stderr).toBe(PORTABLE_NOTICE);
+    });
 
     test.each([
       ["compile --dry-run", (source: string) => ["compile", source, "--dry-run"]],
       ["compile", (source: string) => ["compile", source, "--out-dir", join(source, "out")]],
       ["lint", (source: string) => ["lint", source]],
-    ])("%s fails with the platform requirement", async (_name, args) => {
+    ])("%s --file-safety anchored fails with the platform requirement", async (_name, args) => {
       const source = await project();
 
-      const result = await runOnPlatform(args(source));
+      const result = await runOnPlatform([...args(source), "--file-safety", "anchored"]);
 
       expect(result).toMatchObject({ code: 1, stdout: "", stderr: PLATFORM_REQUIREMENT });
     });
 
-    test("dev stops with the platform requirement instead of serving", async () => {
-      const result = await runOnPlatform(["dev", await project(), "--port", "0"]);
+    test("dev --file-safety anchored stops with the platform requirement", async () => {
+      const result = await runOnPlatform([
+        "dev",
+        await project(),
+        "--port",
+        "0",
+        "--file-safety",
+        "anchored",
+      ]);
 
       expect(result).toMatchObject({
         code: 1,
@@ -172,27 +250,31 @@ describe.skipIf(!existsSync(builtCli))("built topik binary", () => {
     });
   });
 
-  test("help states which commands require Linux", async () => {
+  test("Linux prints no portable-read notice", async () => {
+    dir = await mkdtemp(join(tmpdir(), "topik-cli-linux-"));
+    await writeFile(
+      join(dir, ".topik.yaml"),
+      "version: 1\nnamespace: a/b\nsources:\n  - kind: wiki\n    config: wiki.yaml\n",
+    );
+    await writeFile(join(dir, "wiki.yaml"), "id: w\ntitle: W\nnavigation: [index]\n");
+    await writeFile(join(dir, "index.md"), "# Index\n");
+
+    const result = await runBuilt(["lint", dir, "--file-safety", "portable"]);
+
+    expect(result).toMatchObject({ code: 0, stdout: "Lint passed\n", stderr: "" });
+  });
+
+  test("help offers --file-safety on project commands", async () => {
     const result = await runBuilt(["--help"]);
 
     expect(result.stdout).toContain(
-      "compile    Compile project content into Topik resource files. Requires Linux.\n",
+      "compile    Compile project content into Topik resource files\n",
     );
-    expect(result.stdout).toContain(
-      "dev        Start a development server that watches for content changes. Requires Linux.\n",
-    );
-    expect(result.stdout).toContain(
-      "lint       Lint Topik source content without writing compiled resources. Requires Linux.\n",
-    );
-    expect(result.stdout).toContain(
-      "validate   Validate Topik resource files in JSON, JSONL, or YAML format against schemas\n",
-    );
-    for (const [command, summary] of [
-      ["compile", "Compile project content into Topik resource files. Requires Linux."],
-      ["dev", "Start a development server that watches for content changes. Requires Linux."],
-      ["lint", "Lint Topik source content without writing compiled resources. Requires Linux."],
-    ]) {
-      expect((await runBuilt([command, "--help"])).stdout.split("\n")[1]).toBe(summary);
+    expect(result.stdout).not.toContain("Requires Linux");
+    for (const command of ["compile", "dev", "lint"]) {
+      expect((await runBuilt([command, "--help"])).stdout).toMatch(
+        /--file-safety \[ portable \| anchored \] +How project files are read where descriptor-anchored reads are unavailable \(macOS, Windows\): .* \(default: "portable"\)\n/u,
+      );
     }
   });
 

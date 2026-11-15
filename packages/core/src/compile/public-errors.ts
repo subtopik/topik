@@ -54,7 +54,7 @@ const PUBLIC_COMPILE_ERROR_REASONS = {
   "git-repository-untrusted":
     "The file is inside a Git worktree owned by another user, which Git refuses to inspect; compile as the owner of the worktree or add it to Git's safe.directory setting.",
   "platform-unsupported":
-    "This platform cannot prove descriptor-anchored no-follow reads; manifest, configuration and asset reads currently require Linux.",
+    "This platform cannot prove descriptor-anchored no-follow reads, which anchored file safety requires; use portable file safety on a workspace you trust, or run on Linux.",
   "changed-during-read":
     "The file or its Git evidence changed while it was read; retry once the source tree is stable.",
 } as const;

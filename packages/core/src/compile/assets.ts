@@ -30,6 +30,7 @@ import {
   classifyPortableNavigationPath,
   createPortableReadSession,
   readPortableAssetFile,
+  type FileSafety,
   readPortableAssetFileInSession,
   readPortableAssetFileWithReadHookForTest,
   type PortableReadSession,
@@ -119,8 +120,10 @@ export async function compileAssetResourcesInSession(
   session: PortableReadSession,
   input: CompileAssetResourcesInput,
 ): Promise<AssetCompilationResult> {
-  return compileAssetResourcesWithReader(input, (options) =>
-    readPortableAssetFileInSession(session, options),
+  return compileAssetResourcesWithReader(
+    input,
+    (options) => readPortableAssetFileInSession(session, options),
+    session.fileSafety,
   );
 }
 
@@ -130,8 +133,10 @@ export async function compileAssetResourcesWithReadHookForTest(
   afterFileRead: () => void | Promise<void>,
 ): Promise<AssetCompilationResult> {
   const session = createPortableReadSession();
-  return compileAssetResourcesWithReader(input, (options) =>
-    readPortableAssetFileWithReadHookForTest(options, afterFileRead, session),
+  return compileAssetResourcesWithReader(
+    input,
+    (options) => readPortableAssetFileWithReadHookForTest(options, afterFileRead, session),
+    session.fileSafety,
   );
 }
 
@@ -140,6 +145,7 @@ type PortableAssetReader = typeof readPortableAssetFile;
 async function compileAssetResourcesWithReader(
   input: CompileAssetResourcesInput,
   readAssetFile: PortableAssetReader,
+  fileSafety: FileSafety,
 ): Promise<AssetCompilationResult> {
   const receivedResources = input.resources as readonly Resource[];
   if (receivedResources.some((resource) => resource.type === "Asset")) {
@@ -199,7 +205,12 @@ async function compileAssetResourcesWithReader(
   >();
   const probeNavigationCandidate = async (path: string) => {
     if (navigationProbes.has(path)) return navigationProbes.get(path);
-    const proof = await readGenericNavigationCandidate(readAssetFile, input.rootDir, path);
+    const proof = await readGenericNavigationCandidate(
+      readAssetFile,
+      input.rootDir,
+      path,
+      fileSafety,
+    );
     navigationProbes.set(path, proof);
     return proof;
   };
@@ -594,8 +605,11 @@ async function readGenericNavigationCandidate(
   readAssetFile: PortableAssetReader,
   root: string,
   path: string,
+  fileSafety: FileSafety,
 ): Promise<Awaited<ReturnType<typeof requireAssetFile>> | undefined> {
-  if ((await classifyPortableNavigationPath({ root, path })) === "directory") return undefined;
+  if ((await classifyPortableNavigationPath({ root, path, fileSafety })) === "directory") {
+    return undefined;
+  }
   const proof = await readAssetFile({ root, path });
   if (!proof.ok) {
     if (proof.diagnostics.every((diagnostic) => diagnostic.id === "TOPIK_ASSET_FILE_MISSING")) {

@@ -9,6 +9,7 @@ import {
   type CompileValidationOptions,
 } from "./compile";
 import type { AssetPayload } from "./compile/assets";
+import type { FileSafety } from "./assets/files";
 import { digestTopikMaterializationRecord } from "./assets/identity";
 import type { Resource } from "./resource";
 import { TOPIK_PREVIEW_PROTOCOL, type PreviewState } from "./preview";
@@ -20,6 +21,8 @@ export interface WatchOptions {
   signal?: AbortSignal;
   /** Validation options passed to every compilation, for example the link policy. */
   validation?: CompileValidationOptions;
+  /** File read safety passed to every compilation; see `CompileOptions.fileSafety`. */
+  fileSafety?: FileSafety;
   /**
    * Receives every compile and watch error, including one from the initial compilation
    * that completes before `watch()` resolves and so before `on("error")` can be called.
@@ -108,7 +111,11 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
       const revision = requested;
       publish({ status: "compiling", diagnostics: [] });
       try {
-        const result = await compile({ dir, validation: options.validation });
+        const result = await compile({
+          dir,
+          validation: options.validation,
+          fileSafety: options.fileSafety,
+        });
         // An edit arrived while reading: discard this candidate, including its payloads.
         if (closed || watchFailed) return;
         if (revision !== requested) continue;

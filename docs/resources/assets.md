@@ -263,8 +263,11 @@ compiler inputs, unsupported media, active content, and files that change during
 inspection. Inside a Git checkout, files with an effective Git content filter
 or working-tree encoding are refused too; see
 [Inside a Git checkout](./manifest.md#inside-a-git-checkout) for what the
-compiler needs from Git. An image needs meaningful alternative text; a download
-needs a meaningful label.
+compiler needs from Git. On macOS and Windows these checks run in the portable
+mode described in [Source filesystem safety](./index.md#source-filesystem-safety)
+unless file safety is `anchored`; Windows skips the executable-bit and sparse-file
+checks, which its file metadata cannot support. An image needs meaningful
+alternative text; a download needs a meaningful label.
 
 The compiler detects media types from file bytes, not extensions. It recognizes
 PNG, JPEG, GIF, WebP, AVIF, HEIC/HEIF, BMP, and ICO images; MP3, WAV, Ogg, FLAC,

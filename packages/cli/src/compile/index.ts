@@ -1,15 +1,20 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
+  chmodSync,
   closeSync,
   constants,
   fstatSync,
   lstatSync,
+  mkdirSync,
+  mkdtempSync,
   openSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   renameSync,
   rmdirSync,
   unlinkSync,
+  writeFileSync,
 } from "node:fs";
 import type { BigIntStats } from "node:fs";
 import { lstat, mkdir, mkdtemp, open, realpath } from "node:fs/promises";
@@ -18,18 +23,21 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import { boolean, command, positional, string } from "@drizzle-team/brocli";
 import {
   CompileError,
+  DEFAULT_FILE_SAFETY,
   compile as compileContent,
   isErrorDiagnostic,
   parseStrictTopikJson,
   serializeTopikJson,
   validateTopikMaterializationRecord,
   validateResources,
+  type FileSafety,
   type LinkValidationPolicy,
   type Resource,
   type TopikMaterializationRecordV1,
 } from "@topik/core";
 import { printDiagnostics } from "../diagnostics";
 import { CliError, PublicCliError, withProjectPlatformRequirement } from "../errors";
+import { fileSafetyOption, notePortableReads } from "../file-safety";
 import { formatValidationFailure } from "../validation-output";
 
 const COMPILATION_GENERATION_PREFIX = ".topik-compilation-generation-";
@@ -41,7 +49,7 @@ const ownedDescriptorEncoder = new TextEncoder();
 
 export const compile = command({
   name: "compile",
-  desc: "Compile project content into Topik resource files. Requires Linux.",
+  desc: "Compile project content into Topik resource files",
   options: {
     dir: positional("dir").desc("Project directory containing .topik.yaml").default("."),
     outDir: string("out-dir").alias("o").desc("Output directory for compiled resources"),
@@ -60,20 +68,25 @@ export const compile = command({
       .desc("How unresolved wiki links and local guide fragments are handled")
       .enum("error", "warning", "off")
       .default("error"),
+    fileSafety: fileSafetyOption(),
   },
   handler: async (options) => {
     const dir = resolve(options.dir);
+    const fileSafety = options.fileSafety;
     const links = options.links as LinkValidationPolicy;
     if (options.outDir === "") throw new PublicCliError("compilation-output-empty");
     const outDir = options.outDir !== undefined ? resolve(options.outDir) : join(dir, ".topik");
     await assertCompilationOutputScope(dir, outDir);
-    const result = await compileContent({ dir, validation: { links } }).catch((error: unknown) => {
-      if (!(error instanceof CompileError)) throw withProjectPlatformRequirement(error);
-      // The diagnostics are sanitized by CompileError; print them as lint does.
-      printDiagnostics(error.diagnostics);
-      console.error(`${error.diagnostics.filter(isErrorDiagnostic).length} compile error(s)`);
-      throw new PublicCliError("compilation-failed", { cause: error });
-    });
+    notePortableReads(fileSafety);
+    const result = await compileContent({ dir, validation: { links }, fileSafety }).catch(
+      (error: unknown) => {
+        if (!(error instanceof CompileError)) throw withProjectPlatformRequirement(error);
+        // The diagnostics are sanitized by CompileError; print them as lint does.
+        printDiagnostics(error.diagnostics);
+        console.error(`${error.diagnostics.filter(isErrorDiagnostic).length} compile error(s)`);
+        throw new PublicCliError("compilation-failed", { cause: error });
+      },
+    );
     const { diagnostics, materialization, payloads, resources, semantic } = result;
     printDiagnostics(diagnostics);
 
@@ -114,7 +127,7 @@ export const compile = command({
       { path: "materialization.json", bytes: serializeTopikJson(materialization) },
       { path: "semantic.json", bytes: serializeTopikJson(semantic) },
     );
-    await replaceCompilationTree(outDir, files);
+    await replaceCompilationTree(outDir, files, fileSafety);
 
     console.log(
       `Compiled ${resources.length} resources and ${payloads.length} payloads to ${outDir}`,
@@ -125,7 +138,14 @@ export const compile = command({
 export async function replaceCompilationTree(
   absolutePath: string,
   files: readonly { path: string; bytes: string | Uint8Array }[],
+  fileSafety: FileSafety = DEFAULT_FILE_SAFETY,
 ): Promise<void> {
+  // Linux always publishes through anchored descriptors. Elsewhere the portable path is used
+  // only when permitted; otherwise openAnchoredOutputDirectory refuses the platform.
+  if (process.platform !== "linux" && fileSafety === "portable") {
+    replaceCompilationTreeByPath(absolutePath, files);
+    return;
+  }
   const stagedFiles = snapshotCompilationFiles(files);
   const target = basename(absolutePath);
   if (target.length === 0 || target === "." || target === "..") {
@@ -268,7 +288,7 @@ async function openOwnedCompilationOutput(
       await directory.close();
       return undefined;
     }
-    assertOwnedCompilationTree(directory, tree);
+    assertOwnedCompilationTree((path) => readBoundCompilationFileSync(directory, tree, path), tree);
     return { handle: directory, name: target, path: targetPath, tree };
   } catch (error) {
     await directory.close().catch(() => undefined);
@@ -320,10 +340,13 @@ async function assertCompilationOutputScope(sourceDir: string, outDir: string): 
   }
 }
 
-function assertOwnedCompilationTree(directory: FileHandle, tree: BoundCompilationTree): void {
+function assertOwnedCompilationTree(
+  readFile: (path: string) => Uint8Array,
+  tree: BoundCompilationTree,
+): void {
   try {
-    const materialization = parseBoundCanonicalJson(directory, tree, "materialization.json");
-    const semantic = parseBoundCanonicalJson(directory, tree, "semantic.json");
+    const materialization = parseBoundCanonicalJson(readFile, "materialization.json");
+    const semantic = parseBoundCanonicalJson(readFile, "semantic.json");
     if (!isRecord(materialization) || !Array.isArray(materialization.resources)) {
       throw new TypeError("Materialization resource inventory is unavailable");
     }
@@ -332,7 +355,7 @@ function assertOwnedCompilationTree(directory: FileHandle, tree: BoundCompilatio
       if (!isRecord(entry) || typeof entry.path !== "string") {
         throw new TypeError("Materialization resource inventory is malformed");
       }
-      return parseBoundCanonicalJson(directory, tree, entry.path);
+      return parseBoundCanonicalJson(readFile, entry.path);
     });
     if (!isValidResourceSet(resources)) {
       throw new TypeError("Compiled resource inventory is invalid");
@@ -345,12 +368,8 @@ function assertOwnedCompilationTree(directory: FileHandle, tree: BoundCompilatio
   }
 }
 
-function parseBoundCanonicalJson(
-  root: FileHandle,
-  tree: BoundCompilationTree,
-  path: string,
-): unknown {
-  const bytes = readBoundCompilationFileSync(root, tree, path);
+function parseBoundCanonicalJson(readFile: (path: string) => Uint8Array, path: string): unknown {
+  const bytes = readFile(path);
   const text = ownedDescriptorDecoder.decode(bytes);
   const value = parseStrictTopikJson(text, Number.POSITIVE_INFINITY);
   const canonicalBytes = ownedDescriptorEncoder.encode(serializeTopikJson(value));
@@ -801,4 +820,305 @@ function procFd(fd: number): string {
 
 function procFdChild(fd: number, component: string): string {
   return `${procFd(fd)}/${component}`;
+}
+
+/*
+ * Portable publication for platforms without descriptor-anchored directories (macOS,
+ * Windows), used only when the caller permits portable file safety. It keeps the anchored
+ * flow (stage a complete generation beside the target, verify it, prove ownership of any
+ * existing output, rename) but binds every entry by path: entries are inspected without
+ * following links and the opened handle must be the inspected entry. Like the portable
+ * readers, this cannot contain another process concurrently swapping path components.
+ */
+function replaceCompilationTreeByPath(
+  absolutePath: string,
+  files: readonly { path: string; bytes: string | Uint8Array }[],
+): void {
+  const stagedFiles = snapshotCompilationFiles(files);
+  const target = basename(absolutePath);
+  if (target.length === 0 || target === "." || target === "..") {
+    throw new CliError("Compilation output root is invalid");
+  }
+  const parent = preparePortableOutputParent(dirname(absolutePath));
+  const targetPath = join(parent, target);
+  let existing: PortableOutputTree | undefined;
+  let emptyTarget = false;
+  let generation: PortableOutputTree | undefined;
+  let published = false;
+  let existingRemoved = false;
+  let operationError: unknown;
+  try {
+    const inspected = inspectPortableOutputTarget(targetPath);
+    existing = inspected.existing;
+    emptyTarget = inspected.empty;
+    generation = { path: createPortableGeneration(parent), tree: { entries: [] } };
+    for (const directory of COMPILATION_DIRECTORIES) {
+      createPortableOutputDirectory(join(generation.path, directory));
+    }
+    for (const file of stagedFiles) writePortableOutputFile(generation.path, file.path, file.bytes);
+    generation.tree = bindPortableCompilationTreeSync(generation.path);
+    assertExpectedStagedTree(generation.tree, stagedFiles);
+    chmodSync(generation.path, PUBLISHED_DIRECTORY_MODE);
+
+    if (existing !== undefined) {
+      assertPortableTreeRoot(existing);
+      const priorPath = join(parent, `${COMPILATION_PRIOR_PREFIX}${randomUUID()}`);
+      assertOutputPathAbsent(priorPath);
+      renameSync(targetPath, priorPath);
+      existing.path = priorPath;
+    } else if (emptyTarget && process.platform === "win32") {
+      // Windows cannot rename a directory over another one; rmdir refuses a non-empty target.
+      rmdirSync(targetPath);
+    }
+
+    renameSync(generation.path, targetPath);
+    generation.path = targetPath;
+    published = true;
+
+    if (existing !== undefined) {
+      cleanupPortableTree(existing);
+      existingRemoved = true;
+    }
+  } catch (error) {
+    operationError = error;
+  }
+  if (!published && existing !== undefined && existing.path !== targetPath) {
+    operationError = new PublicCliError("compilation-publication-failed", {
+      cause: operationError,
+    });
+  }
+  if (generation !== undefined && !published) {
+    try {
+      generation.tree = bindPortableCompilationTreeSync(generation.path);
+      cleanupPortableTree(generation);
+    } catch (error) {
+      operationError ??= error;
+    }
+  }
+  if (published && existing !== undefined && !existingRemoved && existing.path !== targetPath) {
+    try {
+      cleanupPortableTree(existing);
+    } catch (error) {
+      operationError ??= error;
+    }
+  }
+  if (operationError !== undefined) throw operationError;
+}
+
+interface PortableOutputTree {
+  path: string;
+  tree: BoundCompilationTree;
+}
+
+/** Create missing parents, then use the canonical parent so aliases above it are allowed. */
+function preparePortableOutputParent(absolutePath: string): string {
+  try {
+    mkdirSync(absolutePath, { recursive: true, mode: PUBLISHED_DIRECTORY_MODE });
+    const canonical = realpathSync.native(absolutePath);
+    const stat = lstatSync(canonical);
+    if (!stat.isDirectory() || stat.isSymbolicLink()) throw new TypeError("Not a directory");
+    return canonical;
+  } catch (error) {
+    if (error instanceof CliError) throw error;
+    throw new PublicCliError("compilation-output-ancestor-unsafe");
+  }
+}
+
+function inspectPortableOutputTarget(targetPath: string): {
+  existing?: PortableOutputTree;
+  empty: boolean;
+} {
+  let stat: ReturnType<typeof lstatSync>;
+  try {
+    stat = lstatSync(targetPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { empty: false };
+    throw new CliError("Compilation output target could not be inspected safely");
+  }
+  // A symbolic link (or Windows junction) is never followed into someone else's directory.
+  if (stat.isSymbolicLink() || !stat.isDirectory()) {
+    throw new PublicCliError("compilation-output-collision");
+  }
+  const tree = bindPortableCompilationTreeSync(targetPath);
+  if (tree.entries.length === 1 && tree.entries[0]?.path === "") return { empty: true };
+  assertOwnedCompilationTree((path) => readPortableBoundFileSync(targetPath, tree, path), tree);
+  return { existing: { path: targetPath, tree }, empty: false };
+}
+
+function createPortableGeneration(parent: string): string {
+  // mkdtemp creates the staging root as 0700; it is widened only once fully staged.
+  const path = mkdtempSync(join(parent, COMPILATION_GENERATION_PREFIX));
+  const stat = lstatSync(path);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) {
+    throw new CliError("Compilation staging identity is invalid");
+  }
+  return path;
+}
+
+function createPortableOutputDirectory(path: string): void {
+  // Fails if anything already occupies the name; the generation is private until published.
+  mkdirSync(path, { mode: 0o700 });
+  chmodSync(path, PUBLISHED_DIRECTORY_MODE);
+}
+
+function writePortableOutputFile(root: string, relativePath: string, bytes: Uint8Array): void {
+  const components = safeOutputComponents(relativePath);
+  let directory = root;
+  for (const component of components.slice(0, -1)) {
+    directory = join(directory, component);
+    try {
+      const stat = lstatSync(directory);
+      if (!stat.isDirectory() || stat.isSymbolicLink()) {
+        throw new CliError("Compilation output directory is unavailable");
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      createPortableOutputDirectory(directory);
+    }
+  }
+  // "wx" creates exclusively and refuses an existing entry, including a link.
+  writeFileSync(join(directory, components.at(-1) ?? ""), bytes, { flag: "wx", mode: 0o600 });
+  chmodSync(join(directory, components.at(-1) ?? ""), 0o644);
+}
+
+const PORTABLE_OUTPUT_READ_FLAGS =
+  constants.O_RDONLY |
+  (typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0) |
+  (typeof constants.O_NONBLOCK === "number" ? constants.O_NONBLOCK : 0);
+
+function bindPortableCompilationTreeSync(root: string): BoundCompilationTree {
+  const entries: BoundCompilationTreeEntry[] = [];
+  try {
+    inspectPortableDirectorySync(root, "", entries);
+  } catch (error) {
+    if (error instanceof CliError) throw error;
+    throw new CliError("Compilation generation contents could not be inspected safely");
+  }
+  entries.sort((left, right) =>
+    Buffer.compare(Buffer.from(left.path, "utf8"), Buffer.from(right.path, "utf8")),
+  );
+  return { entries };
+}
+
+function inspectPortableDirectorySync(
+  path: string,
+  prefix: string,
+  entries: BoundCompilationTreeEntry[],
+): void {
+  const before = lstatSync(path, { bigint: true });
+  if (!before.isDirectory() || before.isSymbolicLink()) {
+    throw new CliError("Compilation generation contains an unsafe directory entry");
+  }
+  const children = readdirSync(path, { withFileTypes: true }).sort((left, right) =>
+    Buffer.compare(Buffer.from(left.name, "utf8"), Buffer.from(right.name, "utf8")),
+  );
+  for (const child of children) {
+    const relativePath = prefix.length === 0 ? child.name : `${prefix}/${child.name}`;
+    const childPath = join(path, child.name);
+    if (child.isDirectory()) {
+      inspectPortableDirectorySync(childPath, relativePath, entries);
+      continue;
+    }
+    if (!child.isFile()) {
+      throw new CliError("Compilation generation contains a link or special-node entry");
+    }
+    const { bytes, identity } = readPortableEntrySync(childPath);
+    entries.push({
+      path: relativePath,
+      kind: "file",
+      identity: toBoundOutputIdentity(identity),
+      digest: sha256OutputBytes(bytes),
+    });
+  }
+  const after = lstatSync(path, { bigint: true });
+  if (after.isSymbolicLink() || !sameBoundOutputIdentity(before, after)) {
+    throw new CliError("Compilation generation directory changed while it was inspected");
+  }
+  entries.push({ path: prefix, kind: "directory", identity: toBoundOutputIdentity(after) });
+}
+
+/** Read a single-link regular file whose opened handle is the entry named by `path`. */
+function readPortableEntrySync(path: string): { bytes: Buffer; identity: BigIntStats } {
+  const entry = lstatSync(path, { bigint: true });
+  if (!entry.isFile() || entry.isSymbolicLink()) {
+    throw new CliError("Compilation generation contains a link or special-node entry");
+  }
+  let fd: number | undefined;
+  try {
+    fd = openSync(path, PORTABLE_OUTPUT_READ_FLAGS);
+    const before = fstatSync(fd, { bigint: true });
+    if (
+      !before.isFile() ||
+      before.nlink !== 1n ||
+      before.dev !== entry.dev ||
+      before.ino !== entry.ino
+    ) {
+      throw new CliError("Compilation generation contains a hard link or unsafe file entry");
+    }
+    const bytes = readFileSync(fd);
+    const after = fstatSync(fd, { bigint: true });
+    const again = lstatSync(path, { bigint: true });
+    if (
+      !sameBoundOutputIdentity(before, after) ||
+      again.isSymbolicLink() ||
+      !sameBoundOutputIdentity(again, after)
+    ) {
+      throw new CliError("Compilation generation file changed while it was inspected");
+    }
+    return { bytes, identity: after };
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
+function readPortableBoundFileSync(
+  root: string,
+  tree: BoundCompilationTree,
+  path: string,
+): Uint8Array {
+  const components = safeOutputComponents(path);
+  const expected = tree.entries.find(
+    (entry): entry is Extract<BoundCompilationTreeEntry, { kind: "file" }> =>
+      entry.kind === "file" && entry.path === path,
+  );
+  if (expected === undefined) throw new TypeError("Compilation descriptor is unavailable");
+  const { bytes, identity } = readPortableEntrySync(join(root, ...components));
+  if (
+    !sameStoredOutputIdentity(toBoundOutputIdentity(identity), expected.identity) ||
+    sha256OutputBytes(bytes) !== expected.digest
+  ) {
+    throw new TypeError("Compilation descriptor bytes changed");
+  }
+  return Uint8Array.from(bytes);
+}
+
+/** The directory about to be moved aside must still be the one whose ownership was proven. */
+function assertPortableTreeRoot(tree: PortableOutputTree): void {
+  const root = tree.tree.entries.find((entry) => entry.kind === "directory" && entry.path === "");
+  const actual = lstatSync(tree.path, { bigint: true });
+  if (
+    root === undefined ||
+    actual.isSymbolicLink() ||
+    !actual.isDirectory() ||
+    !sameStoredOutputIdentity(toBoundOutputIdentity(actual), root.identity)
+  ) {
+    throw new CliError("Compilation output changed after its ownership was proven");
+  }
+}
+
+/** Remove exactly the bound entries, refusing any entry whose identity changed. */
+function cleanupPortableTree(tree: PortableOutputTree): void {
+  for (const entry of [...tree.tree.entries].reverse()) {
+    const path = entry.path.length === 0 ? tree.path : join(tree.path, ...entry.path.split("/"));
+    const actual = lstatSync(path, { bigint: true });
+    if (
+      actual.isSymbolicLink() ||
+      actual.dev !== entry.identity.dev ||
+      actual.ino !== entry.identity.ino
+    ) {
+      throw new CliError("Compilation cleanup entry changed while it was removed");
+    }
+    if (entry.kind === "file") unlinkSync(path);
+    else rmdirSync(path);
+  }
 }

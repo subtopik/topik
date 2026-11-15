@@ -3,22 +3,26 @@ import { command, positional, string } from "@drizzle-team/brocli";
 import { isErrorDiagnostic, lint as lintContent, type LinkValidationPolicy } from "@topik/core";
 import { printDiagnostics } from "../diagnostics";
 import { PublicCliError, withProjectPlatformRequirement } from "../errors";
+import { fileSafetyOption, notePortableReads } from "../file-safety";
 
 export const lint = command({
   name: "lint",
-  desc: "Lint Topik source content without writing compiled resources. Requires Linux.",
+  desc: "Lint Topik source content without writing compiled resources",
   options: {
     dir: positional("dir").desc("Project directory containing .topik.yaml").default("."),
     links: string("links")
       .desc("How unresolved wiki links and local guide fragments are handled")
       .enum("error", "warning", "off")
       .default("error"),
+    fileSafety: fileSafetyOption(),
   },
   handler: async (options) => {
     const links = options.links as LinkValidationPolicy;
+    notePortableReads(options.fileSafety);
     const { diagnostics } = await lintContent({
       dir: resolve(options.dir),
       validation: { links },
+      fileSafety: options.fileSafety,
     }).catch((error: unknown) => {
       throw withProjectPlatformRequirement(error);
     });

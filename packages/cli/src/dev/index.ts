@@ -4,7 +4,9 @@ import { resolve } from "node:path";
 import { command, positional, string } from "@drizzle-team/brocli";
 import {
   CompileError,
+  DEFAULT_FILE_SAFETY,
   watch,
+  type FileSafety,
   TOPIK_PREVIEW_PROTOCOL,
   type LinkValidationPolicy,
   type PreviewState,
@@ -15,6 +17,7 @@ import { version } from "../../package.json";
 
 import { printDiagnostics } from "../diagnostics";
 import { formatPublicCliError, PublicCliError, withProjectPlatformRequirement } from "../errors";
+import { fileSafetyOption, notePortableReads } from "../file-safety";
 
 const DEV_HOST = "127.0.0.1";
 const DEFAULT_ALLOWED_ORIGIN = "https://write.subtopik.com";
@@ -298,17 +301,22 @@ export async function startDevServer(options: {
   port: number;
   allowOrigin?: string;
   links?: LinkValidationPolicy;
+  fileSafety?: FileSafety;
 }): Promise<StartedDevServer> {
   const dir = resolve(options.dir);
   const allowedOrigin = normalizeAllowedOrigin(options.allowOrigin ?? DEFAULT_ALLOWED_ORIGIN);
   await assertSourceDirectory(dir);
 
+  const fileSafety = options.fileSafety ?? DEFAULT_FILE_SAFETY;
+  // Once per run: every recompilation uses the same mode.
+  notePortableReads(fileSafety);
   console.log("Watching content for changes...");
   let initialCompile = true;
   let platformFailure: PublicCliError | undefined;
   const watcher = await watch({
     dir,
     validation: { links: options.links ?? "error" },
+    fileSafety,
     // Registered before the initial compile so its failure is reported too.
     onError: (error) => {
       const platformError = withProjectPlatformRequirement(error);
@@ -413,7 +421,7 @@ async function assertSourceDirectory(dir: string): Promise<void> {
 
 export const dev = command({
   name: "dev",
-  desc: "Start a development server that watches for content changes. Requires Linux.",
+  desc: "Start a development server that watches for content changes",
   options: {
     dir: positional("dir").desc("Project directory containing .topik.yaml").default("."),
     port: string("port").alias("p").desc("Port to listen on").default("50001"),
@@ -424,6 +432,7 @@ export const dev = command({
       .desc("How unresolved wiki links and local guide fragments are handled")
       .enum("error", "warning", "off")
       .default("error"),
+    fileSafety: fileSafetyOption(),
   },
   handler: async (options) => {
     const port = parseDevPort(options.port);
@@ -434,6 +443,7 @@ export const dev = command({
       port,
       allowOrigin: options.allowOrigin,
       links: options.links as LinkValidationPolicy,
+      fileSafety: options.fileSafety,
     });
     console.log(`Dev server listening on http://localhost:${runningServer.port}`);
 

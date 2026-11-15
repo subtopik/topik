@@ -988,3 +988,82 @@ async function replaceCompilationTreePromptly(
   if (timer !== undefined) clearTimeout(timer);
   return result;
 }
+
+describe.each(["darwin", "win32"] as const)("portable publication on simulated %s", (platform) => {
+  let root: string;
+
+  beforeEach(async () => {
+    vi.spyOn(process, "platform", "get").mockReturnValue(platform);
+    root = await mkdtemp(join(tmpdir(), "topik-cli-portable-publication-"));
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test("publishes, replaces an owned tree and leaves no staging directories", async () => {
+    const outDir = join(root, "served", "out");
+    for (const generation of ["first", "second"]) {
+      await replaceCompilationTree(outDir, ownedFiles(generation));
+      await expectOwnedGeneration(outDir, generation);
+      expect(await treeModes(outDir)).toEqual({
+        "": 0o755,
+        blobs: 0o755,
+        "materialization.json": 0o644,
+        resources: 0o755,
+        "resources/Guide": 0o755,
+        [ownedResourcePath(generation)]: 0o644,
+        "semantic.json": 0o644,
+      });
+    }
+    await expect(readFile(join(outDir, ownedResourcePath("first")))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    expect(await readdir(join(root, "served"))).toEqual(["out"]);
+  });
+
+  test("publishes into a pre-existing empty directory", async () => {
+    const outDir = join(root, "precreated");
+    await mkdir(outDir);
+    await replaceCompilationTree(outDir, ownedFiles("new"));
+    await expectOwnedGeneration(outDir, "new");
+  });
+
+  test("refuses foreign, linked and hard-linked targets without touching them", async () => {
+    const foreign = join(root, "foreign");
+    await mkdir(join(foreign, "keep"), { recursive: true });
+    await expect(replaceCompilationTree(foreign, ownedFiles("x"))).rejects.toThrow(
+      /not recognized as owned/u,
+    );
+    expect(await readdir(foreign)).toEqual(["keep"]);
+
+    const outside = await mkdtemp(join(tmpdir(), "topik-cli-portable-outside-"));
+    try {
+      await writeFile(join(outside, "author.txt"), "keep me");
+      await symlink(outside, join(root, "pointer"), "dir");
+      await expect(replaceCompilationTree(join(root, "pointer"), ownedFiles("x"))).rejects.toThrow(
+        /link or non-directory collision/u,
+      );
+      expect(await readFile(join(outside, "author.txt"), "utf8")).toBe("keep me");
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+
+    const linked = join(root, "linked");
+    await writeOwnedTree(linked, "existing");
+    await link(join(linked, "semantic.json"), join(root, "semantic-copy.json"));
+    const before = await snapshotTree(linked);
+    await expect(replaceCompilationTree(linked, ownedFiles("x"))).rejects.toThrow(/hard link/u);
+    expect(await snapshotTree(linked)).toEqual(before);
+    expect((await readdir(root)).filter((name) => name.startsWith(".topik-compilation"))).toEqual(
+      [],
+    );
+  });
+
+  test("refuses the platform when anchored output is required", async () => {
+    await expect(
+      replaceCompilationTree(join(root, "out"), ownedFiles("x"), "anchored"),
+    ).rejects.toMatchObject({ id: "compilation-output-platform-unsupported" });
+  });
+});

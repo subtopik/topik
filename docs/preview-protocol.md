@@ -11,7 +11,9 @@ A compatible published package cohort is a separate adoption requirement.
 `capabilities: ["topik-preview/1"]`. Existing loopback Host checks and configured
 allowed-Origin checks apply to every endpoint. `topik dev --allow-origin <origin>`
 selects one exact browser origin (default `https://write.subtopik.com`). The CLI
-binds to `127.0.0.1`. The current safe source reader requires Linux.
+binds to `127.0.0.1`. On macOS and Windows the dev server reads sources with the
+weaker portable file safety and prints one notice; `--file-safety anchored`
+requires Linux.
 
 `GET /resources` and each `preview-state` event on `GET /events` carry the same
 complete `PreviewState` envelope. HTTP is not cached. SSE sends the current state

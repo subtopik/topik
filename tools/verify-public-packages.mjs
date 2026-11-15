@@ -113,6 +113,13 @@ try {
         timeout: 30_000,
       },
     );
+  const chunkFixture = join(consumer, "content-chunk-consumer.mjs");
+  copyFileSync(join(root, "tools/content-chunk-consumer.mjs"), chunkFixture);
+  execFileSync(process.execPath, [chunkFixture, rendererTestRequire.resolve("vite")], {
+    cwd: consumer,
+    stdio: "inherit",
+    timeout: 60_000,
+  });
   const previewFixture = join(consumer, "preview-browser-consumer.mjs");
   const figureFixture = join(consumer, "figure-browser-consumer.mjs");
   copyFileSync(join(root, "tools/figure-browser-consumer.mjs"), figureFixture);

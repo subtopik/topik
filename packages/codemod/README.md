@@ -66,10 +66,12 @@ git apply --directory=docs migration.patch
 ```
 
 Paths in the patch are relative to the directory you converted. In a Git
-repository, `--directory` takes that directory's path from the repository root,
-wherever you run the command: `--directory=site/docs` for `site/docs`. Plain
-`git apply` from inside the converted directory applies nothing there. Outside
-a repository, `--directory` is relative to the current directory.
+repository, run `git apply` from the repository root and give `--directory`
+that directory's path: `--directory=site/docs` for `site/docs`. Git skips patch
+paths outside the directory it runs in without an error, so the command applies
+nothing from an unrelated subdirectory, and plain `git apply` applies nothing
+from inside the converted directory. Outside a repository, `--directory` is
+relative to the current directory.
 
 The patch uses git headers, so renames from `.mdx` to `.md` apply too. It keeps
 CRLF line endings.

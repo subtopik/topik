@@ -15,7 +15,7 @@ const builtCli = fileURLToPath(new URL("../dist/cli.mjs", import.meta.url));
 const MANIFEST_HINT =
   "ℹ topik lint needs a project manifest (.topik.yaml) that lists wiki.yaml as a wiki source: https://github.com/subtopik/topik/blob/main/docs/resources/manifest.md";
 const PATCH_HINT =
-  "ℹ Paths in the patch are relative to the converted directory. In a Git repository, apply it with git apply --directory=<that directory's path from the repository root>";
+  "ℹ Paths in the patch are relative to the converted directory. In a Git repository, apply it from the repository root with git apply --directory=<path of that directory>";
 
 const runMock = vi.hoisted(() => vi.fn());
 vi.mock("@drizzle-team/brocli", async (importOriginal) => ({

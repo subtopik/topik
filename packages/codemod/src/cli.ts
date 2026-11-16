@@ -86,7 +86,7 @@ const mintlify = command({
       );
     if (diff && (summary.files.some((file) => file.diff) || navigation?.diff))
       console.error(
-        "ℹ Paths in the patch are relative to the converted directory. In a Git repository, apply it with git apply --directory=<that directory's path from the repository root>",
+        "ℹ Paths in the patch are relative to the converted directory. In a Git repository, apply it from the repository root with git apply --directory=<path of that directory>",
       );
 
     const tense = dry ? "would convert" : "converted";

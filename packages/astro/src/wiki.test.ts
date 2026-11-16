@@ -8,7 +8,7 @@ import { topikWikiLoader } from "./wiki";
 
 const docsDir = join(import.meta.dirname, "../../../docs");
 // Compiling all of docs/ takes a few seconds on a loaded CI runner and grows with the docs.
-const DOCS_COMPILE_TIMEOUT_MS = 30_000;
+const DOCS_COMPILE = { timeout: 30_000 };
 const wikiPageNamePattern = /^topik-docs-[a-f0-9]{16}$/;
 const docsOptions = {
   dir: docsDir,
@@ -50,6 +50,7 @@ describe("topikWikiLoader", () => {
 
   test(
     "loads content without a manifest or naming callback when there are no local assets",
+    DOCS_COMPILE,
     async () => {
       const loader = topikWikiLoader({ dir: docsDir, name: "docs-without-assets" });
       const context = createMockContext();
@@ -57,141 +58,128 @@ describe("topikWikiLoader", () => {
       expect(context.entries.size).toBe(11);
       expect(loader.getAssets()).toEqual([]);
     },
-    DOCS_COMPILE_TIMEOUT_MS,
   );
 
-  test(
-    "loads the self-hosted Topik wiki",
-    async () => {
-      const loader = topikWikiLoader(docsOptions);
-      const context = createMockContext();
-      await loader.load(context);
+  test("loads the self-hosted Topik wiki", DOCS_COMPILE, async () => {
+    const loader = topikWikiLoader(docsOptions);
+    const context = createMockContext();
+    await loader.load(context);
 
-      expect(context.entries.size).toBe(11);
-      const home = [...context.entries.values()].find((entry) => entry.data.slug === "");
-      expect(home).toMatchObject({
-        id: expect.stringMatching(wikiPageNamePattern),
-        data: { title: "Topik", wiki: "topik-docs", slug: "" },
-      });
-      expect(home?.body).toContain("# Topik");
-    },
-    DOCS_COMPILE_TIMEOUT_MS,
-  );
+    expect(context.entries.size).toBe(11);
+    const home = [...context.entries.values()].find((entry) => entry.data.slug === "");
+    expect(home).toMatchObject({
+      id: expect.stringMatching(wikiPageNamePattern),
+      data: { title: "Topik", wiki: "topik-docs", slug: "" },
+    });
+    expect(home?.body).toContain("# Topik");
+  });
 
-  test(
-    "uses the shared resolver for nested documentation routes",
-    async () => {
-      const loader = topikWikiLoader(docsOptions);
-      const context = createMockContext();
-      await loader.load(context);
+  test("uses the shared resolver for nested documentation routes", DOCS_COMPILE, async () => {
+    const loader = topikWikiLoader(docsOptions);
+    const context = createMockContext();
+    await loader.load(context);
 
-      const slugs = [...context.entries.values()].map((entry) => String(entry.data.slug));
-      expect(slugs.sort((a, b) => a.localeCompare(b))).toEqual([
-        "",
-        "content/autolinks",
-        "content/code-presentation",
-        "content/content-design",
-        "content/rendering",
-        "content/templates",
-        "resources",
-        "resources/assets",
-        "resources/manifest",
-        "resources/navigation",
-        "resources/source-writing",
-      ]);
-    },
-    DOCS_COMPILE_TIMEOUT_MS,
-  );
+    const slugs = [...context.entries.values()].map((entry) => String(entry.data.slug));
+    expect(slugs.sort((a, b) => a.localeCompare(b))).toEqual([
+      "",
+      "content/autolinks",
+      "content/code-presentation",
+      "content/content-design",
+      "content/rendering",
+      "content/templates",
+      "resources",
+      "resources/assets",
+      "resources/manifest",
+      "resources/navigation",
+      "resources/source-writing",
+    ]);
+  });
 
-  test(
-    "exposes the compiled navigation tree",
-    async () => {
-      const navigation = await topikWikiLoader(docsOptions).getNavigation();
-      expect(navigation).toEqual([
-        {
-          type: "page",
-          page: expect.stringMatching(wikiPageNamePattern),
-          slug: "",
-          sourcePath: "index",
-        },
-        {
-          type: "group",
-          title: "Content",
-          slug: "content",
-          children: [
-            {
-              type: "page",
-              page: expect.stringMatching(wikiPageNamePattern),
-              slug: "content-design",
-              sourcePath: "content/content-design",
-            },
-            {
-              type: "page",
-              page: expect.stringMatching(wikiPageNamePattern),
-              slug: "autolinks",
-              sourcePath: "content/autolinks",
-            },
-            {
-              type: "page",
-              page: expect.stringMatching(wikiPageNamePattern),
-              slug: "templates",
-              sourcePath: "content/templates",
-            },
-            {
-              type: "page",
-              page: expect.stringMatching(wikiPageNamePattern),
-              slug: "code-presentation",
-              sourcePath: "content/code-presentation",
-            },
-            {
-              type: "page",
-              page: expect.stringMatching(wikiPageNamePattern),
-              slug: "rendering",
-              sourcePath: "content/rendering",
-            },
-          ],
-        },
-        {
-          type: "group",
-          title: "Resources",
-          slug: "resources",
-          children: [
-            {
-              type: "page",
-              page: expect.stringMatching(wikiPageNamePattern),
-              slug: "",
-              sourcePath: "resources/index",
-            },
-            {
-              type: "page",
-              page: expect.stringMatching(wikiPageNamePattern),
-              slug: "navigation",
-              sourcePath: "resources/navigation",
-            },
-            {
-              type: "page",
-              page: expect.stringMatching(wikiPageNamePattern),
-              slug: "manifest",
-              sourcePath: "resources/manifest",
-            },
-            {
-              type: "page",
-              page: expect.stringMatching(wikiPageNamePattern),
-              slug: "source-writing",
-              sourcePath: "resources/source-writing",
-            },
-            {
-              type: "page",
-              page: expect.stringMatching(wikiPageNamePattern),
-              slug: "assets",
-              sourcePath: "resources/assets",
-            },
-          ],
-        },
-      ]);
-    },
-    DOCS_COMPILE_TIMEOUT_MS,
-  );
+  test("exposes the compiled navigation tree", DOCS_COMPILE, async () => {
+    const navigation = await topikWikiLoader(docsOptions).getNavigation();
+    expect(navigation).toEqual([
+      {
+        type: "page",
+        page: expect.stringMatching(wikiPageNamePattern),
+        slug: "",
+        sourcePath: "index",
+      },
+      {
+        type: "group",
+        title: "Content",
+        slug: "content",
+        children: [
+          {
+            type: "page",
+            page: expect.stringMatching(wikiPageNamePattern),
+            slug: "content-design",
+            sourcePath: "content/content-design",
+          },
+          {
+            type: "page",
+            page: expect.stringMatching(wikiPageNamePattern),
+            slug: "autolinks",
+            sourcePath: "content/autolinks",
+          },
+          {
+            type: "page",
+            page: expect.stringMatching(wikiPageNamePattern),
+            slug: "templates",
+            sourcePath: "content/templates",
+          },
+          {
+            type: "page",
+            page: expect.stringMatching(wikiPageNamePattern),
+            slug: "code-presentation",
+            sourcePath: "content/code-presentation",
+          },
+          {
+            type: "page",
+            page: expect.stringMatching(wikiPageNamePattern),
+            slug: "rendering",
+            sourcePath: "content/rendering",
+          },
+        ],
+      },
+      {
+        type: "group",
+        title: "Resources",
+        slug: "resources",
+        children: [
+          {
+            type: "page",
+            page: expect.stringMatching(wikiPageNamePattern),
+            slug: "",
+            sourcePath: "resources/index",
+          },
+          {
+            type: "page",
+            page: expect.stringMatching(wikiPageNamePattern),
+            slug: "navigation",
+            sourcePath: "resources/navigation",
+          },
+          {
+            type: "page",
+            page: expect.stringMatching(wikiPageNamePattern),
+            slug: "manifest",
+            sourcePath: "resources/manifest",
+          },
+          {
+            type: "page",
+            page: expect.stringMatching(wikiPageNamePattern),
+            slug: "source-writing",
+            sourcePath: "resources/source-writing",
+          },
+          {
+            type: "page",
+            page: expect.stringMatching(wikiPageNamePattern),
+            slug: "assets",
+            sourcePath: "resources/assets",
+          },
+        ],
+      },
+    ]);
+  });
 
   test("loads shorthand nested index pages with canonical routes and source paths", async () => {
     const dir = await mkdtemp(join(tmpdir(), "topik-astro-wiki-"));

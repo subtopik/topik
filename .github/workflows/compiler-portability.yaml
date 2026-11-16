@@ -24,7 +24,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [macos-latest, windows-latest]
-        node-version: ["22", "24", "26"]
+        # The oldest and newest supported Node.js. ci.yaml runs every supported version on
+        # Linux; these jobs exist for the operating-system differences.
+        node-version: ["22", "26"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

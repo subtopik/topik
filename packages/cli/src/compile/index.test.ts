@@ -1087,6 +1087,50 @@ function defineProjectLinkCases(root: () => string): void {
     expect(await readdir(join(root(), "real", "project", "served"))).toEqual(["out"]);
   });
 
+  // The project directory is recognised by identity, so the rule holds when the project and
+  // the output are spelled through different paths, as with a shell's logical $PWD.
+  test.each([
+    ["the project through the link, the output through the real path", "alias", "real"],
+    ["the project through the real path, the output through the link", "real", "alias"],
+  ] as const)("applies the rule with %s", async (_label, projectVia, outputVia) => {
+    const outside = join(root(), "outside");
+    await mkdir(join(root(), "real", "project"), { recursive: true });
+    await mkdir(outside);
+    await symlink(join(root(), "real"), join(root(), "alias"), "dir");
+    const project = join(root(), projectVia, "project");
+    const output = join(root(), outputVia, "project");
+
+    await replaceCompilationTree(
+      join(output, "served", "out"),
+      ownedFiles("first"),
+      undefined,
+      project,
+    );
+    await expectOwnedGeneration(join(root(), "real", "project", "served", "out"), "first");
+
+    await symlink(outside, join(root(), "real", "project", "output-link"), "dir");
+    await expect(
+      replaceCompilationTree(
+        join(output, "output-link", "compiled"),
+        ownedFiles("first"),
+        undefined,
+        project,
+      ),
+    ).rejects.toMatchObject(collision);
+    expect(await readdir(outside)).toEqual([]);
+  });
+
+  test("refuses a link inside the project that leads back to the project", async () => {
+    const project = join(root(), "project");
+    await mkdir(project);
+    await symlink(project, join(project, "loop"), "dir");
+
+    await expect(
+      replaceCompilationTree(join(project, "loop", "out"), ownedFiles("first"), undefined, project),
+    ).rejects.toMatchObject(collision);
+    expect(await readdir(project)).toEqual(["loop"]);
+  });
+
   // Outside the project the platforms differ: anchored publication refuses a link anywhere in
   // the path as given; portable publication follows links above the target.
   test("treats a link in an output path outside the project by platform", async () => {

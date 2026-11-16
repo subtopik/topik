@@ -13,13 +13,14 @@ import {
   realpathSync,
   renameSync,
   rmdirSync,
+  statSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
 import type { BigIntStats } from "node:fs";
 import { lstat, mkdir, mkdtemp, open } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { DEFAULT_FILE_SAFETY, type FileSafety } from "../assets/files";
 
 /*
@@ -1017,22 +1018,54 @@ interface LocatedOutputPath {
 /**
  * Resolve symbolic links above the project directory and keep the project directory and
  * everything below it as given, so a link there stays visible to the checks that refuse it.
- * An output path outside the project directory is returned unchanged.
+ *
+ * The project directory is found in the output path by file identity, not by spelling, so the
+ * rule also holds when the two paths reach the project through different links. The first
+ * matching prefix is used; a link below the project that leads back to it therefore stays
+ * below the project and is refused. An output path that never passes through the project
+ * directory, or a project directory that does not exist, leaves the path unchanged.
  */
 function locateOutputPath(absolutePath: string, projectDirectory?: string): LocatedOutputPath {
   const output = resolve(absolutePath);
   if (projectDirectory === undefined) return { path: output };
-  const project = resolve(projectDirectory);
-  const below = relative(project, output);
-  if (below === ".." || below.startsWith(`..${sep}`) || isAbsolute(below)) return { path: output };
-  let canonicalParent: string;
+  let project: BigIntStats;
   try {
-    canonicalParent = realpathSync.native(dirname(project));
+    project = statSync(resolve(projectDirectory), { bigint: true });
   } catch {
-    throw refused("ancestor-unsafe");
+    return { path: output };
   }
-  const projectRoot = join(canonicalParent, basename(project));
-  return { path: join(projectRoot, below), projectRoot };
+  if (!project.isDirectory()) return { path: output };
+  const root = parse(output).root;
+  const components = output
+    .slice(root.length)
+    .split(sep)
+    .filter((part) => part.length > 0);
+  let prefix = root;
+  for (const [index, component] of components.entries()) {
+    prefix = join(prefix, component);
+    let stat: BigIntStats;
+    try {
+      stat = statSync(prefix, { bigint: true });
+    } catch {
+      // Nothing below a missing or unreadable component can be the project directory.
+      break;
+    }
+    // A filesystem without file identities reports zero; compare the spelling there.
+    const isProject =
+      project.ino === 0n
+        ? prefix === resolve(projectDirectory)
+        : stat.dev === project.dev && stat.ino === project.ino;
+    if (!isProject) continue;
+    let canonicalParent: string;
+    try {
+      canonicalParent = realpathSync.native(dirname(prefix));
+    } catch {
+      throw refused("ancestor-unsafe");
+    }
+    const projectRoot = join(canonicalParent, component);
+    return { path: join(projectRoot, ...components.slice(index + 1)), projectRoot };
+  }
+  return { path: output };
 }
 
 /**

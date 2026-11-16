@@ -77,7 +77,7 @@ export async function initProject(
   }
 
   const created: string[] = [];
-  let agentInstructions: AgentInstructionsOutcome = "created";
+  let agentInstructions: AgentInstructionsOutcome;
   try {
     for (const [name, content] of files) {
       const handle = await open(join(dir, name), "wx");

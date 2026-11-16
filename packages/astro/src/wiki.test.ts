@@ -7,6 +7,8 @@ import type { LoaderContext } from "astro/loaders";
 import { topikWikiLoader } from "./wiki";
 
 const docsDir = join(import.meta.dirname, "../../../docs");
+// Compiling all of docs/ takes a few seconds on a loaded CI runner and grows with the docs.
+const DOCS_COMPILE = { timeout: 30_000 };
 const wikiPageNamePattern = /^topik-docs-[a-f0-9]{16}$/;
 const docsOptions = {
   dir: docsDir,
@@ -46,15 +48,19 @@ describe("topikWikiLoader", () => {
     expect(() => topikWikiLoader({ dir: docsDir, name: " " })).toThrow(/loader name/u);
   });
 
-  test("loads content without a manifest or naming callback when there are no local assets", async () => {
-    const loader = topikWikiLoader({ dir: docsDir, name: "docs-without-assets" });
-    const context = createMockContext();
-    await loader.load(context);
-    expect(context.entries.size).toBe(11);
-    expect(loader.getAssets()).toEqual([]);
-  });
+  test(
+    "loads content without a manifest or naming callback when there are no local assets",
+    DOCS_COMPILE,
+    async () => {
+      const loader = topikWikiLoader({ dir: docsDir, name: "docs-without-assets" });
+      const context = createMockContext();
+      await loader.load(context);
+      expect(context.entries.size).toBe(11);
+      expect(loader.getAssets()).toEqual([]);
+    },
+  );
 
-  test("loads the self-hosted Topik wiki", async () => {
+  test("loads the self-hosted Topik wiki", DOCS_COMPILE, async () => {
     const loader = topikWikiLoader(docsOptions);
     const context = createMockContext();
     await loader.load(context);
@@ -68,7 +74,7 @@ describe("topikWikiLoader", () => {
     expect(home?.body).toContain("# Topik");
   });
 
-  test("uses the shared resolver for nested documentation routes", async () => {
+  test("uses the shared resolver for nested documentation routes", DOCS_COMPILE, async () => {
     const loader = topikWikiLoader(docsOptions);
     const context = createMockContext();
     await loader.load(context);
@@ -89,7 +95,7 @@ describe("topikWikiLoader", () => {
     ]);
   });
 
-  test("exposes the compiled navigation tree", async () => {
+  test("exposes the compiled navigation tree", DOCS_COMPILE, async () => {
     const navigation = await topikWikiLoader(docsOptions).getNavigation();
     expect(navigation).toEqual([
       {

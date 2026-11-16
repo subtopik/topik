@@ -6,9 +6,11 @@ import { validateResources } from "../validate";
 import { compileWiki } from "./wiki";
 
 const docsDir = join(import.meta.dirname, "../../../../docs");
+// Compiling all of docs/ takes a few seconds on a loaded CI runner and grows with the docs.
+const DOCS_COMPILE = { timeout: 30_000 };
 
 describe("Topik documentation wiki", () => {
-  test("compiles as a self-hosted conformance wiki", async () => {
+  test("compiles as a self-hosted conformance wiki", DOCS_COMPILE, async () => {
     const { resources } = await compileWiki({ dir: docsDir });
     const wiki = resources.find((resource): resource is Wiki => resource.type === "Wiki");
     const pages = resources.filter((resource) => resource.type === "WikiPage");

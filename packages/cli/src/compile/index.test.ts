@@ -451,12 +451,12 @@ describe("compile command", () => {
     expect(await snapshotTree(outDir)).toEqual(firstTree);
   });
 
-  // Anchored publication opens every output ancestor without following links.
-  test.skipIf(process.platform !== "linux")(
-    "rejects a symlinked output ancestor without writing outside",
-    async () => {
-      const outside = await mkdtemp(join(tmpdir(), "topik-cli-outside-"));
+  // A link at or below the project directory is refused on every platform, as for sources.
+  test("rejects a symlinked output ancestor inside the project without writing outside", async () => {
+    const outside = await mkdtemp(join(tmpdir(), "topik-cli-outside-"));
+    try {
       await symlink(outside, join(dir, "output-link"), "dir");
+      vi.spyOn(console, "error").mockImplementation(() => undefined);
       await expect(
         (compile as CompileCommand).handler?.({
           dir,
@@ -468,43 +468,11 @@ describe("compile command", () => {
         }),
       ).rejects.toThrow(/link or non-directory collision/u);
       expect(await readdir(outside)).toEqual([]);
+      expect((await lstat(join(dir, "output-link"))).isSymbolicLink()).toBe(true);
+    } finally {
       await rm(outside, { recursive: true, force: true });
-    },
-  );
-
-  // Portable publication resolves the output parent to its canonical path, so a link among
-  // the ancestors is followed and only a linked target is refused.
-  test.skipIf(process.platform === "linux")(
-    "publishes through a symlinked output ancestor into the directory it names",
-    async () => {
-      const outside = await mkdtemp(join(tmpdir(), "topik-cli-outside-"));
-      try {
-        await symlink(outside, join(dir, "output-link"), "dir");
-        vi.spyOn(console, "error").mockImplementation(() => undefined);
-        vi.spyOn(console, "log").mockImplementation(() => undefined);
-        await expect(
-          (compile as CompileCommand).handler?.({
-            dir,
-            outDir: join(dir, "output-link", "compiled"),
-            format: "json",
-            dryRun: false,
-            validate: true,
-            links: "error",
-          }),
-        ).resolves.toBeUndefined();
-        expect(await readdir(outside)).toEqual(["compiled"]);
-        expect((await readdir(join(outside, "compiled"))).sort()).toEqual([
-          "blobs",
-          "materialization.json",
-          "resources",
-          "semantic.json",
-        ]);
-        expect((await lstat(join(dir, "output-link"))).isSymbolicLink()).toBe(true);
-      } finally {
-        await rm(outside, { recursive: true, force: true });
-      }
-    },
-  );
+    }
+  });
 
   test("rejects hard-linked existing output without changing its peer", async () => {
     const outDir = join(dir, "compiled");
@@ -1043,6 +1011,121 @@ async function replaceCompilationTreePromptly(
   return result;
 }
 
+/**
+ * The output link rule, for the publication of the current (possibly simulated) platform:
+ * links above the project directory are resolved, links at or below it are refused.
+ */
+function defineProjectLinkCases(root: () => string): void {
+  const collision = { id: "compilation-output-collision" };
+
+  test.each([
+    ["directly below the link", ["compiled"]],
+    ["below directories that do not exist yet", ["a", "b", "compiled"]],
+  ] as const)("refuses a link inside the project: output %s", async (_label, tail) => {
+    const project = join(root(), "project");
+    const outside = join(root(), "outside");
+    await mkdir(project);
+    await mkdir(outside);
+    await symlink(outside, join(project, "output-link"), "dir");
+
+    await expect(
+      replaceCompilationTree(
+        join(project, "output-link", ...tail),
+        ownedFiles("first"),
+        undefined,
+        project,
+      ),
+    ).rejects.toMatchObject(collision);
+    expect(await readdir(outside)).toEqual([]);
+    expect(await readdir(project)).toEqual(["output-link"]);
+  });
+
+  test.runIf(HOST_IS_WINDOWS)("refuses a junction inside the project", async () => {
+    const project = join(root(), "project");
+    const outside = join(root(), "outside");
+    await mkdir(project);
+    await mkdir(outside);
+    await symlink(outside, join(project, "output-link"), "junction");
+
+    await expect(
+      replaceCompilationTree(
+        join(project, "output-link", "compiled"),
+        ownedFiles("first"),
+        undefined,
+        project,
+      ),
+    ).rejects.toMatchObject(collision);
+    expect(await readdir(outside)).toEqual([]);
+  });
+
+  test("refuses a project directory that is itself a link", async () => {
+    const real = join(root(), "real-project");
+    const project = join(root(), "project-link");
+    await mkdir(real);
+    await symlink(real, project, "dir");
+
+    await expect(
+      replaceCompilationTree(join(project, "out"), ownedFiles("first"), undefined, project),
+    ).rejects.toMatchObject(collision);
+    expect(await readdir(real)).toEqual([]);
+  });
+
+  test("publishes and republishes when a link lies above the project", async () => {
+    const project = join(root(), "alias", "project");
+    await mkdir(join(root(), "real", "project"), { recursive: true });
+    await symlink(join(root(), "real"), join(root(), "alias"), "dir");
+
+    for (const generation of ["first", "second"]) {
+      await replaceCompilationTree(
+        join(project, "served", "out"),
+        ownedFiles(generation),
+        undefined,
+        project,
+      );
+      await expectOwnedGeneration(join(root(), "real", "project", "served", "out"), generation);
+    }
+    expect(await readdir(join(root(), "real", "project", "served"))).toEqual(["out"]);
+  });
+
+  // Outside the project the platforms differ: anchored publication refuses a link anywhere in
+  // the path as given; portable publication follows links above the target.
+  test("treats a link in an output path outside the project by platform", async () => {
+    const project = join(root(), "project");
+    const outside = join(root(), "outside");
+    await mkdir(project);
+    await mkdir(outside);
+    await symlink(outside, join(root(), "elsewhere"), "dir");
+    const publication = replaceCompilationTree(
+      join(root(), "elsewhere", "compiled"),
+      ownedFiles("first"),
+      undefined,
+      project,
+    );
+
+    if (process.platform === "linux") {
+      await expect(publication).rejects.toMatchObject(collision);
+      expect(await readdir(outside)).toEqual([]);
+    } else {
+      await publication;
+      await expectOwnedGeneration(join(outside, "compiled"), "first");
+    }
+  });
+}
+
+describe("output links relative to the project directory", () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "topik-cli-output-links-"));
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  defineProjectLinkCases(() => root);
+});
+
 describe.each(PORTABLE_PLATFORMS)("portable publication on %s", (platform) => {
   let root: string;
 
@@ -1055,6 +1138,8 @@ describe.each(PORTABLE_PLATFORMS)("portable publication on %s", (platform) => {
     vi.restoreAllMocks();
     await rm(root, { recursive: true, force: true });
   });
+
+  defineProjectLinkCases(() => root);
 
   test("publishes, replaces an owned tree and leaves no staging directories", async () => {
     const outDir = join(root, "served", "out");

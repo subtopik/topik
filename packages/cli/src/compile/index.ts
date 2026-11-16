@@ -111,7 +111,7 @@ export const compile = command({
       { path: "materialization.json", bytes: serializeTopikJson(materialization) },
       { path: "semantic.json", bytes: serializeTopikJson(semantic) },
     );
-    await replaceCompilationTree(outDir, files, fileSafety);
+    await replaceCompilationTree(outDir, files, fileSafety, dir);
 
     console.log(
       `Compiled ${resources.length} resources and ${payloads.length} payloads to ${outDir}`,
@@ -123,10 +123,12 @@ export async function replaceCompilationTree(
   absolutePath: string,
   files: readonly { path: string; bytes: string | Uint8Array }[],
   fileSafety: FileSafety = DEFAULT_FILE_SAFETY,
+  projectDirectory?: string,
 ): Promise<void> {
   try {
     await publishOutputDirectory(absolutePath, files, {
       fileSafety,
+      projectDirectory,
       generationPrefix: COMPILATION_GENERATION_PREFIX,
       priorPrefix: COMPILATION_PRIOR_PREFIX,
       directories: COMPILATION_DIRECTORIES,

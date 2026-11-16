@@ -11,7 +11,8 @@ npm install @topik/cli
 
 ## Usage
 
-Run the commands on a directory with a `.topik.yaml`
+Create a project, then run the other commands on its directory, which holds a
+`.topik.yaml`
 [project manifest](https://github.com/subtopik/topik/blob/main/docs/resources/manifest.md):
 
 ```sh
@@ -23,43 +24,72 @@ npx topik validate ./handbook/.topik/resources
 npx topik dev ./handbook
 ```
 
-| Command    | Purpose                                                                                                                                 | Platform |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| `init`     | Create a minimal wiki project: `.topik.yaml`, `wiki.yaml` and `index.md` (`--namespace`).                                               | Any      |
-| `format`   | Format Topik Markdown files in place (`--check`, `--file-safety`).                                                                      | Any      |
-| `compile`  | Compile project content into resource files (`--out-dir`/`-o`, `--format`/`-f`, `--dry-run`, `--validate`, `--links`, `--file-safety`). | Any      |
-| `lint`     | Check source content without writing compiled resources (`--links`, `--json`, `--file-safety`).                                         | Any      |
-| `validate` | Validate a resource file, directory, or compile output in JSON, JSONL, or YAML against the schemas (`--graph`, `--content`, `--json`).  | Any      |
-| `dev`      | Start a development server that watches for content changes (`--port`/`-p`, `--allow-origin`, `--links`, `--file-safety`).              | Any      |
+| Command    | Purpose                                                                                                                                 |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `init`     | Create a minimal wiki project: `.topik.yaml`, `wiki.yaml` and `index.md` (`--namespace`).                                               |
+| `format`   | Format Topik Markdown files in place (`--check`, `--file-safety`).                                                                      |
+| `compile`  | Compile project content into resource files (`--out-dir`/`-o`, `--format`/`-f`, `--dry-run`, `--validate`, `--links`, `--file-safety`). |
+| `lint`     | Check source content without writing compiled resources (`--links`, `--json`, `--file-safety`).                                         |
+| `validate` | Validate a resource file, directory, or compile output in JSON, JSONL, or YAML against the schemas (`--graph`, `--content`, `--json`).  |
+| `dev`      | Start a development server that watches for content changes (`--port`/`-p`, `--allow-origin`, `--links`, `--file-safety`).              |
 
-`--links` sets how unresolved wiki links and local guide fragments are handled:
-`error` (default), `warning`, or `off`. `--format` accepts only `json`. The dev
-server listens on `127.0.0.1` port `50001` by default and accepts browser
-connections from `https://write.subtopik.com` unless `--allow-origin` names
-another origin.
+Every command runs on any platform;
+[File safety](#file-safety-on-macos-and-windows) describes how Linux differs from
+macOS and Windows. Run `topik <command> --help` for every flag.
 
-`topik init [dir]` writes the project from the
+Two options are shared by several commands:
+
+- `--links` sets how unresolved wiki links and local guide fragments are handled:
+  `error` (default), `warning`, or `off`.
+- `--file-safety` sets how project files are read on macOS and Windows: `portable`
+  (default) or `anchored`.
+
+## Create a project
+
+`topik init [dir]` writes `.topik.yaml`, `wiki.yaml` and `index.md` for the project
+in the
 [Compile a wiki](https://github.com/subtopik/topik/blob/main/docs/resources/index.md#compile-a-wiki)
-example (namespace `example/handbook`, wiki `handbook`), creating the directory if
-needed; `--namespace` sets another project namespace. It refuses to run when any of
-the three files already exists and never overwrites a file.
+example: namespace `example/handbook`, wiki `handbook`. The default directory is
+the current one.
 
-`topik format [path]` takes one `.md` or `.mdx` file, or a directory, which it walks
-for those files, skipping `node_modules`, dot-directories and symbolic links (the
-default is the current directory). It rewrites each file with the
+- `init` creates the directory if needed.
+- `--namespace` sets another project namespace.
+- `init` never overwrites a file. It refuses to run when any of the three files
+  already exists.
+
+## Format Markdown
+
+`topik format [path]` rewrites Markdown files with the
 [`@topik/content`](https://github.com/subtopik/topik/tree/main/packages/content)
-formatter and prints the files it changed. A file that does not compile cleanly is
-left untouched and its diagnostics are printed; the command then exits 1. `--check`
-writes nothing, prints the files that would change, and exits 1 if there are any. A
-file is replaced by renaming a complete new copy over it, so it never holds partial
-output. Before that, format checks that the file still holds the bytes it formatted
-and still has the same identity, size and modification time, keeping its permission
-bits. This makes a lost edit unlikely but cannot rule it out: an edit saved between
-the last check and the rename is overwritten, so do not run `topik format` while an
-editor is saving the same files. Hard-linked files are left alone.
+formatter and prints the files it changed. The path is one `.md` or `.mdx` file, or
+a directory; the default is the current directory. In a directory, `format` finds
+every `.md` and `.mdx` file below it, skipping `node_modules`, dot-directories and
+symbolic links.
 
-`topik lint --json` prints one JSON document on stdout instead of the text
-diagnostics, and exits as without the flag (1 when there are errors):
+- `--check` writes nothing, prints the files that would change, and exits 1 if
+  there are any.
+- A file that does not compile cleanly is left untouched and its diagnostics are
+  printed. The command then exits 1.
+- A hard-linked file is left untouched and reported. The command then exits 1.
+- A rewritten file keeps its permission bits.
+
+`format` replaces a file by renaming a complete new copy over it, so the file
+never holds partial output. Before the rename, `format` checks that the file holds
+the bytes it formatted and has the same identity, size and modification time. If
+the check fails, the file is left as it is and reported, and the command exits 1.
+This makes a lost edit unlikely but cannot rule it out: an edit saved between the
+last check and the rename is overwritten. Do not run `topik format` while an
+editor is saving the same files.
+
+## Lint and compile
+
+`topik lint [dir]` checks the project's source content and prints its diagnostics.
+`topik compile [dir]` also writes the compiled resources, to `.topik` in the
+project directory unless `--out-dir` names another directory. Both exit 1 when
+there are errors. `compile --format` accepts only `json`.
+
+`lint --json` prints one JSON document on stdout in place of the text diagnostics.
+The exit status is the same as without the flag.
 
 ```json
 {
@@ -78,28 +108,50 @@ diagnostics, and exits as without the flag (1 when there are errors):
 }
 ```
 
-`file`, `line` (the first of `lines`) and `column` are omitted when unknown.
-`severity` is `debug`, `info`, `warning`, `error` or `critical`; `errors` counts
-`error` and `critical`. A failure that stops lint before it produces diagnostics,
-such as a missing `.topik.yaml`, prints its message on stderr and nothing on stdout.
+- `file`, `line` (the first of `lines`) and `column` are omitted when unknown.
+- `severity` is `debug`, `info`, `warning`, `error` or `critical`.
+- `errors` counts the `error` and `critical` diagnostics.
 
-`validate --graph` also checks the resources as one complete set (unique
-`type/name`, every by-name reference resolves), and `validate --content` checks
-Topik page content. Both are off by default because a directory may hold only
-part of a project. `validate --json` prints a stable, versioned JSON report on
-stdout with the same exit status; the
+A failure that stops lint before it produces diagnostics, such as a missing
+`.topik.yaml`, prints its message on stderr and nothing on stdout.
+
+## Validate resources
+
+`topik validate <path>` checks each resource in a file, a directory, or a compile
+output directory against its schema. Three flags extend it:
+
+- `--graph` also checks the resources as one complete set: every `type/name` is
+  unique and every by-name reference resolves.
+- `--content` also checks Topik page content.
+- `--json` prints a stable, versioned JSON report on stdout. The exit status is
+  the same as without the flag.
+
+`--graph` and `--content` are off by default because a directory may hold only
+part of a project. The
 [resources guide](https://github.com/subtopik/topik/blob/main/docs/resources/index.md)
-documents its shape.
+documents the checks and the shape of the JSON report.
 
-Run `topik <command> --help` for every flag. On Linux, `compile`, `lint`, `format`
-and `dev` read project files and publish output through descriptor-anchored
-traversal. On macOS and Windows that is unavailable, so by default
-(`--file-safety portable`) they check paths and file identity instead and print
-one notice: this does not protect against another process changing the project
-while it is read, so use it only on a workspace you trust. Pass
-`--file-safety anchored` to refuse instead; off Linux the command then stops with
-a message naming the Linux requirement (for example, use WSL 2 or a Linux
-container).
+## Preview while you write
+
+`topik dev [dir]` starts a development server that watches the project for content
+changes. It listens on `127.0.0.1` port `50001`; `--port` sets another port. It
+accepts browser connections from `https://write.subtopik.com` unless
+`--allow-origin` names another origin.
+
+## File safety on macOS and Windows
+
+`compile`, `lint`, `format` and `dev` read project files and publish output. On
+Linux they anchor every file access to the project directory (descriptor-anchored
+traversal). macOS and Windows do not provide this, and `--file-safety` selects
+what the commands do there:
+
+- `portable` (default): the command checks paths and file identity instead, and
+  prints one notice. This does not protect against another process changing the
+  project while it is read, so use it only on a workspace you trust.
+- `anchored`: the command refuses to run. It stops with a message that names the
+  Linux requirement and suggests, for example, WSL 2 or a Linux container.
+
+On Linux both values use anchored access.
 
 ## Documentation
 

@@ -3,7 +3,12 @@ import { join, resolve } from "node:path";
 import { command, positional, string } from "@drizzle-team/brocli";
 import { parseTopikManifest, TOPIK_MANIFEST_FILENAME } from "@topik/core";
 import { stringify } from "yaml";
-import { AGENT_INSTRUCTIONS_FILENAME, writeAgentInstructions } from "../agents";
+import {
+  AGENT_INSTRUCTIONS_FILENAME,
+  AGENT_INSTRUCTIONS_OUTCOME_MESSAGES,
+  writeAgentInstructions,
+  type AgentInstructionsOutcome,
+} from "../agents";
 import { PublicCliError } from "../errors";
 
 const WIKI_CONFIG_FILENAME = "wiki.yaml";
@@ -54,12 +59,12 @@ export function initProjectFiles(options: InitProjectOptions = {}): [string, str
  *
  * `AGENTS.md` comes last and follows its own rule, because projects often have one already:
  * a missing file is created, the Topik section of an existing one is updated, and any other
- * existing file is kept. The returned names include it only when this call created it.
+ * existing file is kept. `created` includes it only when this call created it.
  */
 export async function initProject(
   dir: string,
   options: InitProjectOptions = {},
-): Promise<string[]> {
+): Promise<{ created: string[]; agentInstructions: AgentInstructionsOutcome }> {
   const files = initProjectFiles(options);
   await mkdir(dir, { recursive: true }).catch(() => {
     throw new PublicCliError("init-target-access-failed");
@@ -72,6 +77,7 @@ export async function initProject(
   }
 
   const created: string[] = [];
+  let agentInstructions: AgentInstructionsOutcome = "created";
   try {
     for (const [name, content] of files) {
       const handle = await open(join(dir, name), "wx");
@@ -84,9 +90,8 @@ export async function initProject(
       }
     }
     // An AGENTS.md that is already there is kept: only the section Topik owns is updated.
-    if ((await writeAgentInstructions(dir)) === "created") {
-      created.push(AGENT_INSTRUCTIONS_FILENAME);
-    }
+    agentInstructions = await writeAgentInstructions(dir);
+    if (agentInstructions === "created") created.push(AGENT_INSTRUCTIONS_FILENAME);
   } catch (error) {
     // Leave the directory as it was: remove only files this run created.
     for (const name of created) await unlink(join(dir, name)).catch(() => undefined);
@@ -95,7 +100,7 @@ export async function initProject(
       { cause: error },
     );
   }
-  return created;
+  return { created, agentInstructions };
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -118,8 +123,13 @@ export const init = command({
       .default(INIT_DEFAULTS.namespace),
   },
   handler: async (options) => {
-    const created = await initProject(resolve(options.dir), { namespace: options.namespace });
+    const { created, agentInstructions } = await initProject(resolve(options.dir), {
+      namespace: options.namespace,
+    });
     console.log(`Created ${created.join(", ")}`);
+    if (agentInstructions !== "created") {
+      console.log(AGENT_INSTRUCTIONS_OUTCOME_MESSAGES[agentInstructions]);
+    }
     console.log("Next: run topik compile --validate in the project directory");
   },
 });

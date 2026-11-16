@@ -81,8 +81,8 @@ async function collectMarkdownFiles(
 
 /**
  * Instructions for coding agents, which `topik init` writes. They are not Topik Markdown (the
- * section markers are HTML comments), so a directory walk leaves them out. Naming the file as
- * the format target still formats it.
+ * section markers are HTML comments), so a directory walk leaves them out. A file named as
+ * the format target is still read, and refused like any other Markdown with raw HTML.
  */
 export const AGENT_INSTRUCTIONS_FILENAME = "AGENTS.md";
 

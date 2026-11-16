@@ -85,6 +85,9 @@ describe("init command", () => {
 
     expect(await readFile(join(dir, "AGENTS.md"), "utf8")).toBe("# House rules\n");
     expect(console.log).toHaveBeenCalledWith("Created .topik.yaml, wiki.yaml, index.md");
+    expect(console.log).toHaveBeenCalledWith(
+      "Kept AGENTS.md as it is: it has no single section between the Topik markers, or it is not a regular file",
+    );
   });
 
   test("updates the Topik section of an existing AGENTS.md and keeps the rest", async () => {
@@ -97,6 +100,7 @@ describe("init command", () => {
       `# House rules\n\n${AGENT_INSTRUCTIONS.trimEnd()}\n\nMore rules\n`,
     );
     expect(console.log).toHaveBeenCalledWith("Created .topik.yaml, wiki.yaml, index.md");
+    expect(console.log).toHaveBeenCalledWith("Updated the Topik section of AGENTS.md");
   });
 
   test("does not follow an AGENTS.md that is a symbolic link", async () => {

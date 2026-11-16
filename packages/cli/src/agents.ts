@@ -65,6 +65,14 @@ function markedRange(text: string): { start: number; end: number } | undefined {
  */
 export type AgentInstructionsOutcome = "created" | "updated" | "unchanged" | "kept";
 
+/** What `topik init` and `topik migrate` print for each outcome. */
+export const AGENT_INSTRUCTIONS_OUTCOME_MESSAGES: Record<AgentInstructionsOutcome, string> = {
+  created: `Created ${AGENT_INSTRUCTIONS_FILENAME}`,
+  updated: `Updated the Topik section of ${AGENT_INSTRUCTIONS_FILENAME}`,
+  unchanged: `${AGENT_INSTRUCTIONS_FILENAME} is up to date`,
+  kept: `Kept ${AGENT_INSTRUCTIONS_FILENAME} as it is: it has no single section between the Topik markers, or it is not a regular file`,
+};
+
 /**
  * Create `AGENTS.md` in `dir`, or update the section Topik owns in an existing one. An existing
  * file is never followed through a link and is replaced through a temporary file, as

@@ -8,6 +8,7 @@ import {
   AGENT_INSTRUCTIONS_START_MARKER,
   replaceAgentInstructionsSection,
 } from "../agents";
+import { lint } from "@topik/core";
 import { initProject } from "../init";
 import { migrate, migrateProject } from "./index";
 
@@ -40,6 +41,20 @@ describe("migrate command", () => {
     await (migrate as MigrateCommand).handler?.({ dir });
     expect(console.log).toHaveBeenLastCalledWith("AGENTS.md is up to date");
     expect((await stat(agents)).mtimeMs).toBe(written.mtimeMs);
+  });
+
+  test("leaves a guide collection in the project directory compiling", async () => {
+    await writeFile(
+      join(dir, ".topik.yaml"),
+      "version: 1\nnamespace: a/b\nsources:\n  - kind: collection\n    config: collection.yaml\n",
+    );
+    await writeFile(join(dir, "collection.yaml"), "id: docs\ntitle: Docs\n");
+    await writeFile(join(dir, "intro.md"), "# Intro\n\nHello.\n");
+
+    expect(await migrateProject(dir)).toBe("created");
+
+    const { diagnostics } = await lint({ dir });
+    expect(diagnostics).toEqual([]);
   });
 
   test("changes nothing right after init", async () => {

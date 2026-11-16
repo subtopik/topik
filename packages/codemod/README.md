@@ -23,8 +23,9 @@ Run `topik-codemod mintlify --help` for every flag.
 
 Review the result with `topik lint` from
 [`@topik/cli`](https://github.com/subtopik/topik/tree/main/packages/cli). It
-needs a project manifest, which the codemod does not write. Create `.topik.yaml`
-beside the `docs` directory, pointing at the generated `wiki.yaml` (see
+needs a project manifest, which the codemod does not write; the codemod prints
+a reminder when it writes a `wiki.yaml`. Create `.topik.yaml` beside the `docs`
+directory, pointing at the generated `wiki.yaml` (see
 [Navigation](#navigation)), and run `topik lint` there:
 
 ```yaml
@@ -64,8 +65,11 @@ npx topik-codemod mintlify ./docs --diff > migration.patch
 git apply --directory=docs migration.patch
 ```
 
-Paths in the patch are relative to the directory you converted, so
-`--directory` names it when you apply the patch from its parent.
+Paths in the patch are relative to the directory you converted. In a Git
+repository, `--directory` takes that directory's path from the repository root,
+wherever you run the command: `--directory=site/docs` for `site/docs`. Plain
+`git apply` from inside the converted directory applies nothing there. Outside
+a repository, `--directory` is relative to the current directory.
 
 The patch uses git headers, so renames from `.mdx` to `.md` apply too. It keeps
 CRLF line endings.

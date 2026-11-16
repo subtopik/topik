@@ -12,6 +12,11 @@ import { runMintlify } from "./runner";
 const execFileAsync = promisify(execFile);
 const builtCli = fileURLToPath(new URL("../dist/cli.mjs", import.meta.url));
 
+const MANIFEST_HINT =
+  "ℹ topik lint needs a project manifest (.topik.yaml) that lists wiki.yaml as a wiki source: https://github.com/subtopik/topik/blob/main/docs/resources/manifest.md";
+const PATCH_HINT =
+  "ℹ Paths in the patch are relative to the converted directory. In a Git repository, apply it with git apply --directory=<that directory's path from the repository root>";
+
 const runMock = vi.hoisted(() => vi.fn());
 vi.mock("@drizzle-team/brocli", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@drizzle-team/brocli")>()),
@@ -196,9 +201,32 @@ describe("codemod CLI file results", () => {
     expect(console.error).toHaveBeenCalledWith("  would convert good.mdx → good.md");
     expect(console.error).toHaveBeenCalledWith("  would write wiki.yaml from docs.json");
     expect(console.error).toHaveBeenCalledWith("✓ would convert 1 file(s)");
+    expect(console.error).toHaveBeenCalledWith(MANIFEST_HINT);
+    expect(console.error).toHaveBeenCalledWith(PATCH_HINT);
     expect((await readdir(dir)).sort()).toEqual(["docs.json", "good.mdx"]);
     expect(await readFile(join(dir, "good.mdx"), "utf-8")).toBe("<Note>Good.</Note>\n");
     expect(await readFile(join(dir, "docs.json"), "utf-8")).toBe(docsJson);
+  });
+
+  test("prints no next-step hints without a patch or a written wiki configuration", async () => {
+    await writeFile(join(dir, "good.mdx"), "<Note>Good.</Note>\n");
+
+    await runCli();
+
+    expect(console.log).toHaveBeenCalledWith("✓ converted 1 file(s)");
+    expect(console.error).not.toHaveBeenCalledWith(MANIFEST_HINT);
+    expect(console.error).not.toHaveBeenCalledWith(PATCH_HINT);
+  });
+
+  test("prints no patch hint when --diff finds nothing to change", async () => {
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await writeFile(join(dir, "plain.md"), "# Plain\n");
+    runMock.mockImplementationOnce(async ([command]) => {
+      await command.handler({ dir, dryRun: false, keepExtension: false, diff: true });
+    });
+    await import("./cli");
+
+    expect(console.error).not.toHaveBeenCalledWith(PATCH_HINT);
   });
 
   test("reports navigation warnings against the Mintlify configuration", async () => {
@@ -211,6 +239,8 @@ describe("codemod CLI file results", () => {
     await runCli();
 
     expect(console.log).toHaveBeenCalledWith("  wrote wiki.yaml from docs.json");
+    expect(console.error).toHaveBeenCalledWith(MANIFEST_HINT);
+    expect(console.error).not.toHaveBeenCalledWith(PATCH_HINT);
     expect(console.error).toHaveBeenCalledWith(
       '⚠ docs.json — navigation.pages[1]: page "gone" has no .md or .mdx file in the directory; not converted',
     );

@@ -5,10 +5,9 @@ compiles wikis, guide collections, and courses declared in a project manifest,
 generates asset resources for local images and downloads, validates resource
 envelopes, and resolves wiki and course navigation.
 
-To render a single document, start with
+To render a single document, use
 [`@topik/content`](https://github.com/subtopik/topik/tree/main/packages/content)
-or [`@topik/content-react`](https://github.com/subtopik/topik/tree/main/packages/content-react)
-instead.
+or [`@topik/content-react`](https://github.com/subtopik/topik/tree/main/packages/content-react).
 
 ## Install
 
@@ -30,20 +29,33 @@ if (!validation.valid) throw new Error(JSON.stringify(validation.errors));
 console.log(result.resources.map((resource) => `${resource.type}/${resource.name}`));
 ```
 
-Use `compile` for the sources declared in `.topik.yaml` and `compileGuides` for a
-standalone guide collection. The result also contains asset payloads,
-diagnostics, and compilation inventories. Navigation helpers are available from
-`@topik/core/wiki-navigation` and `@topik/core/course-navigation`; their link
-resolution contract is in the
+The result also contains asset payloads, diagnostics, and compilation
+inventories.
+
+To compile other sources:
+
+- `compile` compiles every source declared in `.topik.yaml`.
+- `compileGuides` compiles a standalone guide collection.
+- `compileCourse` compiles a standalone course.
+
+## Entry points
+
+| Entry point                     | Provides                                                                                            |
+| ------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `@topik/core`                   | Compilers, manifest parsing, asset naming, source-project update planning, and `validateResources`. |
+| `@topik/core/wiki-navigation`   | Wiki navigation and link resolution helpers.                                                        |
+| `@topik/core/course-navigation` | Course navigation and link resolution helpers.                                                      |
+| `@topik/core/preview`           | Browser-safe local preview types, including `PreviewState`.                                         |
+
+The wiki link resolution contract is in the
 [navigation guide](https://github.com/subtopik/topik/blob/main/docs/resources/navigation.md#wiki-resolver-contract).
-Local preview types, including `PreviewState`, are available from the
-browser-safe `@topik/core/preview`.
 
 ## Documentation
 
 - [Resources and compilation](https://github.com/subtopik/topik/blob/main/docs/resources/index.md)
 - [Project manifest](https://github.com/subtopik/topik/blob/main/docs/resources/manifest.md)
 - [Navigation](https://github.com/subtopik/topik/blob/main/docs/resources/navigation.md)
+- [Source writing](https://github.com/subtopik/topik/blob/main/docs/resources/source-writing.md)
 - [Assets](https://github.com/subtopik/topik/blob/main/docs/resources/assets.md)
 - [Local preview protocol](https://github.com/subtopik/topik/blob/main/docs/preview-protocol.md)
 

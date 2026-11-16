@@ -5,8 +5,10 @@ description: Insert application variables into component text and explicitly sco
 
 # Text and code templates
 
-Templates insert application-supplied scalar values as literal text. Use an
-explicit template when a component label or code example needs reader values:
+A template inserts a value that your application supplies, such as a package
+name or version, into a component label or a code example. The value is always
+inserted as literal text. This page is for authors who write templates and for
+applications that supply their values.
 
 ````markdown
 {% callout title=t"Install {% $package.name %}" %}
@@ -22,14 +24,16 @@ npm install {% $package.name %}@{% $package.version %}
 {% figure src="./install.png" alt=t"{% $package.name %} installation" caption=t"Version {% $package.version %}" /%}
 ````
 
-Supply the values through `config.variables` when compiling or rendering. For
-example, `{ package: { name: "example-kit", version: "1.2.3" } }` produces the
-label `Install example-kit` and code `npm install example-kit@1.2.3`.
+Supply the values through `config.variables` when compiling or rendering. With
+`{ package: { name: "example-kit", version: "1.2.3" } }`, the example above
+produces the label `Install example-kit` and the code
+`npm install example-kit@1.2.3`.
 
-## Component text
+## Template component text
 
-The lowercase `t` directly before a double-quoted string opts that property into
-template parsing. Both whole-value and mixed templates use this form:
+Write a lowercase `t` directly before a double-quoted string to make that
+property a template. The same form covers a value that is only a variable and a
+value that mixes text and variables:
 
 ```markdown
 {% accordion title=t"{% $section.name %}" %}
@@ -43,54 +47,79 @@ Install the package first.
 {% /steps %}
 ```
 
+Only these properties accept templates:
+
 | Component                                                | Template properties |
 | -------------------------------------------------------- | ------------------- |
 | `callout`, `accordion`, `card`, `tab`, `step`, `codeTab` | `title`             |
 | `figure`                                                 | `alt`, `caption`    |
 
-Ordinary quoted strings remain literal, including variable-looking text.
-`title=t""` is an explicitly empty template; `title=t"Install"` retains template
-identity even without a variable. A template that resolves to empty text remains
-a present empty property, rather than becoming absent or restoring a default.
+A quoted string without `t` is literal, even when it contains text that looks
+like a variable.
 
-Other properties are literal-only, including URLs, image sources, icons, math,
-enums, numbers, booleans, and language identifiers. Custom component schemas also
-remain literal-only. Frontmatter, Markdown link/image attributes, and fence
-metadata do not accept templates.
+Empty and variable-free templates are still templates:
 
-## Scoped code
+- `title=t""` is an explicitly empty template.
+- `title=t"Install"` is a template with no variables. It keeps the `t` when the
+  document is formatted.
+- A template that resolves to empty text sets the property to empty text. The
+  property does not become absent, and the component default does not apply.
+
+All other properties are literal-only, including URLs, image sources, icons,
+math, enums, numbers, booleans, and language identifiers. Properties of custom
+component schemas are literal-only. Frontmatter, Markdown link and image
+attributes, and fence metadata do not accept templates.
+
+## Template a code block
 
 Place `{% template code %}` and `{% /template code %}` on their own block lines
-around exactly one fenced code block. Backtick and tilde fences are supported;
-the language and fence metadata remain literal. An empty fenced payload is valid.
-Inline code, indented code, and fences outside the scope stay literal.
+around exactly one fenced code block. Backtick and tilde fences both work. The
+language and fence metadata stay literal, and an empty fenced payload is valid.
+Inline code, indented code, and fences outside a scope are literal.
 
-The two markers and fence must share one logical parent: the document root, a
-list item, a blockquote, a component body that admits blocks, a conditional branch,
-or a `codeTab` body. A scope cannot cross those boundaries. Blank separator lines
-are allowed and removed by formatting. Missing markers, unclosed fences, multiple
-fences, intervening prose, indented code, nested scopes, marker properties, and
-self-closing markers are refused.
+The two markers and the fence must share one logical parent. A parent is one of:
+
+- the document root
+- a list item
+- a blockquote
+- the body of a component that admits blocks
+- a conditional branch
+- a `codeTab` body
+
+A scope cannot cross those boundaries. Blank lines between the markers and the
+fence are allowed; formatting removes them.
+
+Topik refuses a scope with any of these problems:
+
+- a missing marker or an unclosed fence
+- more than one fence, or prose between the markers and the fence
+- indented code instead of a fence
+- a nested scope
+- properties on a marker, or a self-closing marker
 
 Markers are case-sensitive. Spaces or tabs may separate `template` and `code`;
-the closing slash stays directly next to `template`. These are special grammar
-forms; application components named `template` or `codeTemplate` keep their
-ordinary component meaning.
+the closing slash must sit directly before `template`. Only these exact markers
+have this meaning: an application component named `template` or `codeTemplate`
+is an ordinary component.
 
-Templated `mermaid` fences are refused before diagram dispatch. Other language
-identifiers follow ordinary code handling, including plain text fallback for
-unknown languages. Templates produce displayed code text.
+A templated `mermaid` fence is refused, because templates produce displayed code
+text and Mermaid fences render as diagrams. Every other language follows
+ordinary code handling, including the plain-text display for unknown languages.
 
-## Tokens and literal escaping
+## Write variable tokens and literal text
 
-Use `{% $name %}` or dotted paths such as `{% $package.name %}`. Path segments
-match `[A-Za-z_][A-Za-z0-9_]*`; `__proto__`, `prototype`, and `constructor` are
-refused. Spaces and tabs are allowed around the variable inside a token, but
-token line breaks, bracket paths, functions, expressions, defaults, and nested
-tokens are unsupported. Every unescaped `{%` must begin a complete valid token.
+Write a variable as `{% $name %}`, or use a dotted path such as
+`{% $package.name %}`. The rules for a token are:
 
-Use **`{%%` to write a literal `{%` opener** inside a template. The scanner
-consumes that escape once and never rescans the resulting literal text:
+- Each path segment matches `[A-Za-z_][A-Za-z0-9_]*`.
+- The segments `__proto__`, `prototype`, and `constructor` are refused.
+- Spaces and tabs may surround the variable inside the token.
+- Line breaks inside a token, bracket paths, functions, expressions, defaults,
+  and nested tokens are not supported.
+- Every unescaped `{%` must begin a complete, valid token.
+
+Write **`{%%` for a literal `{%`** inside a template. Each `{%%` becomes one
+literal `{%`, and Topik does not scan the result again for tokens:
 
 | Template text                  | Result                                     |
 | ------------------------------ | ------------------------------------------ |
@@ -99,57 +128,92 @@ consumes that escape once and never rescans the resulting literal text:
 | `{%%%`                         | Display `{%%`                              |
 | `C:\Users\{% $name %}` in code | Preserve the backslashes and insert `name` |
 
-Code backslashes remain unchanged. Attribute templates retain ordinary quoted
-string escapes: `\\`, `\"`, `\|`, `\[`, and `\]`. There is no backslash-based
-template escape. Standalone `%}`, dollar signs, ordinary braces, and backticks
-are literal text. Formatting writes active variables as `{% $path %}` and escapes
-literal openers with `{%%`; it chooses a fence that preserves the code payload.
+There is no backslash escape for templates. Backslashes in code are unchanged.
+Attribute templates use the ordinary quoted-string escapes: `\\`, `\"`, `\|`,
+`\[`, and `\]`. A standalone `%}`, dollar signs, ordinary braces, and backticks
+are literal text.
 
-## Values and diagnostics
+Formatting writes each variable as `{% $path %}`, escapes literal openers as
+`{%%`, and chooses a fence that preserves the code payload.
 
-Strings insert unchanged; finite numbers and booleans convert to text. Null and
-empty strings insert empty text. Lookup uses safe own data properties. Missing or
-incompatible paths, objects, arrays, functions, accessors, and non-data values are
-refused. Injected C0 control characters or DEL are refused, including newlines
-and tabs: each substitution must be single-line even in multiline code. Authored
-code may still contain its normal line breaks.
+## Values
 
-Values are never parsed as Markdown, HTML, component tags, or further variable
-tokens. Reader rendering applies normal text/attribute escaping once. Templates
-provide no shell, JSON, or programming-language quoting; authors must supply the
-quoting appropriate for the example.
+Each variable must resolve to a scalar value:
 
-Source syntax, paths, locations, and limits are checked in every conditional
-branch. Values are resolved only in the selected branch, so a missing variable
-in an inactive branch does not fail evaluation. Existing condition truthiness and
-short-circuit behavior are unchanged.
+| Value                      | Inserted text         |
+| -------------------------- | --------------------- |
+| String                     | The string, unchanged |
+| Finite number or boolean   | Its text form         |
+| `null` or the empty string | Empty text            |
+| Missing path               | Refused               |
+| Object, array, or function | Refused               |
+| Accessor or other non-data | Refused               |
 
-Template diagnostics distinguish syntax (`topik-template-syntax`), location
-(`topik-template-location`), code structure (`topik-code-template-structure`),
-language (`topik-code-template-language`), missing variables
-(`topik-template-variable-missing`), incompatible values
-(`topik-template-variable-type`), and forbidden controls
-(`topik-template-control`). When available, diagnostics include bounded
-`attribute` and `variable` path context without exposing supplied values. Body
-variables and conditions outside templates report `topik-variable-missing`,
-`topik-variable-type`, and `topik-variable-control` with the same line and
-`variable` context. Failed
-operations retain original source and provide no usable partial output. Existing
-content/data/output limits also apply to templates and repeated substitutions.
+Lookup reads only own data properties of the supplied variables.
+
+A value must be a single line. Values containing C0 control characters or DEL
+are refused, including newlines and tabs, even in multiline code. The authored
+code around the tokens can contain its normal line breaks.
+
+Topik never parses a value as Markdown, HTML, a component tag, or another
+variable token. Rendering escapes the inserted text once, as ordinary text or
+attribute content. Templates provide no shell, JSON, or programming-language
+quoting: the author must write the quoting the example needs.
+
+## Templates in conditional branches
+
+Topik checks template syntax, paths, locations, and limits in every conditional
+branch. It resolves values only in the selected branch, so a variable that is
+missing from an inactive branch does not fail evaluation. Templates do not
+affect how conditions are evaluated.
+
+## Diagnostics
+
+| Problem                                    | Diagnostic id                     |
+| ------------------------------------------ | --------------------------------- |
+| Invalid token or unescaped opener          | `topik-template-syntax`           |
+| `__proto__`, `prototype`, or `constructor` | `topik-variable-path`             |
+| Template in a literal-only property        | `topik-template-location`         |
+| Invalid code template scope                | `topik-code-template-structure`   |
+| Templated `mermaid` fence                  | `topik-code-template-language`    |
+| Variable not supplied                      | `topik-template-variable-missing` |
+| Value is not a supported scalar            | `topik-template-variable-type`    |
+| Control character in a value or literal    | `topik-template-control`          |
+
+Where available, a template diagnostic includes the `attribute` and the
+`variable` path, with bounded length. Diagnostics never include supplied values.
+
+Variables and conditions in body text, outside templates, report
+`topik-variable-missing`, `topik-variable-type`, and `topik-variable-control`,
+with the same line and `variable` context.
+
+A failed operation produces no usable partial output. Functions that take
+source text return `ok: false` with the original source and the diagnostics;
+`evaluateDocument` throws `ContentEvaluationError`. The content, data, and
+output limits apply to templates, including repeated substitutions.
 
 ## Preserve authoring source
 
-Keep the unevaluated source or authoring tree for storage, formatting, and
-writeback. It retains template kind, literal segments, variable paths, and every
-conditional branch. Evaluation creates a separate derived result and does not
-mutate that source. `evaluateDocument` returns a writable derived tree, but that
-tree cannot replace the saved authoring document.
+Store the unevaluated source or authoring tree, and use it for formatting and
+writeback. It holds each template's kind, literal segments, variable paths, and
+every conditional branch. Evaluation creates a separate derived result and does
+not modify the source. `evaluateDocument` returns a writable derived tree, but
+that tree cannot replace the saved authoring document.
 
-Changing preview values must not save them into source. Resource compilation and
-asset/link rewriting preserve templates in `content.value`. Editors that cannot
-preserve the syntax should retain exact source read-only or refuse a lossy save.
+Rules for applications and editors:
 
-Templates require content schema `0.2.1`. This identity is separate from npm
-package versions, resource `apiVersion`, and `FORMAT_VERSION` (`1`). Keep readers,
-compilers, and editors on a compatible package cohort before authoring templates;
-do not downgrade them to evaluated source for an older reader.
+- Do not save preview values into the source.
+- Resource compilation and asset and link rewriting keep templates in
+  `content.value`.
+- An editor that cannot preserve template syntax should show the exact source
+  read-only or refuse a save that would lose it.
+
+## Compatibility
+
+Templates require content schema `0.2.1` or later; the current content schema
+version is `0.2.2`. The content schema version is separate from npm package
+versions, the resource `apiVersion`, and `FORMAT_VERSION` (`1`).
+
+Keep readers, compilers, and editors on a compatible package cohort before
+authoring templates. Do not downgrade documents to evaluated source for an older
+reader.

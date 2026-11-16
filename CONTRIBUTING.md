@@ -33,6 +33,27 @@ Chromium.
   [Conventional Commits](https://www.conventionalcommits.org/), for example
   `fix(core): …` or `chore: …`.
 
+## Writing documentation
+
+The guides in `docs/` and the package READMEs describe what Topik does today.
+When a change affects behavior, edit the text so it reads as if Topik had
+always worked that way:
+
+- Describe the current behavior in the present tense. Avoid wording that only
+  makes sense with history in mind, such as "now", "no longer", "still
+  supported" or "instead of the old …". What changed belongs in the changeset.
+- Put steps that only matter when upgrading in a "Migrate …" section at the
+  end of the page.
+- Lead with what the reader does or what happens, then the rules, then the
+  edge cases. Prefer a list or table for parallel rules.
+- State the rule and its consequence. Explain how the code achieves it only
+  when a reader needs that to use Topik correctly.
+- Keep exact option names, limits and diagnostic IDs: they are part of the
+  contract.
+
+`docs/` is compiled as a Topik wiki by the test suite, so internal links and
+anchors must resolve.
+
 ## Reporting security issues
 
 Do not open public issues for vulnerabilities. See [SECURITY.md](SECURITY.md).

@@ -1,7 +1,8 @@
 # @topik/codemod
 
-The `topik-codemod` command migrates existing documentation to Topik Markdown.
-It currently converts supported Mintlify MDX components to Topik content tags.
+The `topik-codemod` command migrates Mintlify documentation to Topik Markdown. It
+converts supported Mintlify MDX components to Topik content tags and Mintlify
+navigation to a Topik `wiki.yaml`.
 
 ## Install
 
@@ -18,27 +19,76 @@ npx topik-codemod mintlify ./docs --dry-run
 npx topik-codemod mintlify ./docs
 ```
 
-Converted `.mdx` files are renamed to `.md` unless you pass `--keep-extension`.
-Run `topik-codemod mintlify --help` for every flag, and review the result with
-`topik lint` from [`@topik/cli`](https://github.com/subtopik/topik/tree/main/packages/cli).
+Run `topik-codemod mintlify --help` for every flag.
 
-`--diff` prints a unified diff of every change and writes nothing. Only the patch
-goes to standard output, with the per-file summary on standard error, so you can
-save it with `npx topik-codemod mintlify ./docs --diff > migration.patch` and
-apply it later with `git apply migration.patch`. The patch uses git headers, so
-renames from `.mdx` to `.md` apply too, and CRLF line endings are kept.
+Review the result with `topik lint` from
+[`@topik/cli`](https://github.com/subtopik/topik/tree/main/packages/cli). It
+needs a project manifest, which the codemod does not write. Create `.topik.yaml`
+beside the `docs` directory, pointing at the generated `wiki.yaml` (see
+[Navigation](#navigation)), and run `topik lint` there:
 
-Pass a single `.md` or `.mdx` file instead of a directory to convert just that
-page. Other pages are not inspected, so they may link to it, and the file keeps
-its `.mdx` extension. Run the codemod on the directory to rename it. A file
-argument must not be a symbolic link; a directory argument may be one.
+```yaml
+version: 1
+namespace: example/documentation
+sources:
+  - kind: wiki
+    config: docs/wiki.yaml
+```
+
+The path is a directory or a single `.md` or `.mdx` file; the default is the
+current directory. In a directory, the codemod converts every `.md` and `.mdx`
+file below it, matching the extension case-insensitively. It skips `node_modules`
+and names that start with a dot. It does not follow symbolic links inside the
+directory, and reports the pages and directories they hide.
+
+### Renamed files
+
+The codemod renames `.mdx` files to `.md` and updates the links to them. Pass
+`--keep-extension` to keep the `.mdx` names.
+
+- Every file keeps its `.mdx` extension while any file is left unchanged with a
+  warning or an error, or a symbolic link is skipped, because those pages may
+  link to the renamed ones. Fix the reported files and run the codemod again to
+  rename them.
+- A file whose `.md` name is already taken is not renamed, and the codemod
+  reports an error for it.
+
+### Save the changes as a patch
+
+`--diff` prints a unified diff of every change and writes nothing. The patch goes
+to standard output and the per-file summary to standard error, so you can save
+the patch and apply it later:
+
+```sh
+npx topik-codemod mintlify ./docs --diff > migration.patch
+git apply --directory=docs migration.patch
+```
+
+Paths in the patch are relative to the directory you converted, so
+`--directory` names it when you apply the patch from its parent.
+
+The patch uses git headers, so renames from `.mdx` to `.md` apply too. It keeps
+CRLF line endings.
+
+### Convert one file
+
+Pass a `.md` or `.mdx` file to convert only that page:
+
+- The file keeps its `.mdx` extension, because the codemod does not inspect the
+  other pages, which may link to it. Run the codemod on the directory to rename
+  it.
+- The file argument must not be a symbolic link. A directory argument may be
+  one.
 
 ## Navigation
 
-When the directory contains a Mintlify `docs.json`, or a legacy `mint.json`, the
+When the directory contains a Mintlify `docs.json` or a legacy `mint.json`, the
 codemod also writes a Topik `wiki.yaml` beside it, so the directory compiles as a
-wiki. It never replaces an existing `wiki.yaml`, `wiki.yml` or `wiki.json`, and
-reads `docs.json` when both Mintlify files exist.
+wiki.
+
+- When both Mintlify files exist, the codemod reads `docs.json`.
+- The codemod never replaces a wiki configuration: when the directory already has
+  a `wiki.yaml`, `wiki.yml` or `wiki.json`, it writes nothing.
 
 | Mintlify                                        | Topik `wiki.yaml`                              |
 | ----------------------------------------------- | ---------------------------------------------- |
@@ -53,13 +103,20 @@ reads `docs.json` when both Mintlify files exist.
 | Legacy `mint.json` `navigation` groups          | `type: group` with `children`                  |
 
 Groups, tabs and dropdowns get no `slug`, so every page keeps its Mintlify path
-and route. Everything else is reported as a warning against the configuration
-and left out, including anchors, `global`, versions, languages, products, menus,
-OpenAPI entries, icons, group tags and roots, legacy `mint.json` tabs and anchors,
-page references that are not lowercase Topik paths or have no `.md` or `.mdx`
-file, and repeated routes. Mintlify levels that mix tabs or dropdowns with groups
-keep the first kind and report the rest, because Topik allows one navigation
-surface per level.
+and route.
+
+The codemod reports everything else as a warning against the configuration and
+leaves it out of `wiki.yaml`:
+
+- anchors, `global`, versions, languages, products, menus and OpenAPI entries
+- icons, group tags and roots
+- legacy `mint.json` tabs and anchors
+- page references that are not lowercase Topik paths, or that have no `.md` or
+  `.mdx` file
+- repeated routes
+
+Topik allows one navigation surface per level. Where a Mintlify level mixes tabs
+or dropdowns with groups, the codemod keeps the first kind and reports the rest.
 
 ## Supported components
 
@@ -74,15 +131,18 @@ surface per level.
 | `<CodeGroup>`                                                   | `codeGroup` and `codeTab` | Each fence becomes a code tab titled by the text after its language, such as `npm`. |
 
 Attributes can be quoted strings, literal numbers and booleans (`cols={2}`,
-`defaultOpen={false}`) or boolean shorthand (`defaultOpen`). Indented bodies,
-including those under multi-line opening tags, are dedented, and LF, CRLF and CR
-line endings are kept.
+`defaultOpen={false}`) or boolean shorthand (`defaultOpen`). The codemod dedents
+indented bodies, including those under multi-line opening tags, and keeps LF, CRLF
+and CR line endings.
 
-The codemod never guesses. It keeps a file unchanged and reports a warning for
-other components (such as `<Frame>`, `<AccordionGroup>` or `<Icon>`), dynamic
-attributes, MDX imports, exports and expressions, mismatched closing tags, and
-components inside tables, headings, lists, blockquotes or paragraph text. Files are
-matched by extension case-insensitively; symbolic links are reported and not followed.
+The codemod never guesses. It keeps a file unchanged and reports a warning when
+the file contains any of these:
+
+- other components, such as `<Frame>`, `<AccordionGroup>` or `<Icon>`
+- dynamic attributes
+- MDX imports, exports and expressions
+- mismatched closing tags
+- components inside tables, headings, lists, blockquotes or paragraph text
 
 ## Documentation
 

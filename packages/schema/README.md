@@ -1,9 +1,14 @@
 # @topik/schema
 
 JSON Schema (draft 2020-12) definitions and generated TypeScript types for Topik
-resource envelopes: `Asset`, `Course`, `CourseModule`, `CoursePage`, `Guide`,
-`Person`, `Wiki`, and `WikiPage`, plus a `Resource` union of all of them. Each
-resource has `apiVersion`, `type`, `name`, and a kind-specific `spec`.
+resource envelopes. A resource envelope is the object that carries one compiled
+resource: it has `apiVersion`, `type`, `name`, and a `spec` whose shape depends on
+the `type`. Use this package to validate resources and to type them in
+TypeScript.
+
+There is one schema for each resource type, `Asset`, `Course`, `CourseModule`,
+`CoursePage`, `Guide`, `Person`, `Wiki`, and `WikiPage`, and a `Resource` union of
+all of them.
 
 ## Install
 
@@ -13,10 +18,13 @@ npm install @topik/schema
 
 ## Usage
 
-Each schema is published as `@topik/schema/<resource>/v1.json`, with types at
-`@topik/schema/<resource>/v1`. Validate with any draft 2020-12 validator that
-supports the `email` and `uri` formats. With Ajv, whose default strict mode rejects
-unknown formats, register them with `ajv-formats`:
+Each schema is published as `@topik/schema/<resource>/v1.json`, with its types at
+`@topik/schema/<resource>/v1`. `<resource>` is the type name in lowercase with
+hyphens, such as `guide` or `course-module`.
+
+Validate with any draft 2020-12 validator that supports the `email` and `uri`
+formats. Ajv rejects unknown formats in its default strict mode, so register them
+with `ajv-formats`:
 
 ```ts
 import Ajv2020 from "ajv/dist/2020.js";
@@ -45,9 +53,11 @@ if (!validate(guide)) throw new Error(JSON.stringify(validate.errors));
 
 `@topik/schema/resource/v1.json` accepts any v1 resource envelope, and
 `@topik/schema/resource/v1` exports the matching `Resource` union type. The
-envelope's `type` selects the resource schema, and an unknown `type` fails at
-`/type` with the supported values. The union references the resource schemas by
-`$id` instead of copying them, so add them to the validator before compiling it:
+envelope's `type` selects the resource schema. An unknown `type` fails at `/type`
+with the supported values.
+
+The union schema refers to each resource schema by `$id` and does not contain it,
+so add the resource schemas to the validator before you compile the union:
 
 ```ts
 import Ajv2020 from "ajv/dist/2020.js";

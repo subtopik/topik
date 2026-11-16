@@ -7,6 +7,8 @@ description: Declare link intent, validate destinations, and preserve references
 
 Topik creates links only from explicit Markdown syntax. A URL or email address
 written as ordinary text stays text through parsing, formatting, and rendering.
+This page is for authors who write links and for integrations that import, edit
+or export Topik Markdown.
 
 ## Choose the link syntax
 
@@ -22,41 +24,53 @@ written as ordinary text stays text through parsing, formatting, and rendering.
 | `[Example][site]` and a `[site]: ...` definition | A reference link.                      |
 
 Angle-bracket links are CommonMark autolinks. Topik does not enable GFM literal
-autolinks or infer links from plain addresses. Code remains literal.
+autolinks and does not infer links from plain addresses. An address inside code
+is literal.
 
-Formatting keeps the form the author chose: `<https://example.com>` stays an
-autolink and `[https://example.com](https://example.com)` stays a link with a
-label. A link whose label was edited, or a tree built without parser positions,
-is written as `[label](destination)`.
+A plain address is ordinary text, so Markdown syntax inside it applies:
+`https://example.com/a*b*c` contains an emphasized `b`. Write
+`<https://example.com/a*b*c>` or `[Example](https://example.com/a*b*c)` to make
+the complete address a destination.
 
-Markdown still applies to plain text: `https://example.com/a*b*c` contains
-emphasized `b`. Write `<https://example.com/a*b*c>` or
-`[Example](https://example.com/a*b*c)` to make the complete address a destination.
+Formatting keeps the form the author chose:
+
+- `<https://example.com>` stays an autolink.
+- `[https://example.com](https://example.com)` stays a link with a label.
+- A link whose label was edited, or a link in a tree built without parser
+  positions, is written as `[label](destination)`.
 
 ## Destination admission
 
-Link syntax and destination validity are separate checks. Parsing retains the
-complete destination; `validateTopikContent` and `compileTopikContent` apply the
-URL policy before publishing or rendering.
+A link destination can be a credential-free HTTPS URL, a `mailto:` or `tel:`
+address, a local page path, or a heading fragment.
 
-Ordinary content links support credential-free HTTPS, `mailto:`, `tel:`, local
-page paths, and heading fragments. The link policy (`validateTopikHref`) refuses
-script URLs, protocol-relative URLs, and credential-bearing URLs; it does not
-refuse `http:` URLs. Source admission also checks every Markdown link, autolink,
-reference definition, and image destination as a possible asset reference, and
-that check accepts external URLs only over credential-free HTTPS. An `http:`
-destination is therefore refused with `TOPIK_EXTERNAL_REFERENCE_UNSAFE`, not a
-link policy error. The text `http://example.com` is still valid plain text.
+Link syntax and destination validity are separate checks. Parsing keeps the
+complete destination, whatever it is. `validateTopikContent` and
+`compileTopikContent` apply the URL policy before publishing or rendering.
+
+Two checks apply:
+
+| Check                             | Applies to                                                                 | Refuses                                                          |
+| --------------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Link policy (`validateTopikHref`) | Link destinations                                                          | Script URLs, protocol-relative URLs, and credential-bearing URLs |
+| Asset reference check             | Every Markdown link, autolink, reference definition, and image destination | External URLs that are not credential-free HTTPS                 |
+
+The link policy alone does not refuse `http:` URLs. The asset reference check
+does, so source admission refuses an `http:` destination with
+`TOPIK_EXTERNAL_REFERENCE_UNSAFE`, not with a link policy error. The plain text
+`http://example.com` is valid, because it is not a destination.
 
 Images and downloadable files also follow the [asset rules](../resources/assets.md).
-Authors use local paths or HTTPS. The reserved `asset:` scheme identifies
-compiler-generated resources: normal source admission refuses it unless
-`allowCompiledAssetReferences` is enabled. Reader compilation accepts canonical
-compiled references and the renderer resolves them through the application's
-asset resolver.
+Authors use local paths or HTTPS.
 
-The wiki compiler additionally checks internal page targets and heading
-fragments. See [Navigation](../resources/navigation.md#links-between-pages) for
+The `asset:` scheme is reserved for compiler-generated resources:
+
+- Source admission refuses it unless `allowCompiledAssetReferences` is enabled.
+- Reader compilation accepts canonical compiled references.
+- The renderer resolves them through the application's asset resolver.
+
+The wiki compiler also checks internal page targets and heading fragments. See
+[Navigation](../resources/navigation.md#links-between-pages) for
 source-relative links and route resolution.
 
 ## Reference links
@@ -67,28 +81,39 @@ Read the [installation guide][setup].
 [setup]: https://example.com/setup
 ```
 
-The first definition of a label in a scope wins, even if it follows the reference.
-Lists, blockquotes, and ordinary components share the document's reference scope.
-Each conditional branch introduces a separate scope.
+A reference link names a label, and a definition elsewhere supplies the
+destination. A definition may follow the references that use it.
 
-A reference looks in its own branch, then enclosing branches, then the document.
-Definitions in sibling or descendant branches are invisible. Put a definition
-outside a conditional when both branches should share it.
+Scopes decide which definition a reference uses:
 
-Formatting retains authored references and their bindings. Evaluation resolves
-references before removing branches and emits inline destinations in the derived
-document. A missing Markdown definition normally leaves literal text; manually
-constructed reference nodes with no matching definition are refused.
+- Lists, blockquotes, and ordinary components share the document's scope.
+- Each conditional branch is a separate scope.
+- A reference looks in its own branch, then in enclosing branches, then in the
+  document. It cannot see definitions in sibling or descendant branches.
+- The first definition of a label in a scope wins, even if it follows the
+  reference.
+
+Put a definition outside a conditional when both branches should share it.
+
+Formatting keeps authored references and their bindings. Evaluation resolves
+each reference before it removes branches, and writes inline destinations in the
+derived document.
+
+A reference without a definition is literal text in Markdown source. A reference
+node that an application constructs with no matching definition is refused.
 
 ## Editing and synchronization
 
-An editor can turn a pasted address into a link, but it must export that decision
-as explicit Markdown syntax. Importing Markdown must preserve the author's
-text/link distinction. Removing a link must leave text that stays unlinked after
-export and import.
+An editor or synchronization integration must keep the author's distinction
+between text and links:
 
-A stable parse/write/parse cycle proves preservation, but does not prove that the
-first parse interpreted the author's intent correctly. Integrations should also
-check whether the imported node is text, an inline link, or a reference link.
-See [Content format](./content-design.md#validate-and-format-source) for formatting
-and failure handling.
+- An editor can turn a pasted address into a link, but it must export that
+  decision as explicit Markdown syntax.
+- Importing Markdown must preserve which addresses are text and which are links.
+- Removing a link must leave text that stays unlinked after export and import.
+
+A stable parse/write/parse cycle proves preservation. It does not prove that the
+first parse interpreted the author's intent correctly, so an integration should
+also check whether the imported node is text, an inline link, or a reference
+link. See [Content format](./content-design.md#validate-and-format-source) for
+formatting and failure handling.

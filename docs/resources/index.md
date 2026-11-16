@@ -5,6 +5,11 @@ description: Compile authored files into typed resources and validate the genera
 
 # Resources
 
+This page explains what a resource is, how to compile source files into
+resources with the CLI or the library, how to validate the result, and which
+file safety rules apply to the files the compiler reads. Read it when you set up
+a Topik project or consume its compiled output.
+
 A resource describes a piece of content independently of the application that
 stores or displays it. Every resource has `apiVersion`, `type`, `name`, and a
 kind-specific `spec`.
@@ -28,8 +33,9 @@ schemas and TypeScript types; `@topik/core` validates resource envelopes.
 
 ## Source files and compiled resources
 
-Authors work with Markdown, local configurations, and a [project manifest](./manifest.md). The compiler
-produces resources from those files:
+Authors work with Markdown, local configurations, and a
+[project manifest](./manifest.md). The compiler produces resources from those
+files:
 
 | Source                                    | Output                                                     |
 | ----------------------------------------- | ---------------------------------------------------------- |
@@ -38,14 +44,19 @@ produces resources from those files:
 | `course.yaml` and declared module pages   | A `Course`, its `CourseModule` and `CoursePage` resources. |
 | Supported local images and downloads      | Generated `Asset` resources and payloads.                  |
 
-Configuration can also use `.yml` or `.json`. Markdown inputs may use `.md` or
-`.mdx`; the latter extension does not enable executable MDX. Wikis read pages
-listed in navigation, including nested paths. Guide collections read Markdown
-files directly in their compilation directory, without recursive discovery.
+Each source kind finds its Markdown differently:
+
+- A wiki reads the pages listed in its navigation, including nested paths.
+- A guide collection reads the Markdown files directly in its directory. It
+  does not search subdirectories.
+- A course reads the Markdown paths declared in its module hierarchy. It does
+  not discover files by directory.
+
+Configuration files can use `.yaml`, `.yml` or `.json`. Markdown inputs can use
+`.md` or `.mdx`; the `.mdx` extension does not enable executable MDX.
 
 Versioned collections and Courses can declare Person records and author
-references in their configuration. Courses use an explicit module hierarchy and
-declared Markdown paths rather than directory discovery. See [Source writing](./source-writing.md)
+references in their configuration. See [Source writing](./source-writing.md)
 for Course source layout, versioned metadata and reviewed project edits.
 
 ## Compile a wiki
@@ -87,80 +98,12 @@ npx topik compile ./handbook --validate
 npx topik validate ./handbook/.topik
 ```
 
-`npx topik init ./handbook` writes exactly these three files (pass `--namespace`
-for another project namespace) and refuses to overwrite any existing file.
-`npx topik format ./handbook` rewrites the Markdown in the canonical form; with
-`--check` it only lists the files that would change.
+Two commands help with the source files:
 
-`--validate` checks the generated resource envelopes. `topik validate` accepts
-resource files or directories containing JSON, JSONL, or YAML, and reports each
-failing file, resource, and JSON pointer. When walking a directory it skips
-`node_modules` and dot-directories, unless one is the path you pass. Given a
-compilation output directory, it validates the envelopes under `resources/` and
-skips the `materialization.json` and `semantic.json` inventories.
-
-By default `topik validate` checks each resource against its schema on its own.
-Two opt-in flags add more checks, and both can be combined:
-
-- `--graph` checks the loaded resources as one complete set. Each `type/name`
-  must be unique, and each by-name reference must name a resource in the set:
-  a Wiki navigation `page` entry to its `WikiPage`, a `WikiPage` `spec.wiki` to
-  its `Wiki`, a `CourseModule` `spec.course` to its `Course`, a `CoursePage`
-  `spec.module` to its `CourseModule`, and each `spec.authors` entry of a
-  `Course`, `CoursePage` or `Guide` to a `Person`. Use it on a whole compilation
-  output; a directory that holds only part of a project reports every reference
-  to a resource it leaves out.
-- `--content` checks the `spec.content.value` of each `CoursePage`, `Guide` and
-  `WikiPage` whose content format is `topik`, with the same source checks that
-  compilation applies, and reports each content error with its line.
-
-These problems are reported like schema errors, with the file, resource and
-JSON pointer, and make the command exit with status 1.
-
-`--json` prints one JSON document on stdout instead of the human-readable
-report. The exit status is unchanged: 0 when everything is valid, 1 otherwise,
-with a one-line summary on stderr. The document has this shape (version 1):
-
-```json
-{
-  "version": 1,
-  "valid": false,
-  "resources": 2,
-  "checks": ["schema", "graph"],
-  "diagnostics": [
-    {
-      "check": "graph",
-      "id": "reference-unresolved",
-      "file": "resources/CoursePage/welcome.json",
-      "resource": "CoursePage/welcome",
-      "pointer": "/spec/authors/0",
-      "message": "must reference a Person in the resource set; Person/alice is missing"
-    }
-  ]
-}
-```
-
-`resources` counts the resources that were loaded and validated, and `checks`
-lists the checks that ran. Every diagnostic has all six fields. `check` is
-`read` for a file or target that could not be read or parsed (its `resource`
-and `pointer` are `null`, and `file` is `null` when the target itself failed),
-or `schema`, `graph` or `content`. `id` is a stable identifier such as
-`resource-invalid`, `resource-duplicate`, `reference-unresolved`,
-`content-invalid` or `resource-json-invalid`, or `null` when there is none.
-Files, resource labels, pointers and messages are reduced to the same safe
-labels as the human-readable report.
-
-Compilation validates source and unresolved internal wiki links by default.
-`--dry-run` lists output paths without writing files; `--out-dir` chooses a
-separate output directory, which may already exist if it is empty. A non-empty
-directory is replaced only when it holds a previous compilation. Published
-directories are mode `0755` and files `0644`, so another user, such as a web
-server, can read them. `topik compile`, `topik lint`, `topik format`, `topik dev`
-and `topik validate` run on Linux, macOS and Windows. Off Linux, project files are
-read and output is published with the weaker
-[portable file safety](#source-filesystem-safety), and the CLI prints one notice
-saying so; pass `--file-safety anchored` to refuse instead, which exits with a
-message naming the Linux requirement.
+- `npx topik init ./handbook` writes exactly these three files and refuses to
+  overwrite any existing file. Pass `--namespace` for another project namespace.
+- `npx topik format ./handbook` rewrites the Markdown in the canonical form.
+  With `--check` it only lists the files that would change.
 
 Use [Navigation](./navigation.md) to add folders, groups, page links, and routes.
 If the source includes local assets, see [Assets](./assets.md) for project
@@ -185,10 +128,13 @@ sources:
     config: collection.yaml
 ```
 
-Run `topik compile` on the manifest directory. Each filename supplies a guide slug; the resource name combines
-the collection ID and slug. A frontmatter `title` overrides the first heading as
-the displayed title. The compiler can process a wiki and collection together
-when both configurations are listed in the manifest.
+Run `topik compile` on the manifest directory. Each Markdown file becomes one
+Guide:
+
+- The filename supplies the guide slug.
+- The resource name combines the collection ID and the slug.
+- The displayed title is the first heading, unless a frontmatter `title`
+  overrides it.
 
 Filename-derived slugs must use lowercase letters, digits and single hyphens,
 such as `getting-started.md`, and the collection ID, a hyphen and the slug must
@@ -197,12 +143,128 @@ file, unless `sourceVersion: 1` frontmatter supplies both `id` and `slug`. Two
 files that produce the same Guide identity, such as `intro.md` and `intro.mdx`,
 fail with `guide-duplicate`, which names both files.
 
-Markdown inputs must be valid UTF-8; invalid bytes fail with
-`document-encoding-invalid` at that file rather than being replaced. Unknown
-configuration keys are retained for source tools, but a top-level key that looks
-like a misspelling of a known key, such as `navigaton` or `Title`, fails with
-`config-field-unknown`. Configuration and frontmatter failures report the
-offending field, such as `navigation[2].title`, when one can be identified.
+## Multi-source projects
+
+The [project manifest](./manifest.md) can list several Wiki and collection
+configurations, and the compiler processes them together. Each local
+configuration keeps its own settings and relative content paths.
+
+## Compilation options and output
+
+Compilation validates source and unresolved internal wiki links by default.
+`topik compile` accepts these options:
+
+| Option                   | Effect                                                                                                       |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `--validate`             | Also checks the generated resource envelopes against their schemas.                                          |
+| `--dry-run`              | Lists output paths without writing files.                                                                    |
+| `--out-dir <dir>`        | Writes the output to a separate directory.                                                                   |
+| `--links <policy>`       | Sets how unresolved wiki links and local guide fragments are handled: `error` (default), `warning` or `off`. |
+| `--file-safety anchored` | Refuses to run where anchored file access is unavailable (see below).                                        |
+
+An `--out-dir` directory may already exist if it is empty. The CLI replaces a
+non-empty directory only when it holds a previous compilation. Published
+directories have mode `0755` and files `0644`, so another user, such as a web
+server, can read them. [Compiled output](./assets.md#compiled-output) describes
+the output tree.
+
+`topik compile`, `topik lint`, `topik format`, `topik dev` and `topik validate`
+run on Linux, macOS and Windows. Off Linux, the CLI reads project files and
+publishes output with the weaker
+[portable file safety](#source-filesystem-safety) and prints one notice saying
+so. Pass `--file-safety anchored` to refuse instead; the CLI then exits with a
+message naming the Linux requirement.
+
+### Source errors
+
+- Markdown inputs must be valid UTF-8. Invalid bytes fail with
+  `document-encoding-invalid` at that file; the compiler does not replace them.
+- Unknown configuration keys are retained for source tools. A top-level key that
+  looks like a misspelling of a known key, such as `navigaton` or `Title`, fails
+  with `config-field-unknown`.
+- Configuration and frontmatter failures report the offending field, such as
+  `navigation[2].title`, when one can be identified.
+
+## Validate resources
+
+`topik compile --validate` checks the resource envelopes it generates.
+`topik validate` checks resources that already exist:
+
+```sh
+npx topik validate ./handbook/.topik
+```
+
+It accepts resource files or directories containing JSON, JSONL, or YAML, and
+reports each failing file, resource, and JSON pointer.
+
+- When walking a directory it skips `node_modules` and dot-directories, unless
+  one is the path you pass.
+- Given a compilation output directory, it validates the envelopes under
+  `resources/` and skips the `materialization.json` and `semantic.json`
+  inventories.
+
+### Graph and content checks
+
+By default `topik validate` checks each resource against its schema on its own.
+Two opt-in flags add more checks, and both can be combined:
+
+- `--graph` checks the loaded resources as one complete set. Each `type/name`
+  must be unique, and each by-name reference in the table below must name a
+  resource in the set. Use it on a whole compilation output; a directory that
+  holds only part of a project reports every reference to a resource it leaves
+  out.
+- `--content` checks the `spec.content.value` of each `CoursePage`, `Guide` and
+  `WikiPage` whose content format is `topik`, with the same source checks that
+  compilation applies, and reports each content error with its line.
+
+| Reference checked by `--graph`                                | Must name          |
+| ------------------------------------------------------------- | ------------------ |
+| A Wiki navigation `page` entry                                | Its `WikiPage`     |
+| A `WikiPage` `spec.wiki`                                      | Its `Wiki`         |
+| A `CourseModule` `spec.course`                                | Its `Course`       |
+| A `CoursePage` `spec.module`                                  | Its `CourseModule` |
+| A `spec.authors` entry of a `Course`, `CoursePage` or `Guide` | A `Person`         |
+
+These problems are reported like schema errors, with the file, resource and
+JSON pointer, and make the command exit with status 1.
+
+### JSON report
+
+`--json` prints one JSON document on stdout in place of the human-readable
+report. The exit status is the same in both modes: 0 when everything is valid,
+1 otherwise, with a one-line summary on stderr. The document has this shape
+(version 1):
+
+```json
+{
+  "version": 1,
+  "valid": false,
+  "resources": 2,
+  "checks": ["schema", "graph"],
+  "diagnostics": [
+    {
+      "check": "graph",
+      "id": "reference-unresolved",
+      "file": "resources/CoursePage/welcome.json",
+      "resource": "CoursePage/welcome",
+      "pointer": "/spec/authors/0",
+      "message": "must reference a Person in the resource set; Person/alice is missing"
+    }
+  ]
+}
+```
+
+`resources` counts the resources that were loaded and validated, and `checks`
+lists the checks that ran. Every diagnostic has all six fields:
+
+- `check` is `schema`, `graph` or `content`, or `read` for a file or target
+  that could not be read or parsed. For `read`, `resource` and `pointer` are
+  `null`, and `file` is `null` when the target itself failed.
+- `id` is a stable identifier such as `resource-invalid`, `resource-duplicate`,
+  `reference-unresolved`, `content-invalid` or `resource-json-invalid`, or
+  `null` when there is none.
+- `file`, `resource`, `pointer` and `message` are reduced to the same safe
+  labels as the human-readable report.
 
 ## Use the compiler as a library
 
@@ -215,74 +277,106 @@ if (!validation.valid) throw new Error(JSON.stringify(validation.errors));
 console.log(result.resources.map((resource) => `${resource.type}/${resource.name}`));
 ```
 
-Use `compileGuides` for a standalone collection or `compile` for the sources
-declared in `.topik.yaml`. Only explicit standalone operations omit the manifest. The result contains resources, asset payloads, diagnostics, and
-the semantic and materialization inventories. The library returns these in
-memory; the CLI writes the complete output tree.
+Choose the entry point by what you compile:
 
-`validateResources` checks resource envelopes, not every filesystem byte or every
-possible application relationship. `validateResourceGraph(resources)` adds the
-`--graph` checks for a complete set; each of its errors also carries the `index`
-of its resource in the list. `validateResourceContent(resources)` adds the
-`--content` checks. Both return errors in the same shape as `validateResources`. Keep the generated inventories and payloads
-with the resources when transferring a compilation. [Assets](./assets.md#compiled-output)
-explains that output boundary.
+| Function        | Compiles                              | Reads `.topik.yaml` |
+| --------------- | ------------------------------------- | ------------------- |
+| `compile`       | The sources declared in the manifest. | Yes                 |
+| `compileWiki`   | One standalone wiki.                  | No                  |
+| `compileGuides` | One standalone guide collection.      | No                  |
 
-### Source filesystem safety
+The result contains resources, asset payloads, diagnostics, and the semantic
+and materialization inventories. The library returns these in memory; the CLI
+writes the complete output tree.
+
+Three functions validate resources. All return errors in the same shape:
+
+- `validateResources(resources)` checks resource envelopes. It does not check
+  every filesystem byte or every possible application relationship.
+- `validateResourceGraph(resources)` adds the `--graph` checks for a complete
+  set. Each of its errors also carries the `index` of its resource in the list.
+- `validateResourceContent(resources)` adds the `--content` checks.
+
+Keep the generated inventories and payloads with the resources when
+transferring a compilation. [Assets](./assets.md#compiled-output) explains that
+output boundary.
+
+## Source filesystem safety
+
+The compiler reads only regular files inside the source directory. How firmly
+it can enforce that depends on the platform, and compilation is never a
+security boundary against another process that can modify the source tree or
+its ancestors. Compile from a trusted workspace.
+
+### Rules for source files
 
 Markdown inputs and conventionally discovered Wiki and Guide collection
-configurations must stay within their source directory and be regular files. The compiler checks both
-lexical and resolved paths, rejects symlinked source entries, and validates and
-reads each file through the same handle.
+configurations must be regular files that stay within their source directory.
+The compiler checks both the lexical and the resolved path, and reads the same
+file it checked.
 
-Canonical aliases above the source directory, such as macOS's `/var` path or a
-symlinked `/home`, are accepted on every platform; the source directory itself and
-everything below it must not be symlinks. A name the volume stores in another
-Unicode normalization form (for example decomposed on macOS HFS+) is accepted;
-a name that differs in case is not. A dangling symlink, or a file removed
-while the directory is read, is reported like any other non-regular entry.
-
-On Linux, these reads also open every component of the canonical path through
-held directory descriptors with no-follow flags. This prevents a directory
-replaced with a symlink during traversal from redirecting the read. Linux
-requires accessible `/proc/self/fd`; if descriptor traversal is unavailable,
-compilation fails with `file-safe-read-unsupported` instead of falling back to
-pathname reads.
-
-On macOS, Windows, and other non-Linux systems, the compiler uses portable
-pathname checks and verifies the opened file's identity. These checks
-reject ordinary traversal and static symlink escapes, but cannot guarantee
-containment against malicious concurrent filesystem mutation. Compile from a
-trusted workspace; compilation is not a security boundary against another
-process that can modify the source tree or its ancestors. Linux's stronger
-traversal also does not provide an immutable snapshot of file contents.
+| Case                                                                                       | Result                                     |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------ |
+| The source directory, or anything below it, is a symlink                                   | Rejected.                                  |
+| A symlink above the source directory, such as macOS's `/var` path or a symlinked `/home`   | Accepted on every platform.                |
+| A name the volume stores in another Unicode normalization form, such as decomposed on HFS+ | Accepted.                                  |
+| A name that differs in case                                                                | Rejected.                                  |
+| A dangling symlink, or a file removed while the directory is read                          | Reported like any other non-regular entry. |
 
 [Manifest and explicitly selected configuration files](./manifest.md), Course
-configurations, and
-[local assets](./assets.md#file-and-output-constraints) retain their separate,
-stricter file rules and the
-[Git checkout rules](./manifest.md#inside-a-git-checkout). On Linux they use the
-same descriptor-anchored traversal. Elsewhere they use the same portable mode
-when file safety is `portable` (the default, `DEFAULT_FILE_SAFETY`): each path
-component at and below the source directory is inspected without following
-links, the opened handle must be the inspected file, the resolved path must equal
-the lexical one, and the whole path is inspected again after the read. The same
-limitation applies: this is not containment against a process concurrently
-mutating the source tree. Two checks are dropped on Windows because its file
-metadata cannot support them: executable permission bits (Node synthesizes mode
-bits there) and the sparse-file check (NTFS reports no allocation for small files
-stored in the file table). With file safety `anchored` (`compile`, `lint` and
-`watch` option `fileSafety`, CLI `--file-safety anchored`), these reads fail with
-reason `platform-unsupported` off Linux. Link resolution works in both modes: an
-extensionless link such as `[Next](./next)` resolves to a declared page when no
-file named `next` exists.
+configurations, and [local assets](./assets.md#file-and-output-constraints)
+have separate, stricter file rules and the
+[Git checkout rules](./manifest.md#inside-a-git-checkout).
 
-Off Linux, `topik compile --out-dir` publishes in the same portable mode: it stages
-the complete generation in a sibling temporary directory, verifies it, proves an
-existing output is a previous compilation, and renames it into place, refusing a
-symlinked or foreign target. Linux keeps its descriptor-anchored publication.
-The Astro integration writes its `blobs/` build output through the same code.
+### Anchored and portable reads
 
-## Multi-source projects
+On Linux the compiler makes **anchored reads**. It opens every component of the
+canonical path through held directory descriptors without following links, so a
+directory replaced with a symlink during the read cannot redirect it. Anchored
+reads require an accessible `/proc/self/fd`. If it is unavailable, compilation
+fails with `file-safe-read-unsupported`; the compiler does not fall back to
+pathname reads. Anchored reads do not provide an immutable snapshot of file
+contents.
 
-The [project manifest](./manifest.md) can select multiple existing Wiki and collection configurations. Each local configuration keeps its own settings and relative content paths.
+On macOS, Windows and other non-Linux systems the compiler makes **portable
+reads**. It checks pathnames and verifies the identity of the opened file.
+Portable reads reject ordinary traversal and static symlink escapes, but cannot
+guarantee containment against a process that mutates the source tree
+concurrently.
+
+For manifests, selected configurations, Course configurations and local assets,
+a portable read:
+
+- inspects each path component at and below the source directory without
+  following links;
+- requires the opened handle to be the inspected file;
+- requires the resolved path to equal the lexical one;
+- inspects the whole path again after the read.
+
+On Windows, two checks do not run because its file metadata cannot support
+them: the executable permission bits (Node synthesizes mode bits there) and the
+sparse-file check (NTFS reports no allocation for small files stored in the
+file table).
+
+### Refuse portable reads
+
+The file safety setting decides whether the weaker portable reads are
+acceptable. Set it with the `fileSafety` option of `compile`, `lint` and
+`watch`, or with `--file-safety` on the CLI. It has no effect on Linux.
+
+| File safety                                 | Off Linux                                                                                                                       |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `portable` (default, `DEFAULT_FILE_SAFETY`) | Portable reads.                                                                                                                 |
+| `anchored`                                  | Reads of the manifest, selected configurations, Course configurations and local assets fail with reason `platform-unsupported`. |
+
+Link resolution is the same in both modes: an extensionless link such as
+`[Next](./next)` resolves to a declared page when no file named `next` exists.
+
+### Publishing output
+
+`topik compile --out-dir` publishes with the same platform split. On Linux,
+publication is descriptor-anchored. On other platforms it is portable: the CLI
+stages the complete generation in a sibling temporary directory, verifies it,
+proves that an existing output is a previous compilation, and renames the new
+generation into place. It refuses a symlinked or foreign target. The Astro
+integration writes its `blobs/` build output through the same code.

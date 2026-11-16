@@ -5,7 +5,14 @@ description: Label, number, select, fold, wrap and compare fenced code without c
 
 # Code presentation
 
-Add presentation options after the language on an ordinary fenced code block:
+Presentation options control how a fenced code block is displayed: labels, line
+numbers, highlighted and folded rows, wrapping and diff marks. They never change
+the code itself or what readers copy. This page is for authors who write code
+examples and for developers who render or store them.
+
+## Add presentation options
+
+Write options after the language on an ordinary fenced code block:
 
 ````markdown
 ```ts filename="client.ts" lines highlight="2" added="3" collapse="3"
@@ -15,12 +22,16 @@ const client = makeClient(endpoint);
 ```
 ````
 
-This displays a filename and line numbers, highlights row 2, marks row 3 as added,
-and initially folds row 3. Each fence has its own options, including several
-fences in a `codeTab`. Options work with backtick or tilde fences wherever code
-blocks are allowed: the root, lists, blockquotes, block components and conditional
-branches. Unknown or missing text languages display plain code. Mermaid diagrams
-cannot use text-code presentation options.
+This block displays a filename and line numbers, highlights row 2, marks row 3
+as added, and initially folds row 3.
+
+Options work on backtick and tilde fences wherever code blocks are allowed: the
+document root, lists, blockquotes, block components and conditional branches.
+Each fence has its own options, including each of several fences in a `codeTab`.
+A block with an unknown or missing language displays plain code. Mermaid fences
+render as diagrams and cannot use presentation options.
+
+## Options
 
 | Option               | Example                                        | Reader behavior                                                            |
 | -------------------- | ---------------------------------------------- | -------------------------------------------------------------------------- |
@@ -32,24 +43,43 @@ cannot use text-code presentation options.
 | `wrap`               | `wrap` or `wrap=false`                         | Initial visual wrapping; default false. An accessible toggle changes it.   |
 | `added`, `removed`   | `added="3" removed="4"`                        | Disjoint row selections with visible and accessible diff meaning.          |
 
-Use bare flags for true booleans, or explicit `=true` / `=false`. String values can
-be double-quoted, single-quoted or unquoted when they contain no spaces. Recognized
-options must come first; any remaining unknown metadata is preserved as an opaque
-suffix. Metadata beginning with an unknown word remains ordinary code metadata.
-Duplicate options and malformed recognized values are errors.
+### Write option values
 
-Selections count physical code rows from **1**, independently of `startLine`.
-Use positive rows or closed ranges separated by commas, such as `"1,3-5"`.
-Intervals normalize to sorted, merged pairs. Spaces, zero, descending or open
-ranges, signs and decimals are invalid. Every endpoint must fit the physical rows.
+- Write a true boolean as a bare flag (`lines`) or as `=true`; write `=false` to
+  turn it off.
+- Quote string values with double or single quotes. A value without spaces can
+  be unquoted.
+- Recognized options must come first. Topik keeps any remaining metadata after
+  them unchanged as an opaque suffix.
+- Metadata that begins with an unknown word is ordinary code metadata, not
+  presentation options.
+- A duplicate option or a malformed value for a recognized option is an error.
 
-`collapse` uses the same selection notation as `highlight` and `focus`. It can fold
-a prefix, suffix, multiple middle sections, one row or the whole block. Adjacent
-and overlapping intervals merge, and each normalized interval has its own inline
-control. Expanding one interval leaves the others folded.
+Quoted values are read from the raw fence header and then decoded once as
+ordinary Markdown text. For example, `title="A &amp; B"` means `A & B`. To show
+entity-looking text literally, write `title="A &#38;amp; B"`, which means
+`A &amp; B`.
 
-For example, keep method signatures and closing braces visible while folding two
-method bodies:
+## Select rows
+
+`highlight`, `focus`, `collapse`, `added` and `removed` take a row selection:
+positive row numbers or closed ranges, separated by commas, such as `"1,3-5"`.
+
+- Rows are physical code rows counted from **1**. `startLine` changes only the
+  displayed numbers, not which rows a selection names.
+- Every endpoint must be within the block's physical rows.
+- Spaces, zero, descending or open ranges, signs and decimals are invalid.
+- Topik sorts the intervals and merges adjacent and overlapping ones.
+- `added` and `removed` must not select the same row.
+
+### Fold rows
+
+`collapse` can fold a prefix, a suffix, several middle sections, one row or the
+whole block. Each merged interval has its own inline control, and expanding one
+interval leaves the others folded.
+
+This example keeps the method signatures and closing braces visible and folds
+the two method bodies:
 
 ````markdown
 ```java filename="Client.java" lines collapse="3-4,8-9"
@@ -67,58 +97,44 @@ class Client {
 ```
 ````
 
-Labels are nonblank single-line strings of at most 256 UTF-16 units without
-controls. Admission allows at most 1,024 input intervals per selection, 16,384
-UTF-16 units of active attributes and 20,000 presented rows. A conservative
-document-wide reservation bounds escaped text and row decorations to 8,000,000
-units before allocation, alongside existing source, tree and data limits.
+## Copying
 
-## Payload, copying and accessible controls
+The copy button always writes **the complete code**. That includes added and
+removed rows, `+` and `-` characters written in the source, whitespace and a
+final LF. It excludes line numbers and diff markers, and it never reads DOM text
+or highlighted HTML. Folding, focus, wrapping and highlighting do not change
+what is copied. Empty code copies one LF.
 
-The authoring `value` uses Markdown code semantics: container indentation is
-stripped and CR/CRLF normalize to LF, while tabs, internal indentation, trailing
-spaces and authored blank rows are preserved. Physical rows are
-`value.split("\n")`; an empty value has one row. A value ending in LF includes its
-authored final empty row. The reader keeps separate `payload = value` and
-`content = value + "\n"`. This extra separator LF creates no selectable row.
+The code value follows Markdown code rules:
 
-Copy always writes **the complete `content`**, including added and removed rows,
-source-authored `+`/`−` characters, whitespace and the terminal LF. It excludes UI
-numbers and diff markers and never reads DOM text or highlighted HTML. Folding,
-focus, wrapping and highlighting cannot change copied content. Empty code copies
-one LF.
+- Container indentation is removed, and CR and CRLF line endings become LF.
+- Tabs, internal indentation, trailing spaces and blank rows are preserved.
+- Physical rows are `value.split("\n")`. An empty value has one row, and a value
+  ending in LF has a final empty row.
 
-Plain and rich renderers share rows/options. Shiki receives payload, with exact
-token-row fidelity checks; unavailable/unknown highlighting or errors retain
-readable plain code. Native buttons provide keyboard activation, accessible
-wrap/expand state and visible focus. Each fold control stays available when its
-rows are hidden and can expand or collapse that interval independently. Diff
-markers and row meanings supplement color. Server-rendered content and readers
-without JavaScript display every row; controls are disabled before hydration.
+Code block renderers receive two strings: `payload`, equal to the value, and
+`content`, equal to the value plus one LF. `content` is what readers copy; its
+extra LF does not create a row.
 
-## Formatting and source preservation
+## Display and accessibility
 
-The parser reads quoted attributes from the raw header before applying ordinary
-single-pass Markdown decoding to their values. For example, `title="A &amp; B"`
-means `A & B`. Literal entity-looking text can be authored as
-`title="A &#38;amp; B"`, which means `A &amp; B`.
+The plain and rich renderers display the same rows and options.
 
-Internally, `topikCodePresentation` holds one code or code-template child,
-normalized explicit `options`, and an `opaqueMetaSuffix` including its separating
-spaces/tabs. Authored `lines` maps to internal `lineNumbers`; reader defaults are
-derived rather than saved. Formatting emits readable attributes in a fixed order,
-quotes strings and ranges, and uses character references where needed to preserve
-quotes, ampersands, backslashes and backticks. Output is reparsed and checked for
-semantic equality, including explicit option presence and every authored branch.
+- Rich rendering passes `payload` to Shiki and checks that the highlighted
+  tokens reproduce every row exactly. If highlighting is unavailable, the
+  language is unknown, or a check fails, the block shows readable plain code.
+- The wrap, copy and fold controls are native buttons with keyboard activation,
+  accessible wrap and expanded state, and visible focus.
+- A fold control stays available while its rows are hidden, and expands or
+  collapses only its own interval.
+- Diff markers and row meanings do not rely on color alone.
+- Server-rendered content, and readers without JavaScript, show every row. The
+  controls are disabled until the page hydrates.
 
-Store unevaluated Markdown as the editable source. Highlighted tokens, UI gutters
-and fold/wrap state never become saved revisions. Labels create no inferred Asset
-references or new resource fields/protocols. Metadata edits preserve the code
-payload, suffix meaning, dependencies and complementary source bytes.
+## Combine presentation with templates
 
-## Combining presentation with templates
-
-Presentation attributes work inside an existing code-template scope:
+Presentation options work inside a
+[code template](./templates.md#template-a-code-block) scope:
 
 ````markdown
 {% template code %}
@@ -130,10 +146,64 @@ npm install {% $package.name %}
 {% /template code %}
 ````
 
-Language, options and suffix stay literal. Template substitutions cannot add rows;
-resolved bounds are still validated. Every authored branch is admitted before
-selecting one branch. Presentation attributes alone enable no interpolation.
+The language, options and suffix are literal. Substituted values cannot add
+rows, and selections are validated against the resolved code. Topik checks the
+options in every conditional branch before it selects one. Presentation options
+on their own do not enable templates.
 
-The development content grammar is `0.2.2`; `FORMAT_VERSION` remains `1`.
+## Storage and formatting
+
+Store unevaluated Markdown as the editable source. Highlighted tokens, line
+number gutters and fold or wrap state are never saved. Labels create no Asset
+references and add no resource fields or protocols. Editing a fence's metadata
+preserves the code payload, the meaning of the suffix, dependencies and the
+surrounding source bytes.
+
+Formatting writes recognized options in a fixed order, quotes strings and
+ranges, and uses character references where needed to preserve quotes,
+ampersands, backslashes and backticks. Topik reparses the output and checks
+that its meaning is unchanged, including which options were written explicitly
+and every authored branch.
+
+In the authoring tree, a `topikCodePresentation` node holds:
+
+- exactly one `code` or `topikCodeTemplate` child
+- `options` with only the explicitly written options, normalized; the authored
+  `lines` option is stored as `lineNumbers`
+- `opaqueMetaSuffix`, the remaining metadata including its separating spaces or
+  tabs
+
+Reader defaults, such as `startLine` 1, are applied at render time and are not
+stored.
+
+## Diagnostics
+
+| Problem                                          | Diagnostic id                           |
+| ------------------------------------------------ | --------------------------------------- |
+| Malformed option syntax or duplicate option      | `topik-code-presentation-metadata`      |
+| Invalid label, boolean or `startLine`            | `topik-code-presentation-option`        |
+| Malformed row selection                          | `topik-code-presentation-lines`         |
+| Selection outside the physical rows              | `topik-code-presentation-line-bounds`   |
+| `added` and `removed` select the same row        | `topik-code-presentation-diff-conflict` |
+| Options on a `mermaid` fence                     | `topik-code-presentation-language`      |
+| Presentation node without exactly one code child | `topik-code-presentation-scope`         |
+
+## Limits
+
+| Item                                           | Limit                                                       |
+| ---------------------------------------------- | ----------------------------------------------------------- |
+| `filename`, `title`                            | 256 UTF-16 units, nonblank, one line, no control characters |
+| Intervals per selection, as written            | 1,024                                                       |
+| Option text on one fence                       | 16,384 UTF-16 units                                         |
+| Rows in a presented block                      | 20,000                                                      |
+| Escaped text and row decorations, per document | 8,000,000 units                                             |
+
+Topik reserves the per-document budget conservatively before it allocates any
+output. The ordinary source, tree and data limits also apply.
+
+## Compatibility
+
+Code presentation is part of content schema `0.2.2`; `FORMAT_VERSION` is `1`.
 Topik is in development and may make breaking changes. Keep the compiler,
-renderer and source-writing packages aligned when adopting syntax changes.
+renderer and source-writing packages on matching versions when you adopt syntax
+changes.

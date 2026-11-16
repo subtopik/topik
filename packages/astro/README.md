@@ -39,7 +39,21 @@ export const collections = {
 };
 ```
 
-`createTopikLinkResolver` maps Topik resource references to application routes.
+## Exports
+
+`@topik/astro` is the only entry point.
+
+| Export                    | Provides                                                              |
+| ------------------------- | --------------------------------------------------------------------- |
+| `topikWikiLoader`         | A content loader for a wiki directory.                                |
+| `topikGuidesLoader`       | A content loader for a guide collection.                              |
+| `topik`                   | The Astro integration that delivers the loaders' asset payloads.      |
+| `createTopikLinkResolver` | A resolver that maps Topik resource references to application routes. |
+
+See [Resolve links in Astro](https://github.com/subtopik/topik/blob/main/docs/resources/navigation.md#resolve-links-in-astro)
+for link resolution and the
+[Astro integration](https://github.com/subtopik/topik/blob/main/docs/resources/assets.md#astro-integration)
+section of the assets guide for asset naming.
 
 ## Navigation
 
@@ -56,24 +70,36 @@ const navigation = await wikiLoader.getNavigation();
 ## Assets
 
 Local images and downloads referenced from Markdown compile to `asset:<name>`
-references in entry bodies. Each loader exposes the current compiler snapshot:
+references in entry bodies. Each loader exposes its current compiled snapshot:
 
 - `loader.resolveAsset(name)` returns the payload URL (`<base>blobs/<sha256>`),
   or `undefined` for a name the compilation did not emit.
 - `loader.getAssets()` returns the compiled Asset descriptors.
 
-The integration serves these payloads from memory in development and in server
-output (`Cache-Control: no-cache` in development; `public, max-age=31536000, immutable`
-in production, since paths are content-addressed). Opaque downloads
-(`application/octet-stream`) are sent with `Content-Disposition: attachment`; the
-compiler already rejects active media such as HTML and SVG. A build also writes the
-payloads to `blobs/` in the static (client) output directory.
+The integration serves payloads from memory in development and in server output.
+A build also writes them to `blobs/` in the static (client) output directory.
 
-On Linux, reading local Asset files and writing `blobs/` stay anchored to opened
-directory descriptors. On macOS and Windows that is unavailable, so both use
-Topik's portable file safety (the default, as in `topik compile`): paths and file
-identity are checked instead, which cannot stop another process that changes the
-workspace during a build. The integration logs one warning per build saying so;
-build only in a workspace you trust. Either way, a build replaces only an empty
-`blobs/` directory or one written by a previous build (every entry a file named
-by the SHA-256 of its bytes), and refuses a symbolic link or any other content.
+| Response header       | Value                                                                                                                                       |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Cache-Control`       | `no-cache` in development; `public, max-age=31536000, immutable` in production, because payload paths are content-addressed                 |
+| `Content-Disposition` | `attachment` for media types a browser could display or execute from the site origin, such as opaque downloads (`application/octet-stream`) |
+
+The compiler rejects active media such as HTML and SVG, so in practice
+`Content-Disposition: attachment` applies to opaque downloads.
+
+### File safety during builds
+
+How a build protects local Asset files and the `blobs/` directory depends on the
+platform:
+
+- **Linux:** reading local Asset files and writing `blobs/` are anchored to
+  opened directory descriptors.
+- **macOS and Windows:** directory anchoring is unavailable, so the build uses
+  Topik's portable file safety, the same default as `topik compile`. It checks
+  paths and file identity, which cannot stop another process from changing the
+  workspace during a build. The integration logs one warning per build saying
+  so. Build only in a workspace you trust.
+
+On every platform, a build replaces only an empty `blobs/` directory or one
+written by a previous build (every entry a file named by the SHA-256 of its
+bytes). It refuses a symbolic link or any other content.

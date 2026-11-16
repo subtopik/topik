@@ -5,9 +5,11 @@ description: Write Topik Markdown and preserve authored content through validati
 
 # Content format and normalization
 
-Topik combines Markdown with declarative components, variables, and conditions.
-`@topik/content` validates and formats that source, or produces a reader tree for
-rendering. The authored document remains the source you edit and store.
+Topik Markdown combines Markdown with declarative components, variables, and
+conditions. `@topik/content` validates and formats that source, and compiles it
+to a reader tree for rendering. The authored document is always the source you
+edit and store. This page is for authors who write documents and for developers
+who validate, format or store them.
 
 ## Write a document
 
@@ -23,10 +25,13 @@ Keep a **backup** of your work.
 Status: {% badge variant="success" %}ready{% /badge %}.
 ```
 
-Block tags occupy their own lines. Inline tags appear inside prose. Properties
-are literal strings, numbers, or booleans; selected built-in text properties also
-accept explicit [text templates](./templates.md). Topik checks their names,
-values, and placement against the component schema.
+A component is written as a tag between `{%` and `%}`:
+
+- Block tags occupy their own lines. Inline tags appear inside prose.
+- Properties are literal strings, numbers, or booleans. Selected built-in text
+  properties also accept explicit [text templates](./templates.md).
+- Topik checks property names, values, and tag placement against the component
+  schema.
 
 ## Supported Markdown
 
@@ -35,21 +40,31 @@ inline and fenced code, lists and task lists, blockquotes, hard breaks, links,
 images, reference definitions, and tables with alignment. Leading YAML
 frontmatter is preserved when formatting and omitted from rendered content.
 
-Use `{% #stable-id %}` after a heading to set its anchor explicitly. Without an
-explicit ID, Topik generates an anchor from the authored heading text; a heading
-whose text yields no anchor characters, such as an empty or image-only heading,
-uses `section` with the usual `-1`, `-2` duplicate suffixes. All
-conditional branches reserve heading IDs before evaluation, so hiding a branch
-does not rename anchors in the remaining content. Explicit IDs are case-sensitive.
-
 Raw HTML, footnotes, and executable MDX are unsupported. Topik uses Markdoc-style
-tag delimiters but does not implement the full Markdoc language. Bare URLs and
-email addresses stay text; see [Links](./autolinks.md) for explicit link syntax.
+tag delimiters but does not implement the full Markdoc language. Topik refuses
+unsupported content with a diagnostic; it never flattens it silently.
 
-The table header sets its column count. Missing body cells become empty cells;
-extra body cells are refused. Emphasis and strong each support at most two
-nesting levels of their own kind; strikethrough cannot contain strikethrough.
-Unsupported content receives diagnostics instead of being silently flattened.
+### Heading anchors
+
+Write `{% #stable-id %}` after a heading to set its anchor. Explicit IDs are
+case-sensitive.
+
+Without an explicit ID, Topik generates the anchor from the authored heading
+text. A heading whose text yields no anchor characters, such as an empty or
+image-only heading, uses `section`. Duplicate anchors receive `-1`, `-2` and so
+on, and this applies to `section` too.
+
+Headings in every conditional branch reserve their IDs before evaluation, so
+hiding a branch does not rename the anchors in the remaining content.
+
+### Links, tables and inline marks
+
+- Bare URLs and email addresses stay text. See [Links](./autolinks.md) for
+  explicit link syntax.
+- The table header sets the column count. Missing body cells become empty cells;
+  extra body cells are refused.
+- Emphasis and strong each support at most two nesting levels of their own
+  kind. Strikethrough cannot contain strikethrough.
 
 ## Built-in components
 
@@ -66,8 +81,8 @@ Unsupported content receives diagnostics instead of being silently flattened.
 | `badge`, `underline` (alias `u`)            | Inline status text or underlined text.                                    |
 | `quiz`, `question`, `choice`, `explanation` | Questions, answer choices, and explanations.                              |
 
-For example, a tab set contains `tab` components, rather than arbitrary blocks
-as its direct children:
+Some components accept only specific children. For example, the direct children
+of `tabs` are `tab` components, not arbitrary blocks:
 
 ```markdown
 {% tabs %}
@@ -81,20 +96,26 @@ Start your application.
 ```
 
 The exported `components` registry describes each component's complete property
-and child rules. Unknown components or properties are refused. Defaults apply
-when evaluating or rendering; formatting preserves the distinction between an
-absent property and an explicitly empty value such as `title=""`.
+and child rules:
 
-Applications can add schemas through `config.components`, but cannot replace the
-built-in schemas. Custom schemas are declarative and their properties remain
-literal-only. JavaScript callbacks, imports, partials, and arbitrary expressions
-inside component properties are unsupported. See the
+- Unknown components and unknown properties are refused.
+- Defaults apply when evaluating or rendering.
+- Formatting preserves the distinction between an absent property and an
+  explicitly empty value such as `title=""`.
+
+### Custom components
+
+An application adds component schemas through `config.components`. It cannot
+replace the built-in schemas. A custom schema is declarative, and its properties
+are literal-only. JavaScript callbacks, imports, partials, and arbitrary
+expressions inside component properties are unsupported. See the
 [package reference](https://github.com/subtopik/topik/blob/main/packages/content/README.md)
 for a complete custom-schema example.
 
 ## Variables and conditions
 
-Variable values come from the application. The document contains references:
+The application supplies variable values. The document contains references to
+them, in text and in conditions:
 
 ```markdown
 {% if equals($student.role, "teacher") %}
@@ -104,39 +125,63 @@ Hello {% $student.name %}.
 {% /if %}
 ```
 
+Evaluation selects one branch of each condition and inserts each value as
+literal text:
+
+- A value such as `**Ada**` is inserted as those characters; it does not become
+  Markdown emphasis.
+- `null` and the empty string insert no text.
+- Prose wrappers left empty are omitted.
+
+[Rendering](./rendering.md#variables) shows how to supply values.
+
+### Condition expressions
+
 Expressions support scalar literals, variable paths, `equals`, `and`, `or`, and
 `not`. Only `false` and `null` are false; `0` and an empty string are true.
-`and` and `or` short-circuit. A missing variable raises an evaluation error when
-its reference is evaluated. Compilation reports it as `topik-variable-missing`
-with the reference's line and its `variable` path; incompatible values report
-`topik-variable-type`, forbidden controls `topik-variable-control`, and
-non-scalar `equals` operands `topik-expression-type`. Supplied values are never
-included.
+`and` and `or` short-circuit.
 
-Evaluation selects a branch and inserts values as literal text. A value such as
-`**Ada**` stays literal text rather than becoming Markdown emphasis. Null and
-empty-string values insert no text. Empty prose wrappers are omitted.
+### Evaluation errors
+
+A missing variable is an error only when its reference is evaluated. Compilation
+reports these problems:
+
+| ID                       | Problem                               |
+| ------------------------ | ------------------------------------- |
+| `topik-variable-missing` | A referenced variable is not supplied |
+| `topik-variable-type`    | A value has an incompatible type      |
+| `topik-variable-control` | A value contains a forbidden control  |
+| `topik-expression-type`  | An `equals` operand is not a scalar   |
+
+A `topik-variable-missing` diagnostic carries the reference's line and its
+`variable` path. Diagnostics never include supplied values.
+
+### Variables in component properties and code
 
 Use `t"..."` for supported component text attributes and a paired
 `{% template code %}` scope for a fenced code example. Ordinary quoted attributes,
-inline code, and unwrapped code blocks remain literal. See [Text and code
+inline code, and unwrapped code blocks are literal. See [Text and code
 templates](./templates.md) for supported locations, escaping, and value rules.
 
-Keep the authored source when saving content. Saving evaluated output would
-replace variable references with their current values and discard other branches.
-Conditions control presentation; applications must enforce access to restricted
-content before sending it to a reader. [Rendering](./rendering.md#variables)
-shows how to supply values.
+### Store the authored source
 
-`evaluateDocument` returns a separate authoring tree and checks that it can be
-written faithfully as Markdown. If evaluation leaves an unrepresentable shape,
-such as an empty task item, it throws `ContentEvaluationError`. Reader-tree
-compilation does not need to serialize that result and can retain such shapes.
+Save the authored source, not evaluated output. Evaluated output has the current
+values in place of the variable references and holds only the selected branches.
+
+Conditions control presentation, not access. An application must enforce access
+to restricted content before it sends the content to a reader.
+
+`evaluateDocument` returns a separate authoring tree and checks that the tree
+can be written faithfully as Markdown. If evaluation leaves a shape that
+Markdown cannot represent, such as an empty task item, it throws
+`ContentEvaluationError`. Reader-tree compilation does not serialize the result,
+so it accepts such shapes.
 
 ## Validate and format source
 
-Use source APIs at import and publishing boundaries. Parsing an AST checks
-structure but does not establish that its URLs and asset references are admitted.
+Use the source APIs at import and publishing boundaries. Parsing to an AST
+checks structure only; it does not establish that URLs and asset references are
+admitted.
 
 | API                    | Result                                                            |
 | ---------------------- | ----------------------------------------------------------------- |
@@ -144,8 +189,8 @@ structure but does not establish that its URLs and asset references are admitted
 | `formatTopikContent`   | `ok: true` with `formatted`, or `ok: false` with diagnostics.     |
 | `compileTopikContent`  | `ok: true` with a reader `tree`, or `ok: false` with diagnostics. |
 
-All three retain the exact supplied string in `source`. Validation checks every
-authored branch, including branches that will be hidden during evaluation.
+All three return the exact supplied string in `source`. Validation checks every
+authored branch, including branches that evaluation will hide.
 
 ```ts
 import { formatTopikContent } from "@topik/content";
@@ -160,6 +205,8 @@ if (result.ok) {
   // Retain result.source for correction.
 }
 ```
+
+### Diagnostics
 
 Each diagnostic has a stable `id`, a fixed `message` for that id, a `level`, and
 one-based `lines` and `column` when the source location is known. The column is
@@ -183,28 +230,43 @@ Common source problems include:
 `html` or `footnoteDefinition`. Variable diagnostics set `variable` to the
 bounded authored path.
 
-Formatting can change wrapping, indentation, list markers, inline mark nesting,
-and other equivalent Markdown spelling. It preserves text, marks, structure,
-properties, code and formula payloads, destinations, reference bindings, and
-every conditional branch.
-Successful output is validated and reparsed before it is returned. Repeated
-formatting is stable for the same format version and configuration. If the
-output would change the document's meaning, formatting fails with
-`topik-write-failed`, located at the first authored node that would change.
+### What formatting changes
+
+Formatting changes how a document is spelled, never what it means.
+
+It can change wrapping, indentation, list markers,
+[inline mark nesting](#inline-mark-nesting), and other equivalent Markdown
+spelling. LF, CRLF, and CR inputs are accepted; the output uses LF.
+
+It preserves text, marks, structure, properties, code and formula payloads,
+destinations, reference bindings, and every conditional branch.
+
+Topik validates and reparses the output before it returns it. Repeated
+formatting is stable for the same format version and configuration.
+
+If the output would change the document's meaning, formatting fails with
+`topik-write-failed`, located at the first authored node that would change. The
+result has the original source and no partially formatted output.
+`writeDocument` throws in the same situation; it never returns lossy Markdown.
 
 ### Inline mark nesting
 
 Emphasis, strong, and strikethrough are a set of marks on each piece of inline
 content: text, inline code, images, hard breaks, variables, and inline
-components. Their nesting order and repeated marks of one kind carry no meaning,
-so `***a***`, `**_a_**`, and `_**a**_` are the same document, as are `*a *b* c*`
-and `*a b c*`. A link carries a mark when all of its content does, so
-`**[a](u)**` and `[**a**](u)` are equal too. Links keep their identity: one link
-never becomes two, and adjacent links to the same destination stay separate.
-Which characters carry which marks still matters, so `**a** **b**` differs from
-`**a b**`. Component children, conditional branches, and block structure are
-compared separately; marks outside an inline component do not combine with
-marks inside it.
+components. Two documents are the same when every piece carries the same marks:
+
+- Nesting order and repeated marks of one kind carry no meaning. `***a***`,
+  `**_a_**`, and `_**a**_` are the same document, as are `*a *b* c*` and
+  `*a b c*`.
+- A link carries a mark when all of its content does, so `**[a](u)**` and
+  `[**a**](u)` are equal too.
+- Links keep their identity: one link never becomes two, and adjacent links to
+  the same destination stay separate.
+- Which characters carry which marks does matter, so `**a** **b**` differs from
+  `**a b**`.
+- Component children, conditional branches, and block structure are compared
+  separately. Marks outside an inline component do not combine with marks
+  inside it.
 
 Formatting and `writeDocument` write one canonical nesting for each paragraph,
 heading, table cell, and inline component:
@@ -222,15 +284,14 @@ heading, table cell, and inline component:
 
 Formatting the canonical output again returns it unchanged.
 
-If serialization would change the document's meaning, formatting fails with the
-original source. `writeDocument` likewise throws rather than returning lossy
-Markdown. Failed operations never provide partially formatted output. LF, CRLF,
-and CR inputs are accepted; canonical output uses LF.
+## Work with trees
 
-AST APIs require independent plain-data nodes: cycles, shared node objects,
-getters, and executable values are refused. Applications manipulating trees must
-preserve those constraints as well as the component rules.
+The AST APIs require independent plain-data nodes. Cycles, shared node objects,
+getters, and executable values are refused. An application that manipulates
+trees must keep to those constraints as well as the component rules.
+
+## Versions
 
 The current content schema version is `0.2.2` and `FORMAT_VERSION` is `1`. These
-versions describe the content contract, separately from package versions and the
-`apiVersion` of [resource envelopes](../resources/index.md).
+versions describe the content contract. They are separate from package versions
+and from the `apiVersion` of [resource envelopes](../resources/index.md).

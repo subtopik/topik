@@ -42,8 +42,8 @@ jobs:
         run: >-
           vp exec node -p "JSON.stringify({platform: process.platform, arch: process.arch, node: process.version})"
 
-      - name: Build compiler and workspace dependencies
-        run: vp run --filter '@topik/core...' --fail-if-no-match build
+      - name: Build the CLI, the compiler and their workspace dependencies
+        run: vp run --filter '@topik/cli...' --fail-if-no-match build
 
       - name: Test native compiler reads and platform path semantics
         working-directory: packages/core
@@ -51,3 +51,9 @@ jobs:
         # Linux descriptor traversal and procfs capability cases remain Linux-only.
         # portable-files.test.ts exercises the portable manifest/config/asset reader natively.
         run: vp test --run src/compile/files.test.ts src/compile/files-windows.test.ts src/compile/config.test.ts src/assets/portable-files.test.ts --maxWorkers=1 --fileParallelism=false --reporter=verbose
+
+      - name: Test the CLI on the native platform
+        working-directory: packages/cli
+        # The CLI runs on macOS and Windows with portable file safety. Cases that assert
+        # Linux descriptor traversal gate themselves on the platform.
+        run: vp test --run --maxWorkers=1 --fileParallelism=false --reporter=verbose

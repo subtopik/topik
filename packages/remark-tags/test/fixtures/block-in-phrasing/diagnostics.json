@@ -1,6 +1,7 @@
 [
   {
     "id": "tag-placement-invalid",
+    "tag": "panel",
     "message": "Block tag panel is not valid here",
     "line": 1,
     "column": 6

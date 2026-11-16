@@ -80,6 +80,12 @@ export interface Diagnostic {
   id?: string;
   /** Bounded code-presentation option name; never an authored value. */
   option?: string;
+  /** Component name the diagnostic is about. */
+  tag?: string;
+  /** Attribute name the diagnostic is about; never an authored value. */
+  attribute?: string;
+  /** What the component schema accepts; never authored text. */
+  expected?: readonly string[];
   type?: string;
   message: string;
   line?: number;

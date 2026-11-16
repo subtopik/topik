@@ -88,6 +88,13 @@ editor is saving the same files.
 project directory unless `--out-dir` names another directory. Both exit 1 when
 there are errors. `compile --format` accepts only `json`.
 
+A diagnostic names the component and attribute it is about and what the
+component accepts there, never the value that was written:
+
+```text
+index.md:3 error attribute-value-invalid: An attribute has an invalid value. (tag: callout; attribute: variant; expected: info, tip, warning, danger)
+```
+
 `lint --json` prints one JSON document on stdout in place of the text diagnostics.
 The exit status is the same as without the flag.
 
@@ -109,6 +116,9 @@ The exit status is the same as without the flag.
 ```
 
 - `file`, `line` (the first of `lines`) and `column` are omitted when unknown.
+- `tag`, `attribute`, `option`, `variable` and `expected` are present when the
+  diagnostic has them. `expected` lists what the component schema accepts: the
+  allowed values of an attribute, its type, or the supported attribute names.
 - `severity` is `debug`, `info`, `warning`, `error` or `critical`.
 - `errors` counts the `error` and `critical` diagnostics.
 

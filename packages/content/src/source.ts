@@ -67,6 +67,7 @@ export function prepareSource(
     lines: number[] = [],
     option?: string,
     column?: number,
+    detail: Pick<TopikContentDiagnostic, "tag" | "attribute" | "expected"> = {},
   ): void {
     errors.push(
       sanitizeTopikContentDiagnostic({
@@ -96,6 +97,9 @@ export function prepareSource(
         lines,
         ...(option === undefined ? {} : { option }),
         ...(column === undefined ? {} : { column }),
+        ...(detail.tag === undefined ? {} : { tag: detail.tag }),
+        ...(detail.attribute === undefined ? {} : { attribute: detail.attribute }),
+        ...(detail.expected === undefined ? {} : { expected: detail.expected }),
         ...(options.file === undefined ? {} : { file: options.file }),
       }),
     );
@@ -126,6 +130,7 @@ export function prepareSource(
         diagnostic.line ? [diagnostic.line] : [],
         diagnostic.option,
         diagnostic.column,
+        diagnostic,
       );
     if (!parsed.document) return failure();
 

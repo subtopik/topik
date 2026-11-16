@@ -41,8 +41,12 @@ export interface Tag {
   props: Record<string, AuthoredAttributeValue>;
 }
 
-function issue(id: string, message: string): ValidationIssue {
-  return { id, message };
+function issue(
+  id: string,
+  message: string,
+  detail: Pick<ValidationIssue, "tag" | "attribute" | "expected"> = {},
+): ValidationIssue {
+  return { id, message, ...detail };
 }
 
 function kebab(name: string): string {
@@ -64,27 +68,41 @@ export function validateTag(
   templateData = new Set<object>(),
 ): ValidationIssue | undefined {
   const definition = Object.hasOwn(registry, tag.name) ? registry[tag.name] : undefined;
-  if (!definition) return issue("tag-undefined", `Unknown component ${tag.name}`);
+  if (!definition)
+    return issue("tag-undefined", `Unknown component ${tag.name}`, { tag: tag.name });
   if (tag.close) return;
   if (!tag.props || typeof tag.props !== "object" || Array.isArray(tag.props))
-    return issue("attribute-type-invalid", `Invalid properties on ${tag.name}`);
+    return issue("attribute-type-invalid", `Invalid properties on ${tag.name}`, { tag: tag.name });
   if (definition.kind === "inline" && tag.selfClosing && definition.children !== "none")
-    return issue("topik-tag-children", `Inline component ${tag.name} requires content`);
+    return issue("topik-tag-children", `Inline component ${tag.name} requires content`, {
+      tag: tag.name,
+    });
   if (definition.kind === "inline" && !tag.selfClosing && definition.children === "none")
-    return issue("topik-tag-children", `Inline component ${tag.name} must be self-closing`);
+    return issue("topik-tag-children", `Inline component ${tag.name} must be self-closing`, {
+      tag: tag.name,
+    });
   if (
     definition.kind === "block" &&
     tag.selfClosing &&
     definition.children !== "none" &&
     !definition.selfClosing
   )
-    return issue("topik-tag-children", `Block component ${tag.name} cannot be self-closing`);
+    return issue("topik-tag-children", `Block component ${tag.name} cannot be self-closing`, {
+      tag: tag.name,
+    });
   if (definition.kind === "block" && !tag.selfClosing && definition.children === "none")
-    return issue("topik-tag-children", `Block component ${tag.name} must be self-closing`);
+    return issue("topik-tag-children", `Block component ${tag.name} must be self-closing`, {
+      tag: tag.name,
+    });
 
   for (const [key, value] of Object.entries(tag.props)) {
     const attr = Object.hasOwn(definition.attributes, key) ? definition.attributes[key] : undefined;
-    if (!attr) return issue("attribute-undefined", `Unknown attribute ${key} on ${tag.name}`);
+    if (!attr)
+      return issue("attribute-undefined", `Unknown attribute ${key} on ${tag.name}`, {
+        tag: tag.name,
+        attribute: key,
+        expected: Object.keys(definition.attributes),
+      });
     if (value !== null && typeof value === "object" && value.type === "topikTextTemplate") {
       const canonicalDefinition = Object.hasOwn(components, tag.name)
         ? components[tag.name]
@@ -108,6 +126,7 @@ export function validateTag(
       return issue(
         "attribute-type-invalid",
         `Attribute ${key} on ${tag.name} must be a ${attr.type === "enum" ? "string" : attr.type}`,
+        { tag: tag.name, attribute: key, expected: [attr.type === "enum" ? "string" : attr.type] },
       );
     if (
       typeof value === "string" &&
@@ -115,24 +134,40 @@ export function validateTag(
         attr.type === "string" && attr.escapedWhitespace ? value.replace(/[\t\n\r]/g, "") : value,
       )
     )
-      return issue("attribute-value-invalid", `Control character in ${key} on ${tag.name}`);
+      return issue("attribute-value-invalid", `Control character in ${key} on ${tag.name}`, {
+        tag: tag.name,
+        attribute: key,
+      });
     if (attr.type === "enum" && !attr.values.includes(value as string))
-      return issue("attribute-value-invalid", `Invalid ${key} on ${tag.name}`);
+      return issue("attribute-value-invalid", `Invalid ${key} on ${tag.name}`, {
+        tag: tag.name,
+        attribute: key,
+        expected: attr.values,
+      });
     if (attr.type === "number") {
       const numeric = value as number;
       if (!Number.isFinite(numeric))
-        return issue("attribute-value-invalid", `Invalid ${key} on ${tag.name}`);
+        return issue("attribute-value-invalid", `Invalid ${key} on ${tag.name}`, {
+          tag: tag.name,
+          attribute: key,
+        });
       if (
         (attr.integer && !Number.isInteger(numeric)) ||
         (attr.min !== undefined && numeric < attr.min) ||
         (attr.max !== undefined && numeric > attr.max)
       )
-        return issue(`topik-${kebab(key)}-range`, `Invalid ${key} on ${tag.name}`);
+        return issue(`topik-${kebab(key)}-range`, `Invalid ${key} on ${tag.name}`, {
+          tag: tag.name,
+          attribute: key,
+        });
     }
   }
   for (const [key, attr] of Object.entries(definition.attributes)) {
     if (attr.required && !Object.hasOwn(tag.props, key))
-      return issue("attribute-missing-required", `Missing attribute ${key} on ${tag.name}`);
+      return issue("attribute-missing-required", `Missing attribute ${key} on ${tag.name}`, {
+        tag: tag.name,
+        attribute: key,
+      });
   }
 }
 
@@ -227,9 +262,17 @@ function validatePlacement(
   if (!parent) return errors;
   const parentIsInline = isInlineParent(parent, registry);
   if (definition.kind === "block" && parentIsInline)
-    errors.push(issue("topik-tag-placement", `Block ${component.name} has invalid placement`));
+    errors.push(
+      issue("topik-tag-placement", `Block ${component.name} has invalid placement`, {
+        tag: component.name,
+      }),
+    );
   if (definition.kind === "inline" && !parentIsInline)
-    errors.push(issue("topik-tag-placement", `Inline ${component.name} has invalid placement`));
+    errors.push(
+      issue("topik-tag-placement", `Inline ${component.name} has invalid placement`, {
+        tag: component.name,
+      }),
+    );
   return errors;
 }
 

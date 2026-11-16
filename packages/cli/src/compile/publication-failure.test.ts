@@ -1,7 +1,7 @@
 import { lstatSync, mkdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { lstat, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, join, sep } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { formatPublicCliError, PublicCliError } from "../errors";
 import { compile } from "./index";
@@ -35,7 +35,10 @@ async function snapshot(root: string): Promise<Record<string, string>> {
   for (const entry of await readdir(root, { recursive: true, withFileTypes: true })) {
     if (entry.isFile()) {
       const path = join(entry.parentPath, entry.name);
-      files[path.slice(root.length + 1)] = (await readFile(path)).toString("base64");
+      // Keys use "/" on every platform.
+      files[path.slice(root.length + 1).replaceAll(sep, "/")] = (await readFile(path)).toString(
+        "base64",
+      );
     }
   }
   return files;
@@ -186,7 +189,7 @@ test.each(["target appears", "prior replaced"])(
     let priorPath = "";
     let targetInode: bigint | undefined;
     vi.mocked(renameSync).mockImplementation((from, to) => {
-      if (String(from).endsWith("/.topik")) priorPath = String(to);
+      if (basename(String(from)) === ".topik") priorPath = String(to);
       if (String(from).includes(".topik-compilation-generation-")) {
         if (scenario === "target appears") {
           mkdirSync(to);

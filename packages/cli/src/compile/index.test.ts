@@ -21,12 +21,21 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/tes
 import { serializeTopikJson } from "@topik/core";
 import { compile, replaceCompilationTree } from "./index";
 import { formatPublicCliError } from "../errors";
+import { PORTABLE_READS_NOTICE } from "../file-safety";
 
 const PNG_BYTES = Buffer.from(
   "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000000500010d0a2db40000000049454e44ae426082",
   "hex",
 );
 const execFileAsync = promisify(execFile);
+// Read before any test mocks process.platform.
+const HOST_IS_WINDOWS = process.platform === "win32";
+/** What a project-reading command prints with console.error before its own output here. */
+const NATIVE_NOTICE = process.platform === "linux" ? [] : [PORTABLE_READS_NOTICE];
+// Mocking process.platform cannot make one host's filesystem behave like another's, so both
+// portable platforms are simulated on Linux only; elsewhere the native one runs for real.
+const PORTABLE_PLATFORMS =
+  process.platform === "linux" ? (["darwin", "win32"] as const) : [process.platform];
 
 type CompileCommand = {
   handler?: (options: {
@@ -245,6 +254,7 @@ describe("compile command", () => {
     ).rejects.toMatchObject({ id: "compilation-failed" });
 
     expect(errors).toEqual([
+      ...NATIVE_NOTICE,
       expect.stringMatching(/^intro\.md:3 error [a-z-]+: /u),
       "1 compile error(s)",
     ]);
@@ -441,22 +451,60 @@ describe("compile command", () => {
     expect(await snapshotTree(outDir)).toEqual(firstTree);
   });
 
-  test("rejects a symlinked output ancestor without writing outside", async () => {
-    const outside = await mkdtemp(join(tmpdir(), "topik-cli-outside-"));
-    await symlink(outside, join(dir, "output-link"), "dir");
-    await expect(
-      (compile as CompileCommand).handler?.({
-        dir,
-        outDir: join(dir, "output-link", "compiled"),
-        format: "json",
-        dryRun: false,
-        validate: true,
-        links: "error",
-      }),
-    ).rejects.toThrow(/link or non-directory collision/u);
-    expect(await readdir(outside)).toEqual([]);
-    await rm(outside, { recursive: true, force: true });
-  });
+  // Anchored publication opens every output ancestor without following links.
+  test.skipIf(process.platform !== "linux")(
+    "rejects a symlinked output ancestor without writing outside",
+    async () => {
+      const outside = await mkdtemp(join(tmpdir(), "topik-cli-outside-"));
+      await symlink(outside, join(dir, "output-link"), "dir");
+      await expect(
+        (compile as CompileCommand).handler?.({
+          dir,
+          outDir: join(dir, "output-link", "compiled"),
+          format: "json",
+          dryRun: false,
+          validate: true,
+          links: "error",
+        }),
+      ).rejects.toThrow(/link or non-directory collision/u);
+      expect(await readdir(outside)).toEqual([]);
+      await rm(outside, { recursive: true, force: true });
+    },
+  );
+
+  // Portable publication resolves the output parent to its canonical path, so a link among
+  // the ancestors is followed and only a linked target is refused.
+  test.skipIf(process.platform === "linux")(
+    "publishes through a symlinked output ancestor into the directory it names",
+    async () => {
+      const outside = await mkdtemp(join(tmpdir(), "topik-cli-outside-"));
+      try {
+        await symlink(outside, join(dir, "output-link"), "dir");
+        vi.spyOn(console, "error").mockImplementation(() => undefined);
+        vi.spyOn(console, "log").mockImplementation(() => undefined);
+        await expect(
+          (compile as CompileCommand).handler?.({
+            dir,
+            outDir: join(dir, "output-link", "compiled"),
+            format: "json",
+            dryRun: false,
+            validate: true,
+            links: "error",
+          }),
+        ).resolves.toBeUndefined();
+        expect(await readdir(outside)).toEqual(["compiled"]);
+        expect((await readdir(join(outside, "compiled"))).sort()).toEqual([
+          "blobs",
+          "materialization.json",
+          "resources",
+          "semantic.json",
+        ]);
+        expect((await lstat(join(dir, "output-link"))).isSymbolicLink()).toBe(true);
+      } finally {
+        await rm(outside, { recursive: true, force: true });
+      }
+    },
+  );
 
   test("rejects hard-linked existing output without changing its peer", async () => {
     const outDir = join(dir, "compiled");
@@ -747,7 +795,8 @@ describe("compile command", () => {
     await expect(lstat(outDir)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  test.each([
+  // Windows has neither FIFOs nor Unix sockets bound to a filesystem path.
+  test.skipIf(process.platform === "win32").each([
     ["FIFO", "materialization.json"],
     ["FIFO", "semantic.json"],
     ["Unix socket", "materialization.json"],
@@ -893,6 +942,11 @@ async function writeEmptyOwnedTree(root: string): Promise<void> {
   }
 }
 
+/** Windows has no permission bits: Node reports every writable entry as 0o666. */
+function nativeMode(mode: number): number {
+  return HOST_IS_WINDOWS ? 0o666 : mode;
+}
+
 async function treeModes(root: string, prefix = ""): Promise<Record<string, number>> {
   const modes: Record<string, number> = {
     [prefix]: (await lstat(join(root, prefix))).mode & 0o777,
@@ -989,7 +1043,7 @@ async function replaceCompilationTreePromptly(
   return result;
 }
 
-describe.each(["darwin", "win32"] as const)("portable publication on simulated %s", (platform) => {
+describe.each(PORTABLE_PLATFORMS)("portable publication on %s", (platform) => {
   let root: string;
 
   beforeEach(async () => {
@@ -1008,13 +1062,13 @@ describe.each(["darwin", "win32"] as const)("portable publication on simulated %
       await replaceCompilationTree(outDir, ownedFiles(generation));
       await expectOwnedGeneration(outDir, generation);
       expect(await treeModes(outDir)).toEqual({
-        "": 0o755,
-        blobs: 0o755,
-        "materialization.json": 0o644,
-        resources: 0o755,
-        "resources/Guide": 0o755,
-        [ownedResourcePath(generation)]: 0o644,
-        "semantic.json": 0o644,
+        "": nativeMode(0o755),
+        blobs: nativeMode(0o755),
+        "materialization.json": nativeMode(0o644),
+        resources: nativeMode(0o755),
+        "resources/Guide": nativeMode(0o755),
+        [ownedResourcePath(generation)]: nativeMode(0o644),
+        "semantic.json": nativeMode(0o644),
       });
     }
     await expect(readFile(join(outDir, ownedResourcePath("first")))).rejects.toMatchObject({

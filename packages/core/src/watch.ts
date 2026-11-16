@@ -9,7 +9,7 @@ import {
   type CompileValidationOptions,
 } from "./compile";
 import type { AssetPayload } from "./compile/assets";
-import type { FileSafety } from "./assets/files";
+import { validateGitExecutableOption, type FileSafety } from "./assets/files";
 import { digestTopikMaterializationRecord } from "./assets/identity";
 import type { Resource } from "./resource";
 import { TOPIK_PREVIEW_PROTOCOL, type PreviewState } from "./preview";
@@ -23,6 +23,14 @@ export interface WatchOptions {
   validation?: CompileValidationOptions;
   /** File read safety passed to every compilation; see `CompileOptions.fileSafety`. */
   fileSafety?: FileSafety;
+  /** Git executable passed to every compilation; see `CompileOptions.gitExecutable`. */
+  gitExecutable?: string;
+  /**
+   * Milliseconds without filesystem notifications before a recompilation starts: an integer
+   * from 0 to 2147483647 (the `setTimeout` maximum). Defaults to
+   * {@link DEFAULT_WATCH_DEBOUNCE_MS}. An invalid value rejects with a `RangeError`.
+   */
+  debounceMs?: number;
   /**
    * Receives every compile and watch error, including one from the initial compilation
    * that completes before `watch()` resolves and so before `on("error")` can be called.
@@ -48,6 +56,26 @@ export interface Watcher {
 const IGNORED_SEGMENT =
   /(^|[/\\])(?:node_modules|\.git|\.topik(?:-compilation-(?:generation|prior)-[^/\\]+)?)(?:[/\\]|$)/;
 
+/** Default quiet period that coalesces bursts of filesystem notifications into one compile. */
+export const DEFAULT_WATCH_DEBOUNCE_MS = 100;
+/** Largest delay `setTimeout` honours; longer delays fire immediately instead. */
+const MAX_WATCH_DEBOUNCE_MS = 2 ** 31 - 1;
+
+function watchDebounceMs(value: unknown): number {
+  if (value === undefined) return DEFAULT_WATCH_DEBOUNCE_MS;
+  if (
+    typeof value !== "number" ||
+    !Number.isSafeInteger(value) ||
+    value < 0 ||
+    value > MAX_WATCH_DEBOUNCE_MS
+  ) {
+    throw new RangeError(
+      `Watch debounceMs must be an integer from 0 to ${MAX_WATCH_DEBOUNCE_MS} milliseconds`,
+    );
+  }
+  return value;
+}
+
 function freeze<T>(value: T): T {
   if (value && typeof value === "object") {
     for (const child of Object.values(value)) freeze(child);
@@ -58,6 +86,9 @@ function freeze<T>(value: T): T {
 
 export async function watch(options: WatchOptions): Promise<Watcher> {
   const dir = resolve(options.dir);
+  const debounceMs = watchDebounceMs(options.debounceMs);
+  // Fail before watching rather than on every compilation.
+  validateGitExecutableOption(options.gitExecutable);
   const emitter = new EventEmitter();
   if (options.onError) emitter.on("error", options.onError);
   const resources = new Map<string, Resource>();
@@ -115,6 +146,7 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
           dir,
           validation: options.validation,
           fileSafety: options.fileSafety,
+          gitExecutable: options.gitExecutable,
         });
         // An edit arrived while reading: discard this candidate, including its payloads.
         if (closed || watchFailed) return;
@@ -179,7 +211,7 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
     debounceTimer = setTimeout(() => {
       debounceTimer = undefined;
       void startCompile();
-    }, 100);
+    }, debounceMs);
   }
   const fsWatcher = chokidarWatch(dir, {
     ignoreInitial: true,

@@ -98,7 +98,12 @@ initial `compiling` state. Events from that first compilation are published befo
 `signal` aborted before the first compilation finishes: `watch()` then resolves
 with a closed watcher whose state may still be the initial one.
 
-Compilations are serialized and filesystem notifications coalesced. A candidate
+Compilations are serialized and filesystem notifications coalesced: a compilation
+starts once no notification has arrived for `debounceMs` milliseconds (default
+`DEFAULT_WATCH_DEBOUNCE_MS`, 100). `debounceMs` must be an integer from 0 to
+2147483647, or `watch()` rejects with a `RangeError` before it watches anything.
+Notifications during a running compilation are not delayed further; they cause
+one more compilation after it. A candidate
 invalidated by a notification during compilation is discarded before publication.
 Closing the watcher prevents pending results from being committed. The in-process
 `watcher.state` is frozen and the watcher emits `preview-state`; compatibility Maps

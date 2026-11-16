@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { isTopikActiveMediaType, sniffPortableMediaType } from "./media";
+import { isInlineMediaCompatible, isTopikActiveMediaType, sniffPortableMediaType } from "./media";
 
 const text = (value: string) => new TextEncoder().encode(value);
 
@@ -83,6 +83,159 @@ describe("BMP signatures", () => {
     const bytes = bmp();
     new DataView(bytes.buffer).setUint32(14, 41, true);
     expect(sniffPortableMediaType(bytes)).toBe("application/octet-stream");
+  });
+});
+
+/** A classic TIFF with one IFD of `entries` SHORT fields directly after the header. */
+function tiff(order: "II" | "MM", entries = 1): Uint8Array {
+  const little = order === "II";
+  const bytes = new Uint8Array(8 + 2 + entries * 12 + 4);
+  const view = new DataView(bytes.buffer);
+  bytes.set(text(order));
+  view.setUint16(2, 42, little);
+  view.setUint32(4, 8, little);
+  view.setUint16(8, entries, little);
+  for (let index = 0; index < entries; index++) {
+    view.setUint16(10 + index * 12, 256 + index, little);
+    view.setUint16(12 + index * 12, 3, little);
+    view.setUint32(14 + index * 12, 1, little);
+  }
+  return bytes;
+}
+
+describe("TIFF signatures", () => {
+  test.each(["II", "MM"] as const)("accepts %s byte order with a plausible first IFD", (order) => {
+    expect(sniffPortableMediaType(tiff(order))).toBe("image/tiff");
+    expect(sniffPortableMediaType(tiff(order, 12))).toBe("image/tiff");
+  });
+
+  function withUint32(bytes: Uint8Array, offset: number, value: number, little: boolean) {
+    new DataView(bytes.buffer).setUint32(offset, value, little);
+    return bytes;
+  }
+
+  test.each([
+    ["text starting with II", text("II* notes: the second item.\n")],
+    ["text starting with MM", text("MM-DD dates are ambiguous.\n")],
+    ["a truncated header", text("II*\0")],
+    ["an IFD offset inside the header", withUint32(tiff("II"), 4, 4, true)],
+    ["an odd IFD offset", withUint32(tiff("MM"), 4, 9, false)],
+    ["an IFD offset past the end", withUint32(tiff("II"), 4, 0x1000, true)],
+    ["an IFD with no entries", tiff("II", 0)],
+    ["IFD entries that run past the end", tiff("MM", 2).slice(0, 30)],
+    ["an unknown field type", withUint32(tiff("II"), 10, 0x00ff_0100, true)],
+    ["mixed byte order markers", concat(text("IM"), tiff("II").slice(2))],
+  ])("keeps %s opaque", (_name, bytes) => {
+    expect(sniffPortableMediaType(bytes)).toBe("application/octet-stream");
+  });
+});
+
+/** An ADTS frame (AAC LC, 44.1 kHz, stereo, no CRC) of `length` bytes including its header. */
+function adtsFrame(length = 32, samplingIndex = 4): Uint8Array {
+  const frame = new Uint8Array(length);
+  frame.set([
+    0xff,
+    0xf1,
+    0x40 | (samplingIndex << 2),
+    0x80 | (length >> 11),
+    (length >> 3) & 0xff,
+    ((length & 0x07) << 5) | 0x1f,
+    0xfc,
+  ]);
+  return frame;
+}
+
+describe("AAC (ADTS) signatures", () => {
+  test("accepts a validated frame sequence and a single complete frame", () => {
+    expect(sniffPortableMediaType(concat(adtsFrame(), adtsFrame(), adtsFrame()))).toBe("audio/aac");
+    expect(sniffPortableMediaType(adtsFrame(400))).toBe("audio/aac");
+  });
+
+  test.each([
+    [
+      "UTF-16LE text with a byte order mark",
+      concat([0xff, 0xfe], utf16le("Hello, world. ".repeat(40))),
+    ],
+    ["sync bits without a following frame", concat(adtsFrame(), text("not another frame"))],
+    ["a following frame with another sampling rate", concat(adtsFrame(), adtsFrame(32, 3))],
+    ["a frame longer than the file", adtsFrame(64).slice(0, 40)],
+    ["a frame no longer than its header", concat(adtsFrame(7), adtsFrame(7))],
+    ["a reserved sampling frequency", concat(adtsFrame(32, 13), adtsFrame(32, 13))],
+    ["a truncated header", adtsFrame().slice(0, 5)],
+  ])("keeps %s opaque", (_name, bytes) => {
+    expect(sniffPortableMediaType(bytes)).toBe("application/octet-stream");
+  });
+});
+
+/** An EBML element with a one-byte size. */
+function ebmlElement(id: readonly number[], data: Uint8Array | readonly number[]): Uint8Array {
+  return concat(id, [0x80 | data.length], data);
+}
+
+function ebmlHeader(...children: Uint8Array[]): Uint8Array {
+  return concat(
+    ebmlElement([0x1a, 0x45, 0xdf, 0xa3], concat(...children)),
+    // A Segment element with unknown size follows the header in a real file.
+    [0x18, 0x53, 0x80, 0x67, 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
+  );
+}
+
+const ebmlVersion = ebmlElement([0x42, 0x86], [1]);
+const docType = (value: string) => ebmlElement([0x42, 0x82], text(value));
+
+describe("WebM signatures", () => {
+  test("accepts an EBML header with the webm DocType", () => {
+    expect(sniffPortableMediaType(ebmlHeader(ebmlVersion, docType("webm")))).toBe("video/webm");
+    expect(sniffPortableMediaType(ebmlHeader(docType("webm\0\0")))).toBe("video/webm");
+    // An eight-byte size field is valid EBML.
+    const wide = concat(
+      [0x1a, 0x45, 0xdf, 0xa3, 0x01, 0, 0, 0, 0, 0, 0, 7],
+      docType("webm"),
+      new Uint8Array(4),
+    );
+    expect(sniffPortableMediaType(wide)).toBe("video/webm");
+  });
+
+  test.each([
+    ["a Matroska DocType", ebmlHeader(ebmlVersion, docType("matroska"))],
+    ["a header without a DocType", ebmlHeader(ebmlVersion)],
+    ["a duplicate DocType", ebmlHeader(docType("webm"), docType("matroska"))],
+    ["an empty DocType", ebmlHeader(docType(""))],
+    ["a non-ASCII DocType", ebmlHeader(docType("webé"))],
+    ["a header longer than the file", ebmlHeader(docType("webm")).slice(0, 8)],
+    [
+      "a child element running past the header",
+      concat([0x1a, 0x45, 0xdf, 0xa3, 0x83], docType("webm")),
+    ],
+    ["an unknown header size", concat([0x1a, 0x45, 0xdf, 0xa3, 0xff], docType("webm"))],
+    ["an invalid size marker", concat([0x1a, 0x45, 0xdf, 0xa3, 0x00], docType("webm"))],
+    ["a magic number alone", Uint8Array.from([0x1a, 0x45, 0xdf, 0xa3])],
+    ["text that mentions webm", text("webm files are not sniffed from text.\n")],
+  ])("keeps %s opaque", (_name, bytes) => {
+    expect(sniffPortableMediaType(bytes)).toBe("application/octet-stream");
+  });
+
+  test("scans a large header in linear time", () => {
+    // 200,000 empty Void elements (`EC 80`) inside one 400,000-byte header.
+    const header = new Uint8Array(9 + 400_000);
+    header.set([0x1a, 0x45, 0xdf, 0xa3, 0x08, 0, 0x06, 0x1a, 0x80]);
+    for (let offset = 9; offset < header.byteLength; offset += 2) header.set([0xec, 0x80], offset);
+    const started = performance.now();
+    sniffPortableMediaType(header);
+    expect(performance.now() - started).toBeLessThan(750);
+  });
+});
+
+describe("reference roles for the TIFF, AAC and WebM types", () => {
+  test.each([
+    ["image/tiff", true, true],
+    ["audio/aac", false, true],
+    ["video/webm", false, true],
+  ] as const)("treats %s as passive media", (mediaType, image, media) => {
+    expect(isTopikActiveMediaType(mediaType)).toBe(false);
+    expect(isInlineMediaCompatible(mediaType, "image")).toBe(image);
+    expect(isInlineMediaCompatible(mediaType, "image-dark")).toBe(image);
+    expect(isInlineMediaCompatible(mediaType, "media")).toBe(media);
   });
 });
 

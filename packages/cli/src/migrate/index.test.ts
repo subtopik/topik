@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, link, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
@@ -106,6 +106,29 @@ describe("migrate command", () => {
     expect(await migrateProject(dir)).toBe("kept");
     expect(await readFile(join(dir, "elsewhere.md"), "utf8")).toBe(`${OLD_SECTION}\n`);
   });
+
+  test("keeps a hard-linked file, which another path shares", async () => {
+    await writeFile(agents, `${OLD_SECTION}\n`);
+    await link(agents, join(dir, "shared.md"));
+
+    expect(await migrateProject(dir)).toBe("kept");
+    expect(await readFile(agents, "utf8")).toBe(`${OLD_SECTION}\n`);
+  });
+
+  // Windows has no directory write permission bit, and a superuser ignores it.
+  test.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+    "fails when the section cannot be replaced",
+    async () => {
+      await writeFile(agents, `${OLD_SECTION}\n`);
+      await chmod(dir, 0o555);
+      try {
+        await expect(migrateProject(dir)).rejects.toMatchObject({ id: "migrate-write-failed" });
+        expect(await readFile(agents, "utf8")).toBe(`${OLD_SECTION}\n`);
+      } finally {
+        await chmod(dir, 0o755);
+      }
+    },
+  );
 
   test("requires a project manifest and writes nothing without one", async () => {
     await rm(join(dir, ".topik.yaml"));

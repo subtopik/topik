@@ -60,8 +60,8 @@ function markedRange(text: string): { start: number; end: number } | undefined {
  * - `created`: there was no file; it now holds the section.
  * - `updated`: the marked section was replaced.
  * - `unchanged`: the marked section is current.
- * - `kept`: the file has no single marked section, is not a regular file, or changed while it
- *   was being replaced. It is left as it is.
+ * - `kept`: the file has no single marked section, is not valid UTF-8, or is not a regular
+ *   file with a single link. It is left as it is.
  */
 export type AgentInstructionsOutcome = "created" | "updated" | "unchanged" | "kept";
 
@@ -76,7 +76,7 @@ export const AGENT_INSTRUCTIONS_OUTCOME_MESSAGES: Record<AgentInstructionsOutcom
 /**
  * Create `AGENTS.md` in `dir`, or update the section Topik owns in an existing one. An existing
  * file is never followed through a link and is replaced through a temporary file, as
- * `topik format` replaces files.
+ * `topik format` replaces files. Throws when the file cannot be written.
  */
 export async function writeAgentInstructions(dir: string): Promise<AgentInstructionsOutcome> {
   const path = join(dir, AGENT_INSTRUCTIONS_FILENAME);
@@ -89,16 +89,18 @@ export async function writeAgentInstructions(dir: string): Promise<AgentInstruct
     const handle = await open(path, "wx");
     try {
       await handle.writeFile(AGENT_INSTRUCTIONS);
+      // A filesystem can report a failed write only when the file is closed.
+      await handle.close();
     } catch (error) {
       // Do not leave a partly written file behind; this call created it.
+      await handle.close().catch(() => undefined);
       await unlink(path).catch(() => undefined);
       throw error;
-    } finally {
-      await handle.close();
     }
     return "created";
   }
-  if (!info.isFile()) return "kept";
+  // A hard-linked file is shared with another path; replacing it would split the two.
+  if (!info.isFile() || info.nlink !== 1) return "kept";
 
   const bytes = await readFile(path);
   const existing = bytes.toString("utf8");
@@ -112,5 +114,8 @@ export async function writeAgentInstructions(dir: string): Promise<AgentInstruct
     bytes,
     Buffer.from(updated, "utf8"),
   );
-  return replaced ? "updated" : "kept";
+  // The file was a plain regular file a moment ago, so a refusal now is a failure to write
+  // (for example a read-only directory) or a concurrent change, not a file to leave alone.
+  if (!replaced) throw new Error(`${AGENT_INSTRUCTIONS_FILENAME} could not be replaced`);
+  return "updated";
 }

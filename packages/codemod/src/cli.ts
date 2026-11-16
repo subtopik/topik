@@ -5,6 +5,8 @@ import { boolean, command, positional, run } from "@drizzle-team/brocli";
 import { version } from "../package.json";
 import { isMigrationInput, runMintlify } from "./runner";
 
+const MANIFEST_GUIDE_URL = "https://github.com/subtopik/topik/blob/main/docs/resources/manifest.md";
+
 const mintlify = command({
   name: "mintlify",
   desc: "Convert supported Mintlify components to Topik content directives",
@@ -78,6 +80,14 @@ const mintlify = command({
       console.error(`⚠ ${navigation?.source} — ${warning}`);
 
     for (const notice of summary.notices) console.error(`ℹ ${notice}`);
+    if (navigation?.changed)
+      console.error(
+        `ℹ topik lint needs a project manifest (.topik.yaml) that lists ${navigation.output} as a wiki source: ${MANIFEST_GUIDE_URL}`,
+      );
+    if (diff && (summary.files.some((file) => file.diff) || navigation?.diff))
+      console.error(
+        "ℹ Paths in the patch are relative to the converted directory. In a Git repository, apply it from the repository root with git apply --directory=<path of that directory>",
+      );
 
     const tense = dry ? "would convert" : "converted";
     log(`${errors === 0 ? "✓ " : ""}${tense} ${summary.filesChanged} file(s)`);

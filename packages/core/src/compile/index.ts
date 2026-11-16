@@ -57,6 +57,12 @@ export interface CompileOptions {
    * is unavailable (every platform except Linux). Defaults to `DEFAULT_FILE_SAFETY`.
    */
   fileSafety?: FileSafety;
+  /**
+   * Absolute path of the Git executable used inside a Git checkout, in place of the fixed
+   * trusted locations. It must pass the same owner and mode checks. Never read from project
+   * files. A malformed value throws a `TypeError`.
+   */
+  gitExecutable?: string;
   validation?: CompileValidationOptions;
   /** Optional application-supplied inventory for explicit resource references. */
   referenceTargets?: readonly import("./links").CompileResourceReferenceTarget[];

@@ -360,7 +360,7 @@ describe("rich content-react entry", () => {
     }
   });
 
-  it("replaces the rendered diagram when its source changes", async () => {
+  it("keeps the previous diagram until a changed source finishes rendering", async () => {
     vi.useFakeTimers();
     mermaidRenderMock
       .mockReturnValueOnce({
@@ -379,20 +379,22 @@ describe("rich content-react entry", () => {
       expect(mermaidRenderMock).toHaveBeenCalledTimes(1);
 
       act(() => root?.render(<RichTopikMermaid content="flowchart LR; B-->C" />));
-      expect(dom.querySelector(".topik-rich-mermaid--loading")).not.toBeNull();
-      expect(dom.querySelector("svg")).toBeNull();
+      expect(dom.querySelector(".topik-rich-mermaid--loading")).toBeNull();
+      expect(dom.querySelector("pre.topik-mermaid")).toBeNull();
+      expect(dom.querySelector("svg")?.textContent).toBe("First diagram");
+      expect(dom.querySelector(".topik-rich-mermaid")?.getAttribute("aria-busy")).toBe("true");
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(299);
       });
-      expect(dom.querySelector(".topik-rich-mermaid--loading")).not.toBeNull();
-      expect(dom.querySelector("svg")).toBeNull();
+      expect(dom.querySelector("svg")?.textContent).toBe("First diagram");
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(1);
       });
       expect(dom.querySelector(".topik-rich-mermaid--loading")).toBeNull();
       expect(dom.querySelector("svg")?.textContent).toBe("Updated diagram");
+      expect(dom.querySelector(".topik-rich-mermaid")?.hasAttribute("aria-busy")).toBe(false);
       expect(mermaidRenderMock).toHaveBeenCalledTimes(2);
       expect(mermaidRenderMock).toHaveBeenLastCalledWith("flowchart LR; B-->C", expect.any(Object));
     } finally {

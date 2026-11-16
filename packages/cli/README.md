@@ -29,7 +29,7 @@ npx topik dev ./handbook
 | `format`   | Format Topik Markdown files in place (`--check`, `--file-safety`).                                                                      | Any      |
 | `compile`  | Compile project content into resource files (`--out-dir`/`-o`, `--format`/`-f`, `--dry-run`, `--validate`, `--links`, `--file-safety`). | Any      |
 | `lint`     | Check source content without writing compiled resources (`--links`, `--json`, `--file-safety`).                                         | Any      |
-| `validate` | Validate a resource file, directory, or compile output in JSON, JSONL, or YAML against the schemas.                                     | Any      |
+| `validate` | Validate a resource file, directory, or compile output in JSON, JSONL, or YAML against the schemas (`--graph`, `--content`, `--json`).  | Any      |
 | `dev`      | Start a development server that watches for content changes (`--port`/`-p`, `--allow-origin`, `--links`, `--file-safety`).              | Any      |
 
 `--links` sets how unresolved wiki links and local guide fragments are handled:
@@ -82,6 +82,14 @@ diagnostics, and exits as without the flag (1 when there are errors):
 `severity` is `debug`, `info`, `warning`, `error` or `critical`; `errors` counts
 `error` and `critical`. A failure that stops lint before it produces diagnostics,
 such as a missing `.topik.yaml`, prints its message on stderr and nothing on stdout.
+
+`validate --graph` also checks the resources as one complete set (unique
+`type/name`, every by-name reference resolves), and `validate --content` checks
+Topik page content. Both are off by default because a directory may hold only
+part of a project. `validate --json` prints a stable, versioned JSON report on
+stdout with the same exit status; the
+[resources guide](https://github.com/subtopik/topik/blob/main/docs/resources/index.md)
+documents its shape.
 
 Run `topik <command> --help` for every flag. On Linux, `compile`, `lint`, `format`
 and `dev` read project files and publish output through descriptor-anchored

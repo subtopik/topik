@@ -3,7 +3,6 @@ import { posix, resolve } from "node:path";
 import {
   extractTopikAssetOccurrences,
   rewriteTopikAssetOccurrences,
-  validateTopikContent,
   validateTopikAssetReference,
   type TopikAssetOccurrence,
   type TopikContentDiagnostic,
@@ -51,6 +50,7 @@ import {
 } from "../assets/media";
 import { validateTopikPath, validateTopikPathSet } from "../assets/path";
 import { validateResources, type ValidationError } from "../validate";
+import { createContentMemo, type ContentMemo } from "./content-memo";
 
 export type ContentBearingResource = CoursePage | Guide | WikiPage;
 
@@ -119,11 +119,13 @@ export async function compileAssetResources(
 export async function compileAssetResourcesInSession(
   session: PortableReadSession,
   input: CompileAssetResourcesInput,
+  memo: ContentMemo = createContentMemo(),
 ): Promise<AssetCompilationResult> {
   return compileAssetResourcesWithReader(
     input,
     (options) => readPortableAssetFileInSession(session, options),
     session.fileSafety,
+    memo,
   );
 }
 
@@ -146,6 +148,7 @@ async function compileAssetResourcesWithReader(
   input: CompileAssetResourcesInput,
   readAssetFile: PortableAssetReader,
   fileSafety: FileSafety,
+  memo: ContentMemo = createContentMemo(),
 ): Promise<AssetCompilationResult> {
   const receivedResources = input.resources as readonly Resource[];
   if (receivedResources.some((resource) => resource.type === "Asset")) {
@@ -186,9 +189,7 @@ async function compileAssetResourcesWithReader(
   }
   for (const resource of topikContentResources) {
     const sourcePath = sourcePaths.get(resourceKey(resource)) as string;
-    const validation = validateTopikContent(resource.spec.content.value, {
-      file: sourcePath,
-    });
+    const validation = memo.validate(resource.spec.content.value, sourcePath);
     if (!validation.valid) {
       throw new AssetCompilationError(
         "Asset compilation received invalid Topik content",

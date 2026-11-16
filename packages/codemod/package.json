@@ -49,6 +49,7 @@
     "micromark-extension-frontmatter": "catalog:"
   },
   "devDependencies": {
+    "@topik/core": "workspace:*",
     "@types/node": "catalog:",
     "micromark-util-types": "catalog:",
     "typescript": "catalog:",

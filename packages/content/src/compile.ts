@@ -60,6 +60,9 @@ export function compileTopikContent(
       level: error instanceof TemplateEvaluationError ? "error" : "critical",
       message: "",
       lines: error instanceof TemplateEvaluationError ? error.lines : [],
+      ...(error instanceof TemplateEvaluationError && error.column !== undefined
+        ? { column: error.column }
+        : {}),
       ...(error instanceof TemplateEvaluationError && error.attribute !== undefined
         ? { attribute: error.attribute }
         : {}),

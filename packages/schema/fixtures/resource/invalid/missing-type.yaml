@@ -1,0 +1,5 @@
+# expect: (root) required type
+apiVersion: v1
+name: getting-started
+spec:
+  title: Getting started

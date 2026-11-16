@@ -1,12 +1,13 @@
 import { join } from "node:path";
-import { analyzeTopikContent, validateTopikContent } from "@topik/content";
 import type { Course } from "@topik/schema/course/v1";
 import type { CourseModule } from "@topik/schema/course-module/v1";
 import type { CoursePage } from "@topik/schema/course-page/v1";
 import { parseCourseConfig, parseCoursePageMetadata } from "../config/course";
 import { resolveCourseNavigation, type CourseReferenceContext } from "../course-navigation";
 import type { SourceResource } from "../resource";
-import { compileAssetResources, type AssetCompilationOptions } from "./assets";
+import { compileAssetResourcesInSession, type AssetCompilationOptions } from "./assets";
+import { createPortableReadSession } from "../assets/files";
+import { createContentMemo, type ContentMemo } from "./content-memo";
 import { configurationDirectory, readExactConfigFile, type LoadedConfig } from "./config";
 import type { CompileResourceDiscovery } from "./guide";
 import { decodeUtf8Document, readRegularFileWithinRoot } from "./files";
@@ -17,7 +18,7 @@ import {
   type CompileResult,
   type CompileValidationOptions,
 } from "./shared";
-import { compileResourceLinks, type CompileResourceReferenceTarget } from "./links";
+import { compileResourceLinksInSession, type CompileResourceReferenceTarget } from "./links";
 
 export interface CompileCourseOptions {
   dir: string;
@@ -35,23 +36,32 @@ export async function compileCourse(options: CompileCourseOptions): Promise<Comp
 }
 
 export async function inspectCourse(options: CompileCourseOptions): Promise<CompileResult> {
-  const discovered = await discoverCourse(options);
+  const memo = createContentMemo();
+  const discovered = await discoverCourse(options, undefined, memo);
   validateCourseAuthors(discovered.resources, discovered.sourcePathsByResource);
-  const linked = await compileResourceLinks({
-    rootDir: configurationDirectory(options.dir, options.configFile),
-    resources: discovered.resources,
-    sourcePathsByResource: discovered.sourcePathsByResource,
-    validation: options.validation,
-    referenceTargets: options.referenceTargets,
-  });
+  const linked = await compileResourceLinksInSession(
+    createPortableReadSession(),
+    {
+      rootDir: configurationDirectory(options.dir, options.configFile),
+      resources: discovered.resources,
+      sourcePathsByResource: discovered.sourcePathsByResource,
+      validation: options.validation,
+      referenceTargets: options.referenceTargets,
+    },
+    memo,
+  );
   throwOnCompileErrors(linked.diagnostics);
-  const compiled = await compileAssetResources({
-    rootDir: configurationDirectory(options.dir, options.configFile),
-    resources: linked.resources,
-    sourcePathsByResource: discovered.sourcePathsByResource,
-    protectedSourcePaths: discovered.consumedSourcePaths,
-    ...options.assets,
-  });
+  const compiled = await compileAssetResourcesInSession(
+    createPortableReadSession(),
+    {
+      rootDir: configurationDirectory(options.dir, options.configFile),
+      resources: linked.resources,
+      sourcePathsByResource: discovered.sourcePathsByResource,
+      protectedSourcePaths: discovered.consumedSourcePaths,
+      ...options.assets,
+    },
+    memo,
+  );
   return {
     diagnostics: [...discovered.diagnostics, ...linked.diagnostics],
     references: linked.references,
@@ -64,6 +74,7 @@ export async function inspectCourse(options: CompileCourseOptions): Promise<Comp
 export async function discoverCourse(
   options: CompileCourseOptions,
   selectedConfig?: LoadedConfig,
+  memo: ContentMemo = createContentMemo(),
 ): Promise<CompileResourceDiscovery> {
   const dir = configurationDirectory(options.dir, options.configFile);
   const loaded = selectedConfig ?? (await loadCourseConfig(options.dir, options.configFile));
@@ -123,7 +134,7 @@ export async function discoverCourse(
       const key = `CoursePage/${metadata.id}`;
       if (Object.hasOwn(sourcePathsByResource, key))
         throw new PublicCompileError("config-invalid", loaded.path);
-      const validation = validateTopikContent(parsed.content, { file: file.path });
+      const validation = memo.validate(parsed.content, file.path);
       diagnostics.push(...validation.errors);
       if (!validation.valid) continue;
       const page: CoursePage = {
@@ -144,7 +155,7 @@ export async function discoverCourse(
       navigation.pages.push({ name: page.name, declarationIndex: pageIndex });
       sourcePathsByResource[key] = file.path;
       pages.push({ name: page.name, module: module.id, slug: metadata.slug, sourcePath });
-      const analysis = analyzeTopikContent(parsed.content, { file: file.path });
+      const analysis = memo.analyze(parsed.content, file.path);
       diagnostics.push(...analysis.diagnostics);
     }
   }

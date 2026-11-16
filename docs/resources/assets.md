@@ -270,11 +270,17 @@ checks, which its file metadata cannot support. An image needs meaningful
 alternative text; a download needs a meaningful label.
 
 The compiler detects media types from file bytes, not extensions. It recognizes
-PNG, JPEG, GIF, WebP, AVIF, HEIC/HEIF, BMP, and ICO images; MP3, WAV, Ogg, FLAC,
-and MP4 audio; MP4, QuickTime, and 3GPP video; and PDF, ZIP, and gzip files.
-Other safe bytes, including plain text, are opaque `application/octet-stream`
-downloads. An image slot needs a recognized image type. SVG is active content,
-so it is refused both as an image and as a download.
+PNG, JPEG, GIF, WebP, AVIF, HEIC/HEIF, BMP, TIFF, and ICO images; MP3, AAC
+(ADTS), WAV, Ogg, FLAC, and MP4 audio; MP4, QuickTime, 3GPP, and WebM video; and
+PDF, ZIP, and gzip files. Each signature is validated beyond its magic bytes (for
+example, AAC needs two consistent frame headers, TIFF a first image directory
+inside the file, and WebM a complete EBML header whose DocType is `webm`), so text
+that happens to start with the same bytes stays a download. Matroska files that
+are not WebM, BigTIFF, and other safe bytes, including plain text, are opaque
+`application/octet-stream` downloads. An image slot needs a recognized image
+type; browsers do not all display HEIC or TIFF, and the preview renders only
+PNG, JPEG, GIF, WebP, and AVIF images. SVG is active content, so it is refused
+both as an image and as a download.
 
 Text that starts with an HTML tag, or that contains a script, frame, embed, form,
 meta, link, base, style, or document element, an event-handler attribute inside a

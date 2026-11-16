@@ -27,6 +27,7 @@ import { throwOnCompileErrors, type CompileResult } from "./shared";
 import type { SourceResource } from "../resource";
 import type { CompileOptions } from "./index";
 import { compileResourceLinksInSession } from "./links";
+import { createContentMemo } from "./content-memo";
 
 export interface ManifestSourceDescriptor extends TopikManifestSource {
   /** Zero-based declaration index, used only for provenance and diagnostics. */
@@ -176,7 +177,9 @@ function manifestSourceDescriptors(manifest: TopikManifest): ManifestSourceDescr
 export async function compileManifest(options: CompileOptions): Promise<ManifestCompileResult> {
   const root = resolve(options.dir);
   // One session shares Git repository evidence across every portable read of this build.
-  const session = createPortableReadSession(options.fileSafety);
+  const session = createPortableReadSession(options.fileSafety, options.gitExecutable);
+  // Repeated admission and analysis of the same document text is shared within this call only.
+  const memo = createContentMemo();
   const manifest = await loadTopikManifestInSession(root, session);
   const sources = manifestSourceDescriptors(manifest);
   const provenance: ManifestSourceProvenance[] = [];
@@ -201,10 +204,10 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
     try {
       const localOptions = { dir: join(root, source.directory), validation: options.validation };
       discovered = await (source.kind === "wiki"
-        ? discoverWiki(localOptions, selected)
+        ? discoverWiki(localOptions, selected, memo)
         : source.kind === "course"
-          ? discoverCourse(localOptions, selected)
-          : discoverGuides(localOptions, selected));
+          ? discoverCourse(localOptions, selected, memo)
+          : discoverGuides(localOptions, selected, memo));
     } catch (error) {
       // Discovery locations are relative to the source's configuration directory.
       throw manifestSourceFailure(error, source, source.directory);
@@ -258,26 +261,34 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
     resources,
     Object.assign({}, ...provenance.map((source) => source.sourcePathsByResource)),
   );
-  const linked = await compileResourceLinksInSession(session, {
-    rootDir: root,
-    resources,
-    sourcePathsByResource,
-    sourceDirectoriesByResource,
-    validation: options.validation,
-    referenceTargets: options.referenceTargets,
-  });
+  const linked = await compileResourceLinksInSession(
+    session,
+    {
+      rootDir: root,
+      resources,
+      sourcePathsByResource,
+      sourceDirectoriesByResource,
+      validation: options.validation,
+      referenceTargets: options.referenceTargets,
+    },
+    memo,
+  );
   diagnostics.push(...linked.diagnostics);
   throwOnCompileErrors(diagnostics);
-  const compiled = await compileAssetResourcesInSession(session, {
-    rootDir: root,
-    resources: linked.resources,
-    sourcePathsByResource,
-    sourceDirectoriesByResource,
-    protectedSourcePaths,
-    generateName: createProjectAssetNameGenerator({
-      projectRoot: root,
-      projectNamespace: manifest.namespace,
-    }),
-  });
+  const compiled = await compileAssetResourcesInSession(
+    session,
+    {
+      rootDir: root,
+      resources: linked.resources,
+      sourcePathsByResource,
+      sourceDirectoriesByResource,
+      protectedSourcePaths,
+      generateName: createProjectAssetNameGenerator({
+        projectRoot: root,
+        projectNamespace: manifest.namespace,
+      }),
+    },
+    memo,
+  );
   return { diagnostics, references: linked.references, provenance, courseNavigation, ...compiled };
 }

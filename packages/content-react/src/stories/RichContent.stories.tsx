@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { useState } from "react";
 import { expect, fn, spyOn, waitFor } from "storybook/test";
 import { RichTopikContentProvider, RichTopikThemeProvider } from "../rich";
 import { TopikContent } from "../theme/TopikContent";
@@ -211,6 +212,45 @@ export const IsolatedDiagramThemes: Story = {
         "Content publishing",
       );
     await expect(getComputedStyle(svgs[0]).color).not.toBe(getComputedStyle(svgs[1]).color);
+  },
+};
+
+function EditableDiagram() {
+  const [edited, setEdited] = useState(false);
+  return (
+    <>
+      <button onClick={() => setEdited(true)} type="button">
+        Edit diagram
+      </button>
+      <TopikContent content={edited ? mermaid.replace("Publish", "Review --> Publish") : mermaid} />
+    </>
+  );
+}
+
+export const EditedDiagram: Story = {
+  render: () => <EditableDiagram />,
+  parameters: {
+    docs: {
+      description: {
+        story:
+          "While a changed diagram re-renders, the previous diagram stays visible (marked aria-busy) instead of the loading placeholder.",
+      },
+    },
+  },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await waitFor(
+      () => expect(canvasElement.querySelector(".topik-rich-mermaid svg")).toBeVisible(),
+      { timeout: 10000 },
+    );
+    await userEvent.click(canvas.getByRole("button", { name: "Edit diagram" }));
+    await expect(canvasElement.querySelector(".topik-rich-mermaid--loading")).toBeNull();
+    await expect(canvasElement.querySelector(".topik-rich-mermaid svg")).toBeVisible();
+    await waitFor(
+      () =>
+        expect(canvasElement.querySelector(".topik-rich-mermaid svg")).toHaveTextContent("Review"),
+      { timeout: 10000 },
+    );
+    await expect(canvasElement.querySelector(".topik-rich-mermaid[aria-busy]")).toBeNull();
   },
 };
 

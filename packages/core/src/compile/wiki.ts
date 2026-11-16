@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { join } from "node:path";
-import { analyzeTopikContent, validateTopikContent } from "@topik/content";
 import type {
   Wiki,
   WikiDropdownNavNode,
@@ -13,7 +12,9 @@ import type { SourceResource } from "../resource";
 import { parseWikiConfig, WIKI_PAGE_NAME_HASH_LENGTH, type WikiNavNode } from "../config/wiki";
 import { parsePageMetadata } from "../config/source-version";
 import { validateResources } from "../validate";
-import { compileAssetResources, type AssetCompilationOptions } from "./assets";
+import { compileAssetResourcesInSession, type AssetCompilationOptions } from "./assets";
+import { createPortableReadSession } from "../assets/files";
+import { createContentMemo, type ContentMemo } from "./content-memo";
 import type { CompileResourceDiscovery } from "./guide";
 import {
   readOptionalConfigFileWithPath,
@@ -30,7 +31,7 @@ import {
   type CompileValidationOptions,
   type CompileResult,
 } from "./shared";
-import { compileResourceLinks, type CompileResourceReferenceTarget } from "./links";
+import { compileResourceLinksInSession, type CompileResourceReferenceTarget } from "./links";
 import { joinWikiPath } from "../wiki-navigation";
 
 export interface CompileWikiOptions {
@@ -52,22 +53,31 @@ export async function compileWiki(options: CompileWikiOptions): Promise<CompileR
 }
 
 export async function inspectWiki(options: CompileWikiOptions): Promise<CompileResult> {
-  const discovered = await discoverWiki(options);
-  const linked = await compileResourceLinks({
-    rootDir: configurationDirectory(options.dir, options.configFile),
-    resources: discovered.resources,
-    sourcePathsByResource: discovered.sourcePathsByResource,
-    validation: options.validation,
-    referenceTargets: options.referenceTargets,
-  });
+  const memo = createContentMemo();
+  const discovered = await discoverWiki(options, undefined, memo);
+  const linked = await compileResourceLinksInSession(
+    createPortableReadSession(),
+    {
+      rootDir: configurationDirectory(options.dir, options.configFile),
+      resources: discovered.resources,
+      sourcePathsByResource: discovered.sourcePathsByResource,
+      validation: options.validation,
+      referenceTargets: options.referenceTargets,
+    },
+    memo,
+  );
   throwOnCompileErrors(linked.diagnostics);
-  const compiled = await compileAssetResources({
-    rootDir: configurationDirectory(options.dir, options.configFile),
-    resources: linked.resources,
-    sourcePathsByResource: discovered.sourcePathsByResource,
-    protectedSourcePaths: discovered.consumedSourcePaths,
-    ...options.assets,
-  });
+  const compiled = await compileAssetResourcesInSession(
+    createPortableReadSession(),
+    {
+      rootDir: configurationDirectory(options.dir, options.configFile),
+      resources: linked.resources,
+      sourcePathsByResource: discovered.sourcePathsByResource,
+      protectedSourcePaths: discovered.consumedSourcePaths,
+      ...options.assets,
+    },
+    memo,
+  );
   return {
     diagnostics: [...discovered.diagnostics, ...linked.diagnostics],
     references: linked.references,
@@ -80,6 +90,7 @@ export async function inspectWiki(options: CompileWikiOptions): Promise<CompileR
 export async function discoverWiki(
   options: CompileWikiOptions,
   selectedConfig?: LoadedConfig,
+  memo: ContentMemo = createContentMemo(),
 ): Promise<CompileResourceDiscovery> {
   const dir = configurationDirectory(options.dir, options.configFile);
 
@@ -125,7 +136,7 @@ export async function discoverWiki(
         throw publicSchemaError("frontmatter-invalid", sourcePath, error);
       }
     }
-    const validation = validateTopikContent(content, { file: sourcePath });
+    const validation = memo.validate(content, sourcePath);
     diagnostics.push(...validation.errors);
     if (!validation.valid) continue;
     const name =
@@ -135,7 +146,7 @@ export async function discoverWiki(
     if (pageNamesBySource.has(pagePath) || Object.hasOwn(sourcePathsByResource, `WikiPage/${name}`))
       throw new PublicCompileError("config-invalid", loadedConfig.path);
     pageNamesBySource.set(pagePath, name);
-    const analysis = analyzeTopikContent(content, { file: sourcePath });
+    const analysis = memo.analyze(content, sourcePath);
     diagnostics.push(...analysis.diagnostics);
     const title =
       typeof frontmatter.title === "string"

@@ -5,7 +5,6 @@ import type {
   TopikResourceReference,
 } from "@topik/content";
 import {
-  analyzeTopikContent,
   parseTopikResourceReference,
   rewriteTopikNavigationReferences,
   serializeTopikResourceReference,
@@ -27,6 +26,7 @@ import {
   type ResolvedCourseNavigation,
 } from "../course-navigation";
 import type { SourceResource } from "../resource";
+import { createContentMemo, type ContentMemo } from "./content-memo";
 import { PublicCompileError } from "./public-errors";
 import {
   linkValidationPolicy,
@@ -85,6 +85,7 @@ export async function compileResourceLinks(input: CompileResourceLinksInput): Pr
 export async function compileResourceLinksInSession(
   session: PortableReadSession,
   input: CompileResourceLinksInput,
+  memo: ContentMemo = createContentMemo(),
 ): Promise<{
   resources: SourceResource[];
   diagnostics: TopikContentDiagnostic[];
@@ -119,7 +120,7 @@ export async function compileResourceLinksInSession(
     const key = resourceKey(resource);
     const sourcePath = input.sourcePathsByResource[key];
     if (sourcePath === undefined || resource.spec.content.format !== "topik") continue;
-    analyses.set(key, analyzeTopikContent(resource.spec.content.value, { file: sourcePath }));
+    analyses.set(key, memo.analyze(resource.spec.content.value, sourcePath));
     localTargets.set(key, resource);
     const targets = targetsByPath.get(sourcePath) ?? [];
     targets.push(resource);

@@ -25,6 +25,7 @@
         "level": "error",
         "lines": [5],
         "message": "Link scheme is unsafe.",
+        "column": 1,
         "file": "wiki/ids.md"
       },
       {
@@ -33,6 +34,7 @@
         "level": "error",
         "lines": [1],
         "message": "Asset reference has an invalid generated name.",
+        "column": 1,
         "file": "guides/asset.md"
       }
     ]

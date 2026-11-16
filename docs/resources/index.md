@@ -87,6 +87,11 @@ npx topik compile ./handbook --validate
 npx topik validate ./handbook/.topik
 ```
 
+`npx topik init ./handbook` writes exactly these three files (pass `--namespace`
+for another project namespace) and refuses to overwrite any existing file.
+`npx topik format ./handbook` rewrites the Markdown in the canonical form; with
+`--check` it only lists the files that would change.
+
 `--validate` checks the generated resource envelopes. `topik validate` accepts
 resource files or directories containing JSON, JSONL, or YAML, and reports each
 failing file, resource, and JSON pointer. When walking a directory it skips
@@ -94,13 +99,64 @@ failing file, resource, and JSON pointer. When walking a directory it skips
 compilation output directory, it validates the envelopes under `resources/` and
 skips the `materialization.json` and `semantic.json` inventories.
 
+By default `topik validate` checks each resource against its schema on its own.
+Two opt-in flags add more checks, and both can be combined:
+
+- `--graph` checks the loaded resources as one complete set. Each `type/name`
+  must be unique, and each by-name reference must name a resource in the set:
+  a Wiki navigation `page` entry to its `WikiPage`, a `WikiPage` `spec.wiki` to
+  its `Wiki`, a `CourseModule` `spec.course` to its `Course`, a `CoursePage`
+  `spec.module` to its `CourseModule`, and each `spec.authors` entry of a
+  `Course`, `CoursePage` or `Guide` to a `Person`. Use it on a whole compilation
+  output; a directory that holds only part of a project reports every reference
+  to a resource it leaves out.
+- `--content` checks the `spec.content.value` of each `CoursePage`, `Guide` and
+  `WikiPage` whose content format is `topik`, with the same source checks that
+  compilation applies, and reports each content error with its line.
+
+These problems are reported like schema errors, with the file, resource and
+JSON pointer, and make the command exit with status 1.
+
+`--json` prints one JSON document on stdout instead of the human-readable
+report. The exit status is unchanged: 0 when everything is valid, 1 otherwise,
+with a one-line summary on stderr. The document has this shape (version 1):
+
+```json
+{
+  "version": 1,
+  "valid": false,
+  "resources": 2,
+  "checks": ["schema", "graph"],
+  "diagnostics": [
+    {
+      "check": "graph",
+      "id": "reference-unresolved",
+      "file": "resources/CoursePage/welcome.json",
+      "resource": "CoursePage/welcome",
+      "pointer": "/spec/authors/0",
+      "message": "must reference a Person in the resource set; Person/alice is missing"
+    }
+  ]
+}
+```
+
+`resources` counts the resources that were loaded and validated, and `checks`
+lists the checks that ran. Every diagnostic has all six fields. `check` is
+`read` for a file or target that could not be read or parsed (its `resource`
+and `pointer` are `null`, and `file` is `null` when the target itself failed),
+or `schema`, `graph` or `content`. `id` is a stable identifier such as
+`resource-invalid`, `resource-duplicate`, `reference-unresolved`,
+`content-invalid` or `resource-json-invalid`, or `null` when there is none.
+Files, resource labels, pointers and messages are reduced to the same safe
+labels as the human-readable report.
+
 Compilation validates source and unresolved internal wiki links by default.
 `--dry-run` lists output paths without writing files; `--out-dir` chooses a
 separate output directory, which may already exist if it is empty. A non-empty
 directory is replaced only when it holds a previous compilation. Published
 directories are mode `0755` and files `0644`, so another user, such as a web
-server, can read them. `topik compile`, `topik lint`, `topik dev` and
-`topik validate` run on Linux, macOS and Windows. Off Linux, project files are
+server, can read them. `topik compile`, `topik lint`, `topik format`, `topik dev`
+and `topik validate` run on Linux, macOS and Windows. Off Linux, project files are
 read and output is published with the weaker
 [portable file safety](#source-filesystem-safety), and the CLI prints one notice
 saying so; pass `--file-safety anchored` to refuse instead, which exits with a
@@ -165,7 +221,10 @@ the semantic and materialization inventories. The library returns these in
 memory; the CLI writes the complete output tree.
 
 `validateResources` checks resource envelopes, not every filesystem byte or every
-possible application relationship. Keep the generated inventories and payloads
+possible application relationship. `validateResourceGraph(resources)` adds the
+`--graph` checks for a complete set; each of its errors also carries the `index`
+of its resource in the list. `validateResourceContent(resources)` adds the
+`--content` checks. Both return errors in the same shape as `validateResources`. Keep the generated inventories and payloads
 with the resources when transferring a compilation. [Assets](./assets.md#compiled-output)
 explains that output boundary.
 
@@ -222,6 +281,7 @@ Off Linux, `topik compile --out-dir` publishes in the same portable mode: it sta
 the complete generation in a sibling temporary directory, verifies it, proves an
 existing output is a previous compilation, and renames it into place, refusing a
 symlinked or foreign target. Linux keeps its descriptor-anchored publication.
+The Astro integration writes its `blobs/` build output through the same code.
 
 ## Multi-source projects
 

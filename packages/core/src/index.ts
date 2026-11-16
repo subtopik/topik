@@ -69,9 +69,30 @@ export {
   type ContentBearingResource,
 } from "./compile";
 export { CompileError } from "./compile";
+
+/** @internal Safe publication of generated output, shared by the CLI and the Astro integration. */
+export {
+  OutputPublicationError,
+  publishOutputDirectory,
+  removeOutputDirectory,
+  type OutputDirectoryOptions,
+  type OutputOwnershipPredicate,
+  type OutputPublicationErrorReason,
+  type OutputPublicationFile,
+  type OutputPublicationOptions,
+  type OwnedOutputEntry,
+} from "./compile/publication";
 export type { Resource, ResourceType, SourceResource } from "./resource";
 
-export { validateResources, type ValidationError, type ValidationResult } from "./validate";
+export {
+  validateResourceContent,
+  validateResourceGraph,
+  validateResources,
+  type ResourceGraphError,
+  type ResourceGraphResult,
+  type ValidationError,
+  type ValidationResult,
+} from "./validate";
 
 export {
   findFirstWikiPage,
@@ -107,7 +128,7 @@ export {
   type ResolvedCourseContentReference,
 } from "./course-navigation";
 
-export { watch, type WatchOptions, type Watcher } from "./watch";
+export { DEFAULT_WATCH_DEBOUNCE_MS, watch, type WatchOptions, type Watcher } from "./watch";
 
 /** Compiler-derived Asset/v1 output, validation, identity, and safety APIs. */
 export * from "./assets";
@@ -137,6 +158,7 @@ export {
   type SourceUpdatePlan,
   type SourcePlanResult,
   type SourcePlanDiagnostic,
+  type SourcePlanDiagnosticCode,
 } from "./source/plan";
 export {
   replaySourceByteEdits,

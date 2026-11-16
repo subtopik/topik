@@ -69,8 +69,11 @@ in production, since paths are content-addressed). Opaque downloads
 compiler already rejects active media such as HTML and SVG. A build also writes the
 payloads to `blobs/` in the static (client) output directory.
 
-Reading local Asset files and writing `blobs/` require Linux, where both stay
-anchored to opened directory descriptors. On other platforms a site without local
-Assets builds normally; a local Asset reference fails compilation, and a build that
-would publish or replace a `blobs/` directory fails with
-`Topik Asset publication requires Linux`.
+On Linux, reading local Asset files and writing `blobs/` stay anchored to opened
+directory descriptors. On macOS and Windows that is unavailable, so both use
+Topik's portable file safety (the default, as in `topik compile`): paths and file
+identity are checked instead, which cannot stop another process that changes the
+workspace during a build. The integration logs one warning per build saying so;
+build only in a workspace you trust. Either way, a build replaces only an empty
+`blobs/` directory or one written by a previous build (every entry a file named
+by the SHA-256 of its bytes), and refuses a symbolic link or any other content.

@@ -16,6 +16,7 @@ export function sniffPortableMediaType(bytes: Uint8Array): string {
   const isoMediaType = sniffIsoBaseMediaType(bytes);
   if (isoMediaType !== undefined) return isoMediaType;
   if (isBmp(bytes)) return "image/bmp";
+  if (isTiff(bytes)) return "image/tiff";
   if (has(0x00, 0x00, 0x01, 0x00)) return "image/x-icon";
   if (ascii(bytes, 0, 5) === "%PDF-") return "application/pdf";
   if (has(0x50, 0x4b, 0x03, 0x04) || has(0x50, 0x4b, 0x05, 0x06)) return "application/zip";
@@ -24,6 +25,8 @@ export function sniffPortableMediaType(bytes: Uint8Array): string {
   if (ascii(bytes, 0, 4) === "OggS") return "audio/ogg";
   if (ascii(bytes, 0, 4) === "fLaC") return "audio/flac";
   if (hasId3Header(bytes) || isMpegAudioFrameSequence(bytes)) return "audio/mpeg";
+  if (isAdtsFrameSequence(bytes)) return "audio/aac";
+  if (ebmlDocType(bytes) === "webm") return "video/webm";
   if (
     has(0x7f, 0x45, 0x4c, 0x46) ||
     isPortableExecutable(bytes) ||
@@ -315,6 +318,128 @@ function isMpegAudioFrameSequence(bytes: Uint8Array): boolean {
   const length = mpegAudioFrameLength(bytes, 0);
   if (length === undefined) return false;
   return length === bytes.byteLength || mpegAudioFrameLength(bytes, length) !== undefined;
+}
+
+/** Header bytes of the first ADTS frame, or undefined when they are not a valid header. */
+interface AdtsHeader {
+  length: number;
+  /** Fields that must stay the same in every frame of one stream. */
+  fixed: number;
+}
+
+/**
+ * Parse the ADTS header at `offset`: 12 sync bits, MPEG layer `00` (MP3 frames use the other
+ * layers, so the two never overlap), a defined sampling frequency, and a frame length that
+ * covers the header and at least one payload byte.
+ */
+function adtsHeader(bytes: Uint8Array, offset: number): AdtsHeader | undefined {
+  if (offset + 7 > bytes.byteLength) return undefined;
+  const b1 = bytes[offset + 1];
+  const b2 = bytes[offset + 2];
+  const b3 = bytes[offset + 3];
+  if (bytes[offset] !== 0xff || (b1 & 0xf6) !== 0xf0) return undefined;
+  if (((b2 >> 2) & 0x0f) > 12) return undefined;
+  const length = ((b3 & 0x03) << 11) | (bytes[offset + 4] << 3) | (bytes[offset + 5] >> 5);
+  const headerLength = (b1 & 0x01) === 1 ? 7 : 9;
+  if (length <= headerLength) return undefined;
+  // ID, protection, profile, sampling frequency and channel configuration; not the private bit.
+  return { length, fixed: (b1 << 16) | ((b2 & 0xfd) << 8) | (b3 & 0xc0) };
+}
+
+/**
+ * AAC in ADTS framing must start with a valid header that is followed by another header with the
+ * same fixed fields (or the end of the file) exactly one frame later, like MPEG audio above. This
+ * keeps UTF-16LE text (`FF FE`) and other bytes that merely start with sync bits opaque.
+ */
+function isAdtsFrameSequence(bytes: Uint8Array): boolean {
+  const first = adtsHeader(bytes, 0);
+  if (first === undefined || first.length > bytes.byteLength) return false;
+  if (first.length === bytes.byteLength) return true;
+  return adtsHeader(bytes, first.length)?.fixed === first.fixed;
+}
+
+/** TIFF field types 1-12 from TIFF 6.0 and 13 (IFD) from the TIFF/EP and DNG extensions. */
+const TIFF_MAX_FIELD_TYPE = 13;
+
+/**
+ * Classic TIFF in either byte order: `II*\0` or `MM\0*`, then a first IFD at an even offset past
+ * the header whose entries, field types and next-IFD offset all fit inside the file.
+ */
+function isTiff(bytes: Uint8Array): boolean {
+  if (bytes.byteLength < 8) return false;
+  const little = ascii(bytes, 0, 4) === "II*\0";
+  if (!little && ascii(bytes, 0, 4) !== "MM\0*") return false;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const ifd = view.getUint32(4, little);
+  if (ifd < 8 || ifd % 2 !== 0 || ifd + 2 > bytes.byteLength) return false;
+  const entries = view.getUint16(ifd, little);
+  if (entries === 0 || ifd + 2 + entries * 12 + 4 > bytes.byteLength) return false;
+  for (let index = 0; index < entries; index++) {
+    const type = view.getUint16(ifd + 2 + index * 12 + 2, little);
+    if (type === 0 || type > TIFF_MAX_FIELD_TYPE) return false;
+  }
+  return true;
+}
+
+const EBML_HEADER_ID = 0x1a45dfa3;
+const EBML_DOC_TYPE_ID = 0x4282;
+/** Registered DocTypes are short words such as `webm` and `matroska`. */
+const EBML_DOC_TYPE_MAX_BYTES = 64;
+
+/**
+ * Read an EBML variable-length integer at `offset`. Element IDs keep their length marker and are
+ * at most four bytes; sizes drop it, may use eight bytes, and must not be the reserved
+ * "unknown size" value (all value bits set).
+ */
+function ebmlVint(
+  bytes: Uint8Array,
+  offset: number,
+  end: number,
+  kind: "id" | "size",
+): { value: number; next: number } | undefined {
+  const first = bytes[offset];
+  if (first === undefined || first === 0) return undefined;
+  const length = Math.clz32(first) - 23;
+  if ((kind === "id" && length > 4) || offset + length > end) return undefined;
+  const mask = 0xff >> length;
+  let value = kind === "id" ? first : first & mask;
+  let unknown = (first & mask) === mask;
+  for (let index = 1; index < length; index++) {
+    const byte = bytes[offset + index];
+    value = value * 256 + byte;
+    unknown &&= byte === 0xff;
+  }
+  if (kind === "size" && unknown) return undefined;
+  return { value, next: offset + length };
+}
+
+/**
+ * DocType of a complete EBML header (`1A 45 DF A3`): the header and every child element must fit
+ * inside the file, and the header must name exactly one printable ASCII DocType. WebM and
+ * Matroska share the container, so only the DocType tells them apart.
+ */
+function ebmlDocType(bytes: Uint8Array): string | undefined {
+  const header = ebmlVint(bytes, 0, bytes.byteLength, "id");
+  if (header?.value !== EBML_HEADER_ID) return undefined;
+  const size = ebmlVint(bytes, header.next, bytes.byteLength, "size");
+  if (size === undefined || size.next + size.value > bytes.byteLength) return undefined;
+  const end = size.next + size.value;
+  let docType: string | undefined;
+  let cursor = size.next;
+  while (cursor < end) {
+    const id = ebmlVint(bytes, cursor, end, "id");
+    if (id === undefined) return undefined;
+    const length = ebmlVint(bytes, id.next, end, "size");
+    if (length === undefined || length.next + length.value > end) return undefined;
+    if (id.value === EBML_DOC_TYPE_ID) {
+      if (docType !== undefined || length.value > EBML_DOC_TYPE_MAX_BYTES) return undefined;
+      // Strings may be padded with trailing NUL bytes.
+      docType = ascii(bytes, length.next, length.value).replace(/\0+$/u, "");
+      if (!/^[\x21-\x7e]+$/u.test(docType)) return undefined;
+    }
+    cursor = length.next + length.value;
+  }
+  return docType;
 }
 
 const BMP_DIB_HEADER_SIZES = new Set([12, 40, 52, 56, 64, 108, 124]);

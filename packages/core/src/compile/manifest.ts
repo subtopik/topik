@@ -177,7 +177,7 @@ function manifestSourceDescriptors(manifest: TopikManifest): ManifestSourceDescr
 export async function compileManifest(options: CompileOptions): Promise<ManifestCompileResult> {
   const root = resolve(options.dir);
   // One session shares Git repository evidence across every portable read of this build.
-  const session = createPortableReadSession(options.fileSafety);
+  const session = createPortableReadSession(options.fileSafety, options.gitExecutable);
   // Repeated admission and analysis of the same document text is shared within this call only.
   const memo = createContentMemo();
   const manifest = await loadTopikManifestInSession(root, session);

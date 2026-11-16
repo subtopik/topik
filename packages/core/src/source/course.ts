@@ -1,9 +1,5 @@
 import { posix } from "node:path";
-import {
-  parseTopikResourceReference,
-  rewriteTopikNavigationReferences,
-  type TopikNavigationReference,
-} from "@topik/content";
+import { rewriteTopikNavigationReferences, type TopikNavigationReference } from "@topik/content";
 import type { Course } from "@topik/schema/course/v1";
 import type { CourseModule } from "@topik/schema/course-module/v1";
 import type { CoursePage } from "@topik/schema/course-page/v1";
@@ -13,15 +9,13 @@ import {
   resolveCourseContentHref,
   resolveCourseContentReference,
   type CourseReferenceContext,
+  type ResolvedCourseContentLink,
   type ResolvedCourseNavigation,
 } from "../course-navigation";
-import { SourcePlanningError } from "./diagnostics";
+import { failSourcePlan as fail } from "./diagnostics";
 import { collectMetadataEdits } from "./metadata";
+import { transportSavedReferences, type SourceDerivedRepair } from "./reference-transport";
 import { patchSourceSequence, type SourceByteEdit } from "./syntax";
-
-function fail(code: string, message: string, resource?: string): never {
-  throw new SourcePlanningError({ code, message, ...(resource ? { resource } : {}) });
-}
 
 /** Course references keep stable identities independently of route and file placement. */
 export function sourceCourseContext(
@@ -124,88 +118,61 @@ export function portableCoursePage(
   };
 }
 
+/** Transport saved Course references to the current navigation; true when content changed. */
 export function transportCourseReferences(
   page: CoursePage,
   saved: ResolvedCourseNavigation,
   current: ResolvedCourseNavigation,
-  repairs: Array<{
-    resource: string;
-    kind: "navigation" | "reference";
-    position?: string;
-    before?: string;
-    after?: string;
-    target?: string;
-  }>,
+  repairs: SourceDerivedRepair[],
   resolveOtherReference?: (href: string) => string | undefined,
   isNonPageReference?: (reference: TopikNavigationReference) => boolean,
-  isCurrentNonPageReference?: (reference: TopikNavigationReference) => boolean,
+  isCurrentShadowed?: (
+    reference: TopikNavigationReference,
+    after: ResolvedCourseContentLink | null,
+  ) => boolean,
 ): boolean {
   const key = `CoursePage/${page.name}`;
-  const rewritten = rewriteTopikNavigationReferences(
-    page.spec.content.value,
-    (reference) => {
-      if (parseTopikResourceReference(reference.href) || isNonPageReference?.(reference))
-        return undefined;
-      const savedReference = resolveCourseContentReference(reference.href, page.name, saved);
-      if (savedReference.kind === "unresolved") {
-        const other = resolveOtherReference?.(reference.href);
-        if (other !== undefined) return other;
+  const transported = transportSavedReferences({
+    resource: key,
+    content: page.spec.content.value,
+    resolveSaved: (href) => resolveCourseContentReference(href, page.name, saved),
+    resolveCurrent: (href) => resolveCourseContentHref(href, page.name, current),
+    currentRoute: (name) => current.pageByName.get(name)?.route,
+    repairs,
+    resolveOtherReference,
+    isNonPageReference,
+    isCurrentShadowed,
+    fail: (failure) => {
+      switch (failure) {
+        case "unresolved":
+          return fail(
+            "reference-target-unresolved",
+            "An authored link has no target in its saved Course context.",
+            key,
+          );
+        case "removed":
+          return fail(
+            "reference-target-removed",
+            "An authored Course reference targets a removed page.",
+            key,
+          );
+        case "unrepresentable":
+          return fail(
+            "reference-unrepresentable",
+            "A Course source reference cannot preserve its target.",
+            key,
+          );
+        case "rewrite":
+          return fail(
+            "reference-unrepresentable",
+            "Course authoring references cannot be written faithfully.",
+            key,
+          );
       }
-      if (savedReference.kind === "unresolved")
-        fail(
-          "reference-target-unresolved",
-          "An authored link has no target in its saved Course context.",
-          key,
-        );
-      if (savedReference.kind !== "page") return undefined;
-      const before = savedReference.target;
-      const after = resolveCourseContentHref(reference.href, page.name, current);
-      if (
-        !isCurrentNonPageReference?.(reference) &&
-        after?.page.page === before.page.page &&
-        after.search === before.search &&
-        after.hash === before.hash
-      )
-        return undefined;
-      const target = current.pageByName.get(before.page.page);
-      if (!target)
-        fail(
-          "reference-target-removed",
-          "An authored Course reference targets a removed page.",
-          key,
-        );
-      const href = `/${target.route.split("/").map(encodeURIComponent).join("/")}${before.search}${before.hash ? `#${before.hash}` : ""}`;
-      const proof = resolveCourseContentHref(href, page.name, current);
-      if (
-        proof?.page.page !== before.page.page ||
-        proof.search !== before.search ||
-        proof.hash !== before.hash
-      )
-        fail(
-          "reference-unrepresentable",
-          "A Course source reference cannot preserve its target.",
-          key,
-        );
-      repairs.push({
-        resource: key,
-        kind: "reference",
-        position: reference.position,
-        before: reference.href,
-        after: href,
-        target: before.page.page,
-      });
-      return href;
     },
-    { allowCompiledAssetReferences: true },
-  );
-  if (!rewritten.ok)
-    fail(
-      "reference-unrepresentable",
-      "Course authoring references cannot be written faithfully.",
-      key,
-    );
-  if (!rewritten.changes.length) return false;
-  page.spec.content.value = rewritten.content;
+  });
+  if (!transported.changed) return false;
+  page.spec.content.value = transported.content;
   return true;
 }
 

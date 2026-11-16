@@ -380,3 +380,17 @@ stages the complete generation in a sibling temporary directory, verifies it,
 proves that an existing output is a previous compilation, and renames the new
 generation into place. It refuses a symlinked or foreign target. The Astro
 integration writes its `blobs/` build output through the same code.
+
+Symbolic links in the output path follow the rule for source files when the
+output directory lies inside the project directory, which includes the default
+`.topik`:
+
+| Link in the output path                                                | Result                                                          |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Above the project directory, such as a symlinked `/home`               | Accepted on every platform.                                     |
+| The project directory itself, or a directory between it and the output | Refused on every platform; nothing is written through the link. |
+
+For an output directory outside the project directory the platforms differ.
+Linux refuses a link anywhere in the path as you give it, so pass the real
+path. macOS and Windows follow links above the output directory, because
+system paths such as `/var` and `/tmp` are links there.

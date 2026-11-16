@@ -1,0 +1,671 @@
+{
+  "diagnostics": [
+    {
+      "id": "link-page-not-found",
+      "type": "link",
+      "level": "warning",
+      "message": "Internal link target page was not found.",
+      "lines": [13],
+      "file": "docs/index.md"
+    },
+    {
+      "id": "link-fragment-not-found",
+      "type": "link",
+      "level": "warning",
+      "message": "Link target heading was not found.",
+      "lines": [13],
+      "file": "docs/index.md"
+    },
+    {
+      "id": "link-fragment-not-found",
+      "type": "link",
+      "level": "warning",
+      "message": "Link target heading was not found.",
+      "lines": [5],
+      "file": "docs/guide/usage.md"
+    }
+  ],
+  "references": [
+    {
+      "resource": "CoursePage/welcome",
+      "sourcePath": "course/pages/welcome.md",
+      "href": "next.md#details",
+      "kind": "link",
+      "position": "1/0",
+      "reference": {
+        "type": "CoursePage",
+        "name": "next",
+        "search": "",
+        "hash": "details"
+      },
+      "status": "verified"
+    },
+    {
+      "resource": "CoursePage/welcome",
+      "sourcePath": "course/pages/welcome.md",
+      "href": "/getting-started/destination",
+      "kind": "link",
+      "position": "1/2",
+      "reference": {
+        "type": "CoursePage",
+        "name": "next",
+        "search": "",
+        "hash": ""
+      },
+      "status": "verified"
+    },
+    {
+      "resource": "Guide/guides-first",
+      "sourcePath": "guides/first.md",
+      "href": "second.md#details",
+      "kind": "link",
+      "position": "1/1",
+      "reference": {
+        "type": "Guide",
+        "name": "guides-second",
+        "search": "",
+        "hash": "details"
+      },
+      "status": "verified"
+    },
+    {
+      "resource": "Guide/guides-first",
+      "sourcePath": "guides/first.md",
+      "href": "../docs/guide/setup.md",
+      "kind": "link",
+      "position": "1/3",
+      "reference": {
+        "type": "WikiPage",
+        "name": "docs-4834e2bf04132a89",
+        "search": "",
+        "hash": ""
+      },
+      "status": "verified"
+    },
+    {
+      "resource": "WikiPage/docs-1bc04b5291c26a46",
+      "sourcePath": "docs/index.md",
+      "href": "guide/setup.md",
+      "kind": "link",
+      "position": "1/1",
+      "reference": {
+        "type": "WikiPage",
+        "name": "docs-4834e2bf04132a89",
+        "search": "",
+        "hash": ""
+      },
+      "status": "verified"
+    },
+    {
+      "resource": "WikiPage/docs-1bc04b5291c26a46",
+      "sourcePath": "docs/index.md",
+      "href": "guide/usage.md#options",
+      "kind": "link",
+      "position": "1/3",
+      "reference": {
+        "type": "WikiPage",
+        "name": "docs-3b1f712c8a5f0a3f",
+        "search": "",
+        "hash": "options"
+      },
+      "status": "verified"
+    },
+    {
+      "resource": "WikiPage/docs-1bc04b5291c26a46",
+      "sourcePath": "docs/index.md",
+      "href": "./guide/usage.md",
+      "kind": "card",
+      "position": "3",
+      "reference": {
+        "type": "WikiPage",
+        "name": "docs-3b1f712c8a5f0a3f",
+        "search": "",
+        "hash": ""
+      },
+      "status": "verified"
+    },
+    {
+      "resource": "WikiPage/docs-3b1f712c8a5f0a3f",
+      "sourcePath": "docs/guide/usage.md",
+      "href": "setup.md#install",
+      "kind": "link",
+      "position": "2/3",
+      "reference": {
+        "type": "WikiPage",
+        "name": "docs-4834e2bf04132a89",
+        "search": "",
+        "hash": "install"
+      },
+      "status": "invalid"
+    },
+    {
+      "resource": "WikiPage/docs-4834e2bf04132a89",
+      "sourcePath": "docs/guide/setup.md",
+      "href": "../index.md",
+      "kind": "link",
+      "position": "2/1",
+      "reference": {
+        "type": "WikiPage",
+        "name": "docs-1bc04b5291c26a46",
+        "search": "",
+        "hash": ""
+      },
+      "status": "verified"
+    },
+    {
+      "resource": "WikiPage/docs-4834e2bf04132a89",
+      "sourcePath": "docs/guide/setup.md",
+      "href": "/guide/usage#options",
+      "kind": "link",
+      "position": "2/3",
+      "reference": {
+        "type": "WikiPage",
+        "name": "docs-3b1f712c8a5f0a3f",
+        "search": "",
+        "hash": "options"
+      },
+      "status": "verified"
+    }
+  ],
+  "provenance": [
+    {
+      "kind": "wiki",
+      "config": "docs/wiki.yaml",
+      "sourceIndex": 0,
+      "directory": "docs",
+      "namespace": "example/pipeline",
+      "assetDirectory": "docs/_assets",
+      "sourcePathsByResource": {
+        "WikiPage/docs-1bc04b5291c26a46": "docs/index.md",
+        "WikiPage/docs-4834e2bf04132a89": "docs/guide/setup.md",
+        "WikiPage/docs-3b1f712c8a5f0a3f": "docs/guide/usage.md",
+        "Wiki/docs": "docs/wiki.yaml"
+      }
+    },
+    {
+      "kind": "collection",
+      "config": "guides/collection.yaml",
+      "sourceIndex": 1,
+      "directory": "guides",
+      "namespace": "example/pipeline",
+      "assetDirectory": "guides/_assets",
+      "sourcePathsByResource": {
+        "Person/alice": "guides/collection.yaml",
+        "Guide/guides-first": "guides/first.md",
+        "Guide/guides-second": "guides/second.md"
+      }
+    },
+    {
+      "kind": "course",
+      "config": "course/course.yaml",
+      "sourceIndex": 2,
+      "directory": "course",
+      "namespace": "example/pipeline",
+      "assetDirectory": "course/_assets",
+      "sourcePathsByResource": {
+        "Course/learning": "course/course.yaml",
+        "CourseModule/basics": "course/course.yaml",
+        "CoursePage/welcome": "course/pages/welcome.md",
+        "CoursePage/next": "course/pages/next.md"
+      }
+    }
+  ],
+  "courseNavigation": {
+    "learning": {
+      "modules": [
+        {
+          "name": "basics",
+          "declarationIndex": 0,
+          "pages": [
+            {
+              "name": "welcome",
+              "declarationIndex": 0
+            },
+            {
+              "name": "next",
+              "declarationIndex": 1
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "resources": [
+    {
+      "apiVersion": "v1",
+      "type": "Asset",
+      "name": "auto-v1-dcfqhm7rutjdhuhuux7stpv4ik5zyxdu3ttm6f3rwn2ipxjayzna",
+      "spec": {
+        "uri": "blobs/201dc0f0d35d974d3b5cf3eb520c3623525736219271e38ebb26ba97fe8b9041",
+        "integrity": "sha256:201dc0f0d35d974d3b5cf3eb520c3623525736219271e38ebb26ba97fe8b9041",
+        "size": 69,
+        "mediaType": "image/png"
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "type": "Asset",
+      "name": "auto-v1-rqpbp5wfvhpticovevw7asqat3qlv476odxx32t6cezedvrax6va",
+      "spec": {
+        "uri": "blobs/cfe84775504b1ec482883c556b4572ddd11430766d35899a339ababfe2c283b9",
+        "integrity": "sha256:cfe84775504b1ec482883c556b4572ddd11430766d35899a339ababfe2c283b9",
+        "size": 68,
+        "mediaType": "image/png"
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "type": "Asset",
+      "name": "auto-v1-sbc2f2thqjmfbfikr4swz2u2aad2khixzzjzxxb6dqltbu5k5gfa",
+      "spec": {
+        "uri": "blobs/cfe84775504b1ec482883c556b4572ddd11430766d35899a339ababfe2c283b9",
+        "integrity": "sha256:cfe84775504b1ec482883c556b4572ddd11430766d35899a339ababfe2c283b9",
+        "size": 68,
+        "mediaType": "image/png"
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "type": "Asset",
+      "name": "auto-v1-xkqgszc3ujeixqcmziehnaiaddy5vpmjzuvudckkitk2brdai62q",
+      "spec": {
+        "uri": "blobs/14bcd090baf31edba64e9cbd8cdfc15f943344aa72cb3675ad8e91bfcbce03ad",
+        "integrity": "sha256:14bcd090baf31edba64e9cbd8cdfc15f943344aa72cb3675ad8e91bfcbce03ad",
+        "size": 15,
+        "mediaType": "application/pdf"
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "type": "Asset",
+      "name": "auto-v1-xtsfnbbha2hrejsvjlyalragj7ank6a5fodalihjptshm5nbhbba",
+      "spec": {
+        "uri": "blobs/cfe84775504b1ec482883c556b4572ddd11430766d35899a339ababfe2c283b9",
+        "integrity": "sha256:cfe84775504b1ec482883c556b4572ddd11430766d35899a339ababfe2c283b9",
+        "size": 68,
+        "mediaType": "image/png"
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "type": "Course",
+      "name": "learning",
+      "spec": {
+        "title": "Learning",
+        "slug": "public-course"
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "type": "CourseModule",
+      "name": "basics",
+      "spec": {
+        "course": "learning",
+        "title": "Basics",
+        "slug": "getting-started",
+        "order": 1
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "type": "CoursePage",
+      "name": "next",
+      "spec": {
+        "module": "basics",
+        "title": "Next",
+        "slug": "destination",
+        "order": 2,
+        "content": {
+          "format": "topik",
+          "value": "# Next\n\n## Details\n"
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "type": "CoursePage",
+      "name": "welcome",
+      "spec": {
+        "module": "basics",
+        "title": "Welcome",
+        "slug": "introduction",
+        "order": 1,
+        "content": {
+          "format": "topik",
+          "value": "# Welcome\n\n[Next](ref://course-page/next#details) and [route](ref://course-page/next).\n"
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "type": "Guide",
+      "name": "guides-first",
+      "spec": {
+        "title": "First",
+        "slug": "first",
+        "authors": ["alice"],
+        "tags": ["shared", "one"],
+        "content": {
+          "format": "topik",
+          "value": "# First guide\n\nRead the [second](ref://guide/guides-second#details) guide or [docs](ref://wiki-page/docs-4834e2bf04132a89).\n"
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "type": "Guide",
+      "name": "guides-second",
+      "spec": {
+        "title": "Second",
+        "slug": "second",
+        "tags": ["shared"],
+        "content": {
+          "format": "topik",
+          "value": "# Second\n\n## Details\n\n![Diagram](asset:auto-v1-sbc2f2thqjmfbfikr4swz2u2aad2khixzzjzxxb6dqltbu5k5gfa)\n"
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "type": "Person",
+      "name": "alice",
+      "spec": {
+        "name": "Alice"
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "type": "Wiki",
+      "name": "docs",
+      "spec": {
+        "title": "Docs",
+        "navigation": [
+          {
+            "type": "page",
+            "page": "docs-1bc04b5291c26a46",
+            "slug": "",
+            "sourcePath": "index"
+          },
+          {
+            "type": "group",
+            "title": "Guide",
+            "slug": "guide",
+            "children": [
+              {
+                "type": "page",
+                "page": "docs-4834e2bf04132a89",
+                "slug": "setup",
+                "sourcePath": "guide/setup"
+              },
+              {
+                "type": "page",
+                "page": "docs-3b1f712c8a5f0a3f",
+                "slug": "usage",
+                "sourcePath": "guide/usage"
+              }
+            ]
+          },
+          {
+            "type": "link",
+            "title": "Home",
+            "href": "https://example.com"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "type": "WikiPage",
+      "name": "docs-1bc04b5291c26a46",
+      "spec": {
+        "wiki": "docs",
+        "title": "Docs",
+        "content": {
+          "format": "topik",
+          "value": "# Docs\n\nStart with [setup](ref://wiki-page/docs-4834e2bf04132a89) or the [usage notes][usage].\n\n[usage]: ref://wiki-page/docs-3b1f712c8a5f0a3f#options\n\n{% card href=\"ref://wiki-page/docs-3b1f712c8a5f0a3f\" title=\"Usage\" /%}\n\n![Logo](asset:auto-v1-rqpbp5wfvhpticovevw7asqat3qlv476odxx32t6cezedvrax6va \"The logo\")\n\n{% figure alt=\"Theme\" darkSrc=\"asset:auto-v1-dcfqhm7rutjdhuhuux7stpv4ik5zyxdu3ttm6f3rwn2ipxjayzna\" src=\"asset:auto-v1-xtsfnbbha2hrejsvjlyalragj7ank6a5fodalihjptshm5nbhbba\" /%}\n\n[Manual](asset:auto-v1-xkqgszc3ujeixqcmziehnaiaddy5vpmjzuvudckkitk2brdai62q) and [missing](guide/absent.md) and [bad fragment](#nowhere).\n"
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "type": "WikiPage",
+      "name": "docs-3b1f712c8a5f0a3f",
+      "spec": {
+        "wiki": "docs",
+        "title": "Usage",
+        "content": {
+          "format": "topik",
+          "value": "# Usage\n\n## Options\n\nSame page [anchor](#options) and [setup](ref://wiki-page/docs-4834e2bf04132a89#install).\n\n```ts\nconst value = 1;\n```\n"
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "type": "WikiPage",
+      "name": "docs-4834e2bf04132a89",
+      "spec": {
+        "wiki": "docs",
+        "title": "Set up",
+        "description": "First steps",
+        "content": {
+          "format": "topik",
+          "value": "# Ignored title\n\n## Install {#install}\n\nBack to [the start](ref://wiki-page/docs-1bc04b5291c26a46) and [usage](ref://wiki-page/docs-3b1f712c8a5f0a3f#options).\n"
+        }
+      }
+    }
+  ],
+  "payloads": [
+    {
+      "path": "blobs/14bcd090baf31edba64e9cbd8cdfc15f943344aa72cb3675ad8e91bfcbce03ad",
+      "integrity": "sha256:14bcd090baf31edba64e9cbd8cdfc15f943344aa72cb3675ad8e91bfcbce03ad",
+      "mediaType": "application/pdf",
+      "size": 15,
+      "bytes": {
+        "type": "Buffer",
+        "data": [37, 80, 68, 70, 45, 49, 46, 52, 10, 37, 37, 69, 79, 70, 10]
+      },
+      "assetNames": ["auto-v1-xkqgszc3ujeixqcmziehnaiaddy5vpmjzuvudckkitk2brdai62q"]
+    },
+    {
+      "path": "blobs/201dc0f0d35d974d3b5cf3eb520c3623525736219271e38ebb26ba97fe8b9041",
+      "integrity": "sha256:201dc0f0d35d974d3b5cf3eb520c3623525736219271e38ebb26ba97fe8b9041",
+      "mediaType": "image/png",
+      "size": 69,
+      "bytes": {
+        "type": "Buffer",
+        "data": [
+          137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8,
+          6, 0, 0, 0, 31, 21, 196, 137, 0, 0, 0, 10, 73, 68, 65, 84, 120, 156, 99, 0, 1, 0, 0, 0, 5,
+          0, 1, 13, 10, 45, 180, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130, 0
+        ]
+      },
+      "assetNames": ["auto-v1-dcfqhm7rutjdhuhuux7stpv4ik5zyxdu3ttm6f3rwn2ipxjayzna"]
+    },
+    {
+      "path": "blobs/cfe84775504b1ec482883c556b4572ddd11430766d35899a339ababfe2c283b9",
+      "integrity": "sha256:cfe84775504b1ec482883c556b4572ddd11430766d35899a339ababfe2c283b9",
+      "mediaType": "image/png",
+      "size": 68,
+      "bytes": {
+        "type": "Buffer",
+        "data": [
+          137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8,
+          6, 0, 0, 0, 31, 21, 196, 137, 0, 0, 0, 10, 73, 68, 65, 84, 120, 156, 99, 0, 1, 0, 0, 0, 5,
+          0, 1, 13, 10, 45, 180, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130
+        ]
+      },
+      "assetNames": [
+        "auto-v1-rqpbp5wfvhpticovevw7asqat3qlv476odxx32t6cezedvrax6va",
+        "auto-v1-sbc2f2thqjmfbfikr4swz2u2aad2khixzzjzxxb6dqltbu5k5gfa",
+        "auto-v1-xtsfnbbha2hrejsvjlyalragj7ank6a5fodalihjptshm5nbhbba"
+      ]
+    }
+  ],
+  "semantic": {
+    "descriptor": "topik-asset-semantic-v1",
+    "assetNames": [
+      "auto-v1-dcfqhm7rutjdhuhuux7stpv4ik5zyxdu3ttm6f3rwn2ipxjayzna",
+      "auto-v1-rqpbp5wfvhpticovevw7asqat3qlv476odxx32t6cezedvrax6va",
+      "auto-v1-sbc2f2thqjmfbfikr4swz2u2aad2khixzzjzxxb6dqltbu5k5gfa",
+      "auto-v1-xkqgszc3ujeixqcmziehnaiaddy5vpmjzuvudckkitk2brdai62q",
+      "auto-v1-xtsfnbbha2hrejsvjlyalragj7ank6a5fodalihjptshm5nbhbba"
+    ],
+    "references": [
+      {
+        "resource": "Guide/guides-second",
+        "position": "/children/2/children/0/attributes/src",
+        "slot": "image.src",
+        "name": "auto-v1-sbc2f2thqjmfbfikr4swz2u2aad2khixzzjzxxb6dqltbu5k5gfa"
+      },
+      {
+        "resource": "WikiPage/docs-1bc04b5291c26a46",
+        "position": "/children/4/children/0/attributes/src",
+        "slot": "image.src",
+        "name": "auto-v1-rqpbp5wfvhpticovevw7asqat3qlv476odxx32t6cezedvrax6va"
+      },
+      {
+        "resource": "WikiPage/docs-1bc04b5291c26a46",
+        "position": "/children/5/attributes/darkSrc",
+        "slot": "figure.darkSrc",
+        "name": "auto-v1-dcfqhm7rutjdhuhuux7stpv4ik5zyxdu3ttm6f3rwn2ipxjayzna"
+      },
+      {
+        "resource": "WikiPage/docs-1bc04b5291c26a46",
+        "position": "/children/5/attributes/src",
+        "slot": "figure.src",
+        "name": "auto-v1-xtsfnbbha2hrejsvjlyalragj7ank6a5fodalihjptshm5nbhbba"
+      },
+      {
+        "resource": "WikiPage/docs-1bc04b5291c26a46",
+        "position": "/children/6/children/0/attributes/href",
+        "slot": "link.href",
+        "name": "auto-v1-xkqgszc3ujeixqcmziehnaiaddy5vpmjzuvudckkitk2brdai62q"
+      }
+    ]
+  },
+  "materialization": {
+    "descriptor": "topik-materialization-v1",
+    "resources": [
+      {
+        "resource": "Asset/auto-v1-dcfqhm7rutjdhuhuux7stpv4ik5zyxdu3ttm6f3rwn2ipxjayzna",
+        "path": "resources/Asset/auto-v1-dcfqhm7rutjdhuhuux7stpv4ik5zyxdu3ttm6f3rwn2ipxjayzna.json",
+        "size": 357,
+        "sha256": "8a03bc6c9d6e8a6f3f580f854d3333ed69b869a567c29684c827addb90729dd2"
+      },
+      {
+        "resource": "Asset/auto-v1-rqpbp5wfvhpticovevw7asqat3qlv476odxx32t6cezedvrax6va",
+        "path": "resources/Asset/auto-v1-rqpbp5wfvhpticovevw7asqat3qlv476odxx32t6cezedvrax6va.json",
+        "size": 357,
+        "sha256": "32e615be5d2552d71fd3704b40d0dfaa38d8247fd6fd6dee8544376fb72b5495"
+      },
+      {
+        "resource": "Asset/auto-v1-sbc2f2thqjmfbfikr4swz2u2aad2khixzzjzxxb6dqltbu5k5gfa",
+        "path": "resources/Asset/auto-v1-sbc2f2thqjmfbfikr4swz2u2aad2khixzzjzxxb6dqltbu5k5gfa.json",
+        "size": 357,
+        "sha256": "f58251f701060df0a110ff38fd5642a9f619d02ce8d08314fb91d640f1986155"
+      },
+      {
+        "resource": "Asset/auto-v1-xkqgszc3ujeixqcmziehnaiaddy5vpmjzuvudckkitk2brdai62q",
+        "path": "resources/Asset/auto-v1-xkqgszc3ujeixqcmziehnaiaddy5vpmjzuvudckkitk2brdai62q.json",
+        "size": 363,
+        "sha256": "0aff5762ed9be0e2f262acffee3f916d1a2a7684964989784267744a960049a0"
+      },
+      {
+        "resource": "Asset/auto-v1-xtsfnbbha2hrejsvjlyalragj7ank6a5fodalihjptshm5nbhbba",
+        "path": "resources/Asset/auto-v1-xtsfnbbha2hrejsvjlyalragj7ank6a5fodalihjptshm5nbhbba.json",
+        "size": 357,
+        "sha256": "73efd0cb13bb90fca4165913bc383c2e499a92419166083e34151fc012c13287"
+      },
+      {
+        "resource": "Course/learning",
+        "path": "resources/Course/learning.json",
+        "size": 137,
+        "sha256": "8ce156f7dd629cb36e556ea770c5371f3cd32fb7c3898e2802af4ee62cf43d41"
+      },
+      {
+        "resource": "CourseModule/basics",
+        "path": "resources/CourseModule/basics.json",
+        "size": 183,
+        "sha256": "fd5d51393d634a5bdf9cf25cd346536b2a31c612a23cdfb4b3165bd3c5a7e42b"
+      },
+      {
+        "resource": "CoursePage/next",
+        "path": "resources/CoursePage/next.json",
+        "size": 260,
+        "sha256": "e0d3ca3bf2c3872e48939f74419bf3f98f786202ed4b807c7a8cd1401da9331f"
+      },
+      {
+        "resource": "CoursePage/welcome",
+        "path": "resources/CoursePage/welcome.json",
+        "size": 335,
+        "sha256": "9ce44d54f59a7ea77aa0f09347672fa9b1165ccdc4f0105677ddedb41bde0e3d"
+      },
+      {
+        "resource": "Guide/guides-first",
+        "path": "resources/Guide/guides-first.json",
+        "size": 410,
+        "sha256": "17e227d7d87061578f075318ca95451581d54d35292b858916fa820576f8cb9b"
+      },
+      {
+        "resource": "Guide/guides-second",
+        "path": "resources/Guide/guides-second.json",
+        "size": 341,
+        "sha256": "f37378a77819515bf60d0353b39c520d3937fdc307652dbc51efa79dd75c0182"
+      },
+      {
+        "resource": "Person/alice",
+        "path": "resources/Person/alice.json",
+        "size": 101,
+        "sha256": "5b2ce1a9503acd5ab8485440e1e04055090b8744909a5460c7718afd8394fd10"
+      },
+      {
+        "resource": "Wiki/docs",
+        "path": "resources/Wiki/docs.json",
+        "size": 818,
+        "sha256": "296c819d221bb26187aed221e5c7d26d11af9f18b2e730ca1b11eddf2d447b54"
+      },
+      {
+        "resource": "WikiPage/docs-1bc04b5291c26a46",
+        "path": "resources/WikiPage/docs-1bc04b5291c26a46.json",
+        "size": 858,
+        "sha256": "58d7a2a4520737f11f23818d03abfff33d1373ceffcce8ceaa8ba7650a4699c8"
+      },
+      {
+        "resource": "WikiPage/docs-3b1f712c8a5f0a3f",
+        "path": "resources/WikiPage/docs-3b1f712c8a5f0a3f.json",
+        "size": 354,
+        "sha256": "105cd5c13ab12c62bc5c6b88a3ef29e1cd6277c816b80e8b7d73afbebc5a607e"
+      },
+      {
+        "resource": "WikiPage/docs-4834e2bf04132a89",
+        "path": "resources/WikiPage/docs-4834e2bf04132a89.json",
+        "size": 406,
+        "sha256": "c4408260894296055959734c06e353c80a662e9d827d5d09098fe4e6415c654a"
+      }
+    ],
+    "payloads": [
+      {
+        "path": "blobs/14bcd090baf31edba64e9cbd8cdfc15f943344aa72cb3675ad8e91bfcbce03ad",
+        "size": 15,
+        "sha256": "14bcd090baf31edba64e9cbd8cdfc15f943344aa72cb3675ad8e91bfcbce03ad",
+        "assetNames": ["auto-v1-xkqgszc3ujeixqcmziehnaiaddy5vpmjzuvudckkitk2brdai62q"]
+      },
+      {
+        "path": "blobs/201dc0f0d35d974d3b5cf3eb520c3623525736219271e38ebb26ba97fe8b9041",
+        "size": 69,
+        "sha256": "201dc0f0d35d974d3b5cf3eb520c3623525736219271e38ebb26ba97fe8b9041",
+        "assetNames": ["auto-v1-dcfqhm7rutjdhuhuux7stpv4ik5zyxdu3ttm6f3rwn2ipxjayzna"]
+      },
+      {
+        "path": "blobs/cfe84775504b1ec482883c556b4572ddd11430766d35899a339ababfe2c283b9",
+        "size": 68,
+        "sha256": "cfe84775504b1ec482883c556b4572ddd11430766d35899a339ababfe2c283b9",
+        "assetNames": [
+          "auto-v1-rqpbp5wfvhpticovevw7asqat3qlv476odxx32t6cezedvrax6va",
+          "auto-v1-sbc2f2thqjmfbfikr4swz2u2aad2khixzzjzxxb6dqltbu5k5gfa",
+          "auto-v1-xtsfnbbha2hrejsvjlyalragj7ank6a5fodalihjptshm5nbhbba"
+        ]
+      }
+    ]
+  }
+}

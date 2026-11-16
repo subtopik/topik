@@ -1,0 +1,133 @@
+{
+  "invalid": {
+    "diagnostics": [
+      {
+        "id": "tag-undefined",
+        "type": "document",
+        "level": "critical",
+        "lines": [3],
+        "message": "A tag is not supported.",
+        "column": 1,
+        "file": "wiki/tags.md"
+      },
+      {
+        "id": "tag-undefined",
+        "type": "document",
+        "level": "critical",
+        "lines": [6],
+        "message": "A tag is not supported.",
+        "column": 1,
+        "file": "wiki/tags.md"
+      },
+      {
+        "id": "link-scheme-unsafe",
+        "type": "link",
+        "level": "error",
+        "lines": [5],
+        "message": "Link scheme is unsafe.",
+        "column": 1,
+        "file": "wiki/ids.md"
+      },
+      {
+        "id": "TOPIK_ASSET_REFERENCE_MALFORMED",
+        "type": "image.src",
+        "level": "error",
+        "lines": [1],
+        "message": "Asset reference has an invalid generated name.",
+        "column": 1,
+        "file": "guides/asset.md"
+      }
+    ]
+  },
+  "error": {
+    "diagnostics": [
+      {
+        "id": "link-fragment-not-found",
+        "type": "link",
+        "level": "error",
+        "lines": [3],
+        "message": "Link target heading was not found.",
+        "file": "guides/ok.md"
+      },
+      {
+        "id": "link-page-not-found",
+        "type": "link",
+        "level": "error",
+        "lines": [3],
+        "message": "Internal link target page was not found.",
+        "file": "guides/ok.md"
+      },
+      {
+        "id": "link-page-not-found",
+        "type": "link",
+        "level": "error",
+        "lines": [3],
+        "message": "Internal link target page was not found.",
+        "file": "wiki/index.md"
+      },
+      {
+        "id": "link-fragment-not-found",
+        "type": "link",
+        "level": "error",
+        "lines": [3],
+        "message": "Link target heading was not found.",
+        "file": "wiki/index.md"
+      },
+      {
+        "id": "link-page-not-found",
+        "type": "card",
+        "level": "error",
+        "lines": [3],
+        "message": "Internal link target page was not found.",
+        "file": "wiki/other.md"
+      }
+    ]
+  },
+  "warning": {
+    "diagnostics": [
+      {
+        "id": "link-fragment-not-found",
+        "type": "link",
+        "level": "warning",
+        "message": "Link target heading was not found.",
+        "lines": [3],
+        "file": "guides/ok.md"
+      },
+      {
+        "id": "link-page-not-found",
+        "type": "link",
+        "level": "warning",
+        "message": "Internal link target page was not found.",
+        "lines": [3],
+        "file": "guides/ok.md"
+      },
+      {
+        "id": "link-page-not-found",
+        "type": "link",
+        "level": "warning",
+        "message": "Internal link target page was not found.",
+        "lines": [3],
+        "file": "wiki/index.md"
+      },
+      {
+        "id": "link-fragment-not-found",
+        "type": "link",
+        "level": "warning",
+        "message": "Link target heading was not found.",
+        "lines": [3],
+        "file": "wiki/index.md"
+      },
+      {
+        "id": "link-page-not-found",
+        "type": "card",
+        "level": "warning",
+        "message": "Internal link target page was not found.",
+        "lines": [3],
+        "file": "wiki/other.md"
+      }
+    ]
+  },
+  "off": {
+    "diagnostics": []
+  }
+}

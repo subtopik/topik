@@ -1,11 +1,12 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { analyzeTopikContent, validateTopikContent } from "@topik/content";
 import type { Guide } from "@topik/schema/guide/v1";
 import type { SourceResource } from "../resource";
 import { parseCollectionConfig } from "../config/collection";
 import { parseGuideMetadata } from "../config/source-version";
-import { compileAssetResources, type AssetCompilationOptions } from "./assets";
+import { compileAssetResourcesInSession, type AssetCompilationOptions } from "./assets";
+import { createPortableReadSession } from "../assets/files";
+import { createContentMemo, type ContentMemo } from "./content-memo";
 import {
   readOptionalConfigFileWithPath,
   readExactConfigFile,
@@ -27,7 +28,7 @@ import {
   type CompileValidationOptions,
   type CompileResult,
 } from "./shared";
-import { compileResourceLinks, type CompileResourceReferenceTarget } from "./links";
+import { compileResourceLinksInSession, type CompileResourceReferenceTarget } from "./links";
 import { assertValidDocumentResource } from "./wiki";
 
 export interface CompileGuidesOptions {
@@ -57,24 +58,33 @@ export async function compileGuides(options: CompileGuidesOptions): Promise<Comp
 }
 
 export async function inspectGuides(options: CompileGuidesOptions): Promise<CompileResult> {
-  const discovered = await discoverGuides(options);
+  const memo = createContentMemo();
+  const discovered = await discoverGuides(options, undefined, memo);
   if (discovered.sourceVersion === 1)
     validateGuideAuthors(discovered.resources, discovered.sourcePathsByResource);
-  const linked = await compileResourceLinks({
-    rootDir: configurationDirectory(options.dir, options.configFile),
-    resources: discovered.resources,
-    sourcePathsByResource: discovered.sourcePathsByResource,
-    validation: options.validation,
-    referenceTargets: options.referenceTargets,
-  });
+  const linked = await compileResourceLinksInSession(
+    createPortableReadSession(),
+    {
+      rootDir: configurationDirectory(options.dir, options.configFile),
+      resources: discovered.resources,
+      sourcePathsByResource: discovered.sourcePathsByResource,
+      validation: options.validation,
+      referenceTargets: options.referenceTargets,
+    },
+    memo,
+  );
   throwOnCompileErrors(linked.diagnostics);
-  const compiled = await compileAssetResources({
-    rootDir: configurationDirectory(options.dir, options.configFile),
-    resources: linked.resources,
-    sourcePathsByResource: discovered.sourcePathsByResource,
-    protectedSourcePaths: discovered.consumedSourcePaths,
-    ...options.assets,
-  });
+  const compiled = await compileAssetResourcesInSession(
+    createPortableReadSession(),
+    {
+      rootDir: configurationDirectory(options.dir, options.configFile),
+      resources: linked.resources,
+      sourcePathsByResource: discovered.sourcePathsByResource,
+      protectedSourcePaths: discovered.consumedSourcePaths,
+      ...options.assets,
+    },
+    memo,
+  );
   return {
     diagnostics: [...discovered.diagnostics, ...linked.diagnostics],
     references: linked.references,
@@ -87,6 +97,7 @@ export async function inspectGuides(options: CompileGuidesOptions): Promise<Comp
 export async function discoverGuides(
   options: CompileGuidesOptions,
   selectedConfig?: LoadedConfig,
+  memo: ContentMemo = createContentMemo(),
 ): Promise<CompileResourceDiscovery> {
   const dir = configurationDirectory(options.dir, options.configFile);
 
@@ -181,10 +192,10 @@ export async function discoverGuides(
     if (duplicate !== undefined)
       throw new PublicCompileError("guide-duplicate", file, { relatedLocation: duplicate });
     claimedNames.set(name, file);
-    const validation = validateTopikContent(content, { file });
+    const validation = memo.validate(content, file);
     diagnostics.push(...validation.errors);
     if (!validation.valid) continue;
-    const analysis = analyzeTopikContent(content, { file });
+    const analysis = memo.analyze(content, file);
     diagnostics.push(...analysis.diagnostics);
     const title =
       typeof frontmatter.title === "string"

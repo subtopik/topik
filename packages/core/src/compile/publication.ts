@@ -1050,10 +1050,11 @@ function locateOutputPath(absolutePath: string, projectDirectory?: string): Loca
       // Nothing below a missing or unreadable component can be the project directory.
       break;
     }
-    // A filesystem without file identities reports zero; compare the spelling there.
+    // A filesystem without file identities reports zero; compare the paths there, which
+    // on Windows ignores letter case.
     const isProject =
       project.ino === 0n
-        ? prefix === resolve(projectDirectory)
+        ? relative(resolve(projectDirectory), prefix) === ""
         : stat.dev === project.dev && stat.ino === project.ino;
     if (!isProject) continue;
     let canonicalParent: string;

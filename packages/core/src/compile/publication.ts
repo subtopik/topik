@@ -13,13 +13,14 @@ import {
   realpathSync,
   renameSync,
   rmdirSync,
+  statSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
 import type { BigIntStats } from "node:fs";
 import { lstat, mkdir, mkdtemp, open } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { DEFAULT_FILE_SAFETY, type FileSafety } from "../assets/files";
 
 /*
@@ -102,6 +103,14 @@ export interface OutputDirectoryOptions {
   /** Name prefix of the sibling directory a previous output is moved to before removal. */
   priorPrefix: string;
   isOwned: OutputOwnershipPredicate;
+  /**
+   * The project directory the output belongs to. When the output path lies at or below it,
+   * symbolic links above the project directory are resolved and any link at or below it is
+   * refused, on every platform, as for source files. Without it, or for an output path outside
+   * it, Linux refuses a link anywhere in the path as given and the portable path follows links
+   * above the target.
+   */
+  projectDirectory?: string;
 }
 
 /** @internal */
@@ -131,8 +140,10 @@ export async function publishOutputDirectory(
 ): Promise<void> {
   // Linux always publishes through anchored descriptors. Elsewhere the portable path is used
   // only when permitted; otherwise openAnchoredOutputDirectory refuses the platform.
+  const located = locateOutputPath(absolutePath, options.projectDirectory);
+  absolutePath = located.path;
   if (process.platform !== "linux" && (options.fileSafety ?? DEFAULT_FILE_SAFETY) === "portable") {
-    publishOutputDirectoryByPath(absolutePath, files, options);
+    publishOutputDirectoryByPath(absolutePath, files, options, located.projectRoot);
     return;
   }
   const stagedFiles = snapshotOutputFiles(files);
@@ -232,8 +243,10 @@ export async function removeOutputDirectory(
   absolutePath: string,
   options: OutputDirectoryOptions,
 ): Promise<void> {
+  const located = locateOutputPath(absolutePath, options.projectDirectory);
+  absolutePath = located.path;
   if (process.platform !== "linux" && (options.fileSafety ?? DEFAULT_FILE_SAFETY) === "portable") {
-    removeOutputDirectoryByPath(absolutePath, options);
+    removeOutputDirectoryByPath(absolutePath, options, located.projectRoot);
     return;
   }
   const target = basename(absolutePath);
@@ -873,12 +886,14 @@ function publishOutputDirectoryByPath(
   absolutePath: string,
   files: readonly OutputPublicationFile[],
   options: OutputPublicationOptions,
+  projectRoot?: string,
 ): void {
   const stagedFiles = snapshotOutputFiles(files);
   const target = basename(absolutePath);
   if (target.length === 0 || target === "." || target === "..") {
     throw new OutputPublicationError("output root is invalid");
   }
+  assertNoLinkBelowProject(projectRoot, dirname(absolutePath));
   const parent = preparePortableOutputParent(dirname(absolutePath));
   const targetPath = join(parent, target);
   let existing: PortableOutputTree | undefined;
@@ -953,11 +968,16 @@ function publishOutputDirectoryByPath(
   if (operationError !== undefined) throw operationError;
 }
 
-function removeOutputDirectoryByPath(absolutePath: string, options: OutputDirectoryOptions): void {
+function removeOutputDirectoryByPath(
+  absolutePath: string,
+  options: OutputDirectoryOptions,
+  projectRoot?: string,
+): void {
   const target = basename(absolutePath);
   if (target.length === 0 || target === "." || target === "..") {
     throw new OutputPublicationError("output root is invalid");
   }
+  assertNoLinkBelowProject(projectRoot, dirname(absolutePath));
   const parent = existingPortableOutputParent(dirname(absolutePath));
   if (parent === undefined) return;
   const targetPath = join(parent, target);
@@ -986,6 +1006,91 @@ function removeOutputDirectoryByPath(absolutePath: string, options: OutputDirect
     }
   }
   if (operationError !== undefined) throw operationError;
+}
+
+interface LocatedOutputPath {
+  /** The output path to publish to. */
+  path: string;
+  /** Set when the output lies at or below the project directory: its link-free location. */
+  projectRoot?: string;
+}
+
+/**
+ * Resolve symbolic links above the project directory and keep the project directory and
+ * everything below it as given, so a link there stays visible to the checks that refuse it.
+ *
+ * The project directory is found in the output path by file identity, not by spelling, so the
+ * rule also holds when the two paths reach the project through different links. The first
+ * matching prefix is used; a link below the project that leads back to it therefore stays
+ * below the project and is refused. An output path that never passes through the project
+ * directory, or a project directory that does not exist, leaves the path unchanged.
+ */
+function locateOutputPath(absolutePath: string, projectDirectory?: string): LocatedOutputPath {
+  const output = resolve(absolutePath);
+  if (projectDirectory === undefined) return { path: output };
+  let project: BigIntStats;
+  try {
+    project = statSync(resolve(projectDirectory), { bigint: true });
+  } catch {
+    return { path: output };
+  }
+  if (!project.isDirectory()) return { path: output };
+  const root = parse(output).root;
+  const components = output
+    .slice(root.length)
+    .split(sep)
+    .filter((part) => part.length > 0);
+  let prefix = root;
+  for (const [index, component] of components.entries()) {
+    prefix = join(prefix, component);
+    let stat: BigIntStats;
+    try {
+      stat = statSync(prefix, { bigint: true });
+    } catch {
+      // Nothing below a missing or unreadable component can be the project directory.
+      break;
+    }
+    // A filesystem without file identities reports zero; compare the paths there, which
+    // on Windows ignores letter case.
+    const isProject =
+      project.ino === 0n
+        ? relative(resolve(projectDirectory), prefix) === ""
+        : stat.dev === project.dev && stat.ino === project.ino;
+    if (!isProject) continue;
+    let canonicalParent: string;
+    try {
+      canonicalParent = realpathSync.native(dirname(prefix));
+    } catch {
+      throw refused("ancestor-unsafe");
+    }
+    const projectRoot = join(canonicalParent, component);
+    return { path: join(projectRoot, ...components.slice(index + 1)), projectRoot };
+  }
+  return { path: output };
+}
+
+/**
+ * Refuse a symbolic link or non-directory in the project directory or any existing directory
+ * between it and `directory`. Anchored publication refuses these while it walks the path; the
+ * portable path checks them here, before it creates or resolves anything.
+ */
+function assertNoLinkBelowProject(projectRoot: string | undefined, directory: string): void {
+  if (projectRoot === undefined) return;
+  const below = relative(projectRoot, directory);
+  // The output is the project directory itself; its parent is above the project.
+  if (below === ".." || below.startsWith(`..${sep}`) || isAbsolute(below)) return;
+  let current = projectRoot;
+  for (const component of ["", ...below.split(sep).filter((part) => part.length > 0)]) {
+    current = join(current, component);
+    let stat: ReturnType<typeof lstatSync>;
+    try {
+      stat = lstatSync(current);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw refused("ancestor-unsafe");
+    }
+    if (stat.isSymbolicLink() || !stat.isDirectory()) throw refused("ancestor-collision");
+  }
 }
 
 interface PortableOutputTree {

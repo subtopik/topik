@@ -280,7 +280,9 @@ describe.each(PLATFORMS)("portable reads on %s", (platform) => {
     });
   });
 
-  test("refuses a nested Git worktree and asks Git inside a worktree", async () => {
+  // Runs the real Git, whose first start on a CI runner (the macOS Xcode shim) can take seconds.
+  const realGit = { timeout: 30_000 };
+  test("refuses a nested Git worktree and asks Git inside a worktree", realGit, async () => {
     const root = await fixture();
     await mkdir(join(root, "assets", ".git"));
     expect(reasonOf(await readPortableAssetFile({ root, path: "assets/hero.png" }))).toBe(

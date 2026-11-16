@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { afterEach, expect, test, vi } from "vite-plus/test";
 import { ManifestSourceError } from "@topik/core";
 import { compile } from "./index";
@@ -17,7 +17,10 @@ async function snapshot(dir: string): Promise<Record<string, string>> {
   for (const path of paths)
     if (path.isFile()) {
       const fullPath = join(path.parentPath, path.name);
-      result[fullPath.slice(dir.length + 1)] = (await readFile(fullPath)).toString("base64");
+      // Keys use "/" on every platform.
+      result[fullPath.slice(dir.length + 1).replaceAll(sep, "/")] = (
+        await readFile(fullPath)
+      ).toString("base64");
     }
   return result;
 }

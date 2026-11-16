@@ -15,6 +15,12 @@ import {
   type StartedDevServer,
 } from "./index";
 
+/** What a project-reading command prints with console.error before its own output here. */
+const NATIVE_NOTICE = process.platform === "linux" ? [] : [PORTABLE_READS_NOTICE];
+// Mocking process.platform cannot make one host's filesystem behave like another's, so both
+// portable platforms are simulated on Linux only; elsewhere the native one runs for real.
+const PORTABLE_PLATFORMS =
+  process.platform === "linux" ? (["darwin", "win32"] as const) : [process.platform];
 const WRITE_ORIGIN = "https://write.subtopik.com";
 const PNG_BYTES = Buffer.from(
   "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000000500010d0a2db40000000049454e44ae426082",
@@ -552,6 +558,7 @@ describe("dev command", () => {
     const port = await start();
 
     expect(errors).toEqual([
+      ...NATIVE_NOTICE,
       "Compile error:",
       expect.stringMatching(/^intro\.md:3 error [a-z-]+: /u),
     ]);
@@ -584,7 +591,7 @@ describe("dev command", () => {
     expect(log).not.toHaveBeenCalled();
   });
 
-  test.each(["darwin", "win32"] as const)(
+  test.each(PORTABLE_PLATFORMS)(
     "serves on %s with portable reads and one notice",
     async (platform) => {
       vi.spyOn(process, "platform", "get").mockReturnValue(platform);
@@ -598,7 +605,7 @@ describe("dev command", () => {
     },
   );
 
-  test.each(["darwin", "win32"] as const)(
+  test.each(PORTABLE_PLATFORMS)(
     "stops on %s with the platform requirement when anchored reads are required",
     async (platform) => {
       vi.spyOn(process, "platform", "get").mockReturnValue(platform);

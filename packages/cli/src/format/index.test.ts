@@ -80,7 +80,10 @@ describe("format command", () => {
     await expect(run(dir)).resolves.toBeUndefined();
 
     expect(await readFile(join(dir, "guide", "page.md"), "utf8")).toBe(FORMATTED);
-    expect((await stat(join(dir, "guide", "page.md"))).mode & 0o777).toBe(0o640);
+    // Windows has no group or other permission bits: Node reports every writable file as 0o666.
+    expect((await stat(join(dir, "guide", "page.md"))).mode & 0o777).toBe(
+      process.platform === "win32" ? 0o666 : 0o640,
+    );
     expect(await readdir(join(dir, "guide"))).toEqual(["page.md"]);
     expect(log).toEqual(["guide/page.md", "Formatted 1 of 2 file(s)"]);
     expect(errors).toEqual([]);

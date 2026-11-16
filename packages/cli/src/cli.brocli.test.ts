@@ -15,6 +15,9 @@ const execFileAsync = promisify(execFile);
 const builtCli = fileURLToPath(new URL("../dist/cli.mjs", import.meta.url));
 /** What a project-reading command prints on stderr before its own output on this platform. */
 const NATIVE_NOTICE = process.platform === "linux" ? "" : `${PORTABLE_READS_NOTICE}\n`;
+// A preloaded process.platform cannot make one host's filesystem behave like another's, so
+// both portable platforms are simulated on Linux only; elsewhere the native one runs for real.
+const PORTABLE_PLATFORMS = process.platform === "linux" ? ["darwin", "win32"] : [process.platform];
 
 // Keep real brocli: only replace one command with a handler that fails like a raw
 // Node.js filesystem or socket error.
@@ -87,7 +90,16 @@ describe.skipIf(!existsSync(builtCli))("built topik binary", () => {
     const result = await runBuilt(["compile", dir, "--out-dir", join(dir, "file", "out")]);
 
     expect(result.code).toBe(1);
-    expect(result.stderr).toBe("Topik command failed.\n");
+    expect(result.stderr).not.toContain(SENTINEL);
+    expect(result.stderr).not.toContain(tmpdir());
+    // POSIX reports ENOTDIR for a path below a regular file, which stops the output scope
+    // check with the generic failure. Windows reports ENOENT, the same as an output directory
+    // that does not exist yet, so the command goes on to read the project and fails there.
+    expect(result.stderr).toBe(
+      process.platform === "win32"
+        ? `${NATIVE_NOTICE}Project compilation requires .topik.yaml in the selected directory. Add a manifest such as: {"version":1,"namespace":"owner/project","sources":[{"kind":"wiki","config":"wiki.yaml"}]}\n`
+        : "Topik command failed.\n",
+    );
   });
 
   test("prints located content diagnostics when compilation fails", async () => {
@@ -105,13 +117,14 @@ describe.skipIf(!existsSync(builtCli))("built topik binary", () => {
       code: 1,
       stdout: "",
       stderr:
+        NATIVE_NOTICE +
         "index.md:3 error link-page-not-found: Internal link target page was not found.\n" +
         "1 compile error(s)\n" +
         "Compilation found errors.\n",
     });
   });
 
-  describe.each(["darwin", "win32"])("on %s", (platform) => {
+  describe.each(PORTABLE_PLATFORMS)("on %s", (platform) => {
     const PLATFORM_REQUIREMENT =
       "--file-safety anchored requires descriptor-anchored file reads, which only Linux provides. Use --file-safety portable on a workspace you trust, or run on Linux, for example in WSL 2 or a Linux container.\n";
     const PORTABLE_NOTICE =
@@ -278,7 +291,8 @@ describe.skipIf(!existsSync(builtCli))("built topik binary", () => {
     });
   });
 
-  test("Linux prints no portable-read notice", async () => {
+  // --file-safety is documented to have no effect on Linux; the other platforms print the notice.
+  test.skipIf(process.platform !== "linux")("Linux prints no portable-read notice", async () => {
     dir = await mkdtemp(join(tmpdir(), "topik-cli-linux-"));
     await writeFile(
       join(dir, ".topik.yaml"),

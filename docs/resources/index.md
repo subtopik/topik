@@ -49,7 +49,9 @@ Each source kind finds its Markdown differently:
 - A wiki reads the pages listed in its navigation, including nested paths.
 - A guide collection reads the Markdown files directly in its directory. It
   does not search subdirectories, and it leaves out `AGENTS.md`, the
-  instructions for coding agents that `topik init` writes.
+  instructions for coding agents that `topik init` writes. An `AGENTS.md` whose
+  frontmatter sets both `id` and `slug` in a `sourceVersion: 1` collection is
+  still a guide.
 - A course reads the Markdown paths declared in its module hierarchy. It does
   not discover files by directory.
 

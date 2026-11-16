@@ -129,9 +129,13 @@ export async function discoverGuides(
   }
 
   const files = await readdir(dir);
-  const markdownFiles = files
-    .filter((f) => (f.endsWith(".md") || f.endsWith(".mdx")) && f !== AGENT_INSTRUCTIONS_FILENAME)
-    .sort();
+  const markdownFiles = files.filter((f) => f.endsWith(".md") || f.endsWith(".mdx")).sort();
+  const agentInstructions = markdownFiles.indexOf(AGENT_INSTRUCTIONS_FILENAME);
+  if (
+    agentInstructions !== -1 &&
+    !(config.sourceVersion === 1 && (await agentInstructionsDeclareGuide(dir)))
+  )
+    markdownFiles.splice(agentInstructions, 1);
 
   const resources: SourceResource[] = [...(config.persons ?? [])];
   const diagnostics: CompileResult["diagnostics"] = [];
@@ -259,6 +263,25 @@ export async function discoverGuides(
     assetDirectory: config.assets.directory,
     sourceVersion: config.sourceVersion,
   };
+}
+
+/**
+ * `AGENTS.md` holds instructions for coding agents and is left out of the collection. It was a
+ * guide before only when its frontmatter set both `id` and `slug`, because its filename gives
+ * neither; such a file stays a guide, so no guide disappears from a collection without notice.
+ */
+async function agentInstructionsDeclareGuide(dir: string): Promise<boolean> {
+  try {
+    const raw = decodeUtf8Document(
+      await readRegularFileWithinRoot(join(dir, AGENT_INSTRUCTIONS_FILENAME), dir),
+      AGENT_INSTRUCTIONS_FILENAME,
+    );
+    const { frontmatter } = parseMarkdownFrontmatter(raw, AGENT_INSTRUCTIONS_FILENAME, 1);
+    return typeof frontmatter.id === "string" && typeof frontmatter.slug === "string";
+  } catch {
+    // A link, unreadable bytes or frontmatter that does not parse: not a guide, so left out.
+    return false;
+  }
 }
 
 function fileToSlug(filename: string): string {

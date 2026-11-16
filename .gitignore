@@ -9,6 +9,8 @@ lerna-debug.log*
 
 node_modules
 dist
+# The CLI package ships a copy of docs/, made at build time.
+packages/cli/docs
 storybook-static
 .claude
 .topik

@@ -2,6 +2,7 @@ import { mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/prom
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
+import { AGENT_INSTRUCTIONS } from "../agents";
 import { compile } from "../compile";
 import { PublicCliError } from "../errors";
 import { runFormat } from "../format";
@@ -48,7 +49,8 @@ describe("init command", () => {
       "id: handbook\ntitle: Handbook\nnavigation:\n  - index\n",
     );
     expect(await readFile(join(dir, "index.md"), "utf8")).toMatch(/^# Handbook\n\n/u);
-    expect(console.log).toHaveBeenCalledWith("Created .topik.yaml, wiki.yaml, index.md");
+    expect(await readFile(join(dir, "AGENTS.md"), "utf8")).toBe(AGENT_INSTRUCTIONS);
+    expect(console.log).toHaveBeenCalledWith("Created .topik.yaml, wiki.yaml, index.md, AGENTS.md");
 
     await expect(
       (compile as CompileCommand).handler?.({
@@ -68,6 +70,44 @@ describe("init command", () => {
     await expect(
       runFormat(join(dir, "index.md"), { check: true, fileSafety: "portable" }),
     ).resolves.toBeUndefined();
+  });
+
+  test("leaves AGENTS.md out when a directory is formatted", async () => {
+    await runInit(dir);
+
+    await expect(runFormat(dir, { check: true, fileSafety: "portable" })).resolves.toBeUndefined();
+  });
+
+  test("keeps an existing AGENTS.md without a Topik section", async () => {
+    await writeFile(join(dir, "AGENTS.md"), "# House rules\n");
+
+    await runInit(dir);
+
+    expect(await readFile(join(dir, "AGENTS.md"), "utf8")).toBe("# House rules\n");
+    expect(console.log).toHaveBeenCalledWith("Created .topik.yaml, wiki.yaml, index.md");
+  });
+
+  test("updates the Topik section of an existing AGENTS.md and keeps the rest", async () => {
+    const before = "# House rules\n\n<!--TOPIK START-->\nold\n<!--TOPIK END-->\n\nMore rules\n";
+    await writeFile(join(dir, "AGENTS.md"), before);
+
+    await runInit(dir);
+
+    expect(await readFile(join(dir, "AGENTS.md"), "utf8")).toBe(
+      `# House rules\n\n${AGENT_INSTRUCTIONS.trimEnd()}\n\nMore rules\n`,
+    );
+    expect(console.log).toHaveBeenCalledWith("Created .topik.yaml, wiki.yaml, index.md");
+  });
+
+  test("does not follow an AGENTS.md that is a symbolic link", async () => {
+    await writeFile(join(dir, "elsewhere.md"), "<!--TOPIK START-->\nold\n<!--TOPIK END-->\n");
+    await symlink(join(dir, "elsewhere.md"), join(dir, "AGENTS.md"));
+
+    await runInit(dir);
+
+    expect(await readFile(join(dir, "elsewhere.md"), "utf8")).toBe(
+      "<!--TOPIK START-->\nold\n<!--TOPIK END-->\n",
+    );
   });
 
   test("uses --namespace and creates a missing directory", async () => {

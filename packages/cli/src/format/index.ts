@@ -22,7 +22,8 @@ export interface FormatTarget {
 
 /**
  * Resolve the command argument to Markdown files. A file must be `.md` or `.mdx`; a directory
- * is walked for those files, skipping `node_modules`, dot-directories below it and symbolic links.
+ * is walked for those files, skipping `node_modules`, dot-directories below it, symbolic links
+ * and `AGENTS.md`.
  */
 export async function discoverFormatTargets(
   argument: string,
@@ -68,11 +69,22 @@ async function collectMarkdownFiles(
     if (entry.isDirectory()) {
       if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
       await collectMarkdownFiles(root, path, files);
-    } else if (entry.isFile() && isMarkdownFile(entry.name)) {
+    } else if (
+      entry.isFile() &&
+      isMarkdownFile(entry.name) &&
+      entry.name !== AGENT_INSTRUCTIONS_FILENAME
+    ) {
       files.push(path);
     }
   }
 }
+
+/**
+ * Instructions for coding agents, which `topik init` writes. They are not Topik Markdown (the
+ * section markers are HTML comments), so a directory walk leaves them out. Naming the file as
+ * the format target still formats it.
+ */
+export const AGENT_INSTRUCTIONS_FILENAME = "AGENTS.md";
 
 /** Target-relative labels, as `topik validate` prints them, never absolute paths. */
 function displayLabel(path: string): string {
@@ -137,7 +149,7 @@ const DIRECTORY_FLAGS =
  * which is the portable file safety the notice describes. Returns false if the file changed,
  * became a link or could not be replaced; the original is then left as it is.
  */
-async function replaceFile(
+export async function replaceFile(
   target: FormatTarget,
   expected: Uint8Array,
   next: Uint8Array,

@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import { command, positional, string } from "@drizzle-team/brocli";
 import { parseTopikManifest, TOPIK_MANIFEST_FILENAME } from "@topik/core";
 import { stringify } from "yaml";
+import { AGENT_INSTRUCTIONS_FILENAME, writeAgentInstructions } from "../agents";
 import { PublicCliError } from "../errors";
 
 const WIKI_CONFIG_FILENAME = "wiki.yaml";
@@ -50,6 +51,10 @@ export function initProjectFiles(options: InitProjectOptions = {}): [string, str
  * Create the project files in `dir`, creating the directory if needed. Nothing is written when
  * any of the files already exists, and each file is opened exclusively (`wx`), so a file that
  * appears meanwhile, or a symbolic link in its place, is never followed or replaced.
+ *
+ * `AGENTS.md` comes last and follows its own rule, because projects often have one already:
+ * a missing file is created, the Topik section of an existing one is updated, and any other
+ * existing file is kept. The returned names include it only when this call created it.
  */
 export async function initProject(
   dir: string,
@@ -78,6 +83,10 @@ export async function initProject(
         await handle.close();
       }
     }
+    // An AGENTS.md that is already there is kept: only the section Topik owns is updated.
+    if ((await writeAgentInstructions(dir)) === "created") {
+      created.push(AGENT_INSTRUCTIONS_FILENAME);
+    }
   } catch (error) {
     // Leave the directory as it was: remove only files this run created.
     for (const name of created) await unlink(join(dir, name)).catch(() => undefined);
@@ -101,7 +110,7 @@ async function exists(path: string): Promise<boolean> {
 
 export const init = command({
   name: "init",
-  desc: "Create a minimal Topik wiki project (.topik.yaml, wiki.yaml, index.md)",
+  desc: "Create a minimal Topik wiki project (.topik.yaml, wiki.yaml, index.md, AGENTS.md)",
   options: {
     dir: positional("dir").desc("Directory to create the project in").default("."),
     namespace: string("namespace")

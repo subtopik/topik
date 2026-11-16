@@ -41,7 +41,7 @@ describe("init rollback", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  test.each([".topik.yaml", "wiki.yaml", "index.md"])(
+  test.each([".topik.yaml", "wiki.yaml", "index.md", "AGENTS.md"])(
     "removes every file it created when writing %s fails",
     async (name) => {
       failing.name = name;

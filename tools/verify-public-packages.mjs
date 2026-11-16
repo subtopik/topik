@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import {
+  existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -20,6 +21,7 @@ import { listNpmRootMetadata } from "./public-packlist.mjs";
 import { publicPackages } from "./publish-alpha.mjs";
 
 const root = join(import.meta.dirname, "..");
+const cliPackageRoot = join(root, "packages", "cli");
 // Build, pack, and type-check on the toolchain runtime. Optionally execute the
 // same installed artifacts on an older public runtime without loading Vitest.
 const { values } = parseArgs({ options: { "runtime-node": { type: "string" } } });
@@ -205,6 +207,7 @@ try {
   verifyDeclarations(consumer);
   verifyDocumentationExamples(consumer);
   verifyBins(modules);
+  verifyCliDocs(modules, join(temporary, "cli-docs-project"));
   console.log(`Verified packed public package cohort ${cohortVersion}`);
 } finally {
   rmSync(temporary, { recursive: true, force: true });
@@ -249,6 +252,8 @@ function verifyPacklist(packageRoot, archive) {
     "package.json",
     ...listNpmRootMetadata(packageRoot),
     ...listFiles(join(packageRoot, "dist"), "dist"),
+    // The CLI ships the repository's docs; the list comes from the source, not from the copy.
+    ...(packageRoot === cliPackageRoot ? listFiles(join(root, "docs"), "docs") : []),
   ].toSorted((left, right) => left.localeCompare(right));
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     throw new Error(`Unexpected packed files for ${packageRoot}: ${actual.join(", ")}`);
@@ -269,7 +274,8 @@ function verifyManifest(packageName, destination, manifest) {
   }
   if (
     !Array.isArray(manifest.files) ||
-    JSON.stringify(manifest.files) !== JSON.stringify(["dist"])
+    JSON.stringify(manifest.files) !==
+      JSON.stringify(packageName === "@topik/cli" ? ["dist", "docs"] : ["dist"])
   ) {
     throw new Error(`${packageName} packed manifest has an unexpected files boundary`);
   }
@@ -786,6 +792,40 @@ function verifyBins(modules) {
       if (!output.includes(expected)) {
         throw new Error(`Packed ${bin} did not execute its public help boundary`);
       }
+    }
+  }
+}
+
+/**
+ * The packed CLI carries the repository's docs unchanged, and the place the AGENTS.md of a
+ * new project names for them exists in a consumer that depends on the CLI.
+ */
+function verifyCliDocs(modules, project) {
+  const packed = join(modules, "@topik", "cli", "docs");
+  for (const file of listFiles(join(root, "docs"), "docs")) {
+    const relativePath = file.slice("docs/".length);
+    if (
+      !readFileSync(join(packed, relativePath)).equals(
+        readFileSync(join(root, "docs", relativePath)),
+      )
+    ) {
+      throw new Error(`Packed CLI docs differ from the repository at ${file}`);
+    }
+  }
+  const manifest = readJson(join(modules, "@topik", "cli", "package.json"));
+  execFileSync(
+    runtimeNodes[0],
+    [join(modules, "@topik", "cli", manifest.bin.topik), "init", project],
+    { encoding: "utf8" },
+  );
+  const instructions = readFileSync(join(project, "AGENTS.md"), "utf8");
+  const documented = "node_modules/@topik/cli/docs";
+  if (!instructions.includes(`\`${documented}\``)) {
+    throw new Error("AGENTS.md of a new project does not name the packed docs");
+  }
+  for (const guide of ["content/content-design.md", "resources/index.md"]) {
+    if (!instructions.includes(`\`${guide}\``) || !existsSync(join(packed, guide))) {
+      throw new Error(`AGENTS.md of a new project names a guide the package lacks: ${guide}`);
     }
   }
 }

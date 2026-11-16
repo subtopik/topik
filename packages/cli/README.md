@@ -26,7 +26,8 @@ npx topik dev ./handbook
 
 | Command    | Purpose                                                                                                                                 |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `init`     | Create a minimal wiki project: `.topik.yaml`, `wiki.yaml` and `index.md` (`--namespace`).                                               |
+| `init`     | Create a minimal wiki project: `.topik.yaml`, `wiki.yaml`, `index.md` and `AGENTS.md` (`--namespace`).                                  |
+| `migrate`  | Update the Topik section of `AGENTS.md` to the installed CLI version.                                                                   |
 | `format`   | Format Topik Markdown files in place (`--check`, `--file-safety`).                                                                      |
 | `compile`  | Compile project content into resource files (`--out-dir`/`-o`, `--format`/`-f`, `--dry-run`, `--validate`, `--links`, `--file-safety`). |
 | `lint`     | Check source content without writing compiled resources (`--links`, `--json`, `--file-safety`).                                         |
@@ -56,6 +57,32 @@ the current one.
 - `--namespace` sets another project namespace.
 - `init` never overwrites a file. It refuses to run when any of the three files
   already exists.
+- `init` also writes [`AGENTS.md`](#instructions-for-coding-agents), which follows
+  its own rule because projects often have one already.
+
+## Instructions for coding agents
+
+`AGENTS.md` tells coding agents how to work on Topik content: which commands to
+run and where the guides are. Topik owns only the section between the
+`<!--TOPIK START-->` and `<!--TOPIK END-->` markers; write your own instructions
+outside it.
+
+`topik init` and `topik migrate [dir]` treat the file the same way:
+
+| `AGENTS.md` in the project               | Result                                   |
+| ---------------------------------------- | ---------------------------------------- |
+| Missing                                  | Created with the Topik section.          |
+| Has one marked section                   | The section is replaced; the rest stays. |
+| Has no markers, or more than one section | Kept as it is.                           |
+| Is a symbolic link or not a regular file | Kept as it is.                           |
+
+Run `topik migrate` after you upgrade `@topik/cli`, so the section matches the
+installed version. `migrate` requires `.topik.yaml` in the directory, changes no
+project source, and exits 0 when there is nothing to update.
+
+The package contains the guides for its own version in `docs/`. When
+`@topik/cli` is a dependency of the project, they are at
+`node_modules/@topik/cli/docs`, which is the path the Topik section names.
 
 ## Format Markdown
 
@@ -63,8 +90,8 @@ the current one.
 [`@topik/content`](https://github.com/subtopik/topik/tree/main/packages/content)
 formatter and prints the files it changed. The path is one `.md` or `.mdx` file, or
 a directory; the default is the current directory. In a directory, `format` finds
-every `.md` and `.mdx` file below it, skipping `node_modules`, dot-directories and
-symbolic links.
+every `.md` and `.mdx` file below it, skipping `node_modules`, dot-directories,
+symbolic links and `AGENTS.md`, which is not Topik Markdown.
 
 - `--check` writes nothing, prints the files that would change, and exits 1 if
   there are any.

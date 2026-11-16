@@ -327,7 +327,7 @@ describe.skipIf(!existsSync(builtCli))("built topik binary", () => {
     expect(await runBuilt(["init", project])).toMatchObject({
       code: 0,
       stdout:
-        "Created .topik.yaml, wiki.yaml, index.md\n" +
+        "Created .topik.yaml, wiki.yaml, index.md, AGENTS.md\n" +
         "Next: run topik compile --validate in the project directory\n",
       stderr: "",
     });
@@ -338,10 +338,21 @@ describe.skipIf(!existsSync(builtCli))("built topik binary", () => {
       code: 0,
       stderr: NATIVE_NOTICE,
     });
+    expect(await runBuilt(["migrate", project])).toMatchObject({
+      code: 0,
+      stdout: "AGENTS.md is up to date\n",
+      stderr: "",
+    });
     expect(await runBuilt(["init", project])).toMatchObject({
       code: 1,
       stdout: "",
       stderr: "Project files already exist. topik init does not overwrite files.\n",
+    });
+    expect(await runBuilt(["migrate", dir])).toMatchObject({
+      code: 1,
+      stdout: "",
+      stderr:
+        "topik migrate requires .topik.yaml in the selected directory. Run topik init to create a project.\n",
     });
   });
 

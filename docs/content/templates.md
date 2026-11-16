@@ -187,9 +187,10 @@ Variables and conditions in body text, outside templates, report
 `topik-variable-missing`, `topik-variable-type`, and `topik-variable-control`,
 with the same line and `variable` context.
 
-A failed operation returns the original source and no usable partial output.
-The content, data, and output limits apply to templates, including repeated
-substitutions.
+A failed operation produces no usable partial output. Functions that take
+source text return `ok: false` with the original source and the diagnostics;
+`evaluateDocument` throws `ContentEvaluationError`. The content, data, and
+output limits apply to templates, including repeated substitutions.
 
 ## Preserve authoring source
 

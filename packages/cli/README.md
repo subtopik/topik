@@ -141,9 +141,11 @@ accepts browser connections from `https://write.subtopik.com` unless
 ## File safety on macOS and Windows
 
 `compile`, `lint`, `format` and `dev` read project files and publish output. On
-Linux they anchor every file access to the project directory (descriptor-anchored
-traversal). macOS and Windows do not provide this, and `--file-safety` selects
-what the commands do there:
+Linux they read and replace files through descriptor-anchored traversal: every
+path component is opened relative to the project directory, so a component
+replaced by a symbolic link is refused. Listing a directory to discover files
+is path-based on every platform. macOS and Windows do not provide anchored
+traversal, and `--file-safety` selects what the commands do there:
 
 - `portable` (default): the command checks paths and file identity instead, and
   prints one notice. This does not protect against another process changing the

@@ -394,7 +394,8 @@ For a Wiki or Course, the intent's source `id` and `title` must match the
 initialized resource; a different title returns `source-intent-mismatch`.
 
 Initialization fails with `initialization-unproven` when the tree may already
-hold a project. The diagnostic names the blocking file in `path`.
+hold a project. When one existing configuration file blocks it, the diagnostic
+names that file in `path`; otherwise it has no `path`.
 
 - An existing empty manifest is a project. An invalid manifest or an unresolved
   source configuration cannot be treated as absence.

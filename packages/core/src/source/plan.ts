@@ -46,6 +46,8 @@ import {
 } from "./asset-context";
 import {
   allocateDocumentPath,
+  sourceMediaPath,
+  type SourcePathCollisionPolicy,
   resourceKey,
   writeMarkdown,
   type WritableDocument,
@@ -149,6 +151,13 @@ export interface PlanSourceUpdatesInput {
   courseReferenceContexts?: Readonly<Record<string, CourseReferenceContext>>;
   assetReferenceContexts?: SourceAssetReferenceContexts;
   media?: readonly (SourceMediaSelection & { config: string })[];
+  /**
+   * What to do when a new document has no explicit `path` and the path derived from its slug
+   * is occupied. `"rename"` (default) appends a hash of the resource name, as
+   * `newSourceDocumentPath` describes. `"refuse"` stops with `source-path-collision`, naming
+   * the resource and the occupied path.
+   */
+  pathCollisions?: SourcePathCollisionPolicy;
 }
 
 function resourceMap(resources: readonly Resource[]): Map<string, Resource> {
@@ -590,6 +599,7 @@ function allocateOperationPaths(state: PlanState): void {
         },
         source.directory,
         next,
+        input.pathCollisions,
       );
     if (reserved.has(path))
       block(
@@ -681,12 +691,11 @@ function planMediaDestinations(state: PlanState): PlannedMedium[] {
       !validateTopikPathSet([selection.filename]).ok
     )
       block("asset-path-invalid", "Media filenames must be portable leaf names.");
-    const extension = posix.extname(selection.filename);
-    const stem = selection.filename.slice(0, selection.filename.length - extension.length);
-    const path = posix.join(
-      source.assetDirectory,
-      `${stem}-${sourceHash(encodeSource(selection.name)).slice(0, 8)}${extension}`,
-    );
+    const path = sourceMediaPath({
+      assetDirectory: source.assetDirectory,
+      filename: selection.filename,
+      name: selection.name,
+    });
     if (reserved.has(path) || !validateTopikPathSet([...reserved, path]).ok)
       block(
         "source-path-collision",

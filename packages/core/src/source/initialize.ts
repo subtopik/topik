@@ -67,7 +67,13 @@ import {
   type SourceSharedAuthority,
   verifySharedEdits,
 } from "./plan";
-import { authoredBody } from "./plan-markdown";
+import {
+  authoredBody,
+  initialSourceDocumentPath,
+  sourceDocumentPathCandidates,
+  sourceMediaPath,
+  type SourcePathCollisionPolicy,
+} from "./plan-markdown";
 import { sourceNavigation } from "./plan-navigation";
 import { transportWikiReferences, type SourceDerivedRepair } from "./reference-transport";
 
@@ -98,6 +104,12 @@ export interface InitializeSourceProjectInput {
   assetReferenceContexts?: SourceAssetReferenceContexts;
   /** Exact expected-absence paths admitted from the complete inventory. */
   createPaths: readonly string[];
+  /**
+   * What to do when two new Guides without an explicit document path derive the same path.
+   * `"rename"` (default) appends a hash of the resource name to the later one; `"refuse"`
+   * stops with `source-path-collision`, naming the path.
+   */
+  pathCollisions?: SourcePathCollisionPolicy;
 }
 
 /** Configuration names a source compiler discovers without an explicit manifest path. */
@@ -127,6 +139,8 @@ export interface AddSourceToProjectInput {
   assetReferenceContexts?: SourceAssetReferenceContexts;
   createPaths: readonly string[];
   manifestAuthority: SourceSharedAuthority;
+  /** As {@link InitializeSourceProjectInput.pathCollisions}. */
+  pathCollisions?: SourcePathCollisionPolicy;
 }
 
 /** Adding a declaration preserves the existing namespace, order and every original source. */
@@ -157,6 +171,7 @@ export async function addSourceToProject(
         assetReferenceContexts: input.assetReferenceContexts,
         documentPaths: input.documentPaths,
         createPaths: input.createPaths,
+        pathCollisions: input.pathCollisions,
       },
       { project, authority: input.manifestAuthority },
     );
@@ -362,13 +377,11 @@ function planInitialMedia(draft: InitializationDraft): void {
     const filename = posix.basename(selection.filename);
     if (filename !== selection.filename || !validateTopikPathSet([filename]).ok)
       failure("asset-path-invalid", "Media filenames must be portable leaf names.");
-    const extension = posix.extname(filename);
-    const stem = filename.slice(0, filename.length - extension.length);
-    const path = posix.join(
-      draft.directory,
-      draft.assetDirectory,
-      `${stem}-${sourceHash(encodeSource(selection.name)).slice(0, 8)}${extension}`,
-    );
+    const path = sourceMediaPath({
+      assetDirectory: posix.join(draft.directory, draft.assetDirectory),
+      filename,
+      name: selection.name,
+    });
     const identity = generateAutomaticAssetName({
       projectNamespace: draft.manifest.namespace,
       manifestRelativePath: path,
@@ -421,16 +434,20 @@ function planCollectionSource(draft: InitializationDraft): Record<string, unknow
   for (const guide of input.resources.filter(
     (resource): resource is Guide => resource.type === "Guide",
   )) {
+    // A collection writes `<slug>.md` whatever the slug, so the plain candidate is not used here.
+    const renamed = sourceDocumentPathCandidates(directory, guide)[1];
+    const explicit = input.documentPaths?.[`Guide/${guide.name}`];
     const requested =
-      input.documentPaths?.[`Guide/${guide.name}`] ??
-      posix.join(directory, `${guide.spec.slug}.md`);
-    const path =
-      !input.documentPaths?.[`Guide/${guide.name}`] && allocated.has(requested)
-        ? posix.join(
-            directory,
-            `${guide.spec.slug}-${sourceHash(encodeSource(guide.name)).slice(0, 8)}.md`,
-          )
-        : requested;
+      explicit ??
+      initialSourceDocumentPath({ kind: "collection", directory, slug: guide.spec.slug });
+    if (explicit === undefined && allocated.has(requested) && input.pathCollisions === "refuse")
+      failSourcePlan(
+        "source-path-collision",
+        "Two new Guides derive the same Markdown path.",
+        `Guide/${guide.name}`,
+        requested,
+      );
+    const path = explicit === undefined && allocated.has(requested) ? renamed : requested;
     draft.paths.set(`Guide/${guide.name}`, path);
     allocated.add(path);
   }
@@ -466,7 +483,10 @@ function planWikiSource(draft: InitializationDraft): Record<string, unknown> {
       "Every new Wiki page needs its explicit navigation/source association.",
     );
   for (const page of navigation.pages)
-    paths.set(`WikiPage/${page.page}`, posix.join(directory, `${page.sourcePath}.md`));
+    paths.set(
+      `WikiPage/${page.page}`,
+      initialSourceDocumentPath({ kind: "wiki", directory, sourcePath: page.sourcePath }),
+    );
   const transportSources = (nodes: NonNullable<Wiki["spec"]["navigation"]>) => {
     for (const node of nodes) {
       if (node.type === "page")
@@ -584,7 +604,12 @@ function planCourseSource(draft: InitializationDraft): Record<string, unknown> {
     paths.set(
       `CoursePage/${page.name}`,
       input.documentPaths?.[`CoursePage/${page.name}`] ??
-        posix.join(directory, module.spec.slug, `${page.spec.slug}.md`),
+        initialSourceDocumentPath({
+          kind: "course",
+          directory,
+          moduleSlug: module.spec.slug,
+          slug: page.spec.slug,
+        }),
     );
   }
   const context = sourceCourseContext(expected, course, paths, directory);

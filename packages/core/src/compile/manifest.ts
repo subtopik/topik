@@ -15,9 +15,14 @@ import {
 import { compileAssetResourcesInSession } from "./assets";
 import { createProjectAssetNameGenerator } from "./asset-names";
 import { readConfigurationText, parseSafeConfigurationYaml, readExactConfigFile } from "./config";
-import { discoverGuides, validateGuideAuthors, type CompileResourceDiscovery } from "./guide";
-import { discoverWiki } from "./wiki";
-import { discoverCourse, validateCourseAuthors } from "./course";
+import {
+  discoverGuides,
+  listCollectionDocuments,
+  validateGuideAuthors,
+  type CompileResourceDiscovery,
+} from "./guide";
+import { discoverWiki, listWikiDocuments } from "./wiki";
+import { discoverCourse, listCourseDocuments, validateCourseAuthors } from "./course";
 import {
   PublicCompileError,
   type PublicCompileErrorId,
@@ -171,6 +176,43 @@ function manifestSourceDescriptors(manifest: TopikManifest): ManifestSourceDescr
       namespace: manifest.namespace,
     };
   });
+}
+
+/**
+ * The Markdown files the declared sources read, relative to the project directory with `/`,
+ * sorted and without repeats. A file is listed whether or not its content is valid, so a tool
+ * such as a formatter sees every project document. The list comes from the configurations and
+ * directory listings: no document content is read, except the frontmatter of a `README` beside
+ * a collection configuration. A page a configuration names that does not exist as a regular
+ * file is left out. Fails as compilation does when the manifest or a configuration is invalid.
+ */
+export async function listManifestDocuments(
+  options: Pick<CompileOptions, "dir" | "fileSafety" | "gitExecutable">,
+): Promise<string[]> {
+  const root = resolve(options.dir);
+  const session = createPortableReadSession(options.fileSafety, options.gitExecutable);
+  const manifest = await loadTopikManifestInSession(root, session);
+  const documents = new Set<string>();
+  for (const source of manifestSourceDescriptors(manifest)) {
+    let selected;
+    try {
+      selected = await readExactConfigFile(root, source.config, session);
+    } catch (error) {
+      throw manifestSourceFailure(error, source, "");
+    }
+    try {
+      const dir = join(root, source.directory);
+      const paths = await (source.kind === "wiki"
+        ? listWikiDocuments(dir, selected)
+        : source.kind === "course"
+          ? listCourseDocuments(dir, selected)
+          : listCollectionDocuments(dir, selected));
+      for (const path of paths) documents.add(posix.join(source.directory, path));
+    } catch (error) {
+      throw manifestSourceFailure(error, source, source.directory);
+    }
+  }
+  return [...documents].sort();
 }
 
 /** Compile only declared sources, sharing the existing local compiler and Asset pipeline. */

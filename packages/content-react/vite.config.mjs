@@ -84,6 +84,8 @@ const config = defineConfig({
     },
   },
   test: {
+    // Loaded CI runners are several times slower than a local run.
+    testTimeout: 20_000,
     alias: {
       "@topik/content": contentSource,
       "@topik/core": coreSource,

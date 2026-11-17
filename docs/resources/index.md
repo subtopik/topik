@@ -103,8 +103,10 @@ Two commands help with the source files:
 
 - `npx topik init ./handbook` writes exactly these three files and refuses to
   overwrite any existing file. Pass `--namespace` for another project namespace.
-- `npx topik format ./handbook` rewrites the Markdown in the canonical form.
-  With `--check` it only lists the files that would change.
+- `npx topik format ./handbook` rewrites the project's Markdown in the canonical
+  form. With `--check` it only lists the files that would change. In a project
+  directory it formats the files the sources read, so a repository readme or
+  other Markdown beside them is left alone.
 
 Use [Navigation](./navigation.md) to add folders, groups, page links, and routes.
 If the source includes local assets, see [Assets](./assets.md) for project
@@ -185,9 +187,16 @@ directory takes the name of its folder. `basics/index.md` is the guide
 Some Markdown files are never guides by name:
 
 - A file named in capitals, such as `AGENTS.md`, `CHANGELOG.md` or `FAQ.md`,
-  is left out without a message, in every folder: its name has an uppercase
-  letter and no lowercase one. `Changelog.md` is not left out and fails with
+  is left out, in every folder: its name has an uppercase letter and no
+  lowercase one. `Changelog.md` is not left out and fails with
   `guide-name-invalid`. Name a guide `faq.md`.
+- The usual repository files are left out without a message: `AGENTS`,
+  `AUTHORS`, `CHANGELOG`, `CLAUDE`, `CODE_OF_CONDUCT`, `CONTRIBUTING`, `GEMINI`,
+  `GOVERNANCE`, `LICENSE`, `MAINTAINERS`, `NOTICE`, `SECURITY` and `SUPPORT`.
+  Any other capital-named file that the patterns select, such as `FAQ.md`,
+  produces the warning `guide-left-out`, because it may be a guide with the
+  wrong name. Rename it in lowercase, or add it to `exclude` to silence the
+  warning. The warning does not fail `topik compile` or `topik lint`.
 - `README.md` and `README.mdx` beside `collection.yaml` are left out too,
   unless the collection uses `sourceVersion: 1` and the file's frontmatter sets
   both `id` and `slug`. A repository readme can therefore sit beside the

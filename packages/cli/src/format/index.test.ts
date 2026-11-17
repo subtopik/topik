@@ -71,6 +71,78 @@ describe("format command", () => {
     expect(targets.every(({ root }) => root === dir)).toBe(true);
   });
 
+  describe("in a project directory", () => {
+    beforeEach(async () => {
+      await mkdir(join(dir, "guides", "basics"), { recursive: true });
+      await writeFile(
+        join(dir, ".topik.yaml"),
+        "version: 1\nnamespace: example/docs\nsources:\n" +
+          "  - kind: wiki\n    config: wiki.yaml\n" +
+          "  - kind: collection\n    config: guides/collection.yaml\n",
+      );
+      await writeFile(join(dir, "wiki.yaml"), "id: docs\ntitle: Docs\nnavigation: [index]\n");
+      await writeFile(
+        join(dir, "guides", "collection.yaml"),
+        'id: blog\ntitle: Blog\ninclude: ["**/*.md"]\nexclude: ["drafts.md"]\n',
+      );
+      await writeFile(join(dir, "index.md"), FORMATTED);
+      await writeFile(join(dir, "guides", "basics", "setup.md"), FORMATTED);
+      // None of these is project content.
+      await writeFile(join(dir, "README.md"), "<p align=center>Repository readme</p>\n");
+      await writeFile(join(dir, "notes.md"), UNFORMATTED);
+      await writeFile(join(dir, "guides", "drafts.md"), UNFORMATTED);
+      await writeFile(join(dir, "guides", "CHANGELOG.md"), UNFORMATTED);
+    });
+
+    test("formats only the files the project's sources read", async () => {
+      expect((await discoverFormatTargets(dir)).map(({ path }) => path)).toEqual([
+        "guides/basics/setup.md",
+        "index.md",
+      ]);
+
+      await runFormat(dir, { check: true, fileSafety: "portable" });
+      expect(log).toEqual(["All 2 file(s) are formatted"]);
+
+      await writeFile(join(dir, "guides", "basics", "setup.md"), UNFORMATTED);
+      await runFormat(dir, { check: false, fileSafety: "portable" });
+      expect(log.slice(1)).toEqual(["guides/basics/setup.md", "Formatted 1 of 2 file(s)"]);
+      expect(await readFile(join(dir, "guides", "basics", "setup.md"), "utf8")).toBe(FORMATTED);
+      // Markdown outside the sources is left exactly as it was.
+      expect(await readFile(join(dir, "notes.md"), "utf8")).toBe(UNFORMATTED);
+      expect(await readFile(join(dir, "guides", "drafts.md"), "utf8")).toBe(UNFORMATTED);
+      expect(errors).toEqual([]);
+    });
+
+    test("still fails on a project page that does not compile cleanly", async () => {
+      await writeFile(join(dir, "index.md"), "# Home\n\n<b>raw</b>\n");
+      await expect(runFormat(dir, { check: true, fileSafety: "portable" })).rejects.toMatchObject({
+        id: "format-failed",
+      });
+      expect(errors.at(-1)).toBe("1 of 2 file(s) could not be formatted");
+    });
+
+    test("a file named as the target is formatted whether or not a source reads it", async () => {
+      await runFormat(join(dir, "notes.md"), { check: false, fileSafety: "portable" });
+      expect(await readFile(join(dir, "notes.md"), "utf8")).toBe(FORMATTED);
+    });
+
+    test("a directory below the project is walked as before", async () => {
+      expect((await discoverFormatTargets(join(dir, "guides"))).map(({ path }) => path)).toEqual([
+        "CHANGELOG.md",
+        "basics/setup.md",
+        "drafts.md",
+      ]);
+    });
+
+    test("fails with the project error when a configuration is invalid", async () => {
+      await writeFile(join(dir, "wiki.yaml"), "id: Not Valid\n");
+      await expect(runFormat(dir, { check: true, fileSafety: "portable" })).rejects.toMatchObject({
+        id: "config-invalid",
+      });
+      expect(log).toEqual([]);
+    });
+  });
+
   test("rewrites unformatted files in place and keeps their mode", async () => {
     await mkdir(join(dir, "guide"));
     await writeFile(join(dir, "index.md"), FORMATTED);

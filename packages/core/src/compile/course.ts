@@ -10,7 +10,7 @@ import { createPortableReadSession } from "../assets/files";
 import { createContentMemo, type ContentMemo } from "./content-memo";
 import { configurationDirectory, readExactConfigFile, type LoadedConfig } from "./config";
 import type { CompileResourceDiscovery } from "./guide";
-import { decodeUtf8Document, readRegularFileWithinRoot } from "./files";
+import { decodeUtf8Document, existingDocuments, readRegularFileWithinRoot } from "./files";
 import { PublicCompileError, publicSchemaError } from "./public-errors";
 import {
   parseMarkdownFrontmatter,
@@ -190,6 +190,25 @@ async function loadCourseConfig(dir: string, configFile?: string): Promise<Loade
     }
   }
   throw new PublicCompileError("config-not-found");
+}
+
+/**
+ * @internal The Markdown files a Course's modules name and that exist as regular files,
+ * whether or not their content is valid. Reads no page content.
+ */
+export async function listCourseDocuments(dir: string, loaded: LoadedConfig): Promise<string[]> {
+  let config;
+  try {
+    config = parseCourseConfig(loaded.value);
+  } catch (error) {
+    throw publicSchemaError("config-invalid", loaded.path, error);
+  }
+  return existingDocuments(
+    dir,
+    config.modules.flatMap((module) =>
+      module.pages.flatMap((page) => [`${page}.md`, `${page}.mdx`]),
+    ),
+  );
 }
 
 async function readCoursePage(

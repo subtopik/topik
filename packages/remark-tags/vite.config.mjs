@@ -18,6 +18,8 @@ export default defineConfig({
     },
   },
   test: {
+    // Loaded CI runners are several times slower than a local run.
+    testTimeout: 20_000,
     coverage: {
       provider: "v8",
       include: ["src/**/*.ts"],

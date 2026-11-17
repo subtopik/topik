@@ -257,3 +257,22 @@ test("component context is kept only for bounded names on the diagnostics that d
   expect(other).not.toHaveProperty("attribute");
   expect(other).not.toHaveProperty("expected");
 });
+
+test("guide discovery diagnostics keep their own fixed messages", () => {
+  for (const [id, text] of [
+    ["guide-left-out", "named in capitals"],
+    ["guide-not-regular-file", "regular files"],
+    ["guide-outside-compilation-root", "compilation directory"],
+  ] as const) {
+    const safe = sanitizeTopikContentDiagnostic({
+      id,
+      type: "Guide",
+      level: "warning",
+      lines: [],
+      message: "PRIVATE_VALUE",
+      file: "FAQ.md",
+    });
+    expect(safe.message).toContain(text);
+    expect(safe.message).not.toContain("PRIVATE_VALUE");
+  }
+});

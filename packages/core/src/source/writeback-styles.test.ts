@@ -382,6 +382,26 @@ test("a guide in an included folder is updated in place; a path outside include 
   }
 });
 
+test("a left-out capital-named file beside a collection does not block planning", async () => {
+  const { project, result, written } = await plan(
+    [
+      manifest("collection", "collection.yaml"),
+      file("collection.yaml", collection),
+      file("post.md", "---\nid: p\n---\n# Post\n"),
+      file("FAQ.md", "<b>left out, with a warning</b>\n"),
+    ],
+    (desired) => {
+      guide(desired).spec.tags = ["t"];
+      return [{ kind: "update", resource: "Guide/p" }];
+    },
+  );
+  expect(project.compilation.diagnostics.map(({ id, file }) => [id, file])).toEqual([
+    ["guide-left-out", "FAQ.md"],
+  ]);
+  expect(result.ok).toBe(true);
+  expect(written("post.md")).toContain('tags: ["t"]');
+});
+
 test("an explicit unportable move path is refused for its resource", async () => {
   const { result } = await plan(
     wiki("navigation: [home, other, third]\n"),

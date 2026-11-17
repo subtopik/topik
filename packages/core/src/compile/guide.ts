@@ -21,6 +21,7 @@ import {
 } from "./config";
 import {
   decodeUtf8Document,
+  existingDocuments,
   FileNotRegularError,
   FileOutsideCompilationRootError,
   readRegularFileWithinRoot,
@@ -127,16 +128,18 @@ export async function discoverGuides(
     throw publicSchemaError("config-invalid", options.configFile ?? loadedConfig.path, error);
   }
 
-  const markdownFiles: string[] = [];
-  for (const file of (await listGuideFiles(dir, "", collectionGuideFilter(config))).sort())
-    if (
-      !isReadmeFilename(file) ||
-      (config.sourceVersion === 1 && (await readmeDeclaresGuide(dir, file)))
-    )
-      markdownFiles.push(file);
+  const { paths: markdownFiles, leftOut } = await collectionDocumentPaths(dir, config);
 
   const resources: SourceResource[] = [...(config.persons ?? [])];
-  const diagnostics: CompileResult["diagnostics"] = [];
+  const diagnostics: CompileResult["diagnostics"] = leftOut.map((file) => ({
+    id: "guide-left-out",
+    type: "Guide",
+    level: "warning",
+    message:
+      "A Markdown file named in capitals is not read as a guide. Rename it in lowercase to make it a guide, or exclude it.",
+    lines: [],
+    file,
+  }));
   const sourcePathsByResource: Record<string, string> = {};
   const claimedNames = new Map<string, string>();
 
@@ -263,6 +266,41 @@ export async function discoverGuides(
   };
 }
 
+/** The files a collection reads as guides, relative to `dir` with `/`, in a stable order. */
+async function collectionDocumentPaths(
+  dir: string,
+  config: ReturnType<typeof parseCollectionConfig>,
+): Promise<{ paths: string[]; leftOut: string[] }> {
+  const paths: string[] = [];
+  const leftOut: string[] = [];
+  const filter = collectionGuideFilter(config);
+  for (const file of (await listGuideFiles(dir, "", filter, leftOut)).sort())
+    if (
+      !isReadmeFilename(file) ||
+      (config.sourceVersion === 1 && (await readmeDeclaresGuide(dir, file)))
+    )
+      paths.push(file);
+  return { paths, leftOut: leftOut.sort() };
+}
+
+/**
+ * @internal The Markdown files a collection reads, whether or not their content is valid.
+ * Reads no content except the frontmatter of a `README` beside the configuration.
+ */
+export async function listCollectionDocuments(
+  dir: string,
+  loaded: LoadedConfig,
+): Promise<string[]> {
+  let config;
+  try {
+    config = parseCollectionConfig(loaded.value);
+  } catch (error) {
+    throw publicSchemaError("config-invalid", loaded.path, error);
+  }
+  // Compilation reports an entry that is not a regular file; a list of documents omits it.
+  return existingDocuments(dir, (await collectionDocumentPaths(dir, config)).paths);
+}
+
 /**
  * Paths of the collection's guide files, relative to `dir` with `/`. Directories are read only
  * when `include` names a path below `dir`; links to directories are never followed. An entry
@@ -272,6 +310,7 @@ async function listGuideFiles(
   dir: string,
   relativeDir: string,
   filter: CollectionGuideFilter,
+  leftOut: string[],
 ): Promise<string[]> {
   const entries = await readdir(relativeDir === "" ? dir : join(dir, relativeDir), {
     withFileTypes: true,
@@ -281,7 +320,8 @@ async function listGuideFiles(
     const path = relativeDir === "" ? entry.name : `${relativeDir}/${entry.name}`;
     if (filter.matches(path)) files.push(path);
     else if (filter.nested && entry.isDirectory() && !isSkippedCollectionDirectory(entry.name))
-      files.push(...(await listGuideFiles(dir, path, filter)));
+      files.push(...(await listGuideFiles(dir, path, filter, leftOut)));
+    else if (entry.isFile() && filter.leavesOutUnusualName(path)) leftOut.push(path);
   }
   return files;
 }

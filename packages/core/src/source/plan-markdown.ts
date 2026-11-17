@@ -16,28 +16,120 @@ import { encodeSource, patchFrontmatterFields, sourceHash } from "./syntax";
 export type WritableDocument = Guide | WikiPage | CoursePage;
 export const resourceKey = (resource: Resource): string => `${resource.type}/${resource.name}`;
 
+/** How a planner treats a derived document path that is occupied. */
+export type SourcePathCollisionPolicy = "rename" | "refuse";
+
+/** The identity a new document's derived path depends on. */
+export type SourceDocumentIdentity =
+  | { type: "Guide" | "CoursePage"; name: string; spec: { slug: string } }
+  | { type: "WikiPage"; name: string };
+
+/**
+ * The two paths a planner can derive for a new document without an explicit path, in the
+ * order it tries them: `<directory>/<slug>.md`, then the same name with a hyphen and the first
+ * eight hexadecimal digits of the SHA-256 of the resource name. A Guide or Course page uses
+ * its slug, a Wiki page its name, and an empty slug becomes `index`.
+ */
+export function sourceDocumentPathCandidates(
+  directory: string,
+  resource: SourceDocumentIdentity,
+): readonly [plain: string, renamed: string] {
+  const slug = resource.type === "WikiPage" ? resource.name : resource.spec.slug;
+  const stem = posix.join(directory, slug || "index");
+  return [`${stem}.md`, `${stem}-${sourceHash(encodeSource(resource.name)).slice(0, 8)}.md`];
+}
+
+/**
+ * The path `planSourceUpdates` gives a new document created without an explicit `path`.
+ * `occupied` is every path of the project tree plus the paths already given to earlier
+ * operations of the same plan, in operation order: the result depends on both. Returns
+ * `undefined` when no candidate is free and portable beside the occupied paths. With
+ * `pathCollisions: "refuse"` only the plain path is a candidate.
+ */
+export function newSourceDocumentPath(input: {
+  /** Manifest-relative directory of the source configuration; empty for the project root. */
+  directory: string;
+  resource: SourceDocumentIdentity;
+  occupied: Iterable<string>;
+  pathCollisions?: SourcePathCollisionPolicy;
+}): string | undefined {
+  const occupied = [...input.occupied];
+  const taken = new Set(occupied);
+  const candidates = sourceDocumentPathCandidates(input.directory, input.resource);
+  for (const candidate of input.pathCollisions === "refuse" ? candidates.slice(0, 1) : candidates)
+    if (!taken.has(candidate) && validateTopikPathSet([...occupied, candidate]).ok)
+      return candidate;
+  return undefined;
+}
+
+/**
+ * The path `initializeSourceProject` and `addSourceToProject` derive for a new document that
+ * has no entry in `documentPaths`. `directory` is the manifest-relative directory of the new
+ * source configuration, empty for the project root.
+ *
+ * - `collection`: `<directory>/<slug>.md`. A later Guide of the same call that derives the
+ *   same path gets the renamed candidate of {@link sourceDocumentPathCandidates} instead,
+ *   or is refused with `pathCollisions: "refuse"`.
+ * - `wiki`: `<directory>/<sourcePath>.md`, from the page's navigation entry. `documentPaths`
+ *   does not apply to Wiki pages.
+ * - `course`: `<directory>/<module slug>/<page slug>.md`.
+ *
+ * An occupied derived path is never renamed against the existing tree: it fails.
+ */
+export function initialSourceDocumentPath(
+  input:
+    | { kind: "collection"; directory: string; slug: string }
+    | { kind: "wiki"; directory: string; sourcePath: string }
+    | { kind: "course"; directory: string; moduleSlug: string; slug: string },
+): string {
+  if (input.kind === "wiki") return posix.join(input.directory, `${input.sourcePath}.md`);
+  if (input.kind === "course")
+    return posix.join(input.directory, input.moduleSlug, `${input.slug}.md`);
+  return posix.join(input.directory, `${input.slug}.md`);
+}
+
+/**
+ * The path a planner writes new media to: `<assetDirectory>/<stem>-<hash><extension>`, where
+ * the hash is the first eight hexadecimal digits of the SHA-256 of the Asset name in the
+ * selection. `assetDirectory` is manifest-relative: for `planSourceUpdates` the
+ * `assetDirectory` that source provenance reports for the configuration, and for a source
+ * being initialized or added its configuration directory joined with the intent's
+ * `assetDirectory`, which defaults to `_assets`.
+ */
+export function sourceMediaPath(input: {
+  assetDirectory: string;
+  /** The selection's portable leaf filename. */
+  filename: string;
+  /** The selection's Asset name. */
+  name: string;
+}): string {
+  const extension = posix.extname(input.filename);
+  const stem = input.filename.slice(0, input.filename.length - extension.length);
+  return posix.join(
+    input.assetDirectory,
+    `${stem}-${sourceHash(encodeSource(input.name)).slice(0, 8)}${extension}`,
+  );
+}
+
 export function allocateDocumentPath(
   project: SourceProject,
   directory: string,
   resource: WritableDocument,
+  pathCollisions?: SourcePathCollisionPolicy,
 ): string {
-  const slug =
-    resource.type === "Guide" || resource.type === "CoursePage"
-      ? resource.spec.slug
-      : resource.name;
-  const stem = posix.join(directory, slug || "index");
-  for (const suffix of ["", `-${sourceHash(encodeSource(resource.name)).slice(0, 8)}`]) {
-    const candidate = `${stem}${suffix}.md`;
-    if (
-      !project.tree.some((file) => file.path === candidate) &&
-      validateTopikPathSet([...project.tree.map((file) => file.path), candidate]).ok
-    )
-      return candidate;
-  }
+  const path = newSourceDocumentPath({
+    directory,
+    resource,
+    occupied: project.tree.map((file) => file.path),
+    pathCollisions,
+  });
+  if (path !== undefined) return path;
   return block(
     "source-path-collision",
     "A new Markdown path collides with the existing project.",
     resourceKey(resource),
+    // The caller asked for no rename: name the path it would have had.
+    pathCollisions === "refuse" ? sourceDocumentPathCandidates(directory, resource)[0] : undefined,
   );
 }
 

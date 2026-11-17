@@ -40,6 +40,9 @@ const PUBLIC_CLI_ERROR_MESSAGES = Object.freeze({
   "init-target-access-failed": "Project directory could not be created or accessed.",
   "init-write-failed": "Project files could not be written.",
   "lint-failed": "Lint found errors.",
+  "migrate-project-missing":
+    "topik migrate requires .topik.yaml in the selected directory. Run topik init to create a project.",
+  "migrate-write-failed": "AGENTS.md could not be written.",
   "project-platform-unsupported":
     "--file-safety anchored requires descriptor-anchored file reads, which only Linux provides. Use --file-safety portable on a workspace you trust, or run on Linux, for example in WSL 2 or a Linux container.",
   "resource-access-failed": "Resource input could not be accessed.",

@@ -31,6 +31,13 @@ import {
 import { compileResourceLinksInSession, type CompileResourceReferenceTarget } from "./links";
 import { assertValidDocumentResource } from "./wiki";
 
+/**
+ * Instructions for coding agents, which `topik init` and `topik migrate` write beside the
+ * project manifest. A collection in that directory does not read the file as a guide. Its
+ * name could never be a guide's: guide filenames are lowercase.
+ */
+const AGENT_INSTRUCTIONS_FILENAME = "AGENTS.md";
+
 export interface CompileGuidesOptions {
   dir: string;
   /** Exact config path relative to dir; content is relative to the config directory. */
@@ -122,7 +129,9 @@ export async function discoverGuides(
   }
 
   const files = await readdir(dir);
-  const markdownFiles = files.filter((f) => f.endsWith(".md") || f.endsWith(".mdx")).sort();
+  const markdownFiles = files
+    .filter((f) => (f.endsWith(".md") || f.endsWith(".mdx")) && f !== AGENT_INSTRUCTIONS_FILENAME)
+    .sort();
 
   const resources: SourceResource[] = [...(config.persons ?? [])];
   const diagnostics: CompileResult["diagnostics"] = [];

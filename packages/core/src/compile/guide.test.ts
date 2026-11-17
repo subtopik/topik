@@ -52,6 +52,31 @@ describe("compileGuides", () => {
     });
   });
 
+  test("leaves out AGENTS.md, which is not a guide", async () => {
+    await writeCollectionConfig("id: blog\ntitle: Blog\n");
+    await writeGuide("hello-world", "# Hello World\n\nWelcome!");
+    await writeFile(join(dir, "AGENTS.md"), "<!--TOPIK START-->\n# Agents\n<!--TOPIK END-->\n");
+
+    const result = await compileGuides({ dir });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.resources.map((resource) => resource.name)).toEqual(["blog-hello-world"]);
+  });
+
+  test("leaves out AGENTS.md even when its frontmatter names a guide", async () => {
+    await writeCollectionConfig("sourceVersion: 1\nid: blog\ntitle: Blog\n");
+    await writeGuide("hello-world", "# Hello World\n\nWelcome!");
+    await writeFile(
+      join(dir, "AGENTS.md"),
+      "---\nid: blog-agents\nslug: agents\n---\n# Agents\n\nHow agents work.\n",
+    );
+
+    const result = await compileGuides({ dir });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.resources.map((resource) => resource.name)).toEqual(["blog-hello-world"]);
+  });
+
   test("reports only compilation-relative Guide diagnostic paths", async () => {
     await writeCollectionConfig("id: blog\ntitle: Blog\n");
     await writeGuide("unsafe", "<http://example.com/file.pdf>\n");

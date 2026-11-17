@@ -8,7 +8,8 @@
         "lines": [3],
         "message": "A tag is not supported.",
         "column": 1,
-        "file": "wiki/tags.md"
+        "file": "wiki/tags.md",
+        "tag": "unknown"
       },
       {
         "id": "tag-undefined",
@@ -17,7 +18,8 @@
         "lines": [6],
         "message": "A tag is not supported.",
         "column": 1,
-        "file": "wiki/tags.md"
+        "file": "wiki/tags.md",
+        "tag": "unknown"
       },
       {
         "id": "link-scheme-unsafe",

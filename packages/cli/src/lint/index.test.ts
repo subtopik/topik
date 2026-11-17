@@ -112,6 +112,34 @@ describe("lint command", () => {
     });
   });
 
+  test("lintJsonReport includes the component context of a diagnostic", () => {
+    expect(
+      lintJsonReport([
+        {
+          id: "attribute-value-invalid",
+          type: "tag",
+          level: "error",
+          message: "",
+          lines: [3],
+          tag: "callout",
+          attribute: "variant",
+          expected: ["info", "tip"],
+        },
+      ]).diagnostics,
+    ).toEqual([
+      {
+        line: 3,
+        lines: [3],
+        id: "attribute-value-invalid",
+        severity: "error",
+        message: "An attribute has an invalid value.",
+        tag: "callout",
+        attribute: "variant",
+        expected: ["info", "tip"],
+      },
+    ]);
+  });
+
   test("lintJsonReport keeps the column and omits unknown fields", () => {
     expect(
       lintJsonReport([

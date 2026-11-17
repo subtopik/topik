@@ -3,6 +3,7 @@ import {
   sanitizeTopikContentDiagnostic,
   sanitizeTopikDiagnosticFile,
   topikLinkDiagnosticMessage,
+  type TopikContentDiagnostic,
 } from "./diagnostics";
 import {
   allAmbiguousDiagnosticFiles as ambiguousDiagnosticFiles,
@@ -170,4 +171,89 @@ test("collapse diagnostics retain only the recognized option and safe source pos
         option,
       }),
     ).not.toHaveProperty("option");
+});
+
+test("attribute diagnostics name the component, the attribute and what the schema accepts", () => {
+  const diagnostics = (source: string) => validateTopikContent(source).errors;
+  expect(diagnostics('{% callout variant="PRIVATE_VALUE" %}\nx\n{% /callout %}')).toContainEqual(
+    expect.objectContaining({
+      id: "attribute-value-invalid",
+      message: "An attribute has an invalid value.",
+      tag: "callout",
+      attribute: "variant",
+      expected: ["info", "tip", "warning", "danger"],
+    }),
+  );
+  expect(diagnostics('{% callout colour="PRIVATE_VALUE" %}\nx\n{% /callout %}')).toContainEqual(
+    expect.objectContaining({
+      id: "attribute-undefined",
+      tag: "callout",
+      attribute: "colour",
+      expected: ["variant", "title"],
+    }),
+  );
+  expect(diagnostics("{% callout title=3 %}\nx\n{% /callout %}")).toContainEqual(
+    expect.objectContaining({
+      id: "attribute-type-invalid",
+      tag: "callout",
+      attribute: "title",
+      expected: ["string"],
+    }),
+  );
+  expect(diagnostics("{% unknown %}\nx\n{% /unknown %}")).toContainEqual(
+    expect.objectContaining({ id: "tag-undefined", tag: "unknown" }),
+  );
+  for (const source of [
+    '{% callout variant="PRIVATE_VALUE" %}\nx\n{% /callout %}',
+    '{% callout colour="PRIVATE_VALUE" %}\nx\n{% /callout %}',
+  ])
+    expect(JSON.stringify(diagnostics(source))).not.toContain("PRIVATE_VALUE");
+});
+
+test("component context is kept only for bounded names on the diagnostics that define it", () => {
+  const base: Omit<TopikContentDiagnostic, "id"> = {
+    type: "document",
+    level: "error",
+    lines: [1],
+    message: "PRIVATE_VALUE",
+  };
+  expect(
+    sanitizeTopikContentDiagnostic({
+      ...base,
+      id: "attribute-value-invalid",
+      tag: "callout",
+      attribute: "variant",
+      expected: ["info", "tip"],
+    }),
+  ).toMatchObject({ tag: "callout", attribute: "variant", expected: ["info", "tip"] });
+
+  const unsafe = sanitizeTopikContentDiagnostic({
+    ...base,
+    id: "attribute-value-invalid",
+    tag: "PRIVATE VALUE",
+    attribute: "x".repeat(65),
+    expected: ["info", "PRIVATE VALUE"],
+  });
+  expect(unsafe).not.toHaveProperty("tag");
+  expect(unsafe).not.toHaveProperty("attribute");
+  expect(unsafe).not.toHaveProperty("expected");
+  expect(
+    sanitizeTopikContentDiagnostic({
+      ...base,
+      id: "attribute-value-invalid",
+      expected: Array.from({ length: 33 }, (_, index) => `v${index}`),
+    }),
+  ).not.toHaveProperty("expected");
+
+  // Other diagnostics do not carry component context.
+  const other = sanitizeTopikContentDiagnostic({
+    ...base,
+    id: "link-page-not-found",
+    tag: "callout",
+    attribute: "variant",
+    expected: ["info"],
+  });
+  expect(other).not.toHaveProperty("tag");
+  expect(other).not.toHaveProperty("attribute");
+  expect(other).not.toHaveProperty("expected");
 });

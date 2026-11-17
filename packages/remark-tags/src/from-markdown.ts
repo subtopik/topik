@@ -44,8 +44,14 @@ function isMarker(node: TreeNode): node is Marker {
   return node.type === "topikTagMarker";
 }
 
-function location(message: string, node: Node, id: string): TagDiagnostic {
-  return { id, message, line: node.position?.start.line, column: node.position?.start.column };
+function location(message: string, node: Node, id: string, tag?: string): TagDiagnostic {
+  return {
+    id,
+    message,
+    ...(tag === undefined ? {} : { tag }),
+    line: node.position?.start.line,
+    column: node.position?.start.column,
+  };
 }
 
 function limitError(message: string, node: Node): never {
@@ -312,7 +318,7 @@ function convert(
         }
         case "component": {
           if (!Object.hasOwn(declarations, tag.name)) {
-            errors.push(location(`Unknown tag ${tag.name}`, child, "tag-undefined"));
+            errors.push(location(`Unknown tag ${tag.name}`, child, "tag-undefined", tag.name));
             break;
           }
           const { kind } = declarations[tag.name];
@@ -322,6 +328,7 @@ function convert(
                 `${kind === "block" ? "Block" : "Inline"} tag ${tag.name} is not valid here`,
                 child,
                 "tag-placement-invalid",
+                tag.name,
               ),
             );
           } else if (tag.close) {

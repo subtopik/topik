@@ -228,7 +228,11 @@ Common source problems include:
 
 `node-undefined` diagnostics set `type` to the Markdown node type, such as
 `html` or `footnoteDefinition`. Variable diagnostics set `variable` to the
-bounded authored path.
+bounded authored path. Component and attribute diagnostics set `tag` to the
+component name and `attribute` to the attribute name; `attribute-undefined`,
+`attribute-type-invalid` and `attribute-value-invalid` also set `expected` to
+what the component schema accepts, such as the allowed values of `variant`.
+Diagnostics never include an authored attribute value.
 
 ### What formatting changes
 

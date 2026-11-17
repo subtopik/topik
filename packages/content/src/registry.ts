@@ -74,6 +74,12 @@ export interface ValidationIssue {
   message: string;
   /** Safe authored presentation option name, never a supplied value. */
   option?: string;
+  /** Component name the issue is about. */
+  tag?: string;
+  /** Attribute name the issue is about, never its value. */
+  attribute?: string;
+  /** What the component schema accepts: enum values, a type, or attribute names. */
+  expected?: readonly string[];
 }
 
 /** Declarative schema accepted in application configuration. */

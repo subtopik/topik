@@ -93,6 +93,8 @@ export interface TagDiagnostic {
   /** Stable diagnostic identifier; parser diagnostics always set it. */
   id?: string;
   option?: string;
+  /** Component name of the tag the diagnostic is about, when known. */
+  tag?: string;
   message: string;
   line?: number;
   column?: number;

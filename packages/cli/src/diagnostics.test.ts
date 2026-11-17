@@ -19,6 +19,19 @@ describe("CLI diagnostic serialization", () => {
     expect(output).not.toContain("https://user:");
   });
 
+  test("prints the component, attribute and accepted values without the authored value", () => {
+    const sentinel = "PRIVATE_VALUE";
+    const result = validateTopikContent(`{% callout variant="${sentinel}" %}\nx\n{% /callout %}`, {
+      file: "intro.md",
+    });
+    const output = result.errors.map(formatDiagnostic).join("\n");
+
+    expect(output).toBe(
+      "intro.md:1 error attribute-value-invalid: An attribute has an invalid value. (tag: callout; attribute: variant; expected: info, tip, warning, danger)",
+    );
+    expect(output).not.toContain(sentinel);
+  });
+
   test("re-applies stable link wording before CLI presentation", () => {
     const sentinel = "PRIVATE_VALUE";
     const output = formatDiagnostic({

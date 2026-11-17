@@ -22,8 +22,16 @@ export interface TopikContentDiagnostic {
   lines: number[];
   /** Optional sanitized source label. Absolute directories and URL secrets are removed. */
   file?: string;
-  /** Authored template text slot, when available. */
+  /** Component name the diagnostic is about, with bounded length. */
+  tag?: string;
+  /** Attribute name the diagnostic is about, with bounded length; never its value. */
   attribute?: string;
+  /**
+   * What the component schema accepts where the diagnostic applies: the allowed values of an
+   * enum attribute, the required attribute type, or the supported attribute names. Never
+   * authored text.
+   */
+  expected?: readonly string[];
   /** Bounded authored variable path; context values are never included. */
   variable?: string;
   /** Supported code presentation option, with no authored/resolved values. */
@@ -199,6 +207,47 @@ function componentDiagnosticMessage(id: string): string {
   return "Content validation failed.";
 }
 
+/** Component and attribute names follow the tag grammar; anything else is dropped. */
+const DIAGNOSTIC_NAME = /^[a-z][A-Za-z0-9-]{0,63}$/;
+const DIAGNOSTIC_EXPECTED_VALUE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
+const DIAGNOSTIC_EXPECTED_LIMIT = 32;
+const ATTRIBUTE_DIAGNOSTIC_IDS = new Set([
+  "attribute-missing-required",
+  "attribute-type-invalid",
+  "attribute-undefined",
+  "attribute-value-invalid",
+]);
+const TAG_DIAGNOSTIC_IDS = new Set([
+  ...ATTRIBUTE_DIAGNOSTIC_IDS,
+  "tag-placement-invalid",
+  "tag-undefined",
+  "topik-tag-children",
+  "topik-tag-placement",
+]);
+const EXPECTED_DIAGNOSTIC_IDS = new Set([
+  "attribute-type-invalid",
+  "attribute-undefined",
+  "attribute-value-invalid",
+]);
+
+function isRangeDiagnostic(id: string): boolean {
+  return /^topik-[a-z0-9-]+-range$/.test(id);
+}
+
+function safeExpected(expected: unknown): readonly string[] | undefined {
+  if (
+    !Array.isArray(expected) ||
+    expected.length === 0 ||
+    expected.length > DIAGNOSTIC_EXPECTED_LIMIT
+  )
+    return undefined;
+  return expected.every(
+    (value): value is string => typeof value === "string" && DIAGNOSTIC_EXPECTED_VALUE.test(value),
+  )
+    ? [...expected]
+    : undefined;
+}
+
 /** Re-apply fixed public messages and safe file labels when diagnostics cross package layers. */
 export function sanitizeTopikContentDiagnostic(
   diagnostic: TopikContentDiagnostic,
@@ -214,8 +263,14 @@ export function sanitizeTopikContentDiagnostic(
     variable,
     option,
     column,
+    tag,
+    expected,
     ...safe
   } = diagnostic;
+  const range = isRangeDiagnostic(diagnostic.id);
+  const safeExpectedValues = EXPECTED_DIAGNOSTIC_IDS.has(diagnostic.id)
+    ? safeExpected(expected)
+    : undefined;
   // Template and body-variable diagnostics may carry bounded authored context.
   const template =
     diagnostic.id.startsWith("topik-template-") || diagnostic.id.startsWith("topik-variable-");
@@ -245,9 +300,20 @@ export function sanitizeTopikContentDiagnostic(
       ? { column }
       : {}),
     ...(file === undefined ? {} : { file }),
+    ...((TAG_DIAGNOSTIC_IDS.has(diagnostic.id) || range) &&
+    typeof tag === "string" &&
+    DIAGNOSTIC_NAME.test(tag)
+      ? { tag }
+      : {}),
     ...(template && attribute !== undefined && ["title", "alt", "caption"].includes(attribute)
       ? { attribute }
       : {}),
+    ...((ATTRIBUTE_DIAGNOSTIC_IDS.has(diagnostic.id) || range) &&
+    typeof attribute === "string" &&
+    DIAGNOSTIC_NAME.test(attribute)
+      ? { attribute }
+      : {}),
+    ...(safeExpectedValues === undefined ? {} : { expected: safeExpectedValues }),
     ...(template &&
     typeof variable === "string" &&
     variable.length <= 256 &&

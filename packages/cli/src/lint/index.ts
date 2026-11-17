@@ -17,6 +17,16 @@ export interface LintJsonDiagnostic {
   id: string;
   severity: TopikContentDiagnostic["level"];
   message: string;
+  /** Component name the diagnostic is about. */
+  tag?: string;
+  /** Attribute name the diagnostic is about, never its value. */
+  attribute?: string;
+  /** Code presentation option the diagnostic is about. */
+  option?: string;
+  /** Variable path the diagnostic is about. */
+  variable?: string;
+  /** What the component schema accepts: enum values, a type, or attribute names. */
+  expected?: string[];
 }
 
 /** The single JSON document `topik lint --json` prints on stdout. */
@@ -39,6 +49,11 @@ export function lintJsonReport(diagnostics: readonly TopikContentDiagnostic[]): 
         id: safe.id,
         severity: safe.level,
         message: safe.message,
+        ...(safe.tag === undefined ? {} : { tag: safe.tag }),
+        ...(safe.attribute === undefined ? {} : { attribute: safe.attribute }),
+        ...(safe.option === undefined ? {} : { option: safe.option }),
+        ...(safe.variable === undefined ? {} : { variable: safe.variable }),
+        ...(safe.expected === undefined ? {} : { expected: [...safe.expected] }),
       };
     }),
     errors: diagnostics.filter(isErrorDiagnostic).length,

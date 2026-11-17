@@ -48,6 +48,7 @@ export {
   isErrorDiagnostic,
   pagePathToName,
   publicCompileErrorMessage,
+  publicCompileReasonMessage,
   PublicCompileError,
   type CompileOptions,
   type CompileWikiOptions,

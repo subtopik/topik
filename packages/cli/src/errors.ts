@@ -1,4 +1,11 @@
-import { publicCompileErrorMessage, PublicCompileError, ManifestSourceError } from "@topik/core";
+import { sanitizeTopikDiagnosticFile } from "@topik/content";
+import {
+  AssetCompilationError,
+  publicCompileErrorMessage,
+  publicCompileReasonMessage,
+  PublicCompileError,
+  ManifestSourceError,
+} from "@topik/core";
 
 export class CliError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -105,7 +112,29 @@ export function formatPublicCliError(error: unknown): string {
   if (error instanceof PublicCompileError) {
     return publicCompileErrorMessage(error.id, error.reason) ?? "Topik command failed.";
   }
+  if (error instanceof AssetCompilationError) return formatAssetFailure(error);
   return "Topik command failed.";
+}
+
+/**
+ * An image or download a document references could not be compiled. Names the file when the
+ * diagnostic has a safe project path, and the cause when the reader knows it (for example a
+ * Git LFS pointer). Diagnostic wording is not stable, so only its ID is printed.
+ */
+function formatAssetFailure(error: AssetCompilationError): string {
+  const diagnostic = error.diagnostics[0];
+  const path =
+    typeof diagnostic?.location?.path === "string"
+      ? sanitizeTopikDiagnosticFile(diagnostic.location.path)
+      : undefined;
+  const subject = path === undefined ? "" : `${path}: `;
+  const reason = publicCompileReasonMessage(error.reason);
+  if (reason !== undefined) return `${subject}An image or download could not be read. ${reason}`;
+  const id =
+    typeof diagnostic?.id === "string" && /^[A-Z0-9_]{1,64}$/.test(diagnostic.id)
+      ? ` (${diagnostic.id})`
+      : "";
+  return `${subject}An image or download could not be compiled${id}.`;
 }
 
 function resanitize(error: PublicCompileError): PublicCompileError {

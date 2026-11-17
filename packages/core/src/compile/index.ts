@@ -50,6 +50,7 @@ export {
 } from "./shared";
 export {
   publicCompileErrorMessage,
+  publicCompileReasonMessage,
   PublicCompileError,
   type PublicCompileErrorId,
   type PublicCompileErrorReason,

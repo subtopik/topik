@@ -329,6 +329,13 @@ New media requires exact bytes, digest, desired Asset and declared configuration
 in `media`. It is written into that configuration's `assets.directory`. Existing
 paths are never overwritten, and unused files are not garbage-collected.
 
+The destination is `<assets.directory>/<stem>-<hash><extension>`, where the hash
+is the first eight hexadecimal digits of the SHA-256 of the selection's Asset
+name. `sourceMediaPath({ assetDirectory, filename, name })` returns that path, so
+a caller that must admit the path in `create` or `createPaths` does not need its
+own copy of the rule. `assetDirectory` is the manifest-relative directory that
+source provenance reports for the configuration.
+
 `assetReferenceContexts` can map names in a saved body to separately admitted
 media selections. This transport mapping changes the candidate compilation, while
 the saved graph stays sealed in its original name space. Reusing media requires
@@ -349,6 +356,26 @@ and declaration additions; inspect the original source again with the intended
 compatible cohort before preparing an edit. Resource/Asset protocol identities
 are admitted independently and preserved.
 
+### Paths of new documents
+
+A `create` operation without a `path` gets a path derived from the resource:
+`<source directory>/<slug>.md` for a Guide or Course page and
+`<source directory>/<name>.md` for a Wiki page. When that path is occupied, the
+planner appends a hyphen and the first eight hexadecimal digits of the SHA-256
+of the resource name, such as `docs/install-1e142e62.md`.
+
+- `newSourceDocumentPath({ directory, resource, occupied })` returns the path the
+  planner will choose. `occupied` is every path of the project tree plus the
+  paths given to earlier operations of the same plan, in operation order.
+  `sourceDocumentPathCandidates(directory, resource)` returns both spellings.
+- `pathCollisions: "refuse"` on `planSourceUpdates`, `initializeSourceProject`
+  and `addSourceToProject` turns the rename into the diagnostic
+  `source-path-collision`, which names the resource and the occupied path. The
+  default, `"rename"`, keeps the behaviour above, with the same bytes and plan
+  digest as before the option existed.
+- An explicit `path`, or an entry in `documentPaths`, is never renamed: an
+  occupied explicit path always fails.
+
 ### Diagnostics
 
 Known compiler failures keep their code, safe path, and available line or source
@@ -359,12 +386,36 @@ Unexpected exception details stay private. A generic fallback diagnostic keeps t
 original exception only as a non-enumerable `cause` for in-process debugging, so
 serialized diagnostics never include it.
 
-| Code                       | Returned when                                                                                                                             |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `source-tree-invalid`      | Planning, initialization or source addition receives a tree over the source project limits, or with duplicate, unsafe or colliding paths. |
-| `source-path-invalid`      | An explicit create or move `path` is not a portable project path. The diagnostic names its resource.                                      |
-| `source-validation-failed` | A writer edit would produce invalid configuration syntax. It is not reported as a parse error in the authored file.                       |
-| `source-base-changed`      | The pinned tree is stale, during planning or source addition.                                                                             |
+`code` is typed as `SourcePlanDiagnosticCode`, the union of every code the
+planners raise, or the ID of a compiler diagnostic passed through unchanged.
+`sourcePlanDiagnosticCategory(code)` gives each code one coarse category, so a
+consumer can map diagnostics by category and stay correct when codes are added:
+
+| Category          | Meaning                                                                                  |
+| ----------------- | ---------------------------------------------------------------------------------------- |
+| `request`         | The operations, intent or desired resources contradict each other or are incomplete.     |
+| `mapping`         | A resource has no declared source to write to, or its source record is unusable.         |
+| `version`         | The source must opt in to `sourceVersion: 1`, or cannot.                                 |
+| `authority`       | The caller did not show the current bytes of a file the plan changes or creates.         |
+| `scope`           | The plan would change a resource or shared file the caller did not admit.                |
+| `stale`           | The pinned tree is not the tree the project was read from.                               |
+| `path`            | A requested or derived file path is occupied or not portable.                            |
+| `reference`       | A link or reference cannot be kept or resolved. Compiler `link-…` IDs are in this group. |
+| `asset`           | Supplied media bytes or names do not match the desired Assets.                           |
+| `unrepresentable` | The desired value has no source form.                                                    |
+| `validation`      | The written source does not compile. Every other compiler ID is in this group.           |
+| `tree`            | The supplied tree is over a limit or holds unsafe paths.                                 |
+| `incompatible`    | The saved project was read by another writer or package cohort.                          |
+
+Some codes worth handling by name:
+
+| Code                       | Returned when                                                                                                                                                                           |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `source-tree-too-large`    | The tree has more than 10,000 files, a file over 256 MiB, or more than 512 MiB in total. `limit`, `count` and `unit` (`files` or `bytes`) say which bound was exceeded and by how much. |
+| `source-tree-invalid`      | Planning, initialization or source addition receives a tree with duplicate, unsafe or colliding paths, or entries that are not regular files.                                           |
+| `source-path-invalid`      | An explicit create or move `path` is not a portable project path. The diagnostic names its resource.                                                                                    |
+| `source-validation-failed` | A writer edit would produce invalid configuration syntax. It is not reported as a parse error in the authored file.                                                                     |
+| `source-base-changed`      | The pinned tree is stale, during planning or source addition.                                                                                                                           |
 
 ## Resolve links in browser readers
 

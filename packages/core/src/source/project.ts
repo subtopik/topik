@@ -132,22 +132,35 @@ export interface SourceProject {
 /** A normalized complete tree is required; omitted paths never imply ownership or absence. */
 export function snapshotSourceTree(input: readonly SourceTreeFile[]): SourceTreeFile[] {
   if (input.length > SOURCE_PROJECT_LIMITS.maxFiles)
-    throw new SourceTreeError("Source tree exceeds file limit");
+    throw new SourceTreeError("Source tree exceeds file limit", {
+      limit: SOURCE_PROJECT_LIMITS.maxFiles,
+      count: input.length,
+      unit: "files",
+    });
   const seen = new Set<string>();
   let bytes = 0;
   for (const file of input) {
     if (
       seen.has(file.path) ||
       (file.mode !== "100644" && file.mode !== "100755") ||
-      !(file.bytes instanceof Uint8Array) ||
-      file.bytes.length > SOURCE_PROJECT_LIMITS.maxFileBytes
+      !(file.bytes instanceof Uint8Array)
     )
       throw new SourceTreeError("Source tree requires unique regular files with bounded bytes");
+    if (file.bytes.length > SOURCE_PROJECT_LIMITS.maxFileBytes)
+      throw new SourceTreeError("Source tree holds a file over the file byte limit", {
+        limit: SOURCE_PROJECT_LIMITS.maxFileBytes,
+        count: file.bytes.length,
+        unit: "bytes",
+      });
     seen.add(file.path);
     bytes += file.bytes.length;
-    if (bytes > SOURCE_PROJECT_LIMITS.maxTreeBytes)
-      throw new SourceTreeError("Source tree exceeds its aggregate byte limit");
   }
+  if (bytes > SOURCE_PROJECT_LIMITS.maxTreeBytes)
+    throw new SourceTreeError("Source tree exceeds its aggregate byte limit", {
+      limit: SOURCE_PROJECT_LIMITS.maxTreeBytes,
+      count: bytes,
+      unit: "bytes",
+    });
   if (!validateTopikPathSet(input.map((file) => file.path)).ok)
     throw new SourceTreeError("Source tree exceeds limits or contains unsafe/colliding paths");
   const tree = input.map((file) => ({

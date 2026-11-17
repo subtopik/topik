@@ -167,7 +167,19 @@ export {
   type SourceByteEdit,
   type SourceFieldEvidence,
 } from "./source/syntax";
-export { SourcePlanningError, SourceTreeError } from "./source/diagnostics";
+export {
+  SourcePlanningError,
+  SourceTreeError,
+  sourcePlanDiagnosticCategory,
+  type SourcePlanDiagnosticCategory,
+} from "./source/diagnostics";
+export {
+  newSourceDocumentPath,
+  sourceDocumentPathCandidates,
+  sourceMediaPath,
+  type SourceDocumentIdentity,
+  type SourcePathCollisionPolicy,
+} from "./source/plan-markdown";
 export {
   initializeSourceProject,
   addSourceToProject,

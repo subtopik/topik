@@ -10,7 +10,6 @@ export {
   parseTopikManifest,
   type TopikManifest,
   type TopikManifestSource,
-  isConventionMarkdownFilename,
   parseCollectionConfig,
   parseWikiConfig,
   parseCourseConfig,

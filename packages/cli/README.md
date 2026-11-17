@@ -91,8 +91,7 @@ The package contains the guides for its own version in `docs/`. When
 formatter and prints the files it changed. The path is one `.md` or `.mdx` file, or
 a directory; the default is the current directory. In a directory, `format` finds
 every `.md` and `.mdx` file below it, skipping `node_modules`, dot-directories,
-symbolic links and Markdown named in capitals, such as `README.md` or
-`AGENTS.md`, which is not Topik Markdown.
+symbolic links and `AGENTS.md`, which is not Topik Markdown.
 
 - `--check` writes nothing, prints the files that would change, and exits 1 if
   there are any.

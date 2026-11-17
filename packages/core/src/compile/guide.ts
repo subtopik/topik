@@ -130,7 +130,7 @@ export async function discoverGuides(
   const markdownFiles: string[] = [];
   for (const file of (await listGuideFiles(dir, "", collectionGuideFilter(config))).sort())
     if (
-      !isReadmeFilename(posix.basename(file)) ||
+      !isReadmeFilename(file) ||
       (config.sourceVersion === 1 && (await readmeDeclaresGuide(dir, file)))
     )
       markdownFiles.push(file);
@@ -287,9 +287,10 @@ async function listGuideFiles(
 }
 
 /**
- * A `README` is the file a repository host shows for its folder, and usually not Topik
- * content. It is a guide only when its frontmatter sets both `id` and `slug`; a link, bytes
- * that do not decode or frontmatter that does not parse make it a file to leave out.
+ * A `README` beside the configuration is usually the repository's readme, not Topik content,
+ * and its name gives no slug. It is a guide only when its frontmatter sets both `id` and
+ * `slug`; a link, bytes that do not decode or frontmatter that does not parse make it a file
+ * to leave out. A `README` in a folder below is that folder's landing page and is always read.
  */
 async function readmeDeclaresGuide(dir: string, file: string): Promise<boolean> {
   try {

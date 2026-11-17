@@ -173,21 +173,39 @@ describe("compileGuides", () => {
     await writeGuide("top", "# Top\n");
     await mkdir(join(dir, "basics"));
     await writeFile(join(dir, "README.md"), "<p align=center>Repository readme</p>\n");
-    await writeFile(join(dir, "basics", "README.md"), "---\nid: only-an-id\n---\n# Basics\n");
 
     const plain = await compileGuides({ dir });
     expect(plain.diagnostics).toEqual([]);
     expect(plain.resources.map((resource) => resource.name)).toEqual(["blog-top"]);
 
-    await writeFile(
-      join(dir, "basics", "README.md"),
-      "---\nid: blog-basics\nslug: basics\n---\n# Basics\n",
-    );
+    await writeFile(join(dir, "README.md"), "---\nid: only-an-id\n---\n# Readme\n");
+    expect((await compileGuides({ dir })).resources.map((resource) => resource.name)).toEqual([
+      "blog-top",
+    ]);
+
+    await writeFile(join(dir, "README.md"), "---\nid: blog-home\nslug: home\n---\n# Home\n");
     const declared = await compileGuides({ dir });
     expect(declared.resources.map((resource) => resource.name).sort()).toEqual([
+      "blog-home",
+      "blog-top",
+    ]);
+  });
+
+  test("README.md in a folder is that folder's landing page", async () => {
+    await writeCollectionConfig('id: blog\ntitle: Blog\ninclude: ["**"]\n');
+    await writeGuide("top", "# Top\n\n[Basics](./basics/)\n");
+    await mkdir(join(dir, "basics"));
+    await writeFile(join(dir, "basics", "README.md"), "# Basics\n");
+    await writeFile(join(dir, "basics", "CHANGELOG.md"), "<b>not Topik</b>\n");
+
+    const result = await compileGuides({ dir });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.resources.map((resource) => resource.name).sort()).toEqual([
       "blog-basics",
       "blog-top",
     ]);
+    expect(result.references.map((entry) => entry.reference.name)).toEqual(["blog-basics"]);
   });
 
   test("an unversioned collection leaves out every README.md", async () => {

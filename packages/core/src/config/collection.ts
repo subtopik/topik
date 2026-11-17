@@ -87,8 +87,9 @@ export function isConventionMarkdownFilename(filename: string): boolean {
 }
 
 /**
- * `README.md` in capitals is the file a repository host shows for a folder. A collection reads
- * it as a guide only when its frontmatter sets both `id` and `slug`.
+ * `README.md` in capitals is the file a repository host shows for a folder. Beside the
+ * configuration a collection reads it as a guide only when its frontmatter sets both `id` and
+ * `slug`; in a folder below, it is that folder's landing page.
  */
 export function isReadmeFilename(filename: string): boolean {
   return /^README\.mdx?$/u.test(filename);
@@ -120,13 +121,13 @@ export function collectionGuideFilter(config: {
   const include = includePatterns.map(patternExpression);
   const exclude = (config.exclude ?? []).map(patternExpression);
   return {
-    nested: includePatterns.some((pattern) => pattern.includes("/")),
+    nested: includePatterns.some((pattern) => pattern.includes("/") || pattern === "**"),
     matches(path) {
       const segments = path.split("/");
       const filename = segments.pop()!;
       return (
         /\.mdx?$/u.test(filename) &&
-        // `README` can be a guide: compilation reads its frontmatter to decide.
+        // `README` can be a guide: compilation decides, beside the configuration by frontmatter.
         (isReadmeFilename(filename) || !isConventionMarkdownFilename(filename)) &&
         !segments.some(isSkippedCollectionDirectory) &&
         include.some((pattern) => pattern.test(path)) &&

@@ -501,6 +501,13 @@
       ]
     }
   ],
+  "assetSourcePaths": {
+    "auto-v1-dcfqhm7rutjdhuhuux7stpv4ik5zyxdu3ttm6f3rwn2ipxjayzna": "docs/images/dark.png",
+    "auto-v1-rqpbp5wfvhpticovevw7asqat3qlv476odxx32t6cezedvrax6va": "docs/images/logo.png",
+    "auto-v1-sbc2f2thqjmfbfikr4swz2u2aad2khixzzjzxxb6dqltbu5k5gfa": "guides/diagram.png",
+    "auto-v1-xkqgszc3ujeixqcmziehnaiaddy5vpmjzuvudckkitk2brdai62q": "docs/files/manual.pdf",
+    "auto-v1-xtsfnbbha2hrejsvjlyalragj7ank6a5fodalihjptshm5nbhbba": "docs/images/light.png"
+  },
   "semantic": {
     "descriptor": "topik-asset-semantic-v1",
     "assetNames": [

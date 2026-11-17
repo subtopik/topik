@@ -23,6 +23,11 @@ export type { CompileGuidesOptions } from "./guide";
 export { compileCourse } from "./course";
 export type { CompileCourseOptions } from "./course";
 export {
+  classifyCompileFailure,
+  type CompileFailureClassification,
+  type CompileFailureKind,
+} from "./failure";
+export {
   compileAssetResources,
   AssetCompilationError,
   type AssetCompilationOptions,

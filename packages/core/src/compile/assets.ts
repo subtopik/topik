@@ -643,6 +643,7 @@ async function readGenericNavigationCandidate(
     throw new AssetCompilationError(
       "Existing generic-link target failed portable Asset proof",
       proof.diagnostics,
+      { reason: portableReadFailureReason(proof.diagnostics) },
     );
   }
   return proof.value.bytes === undefined

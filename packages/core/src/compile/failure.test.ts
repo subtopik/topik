@@ -55,6 +55,20 @@ test("an image that is a Git LFS pointer fails with its own reason", async () =>
   expect(classifyCompileFailure(error)).toEqual({ kind: "asset", reason: "git-lfs-pointer" });
 });
 
+test("a download link to a Git LFS pointer carries the same reason as an image", async () => {
+  await write({
+    ...project,
+    "index.md": "# Home\n\n[Manual](./manual.pdf)\n",
+    "manual.pdf": `version https://git-lfs.github.com/spec/v1\noid sha256:${"a".repeat(64)}\nsize 12345\n`,
+  });
+
+  const error = await failure();
+
+  expect(error).toBeInstanceOf(AssetCompilationError);
+  expect(error).toMatchObject({ reason: "git-lfs-pointer" });
+  expect(classifyCompileFailure(error)).toEqual({ kind: "asset", reason: "git-lfs-pointer" });
+});
+
 test("a damaged image fails as an Asset without a read-failure reason", async () => {
   await write({
     ...project,

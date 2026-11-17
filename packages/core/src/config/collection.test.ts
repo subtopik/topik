@@ -124,6 +124,10 @@ exclude: ["drafts/**"]
     const filter = collectionGuideFilter({ include: ["v1.0+beta/*.md"] });
     expect(filter.matches("v1.0+beta/a.md")).toBe(true);
     expect(filter.matches("v1x0+beta/a.md")).toBe(false);
+    // The schema refuses these characters; the matcher still never reads them as syntax.
+    const unchecked = collectionGuideFilter({ include: ["a\\d(b)[c]{1}|^$/*.md"] });
+    expect(unchecked.matches("a\\d(b)[c]{1}|^$/x.md")).toBe(true);
+    expect(unchecked.matches("a1bc/x.md")).toBe(false);
   });
 
   test("a convention filename has an uppercase letter and no lowercase one", () => {

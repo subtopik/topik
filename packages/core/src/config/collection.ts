@@ -68,7 +68,8 @@ function patternExpression(pattern: string): RegExp {
       return;
     }
     source += segment
-      .replace(/[.+^$|]/g, "\\$&")
+      // Every expression metacharacter except the two wildcards, backslash included.
+      .replace(/[\\^$.|+()[\]{}]/g, "\\$&")
       .replace(/\*/g, "[^/]*")
       .replace(/\?/g, "[^/]");
     if (!last) source += "/";

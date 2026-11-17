@@ -134,12 +134,8 @@ export function writeMarkdown(
       extractMarkdownTitle(body, desired.name) !== desired.spec.title)
   )
     updates.title = desired.spec.title;
-  if (desired.type !== "CoursePage") {
-    const priorDescription =
-      prior && prior.type !== "CoursePage" ? prior.spec.description : undefined;
-    if (!prior || priorDescription !== desired.spec.description)
-      updates.description = desired.spec.description;
-  }
+  if (!prior || prior.spec.description !== desired.spec.description)
+    updates.description = desired.spec.description;
   collectMetadataEdits(updates, "labels", prior?.labels, desired.labels);
   if (moved || !prior) updates.id = desired.name;
   if (desired.type === "Guide") {

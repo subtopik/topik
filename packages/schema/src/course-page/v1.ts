@@ -15,6 +15,7 @@ export interface CoursePage {
     title: string;
     slug: string;
     order: number;
+    description?: string | null;
     authors?: string[];
     content: {
       format: "topik" | "other";

@@ -45,6 +45,10 @@
           "type": "integer",
           "minimum": 0
         },
+        "description": {
+          "type": ["string", "null"],
+          "maxLength": 1024
+        },
         "authors": {
           "type": "array",
           "items": {

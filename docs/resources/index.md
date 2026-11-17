@@ -37,20 +37,19 @@ Authors work with Markdown, local configurations, and a
 [project manifest](./manifest.md). The compiler produces resources from those
 files:
 
-| Source                                    | Output                                                     |
-| ----------------------------------------- | ---------------------------------------------------------- |
-| `wiki.yaml` and pages in navigation       | One `Wiki` plus its `WikiPage` resources.                  |
-| `collection.yaml` and root Markdown files | A `Guide` for each Markdown file.                          |
-| `course.yaml` and declared module pages   | A `Course`, its `CourseModule` and `CoursePage` resources. |
-| Supported local images and downloads      | Generated `Asset` resources and payloads.                  |
+| Source                                   | Output                                                     |
+| ---------------------------------------- | ---------------------------------------------------------- |
+| `wiki.yaml` and pages in navigation      | One `Wiki` plus its `WikiPage` resources.                  |
+| `collection.yaml` and its Markdown files | A `Guide` for each Markdown file.                          |
+| `course.yaml` and declared module pages  | A `Course`, its `CourseModule` and `CoursePage` resources. |
+| Supported local images and downloads     | Generated `Asset` resources and payloads.                  |
 
 Each source kind finds its Markdown differently:
 
 - A wiki reads the pages listed in its navigation, including nested paths.
-- A guide collection reads the Markdown files directly in its directory. It
-  does not search subdirectories, and it leaves out `AGENTS.md`, the
-  instructions for coding agents that `topik init` writes. `AGENTS.md` is never
-  a guide, whatever its frontmatter says.
+- A guide collection reads the Markdown files directly in its directory, or
+  the files its `include` and `exclude` patterns select. See
+  [Choose the guide files](#choose-the-guide-files).
 - A course reads the Markdown paths declared in its module hierarchy. It does
   not discover files by directory.
 
@@ -141,9 +140,59 @@ Guide:
 Filename-derived slugs must use lowercase letters, digits and single hyphens,
 such as `getting-started.md`, and the collection ID, a hyphen and the slug must
 fit in 63 characters. Other filenames fail with `guide-name-invalid` at that
-file, unless `sourceVersion: 1` frontmatter supplies both `id` and `slug`. Two
+file, unless `sourceVersion: 1` frontmatter supplies both `id` and `slug`, or
+the file is [never a guide by name](#choose-the-guide-files). Two
 files that produce the same Guide identity, such as `intro.md` and `intro.mdx`,
 fail with `guide-duplicate`, which names both files.
+
+### Choose the guide files
+
+By default a collection reads the `.md` and `.mdx` files beside
+`collection.yaml` and no subdirectories. `include` and `exclude` change that:
+
+```yaml
+id: tutorials
+title: Tutorials
+include:
+  - "*.md"
+  - "basics/**/*.md"
+exclude:
+  - "basics/drafts/**"
+```
+
+- A pattern is a path relative to `collection.yaml`, with `/` separators.
+  `*` and `?` match within one path segment, and a `**` segment matches any
+  number of directories. Other glob syntax is refused.
+- A file is a guide when an `include` pattern matches it and no `exclude`
+  pattern does. Without `include`, the patterns are `*.md` and `*.mdx`.
+- Only `.md` and `.mdx` files become guides, whatever the patterns match.
+- A collection never reads `node_modules`, directories whose name starts with a
+  dot, or directories reached through a symbolic link.
+- The patterns do not know about other sources. If they reach a directory that
+  belongs to a Wiki or another collection, exclude it.
+
+Folders only organise files. The slug still comes from the filename, so
+`basics/setup.md` in the collection above is the guide `tutorials-setup`, and
+two files with the same name in different folders fail with `guide-duplicate`.
+
+A folder's landing page is the one exception: a file named `index` or `readme`
+(in any letter case, so also `README.md`) in a folder below the collection
+directory takes the name of its folder. `basics/index.md` is the guide
+`tutorials-basics`, and a link to `./basics/` selects it by the
+[folder landing rules](./navigation.md#folder-landing-pages). `index.md` beside
+`collection.yaml` keeps the slug `index`.
+
+Some Markdown files are never guides by name:
+
+- A file named in capitals, such as `AGENTS.md`, `CHANGELOG.md` or `FAQ.md`,
+  is left out without a message, in every folder: its name has an uppercase
+  letter and no lowercase one. `Changelog.md` is not left out and fails with
+  `guide-name-invalid`. Name a guide `faq.md`.
+- `README.md` and `README.mdx` beside `collection.yaml` are left out too,
+  unless the collection uses `sourceVersion: 1` and the file's frontmatter sets
+  both `id` and `slug`. A repository readme can therefore sit beside the
+  guides. In a folder below, `README.md` is that folder's landing page; exclude
+  it if it is not Topik Markdown.
 
 ## Multi-source projects
 

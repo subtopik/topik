@@ -23,6 +23,7 @@ import {
   transportCourseReferences,
 } from "./course";
 import { collectMetadataEdits } from "./metadata";
+import { collectionGuideFilter } from "../config/collection";
 import type { Resource } from "../resource";
 import type { SourceMediaSelection } from "./initialize";
 import { resolveSourceReferenceContext } from "./reference-context";
@@ -1294,6 +1295,21 @@ function planCourseModuleOperation(
     );
 }
 
+/** Whether compilation would read `path` as a guide of the collection declared by `config`. */
+function isCollectionGuidePath(
+  state: PlanState,
+  config: string,
+  directory: string,
+  path: string,
+): boolean {
+  if (directory && !path.startsWith(`${directory}/`)) return false;
+  const values = state.configs.get(config) ?? {};
+  return collectionGuideFilter({
+    include: values.include as string[] | undefined,
+    exclude: values.exclude as string[] | undefined,
+  }).matches(directory ? path.slice(directory.length + 1) : path);
+}
+
 /** Write a Guide, Wiki page or Course page to its Markdown document. */
 function planDocumentOperation(
   state: PlanState,
@@ -1320,10 +1336,10 @@ function planDocumentOperation(
       op.resource,
     );
   const path = paths.get(op.resource) ?? document!.path;
-  if (next.type === "Guide" && posix.dirname(path) !== (source.directory || "."))
+  if (next.type === "Guide" && !isCollectionGuidePath(state, config!, source.directory, path))
     block(
       "source-path-invalid",
-      "Guides must remain beside their declared collection configuration.",
+      "Guides must be files their declared collection configuration reads.",
       op.resource,
     );
   if (

@@ -1,8 +1,14 @@
 import { readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import type { Guide } from "@topik/schema/guide/v1";
 import type { SourceResource } from "../resource";
-import { parseCollectionConfig } from "../config/collection";
+import {
+  collectionGuideFilter,
+  isReadmeFilename,
+  isSkippedCollectionDirectory,
+  parseCollectionConfig,
+  type CollectionGuideFilter,
+} from "../config/collection";
 import { parseGuideMetadata } from "../config/source-version";
 import { compileAssetResourcesInSession, type AssetCompilationOptions } from "./assets";
 import { createPortableReadSession } from "../assets/files";
@@ -30,13 +36,6 @@ import {
 } from "./shared";
 import { compileResourceLinksInSession, type CompileResourceReferenceTarget } from "./links";
 import { assertValidDocumentResource } from "./wiki";
-
-/**
- * Instructions for coding agents, which `topik init` and `topik migrate` write beside the
- * project manifest. A collection in that directory does not read the file as a guide. Its
- * name could never be a guide's: guide filenames are lowercase.
- */
-const AGENT_INSTRUCTIONS_FILENAME = "AGENTS.md";
 
 export interface CompileGuidesOptions {
   dir: string;
@@ -128,10 +127,13 @@ export async function discoverGuides(
     throw publicSchemaError("config-invalid", options.configFile ?? loadedConfig.path, error);
   }
 
-  const files = await readdir(dir);
-  const markdownFiles = files
-    .filter((f) => (f.endsWith(".md") || f.endsWith(".mdx")) && f !== AGENT_INSTRUCTIONS_FILENAME)
-    .sort();
+  const markdownFiles: string[] = [];
+  for (const file of (await listGuideFiles(dir, "", collectionGuideFilter(config))).sort())
+    if (
+      !isReadmeFilename(file) ||
+      (config.sourceVersion === 1 && (await readmeDeclaresGuide(dir, file)))
+    )
+      markdownFiles.push(file);
 
   const resources: SourceResource[] = [...(config.persons ?? [])];
   const diagnostics: CompileResult["diagnostics"] = [];
@@ -261,8 +263,56 @@ export async function discoverGuides(
   };
 }
 
-function fileToSlug(filename: string): string {
-  return filename.replace(/\.(mdx?|md)$/, "");
+/**
+ * Paths of the collection's guide files, relative to `dir` with `/`. Directories are read only
+ * when `include` names a path below `dir`; links to directories are never followed. An entry
+ * with a Markdown name that is not a regular file is listed too, so reading it reports it.
+ */
+async function listGuideFiles(
+  dir: string,
+  relativeDir: string,
+  filter: CollectionGuideFilter,
+): Promise<string[]> {
+  const entries = await readdir(relativeDir === "" ? dir : join(dir, relativeDir), {
+    withFileTypes: true,
+  });
+  const files: string[] = [];
+  for (const entry of entries) {
+    const path = relativeDir === "" ? entry.name : `${relativeDir}/${entry.name}`;
+    if (filter.matches(path)) files.push(path);
+    else if (filter.nested && entry.isDirectory() && !isSkippedCollectionDirectory(entry.name))
+      files.push(...(await listGuideFiles(dir, path, filter)));
+  }
+  return files;
+}
+
+/**
+ * A `README` beside the configuration is usually the repository's readme, not Topik content,
+ * and its name gives no slug. It is a guide only when its frontmatter sets both `id` and
+ * `slug`; a link, bytes that do not decode or frontmatter that does not parse make it a file
+ * to leave out. A `README` in a folder below is that folder's landing page and is always read.
+ */
+async function readmeDeclaresGuide(dir: string, file: string): Promise<boolean> {
+  try {
+    const raw = decodeUtf8Document(await readRegularFileWithinRoot(join(dir, file), dir), file);
+    const { frontmatter } = parseMarkdownFrontmatter(raw, file, 1);
+    return typeof frontmatter.id === "string" && typeof frontmatter.slug === "string";
+  } catch {
+    return false;
+  }
+}
+
+const LANDING_STEM = /^(?:index|readme)$/iu;
+
+/**
+ * Folders only organise files: the slug comes from the filename alone. The exception is a
+ * folder's landing page, `index` or `readme` in any case below the configuration directory,
+ * which takes the name of its folder, so each folder can have one.
+ */
+function fileToSlug(path: string): string {
+  const stem = posix.basename(path).replace(/\.(mdx?|md)$/, "");
+  const folder = posix.dirname(path);
+  return folder !== "." && LANDING_STEM.test(stem) ? posix.basename(folder) : stem;
 }
 
 const GUIDE_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;

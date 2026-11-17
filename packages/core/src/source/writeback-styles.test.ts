@@ -348,6 +348,40 @@ test("frontmatter edits of the final key leave no blank line before the closing 
   }
 });
 
+test("a guide in an included folder is updated in place; a path outside include is refused", async () => {
+  const tree = [
+    manifest("collection", "collection.yaml"),
+    file("collection.yaml", `${collection}include: ["*.md", "basics/*.md"]\n`),
+    file("basics/post.md", "---\nid: p\n---\n# Post\n"),
+  ];
+  const updated = await plan(tree, (desired) => {
+    guide(desired).spec.tags = ["t"];
+    return [{ kind: "update", resource: "Guide/p" }];
+  });
+  expect(updated.written("basics/post.md")).toBe(
+    '---\nid: p\ntags: ["t"]\ninheritTags: false\n---\n# Post\n',
+  );
+
+  for (const [path, ok] of [
+    ["basics/moved.md", true],
+    ["advanced/moved.md", false],
+    ["basics/CHANGELOG.md", false],
+  ] as const) {
+    const { result } = await plan(tree, () => [{ kind: "move", resource: "Guide/p", path }], {
+      create: [path],
+    });
+    expect(result.ok).toBe(ok);
+    if (!result.ok)
+      expect(result.diagnostics).toEqual([
+        {
+          code: "source-path-invalid",
+          message: "Guides must be files their declared collection configuration reads.",
+          resource: "Guide/p",
+        },
+      ]);
+  }
+});
+
 test("an explicit unportable move path is refused for its resource", async () => {
   const { result } = await plan(
     wiki("navigation: [home, other, third]\n"),

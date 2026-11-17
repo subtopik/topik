@@ -77,6 +77,157 @@ describe("compileGuides", () => {
     expect(result.resources.map((resource) => resource.name)).toEqual(["blog-hello-world"]);
   });
 
+  test("leaves out Markdown named in capitals, but not a lowercase or mixed-case name", async () => {
+    await writeCollectionConfig("id: blog\ntitle: Blog\n");
+    await writeGuide("2024", "# Year\n");
+    await writeFile(join(dir, "CHANGELOG.md"), "<b>not Topik</b>\n");
+    await writeFile(join(dir, "CODE_OF_CONDUCT.md"), "<b>not Topik</b>\n");
+
+    const result = await compileGuides({ dir });
+    expect(result.resources.map((resource) => resource.name)).toEqual(["blog-2024"]);
+
+    await writeFile(join(dir, "Changelog.md"), "# Changelog\n");
+    await expect(compileGuides({ dir })).rejects.toMatchObject({ id: "guide-name-invalid" });
+  });
+
+  test("reads only the configuration directory unless include names a folder", async () => {
+    await writeCollectionConfig("id: blog\ntitle: Blog\n");
+    await writeGuide("top", "# Top\n");
+    await mkdir(join(dir, "basics"), { recursive: true });
+    await writeFile(join(dir, "basics", "setup.md"), "# Setup\n");
+
+    const result = await compileGuides({ dir });
+    expect(result.resources.map((resource) => resource.name)).toEqual(["blog-top"]);
+  });
+
+  test("include and exclude select guides in folders; the slug is the filename", async () => {
+    await writeCollectionConfig(
+      'id: blog\ntitle: Blog\ninclude: ["**/*.md"]\nexclude: ["drafts/**", "basics/skip-*.md"]\n',
+    );
+    await writeGuide("top", "# Top\n\n[Setup](./basics/setup.md)\n");
+    for (const folder of ["basics", "basics/deep", "drafts", "node_modules/pkg", ".topik"])
+      await mkdir(join(dir, folder), { recursive: true });
+    await writeFile(join(dir, "basics", "setup.md"), "# Setup\n\n[Top](../top.md)\n");
+    await writeFile(join(dir, "basics", "skip-me.md"), "<b>skipped</b>\n");
+    await writeFile(join(dir, "basics", "deep", "more.md"), "# More\n");
+    await writeFile(join(dir, "drafts", "idea.md"), "<b>draft</b>\n");
+    await writeFile(join(dir, "node_modules", "pkg", "readme.md"), "<b>dependency</b>\n");
+    await writeFile(join(dir, ".topik", "stale.md"), "<b>output</b>\n");
+    await writeFile(join(dir, "basics", "notes.mdx"), "<b>not included</b>\n");
+
+    const result = await compileGuides({ dir });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.resources.map((resource) => resource.name).sort()).toEqual([
+      "blog-more",
+      "blog-setup",
+      "blog-top",
+    ]);
+    expect(result.references.map((entry) => entry.reference.name).sort()).toEqual([
+      "blog-setup",
+      "blog-top",
+    ]);
+  });
+
+  test("two files with one name in different folders are a duplicate", async () => {
+    await writeCollectionConfig('id: blog\ntitle: Blog\ninclude: ["*/*.md"]\n');
+    for (const folder of ["advanced", "basics"]) {
+      await mkdir(join(dir, folder), { recursive: true });
+      await writeFile(join(dir, folder, "setup.md"), "# Setup\n");
+    }
+
+    await expect(compileGuides({ dir })).rejects.toMatchObject({
+      id: "guide-duplicate",
+      location: "basics/setup.md",
+      relatedLocation: "advanced/setup.md",
+    });
+  });
+
+  test("a folder's landing page takes the folder's name", async () => {
+    await writeCollectionConfig('id: blog\ntitle: Blog\ninclude: ["**/*.md", "**/*.mdx"]\n');
+    await writeGuide("index", "# Home\n\n[Basics](./basics/)\n");
+    for (const folder of ["advanced", "basics"]) await mkdir(join(dir, folder));
+    await writeFile(join(dir, "basics", "index.md"), "# Basics\n");
+    await writeFile(join(dir, "advanced", "Readme.mdx"), "# Advanced\n");
+
+    const result = await compileGuides({ dir });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(
+      result.resources
+        .map((resource) => `${resource.name} ${(resource as Guide).spec.slug}`)
+        .sort((left, right) => left.localeCompare(right)),
+    ).toEqual(["blog-advanced advanced", "blog-basics basics", "blog-index index"]);
+    expect(result.references.map((entry) => entry.reference.name)).toEqual(["blog-basics"]);
+
+    await writeGuide("basics", "# Also basics\n");
+    await expect(compileGuides({ dir })).rejects.toMatchObject({
+      id: "guide-duplicate",
+      location: "basics/index.md",
+      relatedLocation: "basics.md",
+    });
+  });
+
+  test("README.md is a guide only when its frontmatter sets id and slug", async () => {
+    await writeCollectionConfig('sourceVersion: 1\nid: blog\ntitle: Blog\ninclude: ["**/*.md"]\n');
+    await writeGuide("top", "# Top\n");
+    await mkdir(join(dir, "basics"));
+    await writeFile(join(dir, "README.md"), "<p align=center>Repository readme</p>\n");
+
+    const plain = await compileGuides({ dir });
+    expect(plain.diagnostics).toEqual([]);
+    expect(plain.resources.map((resource) => resource.name)).toEqual(["blog-top"]);
+
+    await writeFile(join(dir, "README.md"), "---\nid: only-an-id\n---\n# Readme\n");
+    expect((await compileGuides({ dir })).resources.map((resource) => resource.name)).toEqual([
+      "blog-top",
+    ]);
+
+    await writeFile(join(dir, "README.md"), "---\nid: blog-home\nslug: home\n---\n# Home\n");
+    const declared = await compileGuides({ dir });
+    expect(declared.resources.map((resource) => resource.name).sort()).toEqual([
+      "blog-home",
+      "blog-top",
+    ]);
+  });
+
+  test("README.md in a folder is that folder's landing page", async () => {
+    await writeCollectionConfig('id: blog\ntitle: Blog\ninclude: ["**"]\n');
+    await writeGuide("top", "# Top\n\n[Basics](./basics/)\n");
+    await mkdir(join(dir, "basics"));
+    await writeFile(join(dir, "basics", "README.md"), "# Basics\n");
+    await writeFile(join(dir, "basics", "CHANGELOG.md"), "<b>not Topik</b>\n");
+
+    const result = await compileGuides({ dir });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.resources.map((resource) => resource.name).sort()).toEqual([
+      "blog-basics",
+      "blog-top",
+    ]);
+    expect(result.references.map((entry) => entry.reference.name)).toEqual(["blog-basics"]);
+  });
+
+  test("an unversioned collection leaves out every README.md", async () => {
+    await writeCollectionConfig("id: blog\ntitle: Blog\n");
+    await writeGuide("top", "# Top\n");
+    await writeFile(join(dir, "README.md"), "---\nid: blog-readme\nslug: readme\n---\n# R\n");
+
+    const result = await compileGuides({ dir });
+    expect(result.resources.map((resource) => resource.name)).toEqual(["blog-top"]);
+  });
+
+  test("does not follow a link to a directory", async () => {
+    await writeCollectionConfig('id: blog\ntitle: Blog\ninclude: ["**/*.md"]\n');
+    await writeGuide("top", "# Top\n");
+    const outside = await mkdtemp(join(tmpdir(), "topik-outside-"));
+    await writeFile(join(outside, "leak.md"), "# Leak\n");
+    await symlink(outside, join(dir, "linked"), "dir");
+
+    const result = await compileGuides({ dir });
+    expect(result.resources.map((resource) => resource.name)).toEqual(["blog-top"]);
+  });
+
   test("reports only compilation-relative Guide diagnostic paths", async () => {
     await writeCollectionConfig("id: blog\ntitle: Blog\n");
     await writeGuide("unsafe", "<http://example.com/file.pdf>\n");

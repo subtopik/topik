@@ -70,6 +70,8 @@ exclude: ["drafts/**"]
     "{a,b}.md",
     "[ab].md",
     "!skip.md",
+    "C:/guides/*.md",
+    "c:guides/*.md",
     "",
   ])("rejects the pattern %j", (pattern) => {
     expect(() =>
@@ -128,6 +130,33 @@ exclude: ["drafts/**"]
     const unchecked = collectionGuideFilter({ include: ["a\\d(b)[c]{1}|^$/*.md"] });
     expect(unchecked.matches("a\\d(b)[c]{1}|^$/x.md")).toBe(true);
     expect(unchecked.matches("a1bc/x.md")).toBe(false);
+  });
+
+  test("wildcards match as documented at the edges", () => {
+    const matches = (pattern: string, path: string) =>
+      collectionGuideFilter({ include: [pattern] }).matches(path);
+    expect(matches("**/**/a.md", "a.md")).toBe(true);
+    expect(matches("**/**/a.md", "x/y/a.md")).toBe(true);
+    expect(matches("x/**", "x.md")).toBe(false);
+    expect(matches("x/**", "x/a.md")).toBe(true);
+    expect(matches("x/**/y/*.md", "x/y/a.md")).toBe(true);
+    expect(matches("x/**/y/*.md", "x/1/2/y/a.md")).toBe(true);
+    expect(matches("x/**/y/*.md", "x/1/a.md")).toBe(false);
+    expect(matches("*a*b*.md", "xaxbx.md")).toBe(true);
+    expect(matches("*a*b*.md", "xbxax.md")).toBe(false);
+    expect(matches("?.md", "ab.md")).toBe(false);
+    expect(matches("?.md", "é.md")).toBe(true);
+    expect(matches("*", "sub/a.md")).toBe(false);
+  });
+
+  test("matching time stays bounded for patterns built to backtrack", () => {
+    const started = performance.now();
+    const deep = collectionGuideFilter({
+      include: [`${"**/a/".repeat(40)}*.md`, `${"*a".repeat(100)}*b.md`],
+    });
+    expect(deep.matches(`${"a/".repeat(120)}x.mdx`)).toBe(false);
+    expect(deep.matches(`${"a".repeat(240)}.md`)).toBe(false);
+    expect(performance.now() - started).toBeLessThan(1000);
   });
 
   test("a convention filename has an uppercase letter and no lowercase one", () => {

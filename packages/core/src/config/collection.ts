@@ -19,7 +19,8 @@ const patternSchema = z
   .refine(isCollectionPattern, "Patterns are relative paths that use only *, ? and ** wildcards");
 
 function isCollectionPattern(pattern: string): boolean {
-  if (/[\\[\]{}()!]/.test(pattern)) return false;
+  // A drive letter is an absolute path on Windows, and `:` is not a portable filename character.
+  if (/[\\[\]{}()!:]/.test(pattern)) return false;
   return pattern
     .split("/")
     .every(
@@ -57,24 +58,63 @@ export function parseCollectionConfig(raw: unknown): CollectionConfig {
   };
 }
 
-function patternExpression(pattern: string): RegExp {
-  const segments = pattern.split("/");
-  let source = "^";
-  segments.forEach((segment, index) => {
-    const last = index === segments.length - 1;
-    if (segment === "**") {
-      // A trailing `**` takes everything below; elsewhere it takes zero or more directories.
-      source += last ? ".+" : "(?:[^/]+/)*";
-      return;
-    }
-    source += segment
-      // Every expression metacharacter except the two wildcards, backslash included.
-      .replace(/[\\^$.|+()[\]{}]/g, "\\$&")
-      .replace(/\*/g, "[^/]*")
-      .replace(/\?/g, "[^/]");
-    if (!last) source += "/";
-  });
-  return new RegExp(`${source}$`, "u");
+/** Whether `name` matches one pattern segment, where `*` is any run and `?` one character. */
+function matchesSegment(pattern: readonly string[], name: readonly string[]): boolean {
+  // Greedy matching that returns to the last `*`: time is bounded by pattern × name length.
+  let p = 0;
+  let n = 0;
+  let star = -1;
+  let resume = 0;
+  while (n < name.length) {
+    if (p < pattern.length && (pattern[p] === "?" || pattern[p] === name[n])) {
+      p += 1;
+      n += 1;
+    } else if (p < pattern.length && pattern[p] === "*") {
+      star = p;
+      resume = n;
+      p += 1;
+    } else if (star !== -1) {
+      p = star + 1;
+      resume += 1;
+      n = resume;
+    } else return false;
+  }
+  while (p < pattern.length && pattern[p] === "*") p += 1;
+  return p === pattern.length;
+}
+
+/**
+ * A matcher for one pattern. It compares segment by segment and never builds a regular
+ * expression, so no pattern text is read as expression syntax and matching cannot backtrack
+ * without bound: time is bounded by pattern segments × path segments × their lengths.
+ */
+function patternMatcher(pattern: string): (path: string) => boolean {
+  const segments = pattern
+    .split("/")
+    // Adjacent `**` segments mean the same as one.
+    .filter((segment, index, all) => !(segment === "**" && all[index - 1] === "**"))
+    .map((segment) => (segment === "**" ? undefined : Array.from(segment)));
+  return (path) => {
+    // By code point, so `?` takes one whole character.
+    const names = path.split("/").map((name) => Array.from(name));
+    const failed = new Set<number>();
+    const matchesFrom = (s: number, n: number): boolean => {
+      if (s === segments.length) return n === names.length;
+      const key = s * (names.length + 1) + n;
+      if (failed.has(key)) return false;
+      const segment = segments[s];
+      const matched =
+        segment === undefined
+          ? s === segments.length - 1
+            ? // A trailing `**` takes everything below, and needs something to take.
+              n < names.length
+            : matchesFrom(s + 1, n) || (n < names.length && matchesFrom(s, n + 1))
+          : n < names.length && matchesSegment(segment, names[n]!) && matchesFrom(s + 1, n + 1);
+      if (!matched) failed.add(key);
+      return matched;
+    };
+    return matchesFrom(0, 0);
+  };
 }
 
 /**
@@ -119,8 +159,8 @@ export function collectionGuideFilter(config: {
   exclude?: readonly string[];
 }): CollectionGuideFilter {
   const includePatterns = config.include ?? DEFAULT_COLLECTION_INCLUDE;
-  const include = includePatterns.map(patternExpression);
-  const exclude = (config.exclude ?? []).map(patternExpression);
+  const include = includePatterns.map(patternMatcher);
+  const exclude = (config.exclude ?? []).map(patternMatcher);
   return {
     nested: includePatterns.some((pattern) => pattern.includes("/") || pattern === "**"),
     matches(path) {
@@ -131,8 +171,8 @@ export function collectionGuideFilter(config: {
         // `README` can be a guide: compilation decides, beside the configuration by frontmatter.
         (isReadmeFilename(filename) || !isConventionMarkdownFilename(filename)) &&
         !segments.some(isSkippedCollectionDirectory) &&
-        include.some((pattern) => pattern.test(path)) &&
-        !exclude.some((pattern) => pattern.test(path))
+        include.some((matches) => matches(path)) &&
+        !exclude.some((matches) => matches(path))
       );
     },
   };

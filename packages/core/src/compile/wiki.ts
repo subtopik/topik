@@ -22,7 +22,12 @@ import {
   configurationDirectory,
   type LoadedConfig,
 } from "./config";
-import { decodeUtf8Document, mapWithConcurrency, readRegularFileWithinRoot } from "./files";
+import {
+  decodeUtf8Document,
+  existingDocuments,
+  mapWithConcurrency,
+  readRegularFileWithinRoot,
+} from "./files";
 import { PublicCompileError, publicSchemaError } from "./public-errors";
 import {
   extractMarkdownTitle,
@@ -263,6 +268,27 @@ function collectPages(nodes: WikiNavNode[], prefix = ""): { sourcePath: string; 
     }
   }
   return paths;
+}
+
+/**
+ * @internal The Markdown files a Wiki's navigation names and that exist as regular files,
+ * whether or not their content is valid. Reads no page content.
+ */
+export async function listWikiDocuments(dir: string, loaded: LoadedConfig): Promise<string[]> {
+  let config;
+  try {
+    config = parseWikiConfig(loaded.value);
+  } catch (error) {
+    throw publicSchemaError("config-invalid", loaded.path, error);
+  }
+  const pages = config.navigation ? collectPages(config.navigation) : [];
+  return existingDocuments(
+    dir,
+    [...new Set(pages.map((page) => page.sourcePath))].flatMap((path) => [
+      `${path}.mdx`,
+      `${path}.md`,
+    ]),
+  );
 }
 
 async function readPageFile(

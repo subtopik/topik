@@ -141,9 +141,35 @@ export function isSkippedCollectionDirectory(name: string): boolean {
   return name === "node_modules" || name.startsWith(".");
 }
 
+/**
+ * Capital-named files every repository may carry. A collection leaves them out without a
+ * note; any other capital-named file it leaves out is reported, because it may be a guide
+ * with the wrong name.
+ */
+const SILENT_CONVENTION_STEMS: ReadonlySet<string> = new Set([
+  "AGENTS",
+  "AUTHORS",
+  "CHANGELOG",
+  "CLAUDE",
+  "CODE_OF_CONDUCT",
+  "CONTRIBUTING",
+  "GEMINI",
+  "GOVERNANCE",
+  "LICENSE",
+  "MAINTAINERS",
+  "NOTICE",
+  "SECURITY",
+  "SUPPORT",
+]);
+
 export interface CollectionGuideFilter {
   /** Whether `include` can match a file below the configuration directory. */
   readonly nested: boolean;
+  /**
+   * Whether the patterns select a file that is left out only for its capital name, and that
+   * name is not one of the usual repository files. Such a file deserves a note.
+   */
+  leavesOutUnusualName(path: string): boolean;
   /** Whether a path relative to the configuration directory, with `/`, is a guide file. */
   matches(path: string): boolean;
 }
@@ -161,18 +187,33 @@ export function collectionGuideFilter(config: {
   const includePatterns = config.include ?? DEFAULT_COLLECTION_INCLUDE;
   const include = includePatterns.map(patternMatcher);
   const exclude = (config.exclude ?? []).map(patternMatcher);
+  /** A Markdown file the patterns select, outside skipped directories, whatever its name. */
+  const selects = (path: string): boolean => {
+    const segments = path.split("/");
+    const filename = segments.pop()!;
+    return (
+      /\.mdx?$/u.test(filename) &&
+      !segments.some(isSkippedCollectionDirectory) &&
+      include.some((matches) => matches(path)) &&
+      !exclude.some((matches) => matches(path))
+    );
+  };
   return {
     nested: includePatterns.some((pattern) => pattern.includes("/") || pattern === "**"),
     matches(path) {
-      const segments = path.split("/");
-      const filename = segments.pop()!;
+      const filename = path.slice(path.lastIndexOf("/") + 1);
+      // `README` can be a guide: compilation decides, beside the configuration by frontmatter.
       return (
-        /\.mdx?$/u.test(filename) &&
-        // `README` can be a guide: compilation decides, beside the configuration by frontmatter.
-        (isReadmeFilename(filename) || !isConventionMarkdownFilename(filename)) &&
-        !segments.some(isSkippedCollectionDirectory) &&
-        include.some((matches) => matches(path)) &&
-        !exclude.some((matches) => matches(path))
+        selects(path) && (isReadmeFilename(filename) || !isConventionMarkdownFilename(filename))
+      );
+    },
+    leavesOutUnusualName(path) {
+      const filename = path.slice(path.lastIndexOf("/") + 1);
+      return (
+        selects(path) &&
+        !isReadmeFilename(filename) &&
+        isConventionMarkdownFilename(filename) &&
+        !SILENT_CONVENTION_STEMS.has(filename.replace(/\.[^.]*$/u, ""))
       );
     },
   };

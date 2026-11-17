@@ -69,6 +69,10 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "duplicate-attribute": "An attribute is specified more than once.",
   "fence-tag-error": "A fenced tag is invalid.",
   "function-undefined": "A referenced function is not defined.",
+  "guide-left-out":
+    "A Markdown file named in capitals is not read as a guide. Rename it in lowercase to make it a guide, or exclude it.",
+  "guide-not-regular-file": "Guide entries must be regular files.",
+  "guide-outside-compilation-root": "Guide files must resolve within the compilation directory.",
   "heading-id-duplicate": "Explicit heading IDs must be unique within a document.",
   "missing-closing": "A tag has no matching closing tag.",
   "missing-opening": "A closing tag has no matching opening tag.",

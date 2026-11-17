@@ -90,6 +90,37 @@ describe("compileGuides", () => {
     await expect(compileGuides({ dir })).rejects.toMatchObject({ id: "guide-name-invalid" });
   });
 
+  test("notes a capital-named file that is not a usual repository file", async () => {
+    await writeCollectionConfig('id: blog\ntitle: Blog\ninclude: ["**/*.md"]\n');
+    await writeGuide("top", "# Top\n");
+    await mkdir(join(dir, "basics"));
+    for (const name of ["FAQ.md", "basics/API.md", "CHANGELOG.md", "AGENTS.md", "README.md"])
+      await writeFile(join(dir, name), "<b>not read</b>\n");
+
+    const result = await compileGuides({ dir });
+
+    expect(result.resources.map((resource) => resource.name)).toEqual(["blog-top"]);
+    expect(result.diagnostics).toEqual(
+      ["FAQ.md", "basics/API.md"].map((file) => ({
+        id: "guide-left-out",
+        type: "Guide",
+        level: "warning",
+        message: expect.stringContaining("named in capitals"),
+        lines: [],
+        file,
+      })),
+    );
+
+    await writeCollectionConfig(
+      'id: blog\ntitle: Blog\ninclude: ["**/*.md"]\nexclude: ["FAQ.md", "basics/API.md"]\n',
+    );
+    expect((await compileGuides({ dir })).diagnostics).toEqual([]);
+
+    // Without a folder pattern, a file in a folder is not selected, so it is not noted.
+    await writeCollectionConfig("id: blog\ntitle: Blog\n");
+    expect((await compileGuides({ dir })).diagnostics.map(({ file }) => file)).toEqual(["FAQ.md"]);
+  });
+
   test("reads only the configuration directory unless include names a folder", async () => {
     await writeCollectionConfig("id: blog\ntitle: Blog\n");
     await writeGuide("top", "# Top\n");

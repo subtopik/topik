@@ -334,8 +334,11 @@ describe.skipIf(!existsSync(builtCli))("built topik binary", () => {
     const compiled = await runBuilt(["compile", project, "--validate"]);
     expect(compiled).toMatchObject({ code: 0, stderr: NATIVE_NOTICE });
     expect(compiled.stdout).toMatch(/^Compiled 2 resources and 0 payloads to /u);
+    // A repository readme is not project content: format leaves it alone.
+    await writeFile(join(project, "README.md"), "<p align=center>Repository readme</p>\n");
     expect(await runBuilt(["format", project, "--check"])).toMatchObject({
       code: 0,
+      stdout: "All 1 file(s) are formatted\n",
       stderr: NATIVE_NOTICE,
     });
     expect(await runBuilt(["migrate", project])).toMatchObject({

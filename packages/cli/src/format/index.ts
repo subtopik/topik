@@ -4,9 +4,15 @@ import { lstat, open, readdir, rename, unlink, type FileHandle } from "node:fs/p
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { boolean, command, positional } from "@drizzle-team/brocli";
 import { formatTopikContent, sanitizeTopikDiagnosticFile } from "@topik/content";
-import { readPortableAssetFile, type FileSafety } from "@topik/core";
+import {
+  DEFAULT_FILE_SAFETY,
+  listManifestDocuments,
+  readPortableAssetFile,
+  TOPIK_MANIFEST_FILENAME,
+  type FileSafety,
+} from "@topik/core";
 import { printDiagnostics } from "../diagnostics";
-import { PublicCliError } from "../errors";
+import { PublicCliError, withProjectPlatformRequirement } from "../errors";
 import { fileSafetyOption, notePortableReads } from "../file-safety";
 
 const MARKDOWN_EXTENSIONS = new Set([".md", ".mdx"]);
@@ -21,13 +27,16 @@ export interface FormatTarget {
 }
 
 /**
- * Resolve the command argument to Markdown files. A file must be `.md` or `.mdx`; a directory
- * is walked for those files, skipping `node_modules`, dot-directories below it, symbolic links
- * and `AGENTS.md`.
+ * Resolve the command argument to Markdown files. A file must be `.md` or `.mdx`. A project
+ * directory (one that holds `.topik.yaml`) gives the files its sources read, so Markdown that
+ * is not project content, such as a repository readme, is left alone. Any other directory is
+ * walked for `.md` and `.mdx` files, skipping `node_modules`, dot-directories below it,
+ * symbolic links and `AGENTS.md`.
  */
 export async function discoverFormatTargets(
   argument: string,
   cwd = process.cwd(),
+  fileSafety: FileSafety = DEFAULT_FILE_SAFETY,
 ): Promise<FormatTarget[]> {
   const absolute = resolve(cwd, argument);
   const info = await lstat(absolute).catch(() => {
@@ -40,12 +49,23 @@ export async function discoverFormatTargets(
   }
   if (!info.isDirectory()) throw new PublicCliError("format-target-unsupported");
   const files: string[] = [];
-  await collectMarkdownFiles(absolute, "", files);
+  if (await isProjectDirectory(absolute)) {
+    files.push(
+      ...(await listManifestDocuments({ dir: absolute, fileSafety }).catch((error: unknown) => {
+        throw withProjectPlatformRequirement(error);
+      })),
+    );
+  } else await collectMarkdownFiles(absolute, "", files);
   return files.map((path) => ({
     root: absolute,
     path,
     label: displayLabel(path),
   }));
+}
+
+async function isProjectDirectory(directory: string): Promise<boolean> {
+  const manifest = await lstat(join(directory, TOPIK_MANIFEST_FILENAME)).catch(() => undefined);
+  return manifest?.isFile() === true;
 }
 
 function isMarkdownFile(path: string): boolean {
@@ -261,7 +281,7 @@ export async function runFormat(
   if (process.platform !== "linux" && options.fileSafety === "anchored") {
     throw new PublicCliError("project-platform-unsupported");
   }
-  const targets = await discoverFormatTargets(path);
+  const targets = await discoverFormatTargets(path, process.cwd(), options.fileSafety);
   if (targets.length === 0) {
     console.log("No Markdown files found.");
     return;

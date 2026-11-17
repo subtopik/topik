@@ -23,6 +23,7 @@ export {
   compileManifest,
   loadTopikManifest,
   discoverManifestSources,
+  listManifestDocuments,
   ManifestSourceError,
   type ManifestCompileResult,
   type ManifestSourceDescriptor,

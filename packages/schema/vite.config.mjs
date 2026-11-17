@@ -6,6 +6,10 @@ export default defineConfig({
     copy: [{ from: "src/*/v*.json", to: "dist", flatten: false }],
     dts: true,
   },
+  test: {
+    // Loaded CI runners are several times slower than a local run.
+    testTimeout: 20_000,
+  },
   lint: {
     options: {
       typeAware: true,

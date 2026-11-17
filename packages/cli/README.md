@@ -89,9 +89,17 @@ The package contains the guides for its own version in `docs/`. When
 `topik format [path]` rewrites Markdown files with the
 [`@topik/content`](https://github.com/subtopik/topik/tree/main/packages/content)
 formatter and prints the files it changed. The path is one `.md` or `.mdx` file, or
-a directory; the default is the current directory. In a directory, `format` finds
-every `.md` and `.mdx` file below it, skipping `node_modules`, dot-directories,
-symbolic links and `AGENTS.md`, which is not Topik Markdown.
+a directory; the default is the current directory.
+
+- In a project directory, one that holds `.topik.yaml`, `format` formats the
+  Markdown files the project's sources read: the pages in a wiki's navigation,
+  the guides of a collection and the pages of a course's modules. Other
+  Markdown in the directory, such as a repository `README.md`, is left alone.
+  An invalid manifest or source configuration stops the command with the same
+  error `topik lint` gives.
+- In any other directory, `format` finds every `.md` and `.mdx` file below it,
+  skipping `node_modules`, dot-directories, symbolic links and `AGENTS.md`.
+- A file named as the path is always formatted.
 
 - `--check` writes nothing, prints the files that would change, and exits 1 if
   there are any.

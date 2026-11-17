@@ -299,3 +299,13 @@ function safeRelativePath(filePath: string, rootDir: string): string | undefined
     ? location
     : undefined;
 }
+
+/** @internal Keep the paths that name a regular file below `dir`; a link is not followed. */
+export async function existingDocuments(dir: string, paths: readonly string[]): Promise<string[]> {
+  const found: string[] = [];
+  for (const path of paths) {
+    const info = await lstat(join(dir, path)).catch(() => undefined);
+    if (info?.isFile()) found.push(path);
+  }
+  return found;
+}

@@ -349,6 +349,10 @@ test("an unexpected exception is internal, whatever code its fallback carries", 
   const [unexpected] = sourcePlanDiagnostics(new Error("private runtime detail"), fallback);
   expect(unexpected).toEqual(fallback);
   expect(sourcePlanDiagnosticCategory(unexpected!)).toBe("internal");
+  for (const thrown of [undefined, null, "text", 0])
+    expect(sourcePlanDiagnosticCategory(sourcePlanDiagnostics(thrown, fallback)[0]!)).toBe(
+      "internal",
+    );
   // The marker is not enumerable: a copy or a bare code reads as an ordinary validation failure.
   expect(sourcePlanDiagnosticCategory({ ...unexpected! })).toBe("validation");
   expect(sourcePlanDiagnosticCategory(unexpected!.code)).toBe("validation");

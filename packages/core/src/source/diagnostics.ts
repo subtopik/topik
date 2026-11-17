@@ -153,7 +153,8 @@ const SOURCE_PLAN_DIAGNOSTIC_CATEGORIES: Readonly<
 export function sourcePlanDiagnosticCategory(
   diagnostic: string | Pick<SourcePlanDiagnostic, "code" | "cause">,
 ): SourcePlanDiagnosticCategory {
-  if (typeof diagnostic !== "string" && diagnostic.cause !== undefined) return "internal";
+  // Own-property presence, not the value: the thrown value can itself be `undefined`.
+  if (typeof diagnostic !== "string" && Object.hasOwn(diagnostic, "cause")) return "internal";
   const code = typeof diagnostic === "string" ? diagnostic : diagnostic.code;
   if (Object.hasOwn(SOURCE_PLAN_DIAGNOSTIC_CATEGORIES, code))
     return SOURCE_PLAN_DIAGNOSTIC_CATEGORIES[code as SourcePlanDiagnosticCode];

@@ -152,8 +152,9 @@ A landing page must meet these rules:
 - Its basename is `index` or `README`, matched case-insensitively (`readme.md`
   also works), with a `.md` or `.mdx` extension.
 - It is declared by Wiki navigation, Course module pages, or a declared Guide
-  collection. A nested Guide folder needs its own declared collection. Files on
-  disk do not automatically become pages.
+  collection. A nested Guide folder needs its own declared collection, or an
+  `include` pattern of its parent collection that selects it. Files on disk do
+  not automatically become pages.
 - It is the only candidate. Multiple candidates, including both `index` and
   `README`, report `link-reference-ambiguous`; there is no implicit priority. Use
   an explicit filename to disambiguate.

@@ -4,6 +4,7 @@ import type { Guide } from "@topik/schema/guide/v1";
 import type { SourceResource } from "../resource";
 import {
   collectionGuideFilter,
+  isReadmeFilename,
   isSkippedCollectionDirectory,
   parseCollectionConfig,
   type CollectionGuideFilter,
@@ -126,7 +127,13 @@ export async function discoverGuides(
     throw publicSchemaError("config-invalid", options.configFile ?? loadedConfig.path, error);
   }
 
-  const markdownFiles = (await listGuideFiles(dir, "", collectionGuideFilter(config))).sort();
+  const markdownFiles: string[] = [];
+  for (const file of (await listGuideFiles(dir, "", collectionGuideFilter(config))).sort())
+    if (
+      !isReadmeFilename(posix.basename(file)) ||
+      (config.sourceVersion === 1 && (await readmeDeclaresGuide(dir, file)))
+    )
+      markdownFiles.push(file);
 
   const resources: SourceResource[] = [...(config.persons ?? [])];
   const diagnostics: CompileResult["diagnostics"] = [];
@@ -279,9 +286,32 @@ async function listGuideFiles(
   return files;
 }
 
-/** Folders only organise files: the slug comes from the filename alone. */
+/**
+ * A `README` is the file a repository host shows for its folder, and usually not Topik
+ * content. It is a guide only when its frontmatter sets both `id` and `slug`; a link, bytes
+ * that do not decode or frontmatter that does not parse make it a file to leave out.
+ */
+async function readmeDeclaresGuide(dir: string, file: string): Promise<boolean> {
+  try {
+    const raw = decodeUtf8Document(await readRegularFileWithinRoot(join(dir, file), dir), file);
+    const { frontmatter } = parseMarkdownFrontmatter(raw, file, 1);
+    return typeof frontmatter.id === "string" && typeof frontmatter.slug === "string";
+  } catch {
+    return false;
+  }
+}
+
+const LANDING_STEM = /^(?:index|readme)$/iu;
+
+/**
+ * Folders only organise files: the slug comes from the filename alone. The exception is a
+ * folder's landing page, `index` or `readme` in any case below the configuration directory,
+ * which takes the name of its folder, so each folder can have one.
+ */
 function fileToSlug(path: string): string {
-  return posix.basename(path).replace(/\.(mdx?|md)$/, "");
+  const stem = posix.basename(path).replace(/\.(mdx?|md)$/, "");
+  const folder = posix.dirname(path);
+  return folder !== "." && LANDING_STEM.test(stem) ? posix.basename(folder) : stem;
 }
 
 const GUIDE_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;

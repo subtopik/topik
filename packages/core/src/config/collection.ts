@@ -83,8 +83,15 @@ function patternExpression(pattern: string): RegExp {
  */
 export function isConventionMarkdownFilename(filename: string): boolean {
   const stem = filename.replace(/\.[^.]*$/u, "");
-  // `README` is a folder landing page when a guide declares it, so it stays a guide file.
-  return stem !== "README" && /[A-Z]/.test(stem) && !/[a-z]/.test(stem);
+  return /[A-Z]/.test(stem) && !/[a-z]/.test(stem);
+}
+
+/**
+ * `README.md` in capitals is the file a repository host shows for a folder. A collection reads
+ * it as a guide only when its frontmatter sets both `id` and `slug`.
+ */
+export function isReadmeFilename(filename: string): boolean {
+  return /^README\.mdx?$/u.test(filename);
 }
 
 /** Directories no collection reads: dependencies and dot-directories such as `.topik`. */
@@ -102,7 +109,8 @@ export interface CollectionGuideFilter {
 /**
  * The one rule for which files are guides of a collection, shared by compilation and source
  * writing: a `.md` or `.mdx` file that `include` matches and `exclude` does not, outside
- * skipped directories, whose name is not a convention file.
+ * skipped directories, whose name is not a convention file. `README` matches; compilation
+ * then leaves it out unless its frontmatter names a guide.
  */
 export function collectionGuideFilter(config: {
   include?: readonly string[];
@@ -118,7 +126,8 @@ export function collectionGuideFilter(config: {
       const filename = segments.pop()!;
       return (
         /\.mdx?$/u.test(filename) &&
-        !isConventionMarkdownFilename(filename) &&
+        // `README` can be a guide: compilation reads its frontmatter to decide.
+        (isReadmeFilename(filename) || !isConventionMarkdownFilename(filename)) &&
         !segments.some(isSkippedCollectionDirectory) &&
         include.some((pattern) => pattern.test(path)) &&
         !exclude.some((pattern) => pattern.test(path))

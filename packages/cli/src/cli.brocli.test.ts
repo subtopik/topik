@@ -334,6 +334,8 @@ describe.skipIf(!existsSync(builtCli))("built topik binary", () => {
     const compiled = await runBuilt(["compile", project, "--validate"]);
     expect(compiled).toMatchObject({ code: 0, stderr: NATIVE_NOTICE });
     expect(compiled.stdout).toMatch(/^Compiled 2 resources and 0 payloads to /u);
+    // Markdown named in capitals is not Topik content: format leaves it out of the walk.
+    await writeFile(join(project, "README.md"), "<p align=center>Repository readme</p>\n");
     expect(await runBuilt(["format", project, "--check"])).toMatchObject({
       code: 0,
       stderr: NATIVE_NOTICE,

@@ -300,10 +300,29 @@ function safeRelativePath(filePath: string, rootDir: string): string | undefined
     : undefined;
 }
 
-/** @internal Keep the paths that name a regular file below `dir`; a link is not followed. */
+/**
+ * @internal Keep the paths that name a regular file below `dir`. No link is followed: a path
+ * through a linked directory, a linked file, and a path with a `.` or `..` segment are all
+ * left out, so a path taken from configuration text can never name a file outside `dir`.
+ */
 export async function existingDocuments(dir: string, paths: readonly string[]): Promise<string[]> {
   const found: string[] = [];
+  const directories = new Map<string, boolean>();
+  const isPlainDirectory = async (path: string): Promise<boolean> => {
+    let known = directories.get(path);
+    if (known === undefined) {
+      known = (await lstat(join(dir, path)).catch(() => undefined))?.isDirectory() === true;
+      directories.set(path, known);
+    }
+    return known;
+  };
   for (const path of paths) {
+    const segments = path.split("/");
+    if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) continue;
+    let inside = true;
+    for (let depth = 1; inside && depth < segments.length; depth++)
+      inside = await isPlainDirectory(segments.slice(0, depth).join("/"));
+    if (!inside) continue;
     const info = await lstat(join(dir, path)).catch(() => undefined);
     if (info?.isFile()) found.push(path);
   }

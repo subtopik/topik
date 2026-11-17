@@ -21,6 +21,7 @@ import {
 } from "./config";
 import {
   decodeUtf8Document,
+  existingDocuments,
   FileNotRegularError,
   FileOutsideCompilationRootError,
   readRegularFileWithinRoot,
@@ -296,7 +297,8 @@ export async function listCollectionDocuments(
   } catch (error) {
     throw publicSchemaError("config-invalid", loaded.path, error);
   }
-  return (await collectionDocumentPaths(dir, config)).paths;
+  // Compilation reports an entry that is not a regular file; a list of documents omits it.
+  return existingDocuments(dir, (await collectionDocumentPaths(dir, config)).paths);
 }
 
 /**

@@ -84,15 +84,76 @@ test("lists a file two sources read once, and both spellings of an ambiguous pag
   expect(await listManifestDocuments({ dir })).toEqual(["both.md", "both.mdx", "index.md"]);
 });
 
-test("leaves out a declared page that is a symbolic link", async () => {
-  await write({
-    ".topik.yaml": manifest([["wiki", "wiki.yaml"]]),
-    "wiki.yaml": "id: docs\ntitle: Docs\nnavigation: [index, linked]\n",
-    "index.md": "# Home\n",
-  });
-  await symlink(join(dir, "index.md"), join(dir, "linked.md"));
+test("leaves out linked files, files below a linked directory and entries that are not files", async () => {
+  const outside = await mkdtemp(join(tmpdir(), "topik-documents-outside-"));
+  try {
+    await writeFile(join(outside, "page.md"), "# Outside\n");
+    await write({
+      ".topik.yaml": manifest([
+        ["wiki", "wiki.yaml"],
+        ["collection", "guides/collection.yaml"],
+        ["course", "course/course.yaml"],
+      ]),
+      "wiki.yaml": "id: docs\ntitle: Docs\nnavigation: [index, linked, away/page]\n",
+      "index.md": "# Home\n",
+      "guides/collection.yaml": 'id: blog\ntitle: Blog\ninclude: ["**/*.md"]\n',
+      "guides/hello.md": "# Hello\n",
+      "guides/folder.md/inner.txt": "A directory with a Markdown name.\n",
+      "course/course.yaml": JSON.stringify({
+        sourceVersion: 1,
+        id: "learning",
+        title: "Learning",
+        slug: "learning",
+        modules: [
+          { id: "basics", title: "Basics", slug: "basics", order: 0, pages: ["one", "away/page"] },
+        ],
+      }),
+      "course/one.md": "# One\n",
+    });
+    await symlink(join(dir, "index.md"), join(dir, "linked.md"));
+    await symlink(join(dir, "index.md"), join(dir, "guides", "linked.md"));
+    await symlink(outside, join(dir, "away"), "dir");
+    await symlink(outside, join(dir, "course", "away"), "dir");
+    await symlink(outside, join(dir, "guides", "away"), "dir");
 
-  expect(await listManifestDocuments({ dir })).toEqual(["index.md"]);
+    expect(await listManifestDocuments({ dir })).toEqual([
+      "course/one.md",
+      "guides/hello.md",
+      "index.md",
+    ]);
+  } finally {
+    await rm(outside, { recursive: true, force: true });
+  }
+});
+
+test("a configuration cannot name a page outside its directory", async () => {
+  await write({
+    "outside.md": "# Outside the wiki\n",
+    "docs/index.md": "# Home\n",
+    ".topik.yaml": manifest([["wiki", "docs/wiki.yaml"]]),
+    "docs/wiki.yaml": JSON.stringify({
+      id: "docs",
+      title: "Docs",
+      navigation: ["index", { type: "page", slug: "out", source: "../outside" }],
+    }),
+  });
+  const listed = await listManifestDocuments({ dir }).catch((error: unknown) => error);
+  if (Array.isArray(listed)) expect(listed).toEqual(["docs/index.md"]);
+  else expect(listed).toMatchObject({ id: "config-invalid" });
+
+  await write({
+    ".topik.yaml": manifest([["course", "docs/course.yaml"]]),
+    "docs/course.yaml": JSON.stringify({
+      sourceVersion: 1,
+      id: "learning",
+      title: "Learning",
+      slug: "learning",
+      modules: [{ id: "m", title: "M", slug: "m", order: 0, pages: ["index", "../outside"] }],
+    }),
+  });
+  const pages = await listManifestDocuments({ dir }).catch((error: unknown) => error);
+  if (Array.isArray(pages)) expect(pages).toEqual(["docs/index.md"]);
+  else expect(pages).toMatchObject({ id: "config-invalid" });
 });
 
 test("a README beside a versioned collection is listed only when it names a guide", async () => {

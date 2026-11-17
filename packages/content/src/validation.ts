@@ -61,6 +61,21 @@ function hasControl(value: string): boolean {
   return false;
 }
 
+const attributeNameLists = new WeakMap<object, readonly string[]>();
+
+/**
+ * The attribute names of one component definition, as one frozen list shared by every issue
+ * that names them: a document can repeat an unknown attribute on many tags.
+ */
+function attributeNames(definition: { attributes: object }): readonly string[] {
+  let names = attributeNameLists.get(definition);
+  if (!names) {
+    names = Object.freeze(Object.keys(definition.attributes));
+    attributeNameLists.set(definition, names);
+  }
+  return names;
+}
+
 /** Validate the literal source form and properties before tree-level checks. */
 export function validateTag(
   tag: Tag,
@@ -101,7 +116,7 @@ export function validateTag(
       return issue("attribute-undefined", `Unknown attribute ${key} on ${tag.name}`, {
         tag: tag.name,
         attribute: key,
-        expected: Object.keys(definition.attributes),
+        expected: attributeNames(definition),
       });
     if (value !== null && typeof value === "object" && value.type === "topikTextTemplate") {
       const canonicalDefinition = Object.hasOwn(components, tag.name)

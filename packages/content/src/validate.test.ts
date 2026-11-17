@@ -1,5 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
+import { components } from "./registry.js";
 import { validateTopikContent } from "./validate.js";
+import { validateTag } from "./validation.js";
 
 function ids(source: string): string[] {
   return validateTopikContent(source).errors.map((error) => error.id);
@@ -31,6 +33,19 @@ describe("catalog validation", () => {
     const result = validateTopikContent(source);
     expect(result).toMatchObject({ source, valid: false });
     expect(result.errors.map((error) => error.id)).toContain(id);
+  });
+
+  test("shares one expected attribute list between issues on the same component", () => {
+    const unknown = (name: string, key: string) =>
+      validateTag({ type: "topikTag", name, props: { [key]: "x" } } as never, components);
+    const first = unknown("callout", "colour");
+    const second = unknown("callout", "color");
+
+    expect(first).toMatchObject({ id: "attribute-undefined", tag: "callout", attribute: "colour" });
+    expect(first?.expected).toEqual(Object.keys(components.callout!.attributes));
+    expect(second?.expected).toBe(first?.expected);
+    expect(Object.isFrozen(first?.expected)).toBe(true);
+    expect(unknown("badge", "colour")?.expected).not.toBe(first?.expected);
   });
 
   test("retains structural and semantic diagnostics across the source boundary", () => {

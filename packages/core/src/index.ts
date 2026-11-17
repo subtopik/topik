@@ -174,6 +174,7 @@ export {
   type SourcePlanDiagnosticCategory,
 } from "./source/diagnostics";
 export {
+  initialSourceDocumentPath,
   newSourceDocumentPath,
   sourceDocumentPathCandidates,
   sourceMediaPath,

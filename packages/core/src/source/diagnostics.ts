@@ -70,6 +70,7 @@ export type SourcePlanDiagnosticCode =
  * - `validation`: the written source does not compile to the desired resources.
  * - `tree`: the supplied tree is over a limit or holds unsafe paths.
  * - `incompatible`: the saved project was read by another writer or package cohort.
+ * - `internal`: the writer failed unexpectedly. Nothing the author wrote is known to be wrong.
  */
 export type SourcePlanDiagnosticCategory =
   | "request"
@@ -84,7 +85,8 @@ export type SourcePlanDiagnosticCategory =
   | "unrepresentable"
   | "validation"
   | "tree"
-  | "incompatible";
+  | "incompatible"
+  | "internal";
 
 /** One category for every planner code; a code added without one fails the type check. */
 const SOURCE_PLAN_DIAGNOSTIC_CATEGORIES: Readonly<
@@ -139,11 +141,20 @@ const SOURCE_PLAN_DIAGNOSTIC_CATEGORIES: Readonly<
 };
 
 /**
- * The category of a diagnostic code. `code` also carries compiler diagnostic IDs that pass
- * through unchanged: a link diagnostic (`link-…`) is a `reference` problem, and every other
- * compiler ID means the source does not compile, which is `validation`.
+ * The category of a diagnostic, or of a bare code.
+ *
+ * - `code` also carries compiler diagnostic IDs that pass through unchanged: a link diagnostic
+ *   (`link-…`) is a `reference` problem, and every other compiler ID means the source does not
+ *   compile, which is `validation`.
+ * - A diagnostic with a `cause` is the generic fallback for an unexpected exception and is
+ *   `internal`, whatever its code. `cause` is not enumerable, so pass the diagnostic itself,
+ *   before it is serialized or copied; a bare code or a copy cannot show the difference.
  */
-export function sourcePlanDiagnosticCategory(code: string): SourcePlanDiagnosticCategory {
+export function sourcePlanDiagnosticCategory(
+  diagnostic: string | Pick<SourcePlanDiagnostic, "code" | "cause">,
+): SourcePlanDiagnosticCategory {
+  if (typeof diagnostic !== "string" && diagnostic.cause !== undefined) return "internal";
+  const code = typeof diagnostic === "string" ? diagnostic : diagnostic.code;
   if (Object.hasOwn(SOURCE_PLAN_DIAGNOSTIC_CATEGORIES, code))
     return SOURCE_PLAN_DIAGNOSTIC_CATEGORIES[code as SourcePlanDiagnosticCode];
   return code.startsWith("link-") ? "reference" : "validation";

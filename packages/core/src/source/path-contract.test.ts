@@ -4,12 +4,14 @@ import { generateAutomaticAssetName, parseAssetBlobUri } from "../assets/asset";
 import type { Resource } from "../resource";
 import {
   SourceTreeError,
+  sourcePlanDiagnostics,
   sourcePlanDiagnosticCategory,
   type SourcePlanDiagnosticCode,
 } from "./diagnostics";
 import { initializeSourceProject } from "./initialize";
 import { planSourceUpdates, type PlanSourceUpdatesInput } from "./plan";
 import {
+  initialSourceDocumentPath,
   newSourceDocumentPath,
   sourceDocumentPathCandidates,
   sourceMediaPath,
@@ -242,9 +244,125 @@ test("initialization renames the later of two Guides with one slug, or refuses",
       {
         code: "source-path-collision",
         message: "Two new Guides derive the same Markdown path.",
+        resource: "Guide/second",
         path: "docs/same.md",
       },
     ],
+  });
+});
+
+test("initialization derives the documented paths for each kind and never renames an explicit one", async () => {
+  expect(initialSourceDocumentPath({ kind: "collection", directory: "docs", slug: "hello" })).toBe(
+    "docs/hello.md",
+  );
+  expect(
+    initialSourceDocumentPath({ kind: "wiki", directory: "", sourcePath: "guides/setup" }),
+  ).toBe("guides/setup.md");
+  expect(
+    initialSourceDocumentPath({
+      kind: "course",
+      directory: "course",
+      moduleSlug: "basics",
+      slug: "one",
+    }),
+  ).toBe("course/basics/one.md");
+
+  const guide = newGuide("first", "hello");
+  const bytes = encodeSource("Download");
+  const digest = sourceHash(bytes);
+  const generated = generateAutomaticAssetName({
+    projectNamespace: "hosted/example",
+    manifestRelativePath: "manual.txt",
+  });
+  if (!generated.ok) throw new Error("Invalid fixture asset");
+  guide.spec.content.value = `# Install\n\n[Manual](asset:${generated.value})\n`;
+  const documentPath = initialSourceDocumentPath({
+    kind: "collection",
+    directory: "docs",
+    slug: guide.spec.slug,
+  });
+  const mediaPath = sourceMediaPath({
+    assetDirectory: "docs/_assets",
+    filename: "manual.txt",
+    name: generated.value,
+  });
+  const input = {
+    tree: [],
+    expectedTreeDigest: digestSourceTree([]),
+    packageCohort: cohort,
+    intent: {
+      namespace: "contract",
+      source: {
+        kind: "collection" as const,
+        config: "docs/collection.yaml",
+        id: "blog",
+        title: "Blog",
+      },
+    },
+    resources: [
+      guide,
+      {
+        apiVersion: "v1" as const,
+        type: "Asset" as const,
+        name: generated.value,
+        spec: {
+          uri: parseAssetBlobUri(`blobs/${digest}`),
+          integrity: `sha256:${digest}` as const,
+          size: bytes.length,
+          mediaType: "application/octet-stream",
+        },
+      },
+    ],
+    media: [{ name: generated.value, filename: "manual.txt", sha256: digest, bytes }],
+  };
+  const result = await initializeSourceProject({
+    ...input,
+    createPaths: [".topik.yaml", "docs/collection.yaml", documentPath, mediaPath],
+  });
+  expect(result.ok, JSON.stringify(result)).toBe(true);
+  if (result.ok)
+    expect(result.plan.changes.map((change) => change.path).sort()).toEqual(
+      [".topik.yaml", "docs/collection.yaml", documentPath, mediaPath].sort(),
+    );
+
+  // An explicit document path that is occupied fails; it is never renamed.
+  const occupied = file("docs/taken.md", "# Taken\n");
+  const explicit = await initializeSourceProject({
+    ...input,
+    tree: [occupied],
+    expectedTreeDigest: digestSourceTree([occupied]),
+    documentPaths: { "Guide/first": "docs/taken.md" },
+    createPaths: [".topik.yaml", "docs/collection.yaml", "docs/taken.md", mediaPath],
+  });
+  expect(explicit.ok).toBe(false);
+  if (!explicit.ok)
+    expect(
+      explicit.diagnostics.map((diagnostic) => sourcePlanDiagnosticCategory(diagnostic)),
+    ).toEqual(["path"]);
+});
+
+test("an unexpected exception is internal, whatever code its fallback carries", () => {
+  const fallback = {
+    code: "source-validation-failed",
+    message: "Source planning could not complete.",
+  };
+  const [unexpected] = sourcePlanDiagnostics(new Error("private runtime detail"), fallback);
+  expect(unexpected).toEqual(fallback);
+  expect(sourcePlanDiagnosticCategory(unexpected!)).toBe("internal");
+  // The marker is not enumerable: a copy or a bare code reads as an ordinary validation failure.
+  expect(sourcePlanDiagnosticCategory({ ...unexpected! })).toBe("validation");
+  expect(sourcePlanDiagnosticCategory(unexpected!.code)).toBe("validation");
+});
+
+test("reading a project throws for an oversized tree; the planners return the diagnostic", async () => {
+  const one = file("a.md", "# A\n");
+  const tooMany = Array.from({ length: SOURCE_PROJECT_LIMITS.maxFiles + 1 }, (_, index) => ({
+    ...one,
+    path: `f${index}.md`,
+  }));
+  await expect(readSourceProject({ tree: tooMany })).rejects.toMatchObject({
+    name: "SourceTreeError",
+    diagnostic: { code: "source-tree-too-large", limit: 10_000, count: 10_001, unit: "files" },
   });
 });
 

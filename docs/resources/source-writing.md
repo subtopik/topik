@@ -333,8 +333,11 @@ The destination is `<assets.directory>/<stem>-<hash><extension>`, where the hash
 is the first eight hexadecimal digits of the SHA-256 of the selection's Asset
 name. `sourceMediaPath({ assetDirectory, filename, name })` returns that path, so
 a caller that must admit the path in `create` or `createPaths` does not need its
-own copy of the rule. `assetDirectory` is the manifest-relative directory that
-source provenance reports for the configuration.
+own copy of the rule. `assetDirectory` is manifest-relative. For
+`planSourceUpdates` it is the `assetDirectory` that source provenance reports
+for the configuration. For a source being initialized or added it is the
+configuration's directory joined with the intent's `assetDirectory`, which
+defaults to `_assets`.
 
 `assetReferenceContexts` can map names in a saved body to separately admitted
 media selections. This transport mapping changes the candidate compilation, while
@@ -376,6 +379,20 @@ of the resource name, such as `docs/install-1e142e62.md`.
 - An explicit `path`, or an entry in `documentPaths`, is never renamed: an
   occupied explicit path always fails.
 
+`initializeSourceProject` and `addSourceToProject` derive paths differently, and
+`initialSourceDocumentPath` returns them:
+
+| Source     | Path of a document without a `documentPaths` entry              |
+| ---------- | --------------------------------------------------------------- |
+| Collection | `<directory>/<slug>.md`                                         |
+| Wiki       | `<directory>/<sourcePath>.md`, from the page's navigation entry |
+| Course     | `<directory>/<module slug>/<page slug>.md`                      |
+
+These calls never rename against the existing tree: a derived path that is
+occupied fails. The one rename is between two new Guides of the same call that
+derive the same path, where the later one gets the hash spelling unless
+`pathCollisions` is `"refuse"`.
+
 ### Diagnostics
 
 Known compiler failures keep their code, safe path, and available line or source
@@ -406,6 +423,16 @@ consumer can map diagnostics by category and stay correct when codes are added:
 | `validation`      | The written source does not compile. Every other compiler ID is in this group.           |
 | `tree`            | The supplied tree is over a limit or holds unsafe paths.                                 |
 | `incompatible`    | The saved project was read by another writer or package cohort.                          |
+| `internal`        | The writer failed unexpectedly. Nothing the author wrote is known to be wrong.           |
+
+An unexpected exception is reported with a general code such as
+`source-validation-failed` and a non-enumerable `cause`. Pass the diagnostic
+object itself to `sourcePlanDiagnosticCategory`, before serializing or copying
+it, to get `internal`; a bare code or a copy reads as `validation`.
+
+`readSourceProject` and `snapshotSourceTree` throw `SourceTreeError` for an
+invalid or oversized tree, with the same diagnostic on its `diagnostic`
+property. The three planners return it in their result.
 
 Some codes worth handling by name:
 

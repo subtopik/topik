@@ -69,6 +69,7 @@ import {
 } from "./plan";
 import {
   authoredBody,
+  initialSourceDocumentPath,
   sourceDocumentPathCandidates,
   sourceMediaPath,
   type SourcePathCollisionPolicy,
@@ -436,9 +437,16 @@ function planCollectionSource(draft: InitializationDraft): Record<string, unknow
     // A collection writes `<slug>.md` whatever the slug, so the plain candidate is not used here.
     const renamed = sourceDocumentPathCandidates(directory, guide)[1];
     const explicit = input.documentPaths?.[`Guide/${guide.name}`];
-    const requested = explicit ?? posix.join(directory, `${guide.spec.slug}.md`);
+    const requested =
+      explicit ??
+      initialSourceDocumentPath({ kind: "collection", directory, slug: guide.spec.slug });
     if (explicit === undefined && allocated.has(requested) && input.pathCollisions === "refuse")
-      failure("source-path-collision", "Two new Guides derive the same Markdown path.", requested);
+      failSourcePlan(
+        "source-path-collision",
+        "Two new Guides derive the same Markdown path.",
+        `Guide/${guide.name}`,
+        requested,
+      );
     const path = explicit === undefined && allocated.has(requested) ? renamed : requested;
     draft.paths.set(`Guide/${guide.name}`, path);
     allocated.add(path);
@@ -475,7 +483,10 @@ function planWikiSource(draft: InitializationDraft): Record<string, unknown> {
       "Every new Wiki page needs its explicit navigation/source association.",
     );
   for (const page of navigation.pages)
-    paths.set(`WikiPage/${page.page}`, posix.join(directory, `${page.sourcePath}.md`));
+    paths.set(
+      `WikiPage/${page.page}`,
+      initialSourceDocumentPath({ kind: "wiki", directory, sourcePath: page.sourcePath }),
+    );
   const transportSources = (nodes: NonNullable<Wiki["spec"]["navigation"]>) => {
     for (const node of nodes) {
       if (node.type === "page")
@@ -593,7 +604,12 @@ function planCourseSource(draft: InitializationDraft): Record<string, unknown> {
     paths.set(
       `CoursePage/${page.name}`,
       input.documentPaths?.[`CoursePage/${page.name}`] ??
-        posix.join(directory, module.spec.slug, `${page.spec.slug}.md`),
+        initialSourceDocumentPath({
+          kind: "course",
+          directory,
+          moduleSlug: module.spec.slug,
+          slug: page.spec.slug,
+        }),
     );
   }
   const context = sourceCourseContext(expected, course, paths, directory);

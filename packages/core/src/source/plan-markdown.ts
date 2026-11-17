@@ -63,9 +63,38 @@ export function newSourceDocumentPath(input: {
 }
 
 /**
+ * The path `initializeSourceProject` and `addSourceToProject` derive for a new document that
+ * has no entry in `documentPaths`. `directory` is the manifest-relative directory of the new
+ * source configuration, empty for the project root.
+ *
+ * - `collection`: `<directory>/<slug>.md`. A later Guide of the same call that derives the
+ *   same path gets the renamed candidate of {@link sourceDocumentPathCandidates} instead,
+ *   or is refused with `pathCollisions: "refuse"`.
+ * - `wiki`: `<directory>/<sourcePath>.md`, from the page's navigation entry. `documentPaths`
+ *   does not apply to Wiki pages.
+ * - `course`: `<directory>/<module slug>/<page slug>.md`.
+ *
+ * An occupied derived path is never renamed against the existing tree: it fails.
+ */
+export function initialSourceDocumentPath(
+  input:
+    | { kind: "collection"; directory: string; slug: string }
+    | { kind: "wiki"; directory: string; sourcePath: string }
+    | { kind: "course"; directory: string; moduleSlug: string; slug: string },
+): string {
+  if (input.kind === "wiki") return posix.join(input.directory, `${input.sourcePath}.md`);
+  if (input.kind === "course")
+    return posix.join(input.directory, input.moduleSlug, `${input.slug}.md`);
+  return posix.join(input.directory, `${input.slug}.md`);
+}
+
+/**
  * The path a planner writes new media to: `<assetDirectory>/<stem>-<hash><extension>`, where
  * the hash is the first eight hexadecimal digits of the SHA-256 of the Asset name in the
- * selection. `assetDirectory` is manifest-relative, as source provenance reports it.
+ * selection. `assetDirectory` is manifest-relative: for `planSourceUpdates` the
+ * `assetDirectory` that source provenance reports for the configuration, and for a source
+ * being initialized or added its configuration directory joined with the intent's
+ * `assetDirectory`, which defaults to `_assets`.
  */
 export function sourceMediaPath(input: {
   assetDirectory: string;

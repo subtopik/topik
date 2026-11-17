@@ -4,7 +4,7 @@ import { lstat, open, readdir, rename, unlink, type FileHandle } from "node:fs/p
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { boolean, command, positional } from "@drizzle-team/brocli";
 import { formatTopikContent, sanitizeTopikDiagnosticFile } from "@topik/content";
-import { readPortableAssetFile, type FileSafety } from "@topik/core";
+import { isConventionMarkdownFilename, readPortableAssetFile, type FileSafety } from "@topik/core";
 import { printDiagnostics } from "../diagnostics";
 import { PublicCliError } from "../errors";
 import { fileSafetyOption, notePortableReads } from "../file-safety";
@@ -72,7 +72,7 @@ async function collectMarkdownFiles(
     } else if (
       entry.isFile() &&
       isMarkdownFile(entry.name) &&
-      entry.name !== AGENT_INSTRUCTIONS_FILENAME
+      !isConventionMarkdownFilename(entry.name)
     ) {
       files.push(path);
     }
@@ -80,9 +80,10 @@ async function collectMarkdownFiles(
 }
 
 /**
- * Instructions for coding agents, which `topik init` writes. They are not Topik Markdown (the
- * section markers are HTML comments), so a directory walk leaves them out. A file named as
- * the format target is still read, and refused like any other Markdown with raw HTML.
+ * Instructions for coding agents, which `topik init` writes. Like every Markdown file named
+ * in capitals (`README.md`, `CHANGELOG.md`), they are not Topik Markdown, so a directory walk
+ * leaves them out. A file named as the format target is still read, and refused like any
+ * other Markdown with raw HTML.
  */
 export const AGENT_INSTRUCTIONS_FILENAME = "AGENTS.md";
 

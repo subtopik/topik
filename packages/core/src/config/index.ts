@@ -1,4 +1,8 @@
-export { parseCollectionConfig } from "./collection";
+export {
+  collectionGuideFilter,
+  isConventionMarkdownFilename,
+  parseCollectionConfig,
+} from "./collection";
 export type { CollectionConfig } from "./collection";
 
 export { parseWikiConfig } from "./wiki";

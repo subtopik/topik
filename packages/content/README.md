@@ -97,7 +97,7 @@ reported as a diagnostic, never silently discarded.
 | Component                                   | Content and principal properties                                                                    |
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | `callout`                                   | Block content; optional `variant` and `title`                                                       |
-| `accordion`                                 | Block content; required `title`, optional `open`                                                    |
+| `accordion`                                 | Block content; required `title`, optional `open` and `id` (link target)                             |
 | `cardGrid`, `card`                          | Cards; grid `columns` from 1 to 4; card requires `title` and accepts `href`, `icon`                 |
 | `tabs`, `tab`                               | One or more tabs, each with a required `title`                                                      |
 | `steps`, `step`                             | One or more steps; optional step `title`                                                            |

@@ -65,6 +65,28 @@ first one, `details` (`link-fragment-positional`). Titles that differ only in
 punctuation, such as `C++` and `C#`, share an ID too. Give such a heading an
 explicit ID and link to that instead.
 
+### Accordion anchors
+
+Accordions are link targets too, and share the heading IDs. Write `id` to set
+an accordion's anchor; without it, Topik generates one from the `title`, in
+document order with the headings, so `## FAQ` followed by an accordion titled
+"FAQ" gives `faq` and `faq-1`:
+
+```markdown
+{% accordion title="How are answers graded?" id="grading" %}
+Each correct answer scores one point.
+{% /accordion %}
+
+See [grading](#grading).
+```
+
+Explicit IDs use the same characters as `{% #id %}` (`topik-accordion-id`) and
+are unique across headings and accordions (`heading-id-duplicate`). Variables in
+a template title, such as `title=t"Week {% $week %}"`, do not contribute to the
+generated ID, like variables in a heading. Accordions are not headings: they do
+not appear in a page's outline or provide its title. Opening a link to an
+accordion, or to an element inside one, opens the accordion.
+
 ### Links, tables and inline marks
 
 - Bare URLs and email addresses stay text. See [Links](./autolinks.md) for
@@ -79,7 +101,7 @@ explicit ID and link to that instead.
 | Component                                   | Use                                                                       |
 | ------------------------------------------- | ------------------------------------------------------------------------- |
 | `callout`                                   | A block of prose with an optional `title` and `variant`.                  |
-| `accordion`                                 | Collapsible block content with a required `title`.                        |
+| `accordion`                                 | Collapsible block content with a required `title`; a link target.         |
 | `cardGrid`, `card`                          | A grid of cards with titles and optional links and icons.                 |
 | `tabs`, `tab`                               | Tab panels; each `tab` needs a `title`.                                   |
 | `steps`, `step`                             | An ordered sequence of blocks, with optional step titles.                 |

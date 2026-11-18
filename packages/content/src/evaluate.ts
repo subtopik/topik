@@ -5,8 +5,7 @@ import { components, type Registry } from "./registry.js";
 import { validateDocument } from "./validation.js";
 import { assertDataLimits, ContentLimitError, CONTENT_LIMITS } from "./limits.js";
 import { indexDocument, materializeReferences } from "./document-index.js";
-import { assignHeadingIds } from "./headings.js";
-import type { Heading } from "mdast";
+import { assignAnchorIds, isAnchorNode } from "./headings.js";
 import { inlineParentTypes } from "./node-grammar.js";
 import { writeDocument } from "./writer.js";
 
@@ -191,11 +190,7 @@ function resolveDocument(
   const resolved = structuredClone(document);
   const index = indexDocument(resolved);
   if (includeHeadingIds)
-    assignHeadingIds(
-      index.entries
-        .filter(({ node }) => node.type === "heading")
-        .map(({ node }) => node as Heading),
-    );
+    assignAnchorIds(index.entries.filter(({ node }) => isAnchorNode(node)).map(({ node }) => node));
   materializeReferences(resolved, index);
   let interpolatedLength = 0;
   let templateResolved = false;

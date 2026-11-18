@@ -232,6 +232,15 @@ tabs and expanded code regions is kept.
 Define component functions once, outside render. A new component function is a
 different component to React and remounts its content.
 
+### Links to accordions
+
+`TopikAccordion` receives the accordion's `id`, explicit or generated, and sets
+it on its `<details>`. When the page opens with a fragment that names the
+accordion or an element inside it, or the fragment changes to one, the
+accordion opens. Browsers already reveal some targets inside a closed
+`<details>`, but not the `<details>` itself and not in every browser. A custom
+`TopikAccordion` should render the `id` so links reach it.
+
 ### Compile before rendering
 
 To inspect a result before rendering, compile explicitly. This example passes the

@@ -92,9 +92,10 @@ next content page and the assets page:
 [Asset identity](../resources/assets.md#generated-identity)
 ```
 
-Fragments refer to the destination's heading IDs. The compiler checks page targets
-and fragments against the wiki's navigation and analyzed headings. A fragment
-that matches a generated ID whose title other headings on that page share
+Fragments refer to the destination's heading and accordion IDs. The compiler
+checks page targets and fragments against the wiki's navigation and analyzed
+headings and accordions. A fragment that matches a generated ID whose title
+other headings or accordions on that page share
 compiles, but warns with `link-fragment-positional`, because the ID moves when
 an earlier heading with that title is added or removed. Give the heading an
 explicit `{% #id %}` instead; see

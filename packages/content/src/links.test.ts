@@ -165,7 +165,7 @@ describe("Topik links", () => {
         expect.objectContaining({
           file: label,
           id: "heading-id-duplicate",
-          message: "Explicit heading IDs must be unique within a document.",
+          message: "Explicit heading and accordion IDs must be unique within a document.",
         }),
       ]);
       expect(JSON.stringify(result.diagnostics)).not.toContain(sentinel);

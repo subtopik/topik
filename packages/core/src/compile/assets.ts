@@ -28,6 +28,7 @@ import {
 import {
   classifyPortableNavigationPath,
   createPortableReadSession,
+  portableReadFailureReason,
   readPortableAssetFile,
   type FileSafety,
   readPortableAssetFileInSession,
@@ -51,6 +52,7 @@ import {
 import { validateTopikPath, validateTopikPathSet } from "../assets/path";
 import { validateResources, type ValidationError } from "../validate";
 import { createContentMemo, type ContentMemo } from "./content-memo";
+import type { PublicCompileErrorReason } from "./public-errors";
 
 export type ContentBearingResource = CoursePage | Guide | WikiPage;
 
@@ -92,6 +94,14 @@ export interface AssetPayload {
 export interface AssetCompilationResult {
   resources: CompiledResource[];
   payloads: AssetPayload[];
+  /**
+   * The source file of each generated local Asset: Asset name to its path relative to the
+   * compilation root (the project directory for a manifest), with `/` separators. Several names
+   * can share one payload, so pair a payload with its files through `AssetPayload.assetNames`.
+   * An Asset with an external `https` reference has no entry. This is caller-side provenance:
+   * it is not part of the semantic or materialization records and is never written to output.
+   */
+  assetSourcePaths: Readonly<Record<string, string>>;
   semantic: TopikAssetSemanticRecordV1;
   materialization: TopikMaterializationRecordV1;
 }
@@ -99,12 +109,21 @@ export interface AssetCompilationResult {
 export type CompiledResource = SourceResource | CompiledAsset;
 
 export class AssetCompilationError extends Error {
+  /**
+   * Why a local Asset file was refused, when the reader knows: for example `git-lfs-pointer`
+   * for a file that holds a Git LFS pointer in place of its content, or `too-large`. Absent
+   * for every other Asset failure. The diagnostic wording is not a stable surface; this is.
+   */
+  declare public readonly reason?: PublicCompileErrorReason;
+
   constructor(
     message: string,
     public readonly diagnostics: readonly TopikAssetDiagnostic[] = [],
+    options?: { reason?: PublicCompileErrorReason },
   ) {
     super(message);
     this.name = "AssetCompilationError";
+    if (options?.reason !== undefined) this.reason = options.reason;
   }
 }
 
@@ -468,7 +487,10 @@ async function compileAssetResourcesWithReader(
   const inventory = validateTopikMaterializationRecord(materialization, resources, semantic);
   if (!inventory.ok)
     throw new AssetCompilationError("Compiled inventory is incomplete", inventory.diagnostics);
-  return { resources, payloads, semantic, materialization };
+  const assetSourcePaths = Object.fromEntries(
+    [...localPathByGeneratedName].sort(([left], [right]) => compareUtf8(left, right)),
+  );
+  return { resources, payloads, assetSourcePaths, semantic, materialization };
 }
 
 /** @internal Shared with the source test suite to prove generated-name collision handling. */
@@ -597,7 +619,9 @@ function safeResourceDescriptorVersion(
 async function requireAssetFile(root: string, path: string, readAssetFile: PortableAssetReader) {
   const read = await readAssetFile({ root, path });
   if (!read.ok || read.value.bytes === undefined) {
-    throw new AssetCompilationError("Local Asset bytes could not be proven", read.diagnostics);
+    throw new AssetCompilationError("Local Asset bytes could not be proven", read.diagnostics, {
+      reason: portableReadFailureReason(read.diagnostics),
+    });
   }
   return read.value as typeof read.value & { bytes: Uint8Array };
 }
@@ -619,6 +643,7 @@ async function readGenericNavigationCandidate(
     throw new AssetCompilationError(
       "Existing generic-link target failed portable Asset proof",
       proof.diagnostics,
+      { reason: portableReadFailureReason(proof.diagnostics) },
     );
   }
   return proof.value.bytes === undefined

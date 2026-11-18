@@ -125,6 +125,25 @@ The theme stylesheet includes print styles:
   questions and table rows avoid page breaks inside them.
 - With `rich/styles.css`, syntax-highlighted code prints as dark text and dark
   diagrams print with light diagram colors.
+- Footnotes print at the end of the content without their back-links.
+
+### Footnotes
+
+A reference renders as `TopikFootnoteReference`, a superscript number linking to
+its note. After the content, `TopikFootnotes` lists every shown note as a
+`TopikFootnote`, in order of first reference, each with back-links to its
+references.
+
+| Component                | Props                                                         |
+| ------------------------ | ------------------------------------------------------------- |
+| `TopikFootnoteReference` | `number`, `id` (`fnref:1`, `fnref:1:2` …), `target` (`fn:1`)  |
+| `TopikFootnotes`         | the notes as children                                         |
+| `TopikFootnote`          | `number`, `id` (`fn:1`), `backrefs`, and the note as children |
+
+The anchors are the same on every page, so two footnoted contents on one page
+share them; give each its own component map with prefixed anchors if they must
+coexist. Without themed components, footnotes still render as superscript links
+and an ordered list, so a plain renderer keeps the notes.
 
 ## Variables
 

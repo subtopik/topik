@@ -14,6 +14,8 @@ import {
 } from "./code-presentation.js";
 import { assertCodePresentationOutputLimit } from "./presentation-output.js";
 import { validateTopikHref, validateTopikNavigationHref } from "./links.js";
+import { footnoteAnchor, footnoteKey, numberFootnotes } from "./footnotes.js";
+import type { TreeNode } from "./model.js";
 
 /**
  * Defence in depth for documents that never passed source admission, such as
@@ -73,6 +75,35 @@ export function transformDocument(
 ): RenderableTreeNode {
   const resolved = evaluateDocumentForRendering(document, config.variables, config.components);
   assertCodePresentationOutputLimit(resolved);
+  const footnotes = numberFootnotes(resolved);
+
+  /** Shown footnotes as one list after the content, in order of first reference. */
+  function footnoteList(): RenderableTreeNode {
+    const definitions = resolved.children
+      .filter((child) => child.type === "footnoteDefinition")
+      .map((child) => ({ child, number: footnotes.numbers.get(footnoteKey(child as TreeNode)) }))
+      .filter((entry): entry is { child: (typeof entry)["child"]; number: number } =>
+        Number.isInteger(entry.number),
+      )
+      .sort((left, right) => left.number - right.number);
+    if (!definitions.length) return null;
+    return new ContentTag(
+      "TopikFootnotes",
+      {},
+      definitions.map(
+        ({ child, number }) =>
+          new ContentTag(
+            "TopikFootnote",
+            {
+              number,
+              id: footnoteAnchor(number),
+              backrefs: footnotes.backrefs.get(footnoteKey(child as TreeNode)) ?? [],
+            },
+            "children" in child ? child.children.map((item) => render(item as RootContent)) : [],
+          ),
+      ),
+    );
+  }
 
   function render(
     node: ContentDocument | RootContent | Branch,
@@ -83,8 +114,25 @@ export function transformDocument(
     const tag = (name: string, attributes: Record<string, unknown> = {}, body = children()) =>
       new ContentTag(name, attributes, body);
     switch (node.type) {
-      case "root":
-        return tag("article");
+      case "root": {
+        const list = footnoteList();
+        return tag("article", {}, list === null ? children() : [...children(), list]);
+      }
+      case "footnoteReference": {
+        const number = footnotes.numbers.get(footnoteKey(node as TreeNode));
+        if (number === undefined) return null;
+        return tag(
+          "TopikFootnoteReference",
+          {
+            number,
+            id: footnotes.anchors.get(node as TreeNode),
+            target: footnoteAnchor(number),
+          },
+          [],
+        );
+      }
+      case "footnoteDefinition":
+        return null;
       case "text":
         return node.value;
       case "paragraph":

@@ -70,10 +70,11 @@ Supported Markdown:
 - headings, emphasis, strong and strikethrough marks, and code
 - lists and task lists, blockquotes, and hard breaks
 - links, images, and reference definitions
+- footnotes, whose definitions are written at the end of the document
 - tables
 - leading YAML frontmatter, which is kept in the source but not rendered
 
-Raw HTML and footnotes are refused. Bare URLs and email addresses are text; to
+Raw HTML is refused. Bare URLs and email addresses are text; to
 make a link, write an explicit Markdown link or an angle-bracket autolink.
 
 ### Links between resources
@@ -387,7 +388,8 @@ Source diagnostics have stable IDs with fixed messages.
 | Tag syntax                       | `missing-closing`, `missing-opening`, `tag-unterminated`, `tag-name-invalid`, `attribute-syntax-invalid`, `duplicate-attribute`, `tag-closing-invalid`, `tag-placement-invalid`, `tag-undefined` |
 | `else` placement and syntax      | `topik-else-placement`, `topik-else-syntax`                                                                                                                                                      |
 | Unsupported condition expression | `topik-expression-invalid` (reported once)                                                                                                                                                       |
-| Unsupported Markdown             | `node-undefined`, at the node's line, with its Markdown node `type`; covers raw HTML, comments, and footnotes                                                                                    |
+| Unsupported Markdown             | `node-undefined`, at the node's line, with its Markdown node `type`; covers raw HTML and comments                                                                                                |
+| Footnotes                        | `topik-footnote-placement`, `topik-footnote-duplicate`, `topik-footnote-unreferenced`, `topik-footnote-nested`, `topik-footnote-missing`                                                         |
 | Misplaced heading ID             | `topik-heading-id-placement`, for a heading ID that does not end its heading                                                                                                                     |
 | Custom schema rules              | `topik-<name>-children`, `topik-<name>-requires-<child>`, `topik-<parent>-parent-required`, `topik-<attribute>-range`, each with a fixed message per rule family                                 |
 | Content limits                   | `topik-content-limit`                                                                                                                                                                            |

@@ -216,7 +216,7 @@ describe("format command", () => {
     expect(await readFile(join(dir, "bad.md"), "utf8")).toBe(invalid);
     expect(await readFile(join(dir, "good.md"), "utf8")).toBe(FORMATTED);
     expect(errors).toEqual([
-      "bad.md:3 critical node-undefined: This Markdown construct is not supported, such as raw HTML or footnotes.",
+      "bad.md:3 critical node-undefined: This Markdown construct is not supported, such as raw HTML.",
       "1 of 2 file(s) could not be formatted",
     ]);
   });

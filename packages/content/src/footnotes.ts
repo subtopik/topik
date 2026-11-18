@@ -1,0 +1,172 @@
+import type { ContentDocument, TreeNode } from "./model.js";
+import { referenceIdentifier } from "./document-index.js";
+
+/**
+ * Footnote labels are document-wide and case-insensitive, like reference labels. A definition is
+ * written once at the end of the document, wherever it was authored, so its position carries no
+ * meaning: the writer and the meaning check both use the canonical order from this module.
+ */
+export function footnoteKey(node: TreeNode): string {
+  return referenceIdentifier(String((node as TreeNode & { identifier?: string }).identifier));
+}
+
+export interface FootnoteProblem {
+  node: TreeNode;
+  id: string;
+  message: string;
+}
+
+/** Visit nodes in document order, including every conditional branch. */
+function visit(node: TreeNode, callback: (node: TreeNode, parent?: TreeNode) => void): void {
+  function walk(current: TreeNode, parent?: TreeNode): void {
+    callback(current, parent);
+    for (const child of current.children ?? []) walk(child, current);
+  }
+  walk(node);
+}
+
+/** Labels in order of their first reference across the authored document. */
+function referenceOrder(document: TreeNode): string[] {
+  const order: string[] = [];
+  const seen = new Set<string>();
+  visit(document, (node) => {
+    if (node.type !== "footnoteReference") return;
+    const key = footnoteKey(node);
+    if (!seen.has(key)) {
+      seen.add(key);
+      order.push(key);
+    }
+  });
+  return order;
+}
+
+/** Placement, uniqueness and reference rules; shapes are checked by the node grammar. */
+export function footnoteProblems(document: ContentDocument): FootnoteProblem[] {
+  const problems: FootnoteProblem[] = [];
+  const definitions = new Map<string, TreeNode>();
+  const references = new Set<string>();
+  const root = document as TreeNode;
+  function insideDefinitionOrLink(ancestors: readonly TreeNode[]): "definition" | "link" | null {
+    for (const ancestor of ancestors) {
+      if (ancestor.type === "footnoteDefinition") return "definition";
+      if (ancestor.type === "link" || ancestor.type === "linkReference") return "link";
+    }
+    return null;
+  }
+  function walk(node: TreeNode, ancestors: readonly TreeNode[]): void {
+    if (node.type === "footnoteDefinition") {
+      if (ancestors.at(-1) !== root)
+        problems.push({
+          node,
+          id: "topik-footnote-placement",
+          message: "Footnote definitions belong at the top level of the document",
+        });
+      const key = footnoteKey(node);
+      if (definitions.has(key))
+        problems.push({
+          node,
+          id: "topik-footnote-duplicate",
+          message: "Footnote label is defined more than once",
+        });
+      else definitions.set(key, node);
+    }
+    if (node.type === "footnoteReference") {
+      references.add(footnoteKey(node));
+      const container = insideDefinitionOrLink(ancestors);
+      if (container === "definition")
+        problems.push({
+          node,
+          id: "topik-footnote-nested",
+          message: "Footnote definitions cannot contain footnote references",
+        });
+      else if (container === "link")
+        problems.push({
+          node,
+          id: "topik-footnote-placement",
+          message: "Links cannot contain footnote references",
+        });
+    }
+    for (const child of node.children ?? []) walk(child, [...ancestors, node]);
+  }
+  walk(root, []);
+  visit(root, (node) => {
+    if (node.type === "footnoteReference" && !definitions.has(footnoteKey(node)))
+      problems.push({
+        node,
+        id: "topik-footnote-missing",
+        message: "Footnote reference has no definition",
+      });
+  });
+  for (const [key, node] of definitions)
+    if (!references.has(key))
+      problems.push({
+        node,
+        id: "topik-footnote-unreferenced",
+        message: "Footnote definition is never referenced",
+      });
+  return problems;
+}
+
+/**
+ * Move every top-level footnote definition to the end of the document, in the order of first
+ * reference. Definitions that no reference reaches keep their relative order after the others.
+ * Returns the input when it has no definitions, otherwise a shallow copy of the root.
+ */
+export function canonicalizeFootnotes<T extends ContentDocument>(document: T): T {
+  const children = (document as TreeNode).children ?? [];
+  const definitions = children.filter((child) => child.type === "footnoteDefinition");
+  if (!definitions.length) return document;
+  const rank = new Map(referenceOrder(document as TreeNode).map((key, index) => [key, index]));
+  const ordered = definitions
+    .map((node, index) => ({ node, index, rank: rank.get(footnoteKey(node)) ?? Infinity }))
+    .sort((left, right) => left.rank - right.rank || left.index - right.index)
+    .map(({ node }) => node);
+  return {
+    ...document,
+    children: [...children.filter((child) => child.type !== "footnoteDefinition"), ...ordered],
+  } as T;
+}
+
+/** Evaluation hides branches; a definition whose every reference was hidden is not shown. */
+export function pruneUnreferencedFootnotes(document: ContentDocument): void {
+  const root = document as TreeNode;
+  const referenced = new Set<string>();
+  visit(root, (node) => {
+    if (node.type === "footnoteReference") referenced.add(footnoteKey(node));
+  });
+  root.children = (root.children ?? []).filter(
+    (child) => child.type !== "footnoteDefinition" || referenced.has(footnoteKey(child)),
+  );
+}
+
+export interface FootnoteNumbering {
+  /** Number of each label, in order of first reference. */
+  numbers: Map<string, number>;
+  /** Back-reference anchors of each label, one per reference, in document order. */
+  backrefs: Map<string, string[]>;
+  /** Anchor of each reference node. */
+  anchors: WeakMap<TreeNode, string>;
+}
+
+export function footnoteAnchor(number: number): string {
+  return `fn:${number}`;
+}
+
+/** Number footnotes of an evaluated document by their first remaining reference. */
+export function numberFootnotes(document: ContentDocument): FootnoteNumbering {
+  const numbers = new Map<string, number>();
+  const backrefs = new Map<string, string[]>();
+  const anchors = new WeakMap<TreeNode, string>();
+  visit(document as TreeNode, (node) => {
+    if (node.type !== "footnoteReference") return;
+    const key = footnoteKey(node);
+    if (!numbers.has(key)) numbers.set(key, numbers.size + 1);
+    const number = numbers.get(key)!;
+    const list = backrefs.get(key) ?? [];
+    const anchor = list.length === 0 ? `fnref:${number}` : `fnref:${number}:${list.length + 1}`;
+    list.push(anchor);
+    backrefs.set(key, list);
+    anchors.set(node, anchor);
+  });
+  return { numbers, backrefs, anchors };
+}

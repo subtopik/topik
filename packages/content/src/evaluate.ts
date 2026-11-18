@@ -5,6 +5,7 @@ import { components, type Registry } from "./registry.js";
 import { validateDocument } from "./validation.js";
 import { assertDataLimits, ContentLimitError, CONTENT_LIMITS } from "./limits.js";
 import { indexDocument, materializeReferences } from "./document-index.js";
+import { pruneUnreferencedFootnotes } from "./footnotes.js";
 import { assignHeadingIds } from "./headings.js";
 import type { Heading } from "mdast";
 import { inlineParentTypes } from "./node-grammar.js";
@@ -377,6 +378,8 @@ function resolveDocument(
   resolved.children = resolveChildren(
     resolved.children as TreeNode[],
   ) as ContentDocument["children"];
+  // A footnote referenced only in hidden branches is not part of the evaluated content.
+  pruneUnreferencedFootnotes(resolved);
   try {
     assertDataLimits(resolved, { plain: true, stringLengths });
   } catch (error) {

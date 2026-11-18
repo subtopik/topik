@@ -1,3 +1,4 @@
+import { footnoteProblems } from "./footnotes.js";
 import type {
   Branch,
   AuthoredAttributeValue,
@@ -516,7 +517,16 @@ export function validateDocumentWithIndex(
         if (!label || label.length > 999 || !/^(?:\\[\s\S]|[^[\]\\])+$/u.test(label))
           add("Reference identifier has no faithful Markdown label", node, "topik-reference-label");
       }
+      // A footnote label is one word: whitespace ends the label in Markdown.
+      if (node.type === "footnoteReference" || node.type === "footnoteDefinition") {
+        const association = node as unknown as Association;
+        const label = association.label ?? association.identifier;
+        if (!label || label.length > 999 || /\s/u.test(label))
+          add("Footnote label has no faithful Markdown label", node, "topik-reference-label");
+      }
     }
+    for (const problem of footnoteProblems(document))
+      add(problem.message, problem.node, problem.id);
   }
   return { diagnostics: errors, index };
 }

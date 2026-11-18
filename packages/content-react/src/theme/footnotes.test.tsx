@@ -47,8 +47,8 @@ describe("themed footnotes", () => {
         link.getAttribute("aria-label"),
       ]),
     ).toEqual([
-      ["#fnref:1", "Back to reference 1 (1)"],
-      ["#fnref:1:2", "Back to reference 1 (2)"],
+      ["#fnref:1", "Back to reference 1, 1"],
+      ["#fnref:1:2", "Back to reference 1, 2"],
     ]);
     expect(notes[1].querySelector(".topik-footnote__backrefs a")?.getAttribute("aria-label")).toBe(
       "Back to reference 2",

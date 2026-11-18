@@ -593,10 +593,11 @@
     display: inline;
   }
 
+  /* Underlined: in muted note text, color alone does not mark the links. */
   .topik-footnote__backrefs a {
     color: var(--topik-color-accent);
     margin-inline-start: 0.35em;
-    text-decoration: none;
+    text-decoration: underline;
   }
 
   /* The target of a footnote link stands out briefly after the jump. */

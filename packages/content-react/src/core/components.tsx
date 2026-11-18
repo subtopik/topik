@@ -118,7 +118,7 @@ function PlainTopikFootnote({ backrefs, children, id, number }: TopikComponentPr
       {links.map((anchor, index) => (
         <a
           key={anchor}
-          aria-label={`Back to reference ${value ?? ""}${links.length > 1 ? ` (${index + 1})` : ""}`}
+          aria-label={`Back to reference ${value ?? ""}${links.length > 1 ? `, ${index + 1}` : ""}`}
           href={`#${anchor}`}
         >
           ↩

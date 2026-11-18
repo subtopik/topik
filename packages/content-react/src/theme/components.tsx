@@ -354,7 +354,8 @@ export function TopikFootnote({ backrefs, children, id, number }: TopikComponent
           {links.map((anchor, index) => (
             <a
               key={anchor}
-              aria-label={`Back to reference ${value ?? ""}${links.length > 1 ? ` (${index + 1})` : ""}`}
+              // The visible sub-number ends the name, so speech and sight agree.
+              aria-label={`Back to reference ${value ?? ""}${links.length > 1 ? `, ${index + 1}` : ""}`}
               href={`#${anchor}`}
             >
               ↩{links.length > 1 ? <sup>{index + 1}</sup> : null}

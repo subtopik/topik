@@ -157,6 +157,26 @@ replacement is not a cross-process locking, rollback, or crash-recovery
 mechanism; applications that need those guarantees must manage generations
 themselves.
 
+### Find an asset's source file
+
+The output never records where an asset came from. A program that calls the
+compiler gets that from the result: `assetSourcePaths` maps each generated
+local Asset name to the path of its source file, relative to the compilation
+directory (the project directory for `compileManifest`), with `/` separators.
+
+```ts
+const { payloads, assetSourcePaths } = await compileManifest({ dir: projectRoot });
+for (const payload of payloads) {
+  const files = payload.assetNames.map((name) => assetSourcePaths[name]);
+}
+```
+
+Files with equal bytes share one payload and keep separate names, so a payload
+can map to several files. An external `https` reference produces no Asset and
+has no entry. The map is not part of `semantic.json` or
+`materialization.json`, is not written to the output directory and is not sent
+to the preview.
+
 ## Render compiled assets
 
 Build a resolver from the descriptors and the URL where your application serves
@@ -399,3 +419,23 @@ The compiler also refuses:
 - WebAssembly modules;
 - Git LFS pointer files, which are small files whose first line is a Git LFS
   `version` line. Run `git lfs pull` first.
+
+A refused local file fails compilation with an `AssetCompilationError`. Its
+`diagnostics` name the file in `location.path`; their `message` wording is not
+a stable surface. When the reader knows why the file was refused, the error has
+a stable `reason`, the same set a
+[refused configuration read](./manifest.md#errors) reports:
+
+| `reason`                                                                       | The file                                            |
+| ------------------------------------------------------------------------------ | --------------------------------------------------- |
+| `git-lfs-pointer`                                                              | holds a Git LFS pointer in place of its content.    |
+| `git-filtered`, `git-submodule`                                                | has a Git content filter, or is inside a submodule. |
+| `symbolic-link`, `hard-linked`, `executable`, `special-file`                   | is not a plain, non-executable file with one link.  |
+| `too-large`                                                                    | exceeds the asset size limit.                       |
+| `changed-during-read`                                                          | changed while it was read.                          |
+| `git-evidence-unavailable`, `git-repository-untrusted`, `platform-unsupported` | could not be checked on this machine.               |
+
+A damaged or unsupported media file, active content and an executable have no
+`reason`. So `reason === "git-lfs-pointer"` tells "stored in Git LFS" apart
+from "damaged". [Classify a failure](./manifest.md#classify-a-failure) reads
+the reason without knowing the error class.

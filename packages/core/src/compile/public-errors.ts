@@ -71,6 +71,12 @@ export function publicCompileErrorMessage(id: unknown, reason?: unknown): string
     : `${message} ${PUBLIC_COMPILE_ERROR_REASONS[explanation]}`;
 }
 
+/** The fixed explanation of a read-failure reason, or `undefined` for an unknown value. */
+export function publicCompileReasonMessage(reason: unknown): string | undefined {
+  const known = sanitizeCompileReason(reason);
+  return known === undefined ? undefined : PUBLIC_COMPILE_ERROR_REASONS[known];
+}
+
 function sanitizeCompileReason(value: unknown): PublicCompileErrorReason | undefined {
   return typeof value === "string" && Object.hasOwn(PUBLIC_COMPILE_ERROR_REASONS, value)
     ? (value as PublicCompileErrorReason)

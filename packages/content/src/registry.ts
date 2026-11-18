@@ -175,10 +175,13 @@ function metadata(name: string, definition: ComponentDefinition): TopikComponent
         ? constraint.components
         : constraint.nodes.map((node) => (node === "code" ? "fence" : node))
       : undefined;
+  // A minimum over alternatives, such as a card or a column, requires no one kind.
   const requiredChildren =
     name === "question"
       ? ["choice"]
-      : typeof constraint === "object" && constraint.min
+      : typeof constraint === "object" &&
+          constraint.min &&
+          ("nodes" in constraint || constraint.components.length === 1)
         ? allowedChildren?.slice(0, 1)
         : undefined;
   return {

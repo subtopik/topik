@@ -1,5 +1,11 @@
 import { expect, test } from "vite-plus/test";
-import { components, getEffectiveProps, parseDocument, writeDocument } from "../index.js";
+import {
+  components,
+  getEffectiveProps,
+  parseDocument,
+  topikComponents,
+  writeDocument,
+} from "../index.js";
 import type { Component } from "../model.js";
 import { parse, withoutPositions } from "../test-helpers.js";
 
@@ -91,6 +97,25 @@ test("columns are placed wherever block content is", () => {
   ])
     expect(parseDocument(source)).toMatchObject({ ok: true });
   expect(diagnosticIds(`Text ${cells}`)).not.toEqual([]);
+});
+
+test("an empty layout names both cell kinds", () => {
+  const result = parseDocument("{% columns %}\n{% /columns %}");
+  expect(result.ok).toBe(false);
+  if (!result.ok)
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        id: "topik-columns-requires-card",
+        message: expect.stringContaining("card or column"),
+      }),
+    );
+});
+
+test("the catalog requires no single cell kind", () => {
+  expect(topikComponents.columns.allowedChildren).toEqual(["card", "column"]);
+  expect(topikComponents.columns).not.toHaveProperty("requiredChildren");
+  expect(topikComponents.codeGroup.requiredChildren).toEqual(["codeTab"]);
+  expect(topikComponents.codeTab.requiredChildren).toEqual(["fence"]);
 });
 
 test("a card still stands alone outside columns", () => {

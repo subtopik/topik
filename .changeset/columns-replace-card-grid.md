@@ -14,4 +14,6 @@ Breaking:
 
 - `cardGrid` is removed. Write `{% columns count=N %}` where you wrote `{% cardGrid columns=N %}`. A `cardGrid` without `columns` showed three columns; `columns` without `count` shows two.
 - `TopikCardGrid` is removed from `@topik/content-react`, and `TopikComponentName` and `TopikComponentMap` gain `TopikColumns` and `TopikColumn`.
-- The diagnostics `topik-columns-range` and `topik-card-grid-children` are replaced by `topik-count-range`, `topik-columns-children`, `topik-columns-requires-card` and `topik-columns-parent-required`.
+- The built-in diagnostics for `cardGrid`, `topik-columns-range` and `topik-card-grid-children`, are replaced by `topik-count-range`, `topik-columns-children`, `topik-columns-requires-card` and `topik-columns-parent-required`. A custom component with its own numeric `columns` attribute still reports `topik-columns-range`.
+- `column` and `columns` are now canonical components. An application that registered its own `column` or `columns` in `config.components` must rename that schema and the tags that use it together; the built-in schema takes its place.
+- `topikComponents.columns` lists no `requiredChildren`, because a card or a column satisfies the minimum.

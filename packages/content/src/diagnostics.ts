@@ -107,7 +107,7 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "topik-code-tab-parent-required": "A code tab must be nested inside a code group.",
   "topik-code-tab-children": "A code tab may contain only fenced code blocks.",
   "topik-code-tab-requires-fence": "A code tab requires a fenced code block.",
-  "topik-count-range": "Columns count must be an integer from 1 to 4.",
+  "topik-count-range": "A count is outside its supported range; columns take 1 to 4.",
   "topik-config-invalid": "Content configuration is invalid.",
   "topik-content-limit": "Content exceeds the supported complexity limits.",
   "topik-node-invalid": "A Markdown node cannot be represented without changing its meaning.",
@@ -183,7 +183,8 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "topik-tag-placement": "The component cannot appear in this location.",
   "topik-columns-children": "Columns may contain only cards and columns.",
   "topik-columns-requires-card": "Columns require at least one card or column.",
-  "topik-columns-parent-required": "A column must be nested inside columns.",
+  "topik-columns-parent-required":
+    "A component must be nested inside its required parent, such as a column inside columns.",
   "topik-quiz-parent-required": "A question must be nested inside a quiz.",
   "topik-underline-children": "Underline requires inline content.",
   "topik-u-children": "Underline requires inline content.",

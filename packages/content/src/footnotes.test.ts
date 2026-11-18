@@ -80,6 +80,31 @@ describe("footnote source", () => {
       "topik-footnote-duplicate",
     ],
     ["an unreferenced definition", "Text.\n\n[^a]: Note", "topik-footnote-unreferenced"],
+    [
+      "a heading inside a definition",
+      "Note[^a]\n\n[^a]: Value\n\n    ## Title",
+      "topik-footnote-content",
+    ],
+    [
+      "a link definition inside a definition",
+      "Note[^a] [x][y]\n\n[^a]: Value\n\n    [y]: https://x.test",
+      "topik-footnote-content",
+    ],
+    [
+      "a block conditional inside a definition",
+      "Note[^a]\n\n[^a]: Value\n\n    {% if $x %}\n    More\n    {% /if %}",
+      "topik-footnote-content",
+    ],
+    [
+      "an explicit heading ID like a footnote anchor",
+      "## A {% #fn:1 %}",
+      "topik-heading-id-reserved",
+    ],
+    [
+      "an explicit heading ID like a reference anchor",
+      "## A {% #fnref:1 %}",
+      "topik-heading-id-reserved",
+    ],
   ])("refuses %s", (_name, source, id) => {
     expect(ids(source)).toContain(id);
   });
@@ -215,6 +240,56 @@ describe("footnote evaluation and rendering", () => {
     expect(tags(compiled.tree, "TopikFootnote")).toEqual([
       { number: 1, id: "fn:1", backrefs: ["fnref:1"] },
     ]);
+  });
+
+  test("a hidden footnote's body is not evaluated", () => {
+    // `$name` is absent: only the hidden branch needs it.
+    const source = conditional.replace("For teachers.", "For {% $name %}.");
+    expect(writeDocument(evaluateDocument(parse(source), { teacher: false }))).toBe(
+      "Shown[^a].\n\n[^a]: Always.\n",
+    );
+    expect(() => evaluateDocument(parse(source), { teacher: true })).toThrow();
+  });
+
+  test("a footnote whose body evaluates to nothing is dropped with its references", () => {
+    const source = "Shown[^a] and kept[^b].\n\n[^a]: {% $empty %}\n\n[^b]: Kept.";
+    expect(writeDocument(evaluateDocument(parse(source), { empty: "" }))).toBe(
+      "Shown and kept[^b].\n\n[^b]: Kept.\n",
+    );
+  });
+
+  test("references the renderer omits are not numbered", () => {
+    const config = {
+      components: {
+        omitted: {
+          kind: "block" as const,
+          render: false,
+          attributes: {},
+          children: "blocks" as const,
+        },
+      },
+    };
+    const source = [
+      "{% omitted %}",
+      "Hidden[^h].",
+      "{% /omitted %}",
+      "",
+      "Shown[^s].",
+      "",
+      "[^h]: Hidden note.",
+      "",
+      "[^s]: Shown note.",
+    ].join("\n");
+    const compiled = compileTopikContent(source, { config });
+    expect(compiled.ok).toBe(true);
+    if (!compiled.ok) return;
+    expect(tags(compiled.tree, "TopikFootnoteReference")).toEqual([
+      { number: 1, id: "fnref:1", target: "fn:1" },
+    ]);
+    expect(tags(compiled.tree, "TopikFootnote")).toEqual([
+      { number: 1, id: "fn:1", backrefs: ["fnref:1"] },
+    ]);
+    expect(JSON.stringify(compiled.tree)).not.toContain("Hidden note.");
   });
 
   test("a document without footnotes has no footnote list", () => {

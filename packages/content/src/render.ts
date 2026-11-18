@@ -75,7 +75,12 @@ export function transformDocument(
 ): RenderableTreeNode {
   const resolved = evaluateDocumentForRendering(document, config.variables, config.components);
   assertCodePresentationOutputLimit(resolved);
-  const footnotes = numberFootnotes(resolved);
+  const footnotes = numberFootnotes(
+    resolved,
+    (node) =>
+      node.type === "topikComponent" &&
+      config.components[(node as TreeNode & { name: string }).name]?.render === false,
+  );
 
   /** Shown footnotes as one list after the content, in order of first reference. */
   function footnoteList(): RenderableTreeNode {

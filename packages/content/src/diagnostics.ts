@@ -124,6 +124,10 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "topik-footnote-unreferenced":
     "A footnote definition is never referenced; reference it or remove it.",
   "topik-footnote-nested": "A footnote definition cannot contain footnote references.",
+  "topik-footnote-content":
+    "A footnote definition cannot contain headings, link definitions or conditionals; make the reference conditional instead.",
+  "topik-heading-id-reserved":
+    "Explicit heading IDs cannot start with fn: or fnref:, which footnote anchors use.",
   "topik-figure-children": "A figure cannot contain children; use its alt and caption attributes.",
   "topik-math-children": "Block math cannot contain children; use its content attribute.",
   "topik-math-inline-children": "Inline math cannot contain children; use its content attribute.",

@@ -40,6 +40,9 @@ function referenceOrder(document: TreeNode): string[] {
   return order;
 }
 
+/** Footnote anchors are `fn:N`, `fnref:N` and `fnref:N:K`; explicit heading IDs avoid them. */
+const reservedAnchor = /^fn(?:ref)?:/u;
+
 /** Placement, uniqueness and reference rules; shapes are checked by the node grammar. */
 export function footnoteProblems(document: ContentDocument): FootnoteProblem[] {
   const problems: FootnoteProblem[] = [];
@@ -70,6 +73,24 @@ export function footnoteProblems(document: ContentDocument): FootnoteProblem[] {
         });
       else definitions.set(key, node);
     }
+    if (node.type === "heading") {
+      const id = (node as TreeNode & { data?: { topikId?: unknown } }).data?.topikId;
+      if (typeof id === "string" && reservedAnchor.test(id))
+        problems.push({
+          node,
+          id: "topik-heading-id-reserved",
+          message: "Explicit heading IDs cannot start with fn: or fnref:",
+        });
+    }
+    if (
+      (node.type === "heading" || node.type === "definition" || node.type === "topikConditional") &&
+      ancestors.some((ancestor) => ancestor.type === "footnoteDefinition")
+    )
+      problems.push({
+        node,
+        id: "topik-footnote-content",
+        message: "Footnote definitions cannot contain headings, link definitions or conditionals",
+      });
     if (node.type === "footnoteReference") {
       references.add(footnoteKey(node));
       const container = insideDefinitionOrLink(ancestors);
@@ -127,18 +148,6 @@ export function canonicalizeFootnotes<T extends ContentDocument>(document: T): T
   } as T;
 }
 
-/** Evaluation hides branches; a definition whose every reference was hidden is not shown. */
-export function pruneUnreferencedFootnotes(document: ContentDocument): void {
-  const root = document as TreeNode;
-  const referenced = new Set<string>();
-  visit(root, (node) => {
-    if (node.type === "footnoteReference") referenced.add(footnoteKey(node));
-  });
-  root.children = (root.children ?? []).filter(
-    (child) => child.type !== "footnoteDefinition" || referenced.has(footnoteKey(child)),
-  );
-}
-
 export interface FootnoteNumbering {
   /** Number of each label, in order of first reference. */
   numbers: Map<string, number>;
@@ -152,13 +161,24 @@ export function footnoteAnchor(number: number): string {
   return `fn:${number}`;
 }
 
-/** Number footnotes of an evaluated document by their first remaining reference. */
-export function numberFootnotes(document: ContentDocument): FootnoteNumbering {
+/**
+ * Number footnotes of an evaluated document by their first shown reference. References inside a
+ * subtree the renderer drops, such as a component with `render: false`, are not shown and so are
+ * neither numbered nor linked back to.
+ */
+export function numberFootnotes(
+  document: ContentDocument,
+  hidden: (node: TreeNode) => boolean = () => false,
+): FootnoteNumbering {
   const numbers = new Map<string, number>();
   const backrefs = new Map<string, string[]>();
   const anchors = new WeakMap<TreeNode, string>();
-  visit(document as TreeNode, (node) => {
-    if (node.type !== "footnoteReference") return;
+  function walk(node: TreeNode): void {
+    if (hidden(node)) return;
+    if (node.type !== "footnoteReference") {
+      for (const child of node.children ?? []) walk(child);
+      return;
+    }
     const key = footnoteKey(node);
     if (!numbers.has(key)) numbers.set(key, numbers.size + 1);
     const number = numbers.get(key)!;
@@ -167,6 +187,7 @@ export function numberFootnotes(document: ContentDocument): FootnoteNumbering {
     list.push(anchor);
     backrefs.set(key, list);
     anchors.set(node, anchor);
-  });
+  }
+  walk(document as TreeNode);
   return { numbers, backrefs, anchors };
 }

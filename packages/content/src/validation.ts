@@ -402,6 +402,8 @@ export function validateDocumentWithIndex(
           parent.type === "blockquote" ||
           parent.type === "listItem" ||
           parent.type === "topikBranch" ||
+          // Reported once as topik-footnote-content.
+          parent.type === "footnoteDefinition" ||
           (parent.type === "topikComponent" &&
             registry[(parent as Component).name]?.children === "blocks")
         )

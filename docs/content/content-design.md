@@ -83,14 +83,24 @@ reference and list them at the end of the content, so the label is only a name:
   branches. Formatting keeps their authored spelling.
 - **References** work wherever inline content does, including headings, lists,
   table cells and inline components, but not inside links or inside a footnote.
+- **Content** is block content without headings, link definitions or
+  conditionals: a note is part of the page it annotates, so headings stay in the
+  outline and link labels resolve the same wherever the note is written. To show
+  a note only to some readers, make its reference conditional.
 - A reference in a hidden conditional branch is not shown, and a footnote whose
-  references are all hidden is left out of the evaluated content.
+  references are all hidden is left out of the evaluated content without its
+  body being evaluated. A footnote whose body evaluates to nothing is left out
+  with its references. References inside a component that does not render are
+  not numbered.
+- Footnotes link with the anchors `fn:N` and `fnref:N`, so explicit heading IDs
+  cannot start with `fn:` or `fnref:` (`topik-heading-id-reserved`).
 
 Topik refuses a definition inside a quote, list, component or conditional
 branch (`topik-footnote-placement`), a label defined twice
 (`topik-footnote-duplicate`), a definition that nothing references
-(`topik-footnote-unreferenced`) and a reference inside a footnote
-(`topik-footnote-nested`). Without a definition, Markdown keeps `[^label]` as
+(`topik-footnote-unreferenced`), a reference inside a footnote
+(`topik-footnote-nested`) and a heading, link definition or conditional inside a
+footnote (`topik-footnote-content`). Without a definition, Markdown keeps `[^label]` as
 text; a tree built in code reports `topik-footnote-missing`.
 
 ### Links, tables and inline marks
@@ -261,7 +271,9 @@ Common source problems include:
 | `node-undefined`                                       | Unsupported Markdown such as raw HTML or comments                 |
 | `topik-footnote-placement`, `topik-footnote-duplicate` | A misplaced footnote definition or reference, or a repeated label |
 | `topik-footnote-unreferenced`, `topik-footnote-nested` | A definition nothing references, or a reference inside a footnote |
+| `topik-footnote-content`                               | A heading, link definition or conditional inside a footnote       |
 | `topik-heading-id-placement`                           | A `{% #id %}` that does not end its heading                       |
+| `topik-heading-id-reserved`                            | A `{% #id %}` starting with `fn:` or `fnref:`                     |
 | `topik-variable-missing`, `topik-variable-type`        | A missing or incompatible variable during compilation             |
 
 `node-undefined` diagnostics set `type` to the Markdown node type, such as

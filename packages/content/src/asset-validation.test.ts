@@ -1,6 +1,67 @@
 import { describe, expect, test, vi } from "vite-plus/test";
 import { validateTopikContent } from "./validate.js";
-import { formatTopikContent, rewriteTopikAssetOccurrences } from "./index.js";
+import {
+  formatTopikContent,
+  rewriteTopikAssetOccurrences,
+  transformTopikContent,
+  validateTopikAssetReference,
+  validateTopikHref,
+} from "./index.js";
+import { parseTopikContent } from "./content.js";
+
+describe("external references that rendering would drop", () => {
+  const dropped = [
+    "https://example.com/a.png#%E9",
+    "https://example.com/a.png#%",
+    "https://example.com/a.png#%zz",
+  ];
+
+  test.each(dropped)("refuses %s during validation", (url) => {
+    for (const source of [`![Image](${url})`, `{% figure src="${url}" alt="Figure" /%}`])
+      expect(validateTopikContent(source)).toMatchObject({
+        valid: false,
+        errors: [expect.objectContaining({ id: "TOPIK_EXTERNAL_REFERENCE_UNSAFE" })],
+      });
+  });
+
+  test("refuses trailing whitespace the URL parser would strip", () => {
+    expect(validateTopikAssetReference("https://example.com/a.png ")).toMatchObject({
+      valid: false,
+      failureKind: "external",
+    });
+    expect(validateTopikAssetReference("https://example.com/a.png\u3000")).toMatchObject({
+      valid: false,
+    });
+  });
+
+  test("every admitted external reference survives rendering", () => {
+    const candidates = [
+      ...dropped,
+      "https://example.com/a.png",
+      "https://example.com/a.png#hero",
+      "https://example.com/a.png#%25",
+      "https://example.com/a.png#%C3%A9",
+      "https://example.com/%E9.png?x=%E9",
+      "https://example.com/a b.png",
+      "https://[::1]/a.png",
+      "HTTPS://example.com/a.png",
+      "https:///a.png",
+      "https://example.com/a.png ",
+    ];
+    for (const url of candidates) {
+      const admitted = validateTopikAssetReference(url);
+      if (!admitted.valid) continue;
+      expect(validateTopikHref(url), url).toEqual([]);
+      const document = parseTopikContent(`{% figure src="${url}" alt="Figure" /%}`);
+      expect(JSON.stringify(transformTopikContent(document)), url).toContain('"src"');
+    }
+  });
+
+  test("keeps a decodable fragment", () => {
+    expect(validateTopikContent("![Image](https://example.com/a.png#%C3%A9)").valid).toBe(true);
+  });
+});
+
 describe("source asset validation", () => {
   test("preserves separate asset error locations across source operations", () => {
     const source =

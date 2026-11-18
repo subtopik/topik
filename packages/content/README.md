@@ -355,7 +355,8 @@ Rewriting rules:
 Accepted references:
 
 - Images and figure sources accept canonical relative paths or credential-free
-  HTTPS URLs.
+  HTTPS URLs. An HTTPS URL with trailing whitespace or an undecodable fragment,
+  such as `#%E9`, is refused, because rendering would drop it.
 - Compiler-generated `asset:` references are accepted in rewritten output.
   Source admission accepts them only with `allowCompiledAssetReferences: true`.
 - Generic links count as download assets only when their decoded file path is

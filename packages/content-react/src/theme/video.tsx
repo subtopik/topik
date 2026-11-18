@@ -1,0 +1,180 @@
+import { useEffect, useRef, useState } from "react";
+import type { TopikComponentProps } from "../core/components";
+
+function stringAttribute(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+}
+
+/** Browsers may refuse playback, for example under data saving; the reader can still press Play. */
+function startPlayback(video: HTMLVideoElement): void {
+  try {
+    void Promise.resolve(video.play()).catch(() => {});
+  } catch {
+    // Environments without media playback keep the clip paused.
+  }
+}
+
+/**
+ * The poster and title as a link to the source: the fallback, and what a printed page shows. A
+ * source the browser may only request with CORS, such as a local preview stream, gets no link:
+ * navigating to it cannot succeed.
+ */
+function VideoLink({
+  poster,
+  source,
+  title,
+}: {
+  poster: string | undefined;
+  source: string | undefined;
+  title: string;
+}) {
+  const content = (
+    <>
+      {poster ? <img alt="" src={poster} /> : null}
+      <span className="topik-video__title">{title}</span>
+    </>
+  );
+  return source ? (
+    <a className="topik-video__link" href={source}>
+      {content}
+    </a>
+  ) : (
+    <div className="topik-video__fallback">{content}</div>
+  );
+}
+
+function VideoPlayer({
+  crossOrigin,
+  loop,
+  onFailure,
+  poster,
+  source,
+  title,
+}: {
+  crossOrigin: "anonymous" | undefined;
+  loop: boolean;
+  onFailure: () => void;
+  poster: string | undefined;
+  source: string;
+  title: string;
+}) {
+  const video = useRef<HTMLVideoElement>(null);
+  const failure = useRef(onFailure);
+  failure.current = onFailure;
+  // Server-rendered and unhydrated clips keep native controls, so they stay playable without script.
+  const [hydrated, setHydrated] = useState(false);
+  const [playing, setPlaying] = useState(false);
+
+  useEffect(() => {
+    const element = video.current;
+    if (!element) return;
+    // An error before hydration dispatches no React event; read the element's state instead.
+    if (element.error) {
+      failure.current();
+      return;
+    }
+    setHydrated(true);
+    setPlaying(!element.paused);
+    if (!loop) return;
+    // Browsers autoplay only muted media. React does not server-render `muted`, so the property is
+    // set here; before hydration the clip has controls and plays only when the reader starts it.
+    element.muted = true;
+    if (!prefersReducedMotion()) startPlayback(element);
+  }, [loop]);
+
+  const clip = loop && hydrated;
+  return (
+    <div className="topik-video__frame">
+      <video
+        ref={video}
+        aria-label={title}
+        className="topik-video__player"
+        controls={!clip}
+        crossOrigin={crossOrigin}
+        loop={loop}
+        playsInline
+        poster={poster}
+        preload="metadata"
+        src={source}
+        onError={() => failure.current()}
+        onPause={() => setPlaying(false)}
+        onPlay={() => setPlaying(true)}
+      >
+        {crossOrigin ? title : <a href={source}>{title}</a>}
+      </video>
+      {clip ? (
+        <button
+          type="button"
+          className="topik-video__toggle"
+          aria-label={`${playing ? "Pause" : "Play"} ${title}`}
+          onClick={() => {
+            const element = video.current;
+            if (!element) return;
+            if (element.paused) startPlayback(element);
+            else element.pause();
+          }}
+        >
+          {playing ? "Pause" : "Play"}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * A native video player. A source the browser cannot play, such as a video page on a hosting
+ * service, falls back to a link; applications that embed such services supply their own component.
+ */
+export function TopikVideo({
+  caption,
+  crossOrigin,
+  loop,
+  poster,
+  src,
+  title,
+}: TopikComponentProps) {
+  const source = stringAttribute(src);
+  const titleText = stringAttribute(title) ?? "";
+  const captionText = stringAttribute(caption);
+  const posterSource = stringAttribute(poster);
+  const corsOnly = crossOrigin === "anonymous";
+  const [failedSource, setFailedSource] = useState<string>();
+  const link = (
+    <VideoLink poster={posterSource} source={corsOnly ? undefined : source} title={titleText} />
+  );
+  const figcaption = captionText ? <figcaption>{captionText}</figcaption> : null;
+
+  if (source === undefined || failedSource === source) {
+    if (!titleText && !captionText && !posterSource) return null;
+    return (
+      <figure className="topik-video">
+        {link}
+        {figcaption}
+      </figure>
+    );
+  }
+  return (
+    <figure className="topik-video">
+      <VideoPlayer
+        // A changed source starts a fresh player, with its own playback and failure state.
+        key={source}
+        crossOrigin={corsOnly ? "anonymous" : undefined}
+        loop={loop === true}
+        onFailure={() => setFailedSource(source)}
+        poster={posterSource}
+        source={source}
+        title={titleText}
+      />
+      <div className="topik-video__print">{link}</div>
+      {figcaption}
+    </figure>
+  );
+}

@@ -111,6 +111,19 @@ const UNSAFE_GENERIC_LINK_CASES: readonly (readonly [
   ],
 ];
 
+/** An ISO base media `ftyp` box with the given major brand, followed by an empty `mdat` box. */
+function isoMedia(brand: string): Buffer {
+  return Buffer.concat([
+    Buffer.from([0, 0, 0, 0x14]),
+    Buffer.from(`ftyp${brand}\0\0\0\0${brand}`, "latin1"),
+    Buffer.from([0, 0, 0, 8]),
+    Buffer.from("mdat", "latin1"),
+  ]);
+}
+
+// An EBML header with the webm DocType, followed by a Segment of unknown size.
+const WEBM_BYTES = Buffer.from("1a45dfa387428284" + "7765626d" + "1853806701ffffffffffffff", "hex");
+
 function guide(name: string, content: string): Guide {
   return {
     apiVersion: "v1",
@@ -885,6 +898,89 @@ describe("compilation-wide automatic Assets", () => {
     expect(
       compiledGuide?.spec.content.value.match(/\]\(asset:auto-v1-[a-z2-7]{51}[aq]/gu),
     ).toHaveLength(5);
+  });
+
+  test("compiles local MP4 and WebM videos with a poster", async () => {
+    await writeFile(join(dir, "intro.mp4"), isoMedia("mp42"));
+    await writeFile(join(dir, "clip.webm"), WEBM_BYTES);
+    await writeFile(join(dir, "poster.png"), PNG_BYTES);
+    await writeFile(join(dir, "guide.md"), "source\n");
+
+    const result = await compileAssetResources({
+      rootDir: dir,
+      resources: [
+        guide(
+          "guide",
+          [
+            '{% video src="intro.mp4" title="Intro" poster="poster.png" /%}',
+            "",
+            '{% video src="clip.webm" title=t"Clip for {% $name %}" loop=true /%}',
+            "",
+          ].join("\n"),
+        ),
+      ],
+      sourcePathsByResource: { "Guide/guide": "guide.md" },
+      generateName: createProjectAssetNameGenerator({
+        projectRoot: dir,
+        projectNamespace: "videos",
+      }),
+    });
+
+    const assets = result.resources.filter(
+      (resource): resource is CompiledAsset => resource.type === "Asset",
+    );
+    expect(assets.map((asset) => asset.spec.mediaType).toSorted()).toEqual([
+      "image/png",
+      "video/mp4",
+      "video/webm",
+    ]);
+    expect(result.semantic.references.map((reference) => reference.slot).toSorted()).toEqual([
+      "video.poster",
+      "video.src",
+      "video.src",
+    ]);
+  });
+
+  test.each([
+    ["QuickTime", "intro.mov", isoMedia("qt  ")],
+    ["MP4 audio", "intro.m4a", isoMedia("M4A ")],
+    ["an image", "intro.png", PNG_BYTES],
+  ])("refuses %s as a video source", async (_name, file, bytes) => {
+    await writeFile(join(dir, file), bytes);
+    await writeFile(join(dir, "guide.md"), "source\n");
+
+    await expect(
+      compileAssetResources({
+        rootDir: dir,
+        resources: [guide("guide", `{% video src="${file}" title="Intro" /%}\n`)],
+        sourcePathsByResource: { "Guide/guide": "guide.md" },
+        generateName: createProjectAssetNameGenerator({
+          projectRoot: dir,
+          projectNamespace: "video-types",
+        }),
+      }),
+    ).rejects.toMatchObject({
+      diagnostics: [expect.objectContaining({ id: "TOPIK_ASSET_MEDIA_TYPE_MISMATCH" })],
+    });
+  });
+
+  test("rejects a video whose title is blank", async () => {
+    await writeFile(join(dir, "intro.mp4"), isoMedia("mp42"));
+    await writeFile(join(dir, "guide.md"), "source\n");
+
+    await expect(
+      compileAssetResources({
+        rootDir: dir,
+        resources: [guide("guide", '{% video src="intro.mp4" title="  " /%}\n')],
+        sourcePathsByResource: { "Guide/guide": "guide.md" },
+        generateName: createProjectAssetNameGenerator({
+          projectRoot: dir,
+          projectNamespace: "video-title",
+        }),
+      }),
+    ).rejects.toMatchObject({
+      diagnostics: [expect.objectContaining({ id: "TOPIK_ASSET_REFERENCE_ACCESSIBILITY_INVALID" })],
+    });
   });
 
   test("rejects a download labeled only by a decorative nested image", async () => {

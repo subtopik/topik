@@ -64,7 +64,7 @@ export interface TopikAssetResolutionDiagnostic {
   id: "TOPIK_ASSET_REFERENCE_MALFORMED" | "TOPIK_ASSET_REFERENCE_MISSING";
   message: string;
   name?: string;
-  slot: "image.src" | "figure.src" | "figure.darkSrc" | "link.href";
+  slot: "image.src" | "figure.src" | "figure.darkSrc" | "video.src" | "video.poster" | "link.href";
 }
 
 export interface TopikNavigationResolutionDiagnostic {
@@ -406,6 +406,12 @@ function renderedReferenceSlots(name: string): readonly RenderedReferenceSlot[] 
     return [
       { kind: "asset", attribute: "src", slot: "figure.src" },
       { kind: "asset", attribute: "darkSrc", slot: "figure.darkSrc" },
+    ];
+  }
+  if (name === "TopikVideo") {
+    return [
+      { kind: "asset", attribute: "src", slot: "video.src" },
+      { kind: "asset", attribute: "poster", slot: "video.poster" },
     ];
   }
   if (name === "TopikLink") {

@@ -25,7 +25,13 @@ export interface PreviewAssetAdapter {
   /** Abort pending loads and revoke all object URLs when replacing a snapshot/session. */
   dispose(): void;
 }
-type Slot = "image.src" | "figure.src" | "figure.darkSrc" | "link.href";
+type Slot =
+  | "image.src"
+  | "figure.src"
+  | "figure.darkSrc"
+  | "video.src"
+  | "video.poster"
+  | "link.href";
 interface Entry {
   path: string;
   integrity: string;
@@ -40,6 +46,13 @@ interface AdapterState {
 const adapters = new WeakMap<PreviewAssetAdapter, AdapterState>();
 const tokens = new WeakMap<object, { name: string; slot: Slot; state: AdapterState }>();
 const imageTypes = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"]);
+const videoTypes = new Set(["video/mp4", "video/webm"]);
+
+/** Whether a payload of this media type may fill a slot: downloads take any payload. */
+function admitsMediaType(slot: Slot, mediaType: string): boolean {
+  if (slot === "link.href") return true;
+  return (slot === "video.src" ? videoTypes : imageTypes).has(mediaType);
+}
 
 /** Bind a validated successful preview inventory to one exact loopback producer origin. */
 export function createPreviewAssetAdapter(options: {
@@ -129,26 +142,29 @@ export function createPreviewAssetAdapter(options: {
   const controller = new AbortController();
   const urls = new Set<string>();
   const pending = new Map<string, Promise<string>>();
+  function blobUrl(entry: Entry): URL {
+    const url = new URL(`/${entry.path}`, origin);
+    url.searchParams.set("sessionId", sessionId);
+    url.searchParams.set("generation", String(generation));
+    return url;
+  }
   const state: AdapterState = {
     entries: assets,
     active: () => !controller.signal.aborted,
     load(name, slot) {
       const entry = assets.get(name);
-      if (
-        !entry ||
-        controller.signal.aborted ||
-        (slot !== "link.href" && !imageTypes.has(entry.mediaType))
-      )
+      if (!entry || controller.signal.aborted || !admitsMediaType(slot, entry.mediaType))
         return Promise.reject(new Error("Preview media unavailable"));
+      // Video streams from the producer in ranges instead of loading whole into memory. The
+      // session and generation binding refuses stale bytes; the browser never runs them.
+      if (slot === "video.src") return Promise.resolve(blobUrl(entry).href);
       // Download blobs are inert even for active media; never expose them as navigation hrefs.
       const download = slot === "link.href";
       const key = `${entry.path}/${download ? "download" : "image"}`;
       let promise = pending.get(key);
       if (!promise) {
         promise = (async () => {
-          const url = new URL(`/${entry.path}`, origin);
-          url.searchParams.set("sessionId", sessionId);
-          url.searchParams.set("generation", String(generation));
+          const url = blobUrl(entry);
           const response = await fetch(url, {
             mode: "cors",
             credentials: "omit",
@@ -210,8 +226,7 @@ export function previewAssetToken(
 ): object | undefined {
   const state = adapter && adapters.get(adapter);
   const entry = state?.entries.get(name);
-  if (!state?.active() || !entry || (slot !== "link.href" && !imageTypes.has(entry.mediaType)))
-    return;
+  if (!state?.active() || !entry || !admitsMediaType(slot, entry.mediaType)) return;
   const token = Object.freeze({});
   tokens.set(token, { name, slot, state });
   return token;

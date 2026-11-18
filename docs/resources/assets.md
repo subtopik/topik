@@ -47,6 +47,7 @@ The compiler creates assets from:
 
 - Markdown images;
 - `figure` light and dark sources;
+- `video` sources and posters;
 - local Markdown links that resolve to a supported regular file.
 
 It checks every authored conditional branch. Frontmatter, captions, arbitrary
@@ -373,6 +374,11 @@ plain text, are opaque `application/octet-stream` downloads.
 
 An image slot needs a recognized image type. Browsers do not all display HEIC
 or TIFF, and the preview renders only PNG, JPEG, GIF, WebP, and AVIF images.
+
+A `video` source must be MP4 or WebM, the formats every current browser plays.
+QuickTime, 3GPP, audio-only files and images are refused with
+`TOPIK_ASSET_MEDIA_TYPE_MISMATCH`. A video and its poster need a non-empty
+`title`, which names them for assistive technology.
 
 ### Refused content
 

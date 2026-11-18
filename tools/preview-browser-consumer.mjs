@@ -18,6 +18,25 @@ const png = Buffer.from(
   "hex",
 );
 const downloadBytes = Buffer.from("download bytes\n");
+// A two-second 16x16 VP8 WebM: Chromium builds without proprietary codecs play it.
+const webm = Buffer.from(
+  [
+    "GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQJChYECGFOAZwEAAAAAAAMCEU2bdLpNu4tTq4QVSalmU6yBoU",
+    "27i1OrhBZUrmtTrIHYTbuMU6uEElTDZ1OsggEeTbuMU6uEHFO7a1OsggLa7AEAAAAAAABZAAAAAAAAAAAAAAAAAAAA",
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "AAAAAAAAAVSalmsirXsYMPQkBNgI1MYXZmNjAuMTYuMTAwV0GNTGF2ZjYwLjE2LjEwMESJiECfQAAAAAAAFlSua8Gu",
+    "AQAAAAAAADjXgQFzxYjzzi9FKnUgBJyBACK1nIN1bmSIgQCGhVZfVlA4g4EBI+ODhAvrwgDgibCBELqBEJqBAhJUw2",
+    "f8c3OgY8CAZ8iaRaOHRU5DT0RFUkSHjUxhdmY2MC4xNi4xMDBzc9ZjwItjxYjzzi9FKnUgBGfIoUWjh0VOQ09ERVJE",
+    "h5RMYXZjNjAuMzEuMTAyIGxpYnZweGfIoUWjiERVUkFUSU9ORIeTMDA6MDA6MDIuMDAwMDAwMDAwAB9DtnVBNeeBAK",
+    "O7gQAAgLACAJ0BKhAAEAAARwiFhYiFhIgCAgJ1qgP4Agz9+wD++2iX/z0zXmD/Jz/9uR/tyP9uR/+2wgCjlYEAyACx",
+    "AQABEBAAGAAYWC/0AAgAAKOVgQGQALEBAAEQEAAYABhYL/QACAAAo5WBAlgAsQEAARAQABgAGFgv9AAIAACjlYEDIA",
+    "CxAQABEBAAGAAYWC/0AAgAAKO7gQPogLACAJ0BKhAAEAAARwiFhYiFhIgCAgJ1qgP4Agz9+wD++2iX/z0zXmD/Jz/9",
+    "uR/tyP9uR/+2wgCjlYEEsACxAQABEBAAGAAYWC/0AAgAAKOVgQV4ALEBAAEQEAAYABhYL/QACAAAo5WBBkAAsQEAAR",
+    "AQABgAGFgv9AAIAACjlYEHCACxAQABEBAAGAAYWC/0AAgAABxTu2uju4+zgQC3iveBAfGCAZ/wgQO7kLOCA+i3iveB",
+    "AfGCAZ/wgZw=",
+  ].join(""),
+  "base64",
+);
 const configuration = (pages = ["z", "a"]) =>
   JSON.stringify({
     sourceVersion: 1,
@@ -38,9 +57,10 @@ await writeFile(join(dir, "course.yaml"), configuration());
 await writeFile(join(dir, "hero.png"), png);
 await writeFile(join(dir, "dark.png"), png);
 await writeFile(join(dir, "download.txt"), downloadBytes);
+await writeFile(join(dir, "clip.webm"), webm);
 await writeFile(
   join(dir, "z.md"),
-  '---\nid: z-page\ntitle: Z\nslug: z\norder: 0\n---\n# Z\n\n![Hero](hero.png)\n\n{% figure src="hero.png" darkSrc="dark.png" alt="Figure" /%}\n\n[Download](download.txt)\n',
+  '---\nid: z-page\ntitle: Z\nslug: z\norder: 0\n---\n# Z\n\n![Hero](hero.png)\n\n{% figure src="hero.png" darkSrc="dark.png" alt="Figure" /%}\n\n{% video src="clip.webm" title="Clip" /%}\n\n[Download](download.txt)\n',
 );
 await writeFile(join(dir, "a.md"), "---\nid: a-page\ntitle: A\nslug: a\norder: 0\n---\n# A\n");
 const host = await createServer({
@@ -134,6 +154,16 @@ window.stream.addEventListener("preview-state", event => window.accept(JSON.pars
       document.querySelectorAll("img").length === 2 &&
       [...document.querySelectorAll("img")].every((img) => img.naturalWidth === 1),
   );
+  // Video streams from the producer in ranges, with CORS from the allowed origin.
+  await page.waitForFunction(() => document.querySelector("video")?.readyState >= 1);
+  assert.ok(Math.abs((await page.locator("video").evaluate((video) => video.duration)) - 2) < 0.5);
+  assert.equal(await page.locator("video").getAttribute("crossorigin"), "anonymous");
+  const videoRequests = requests.filter((request) => request.resourceType() === "media");
+  assert.ok(videoRequests.length >= 1);
+  for (const request of videoRequests) {
+    assert.match((await request.allHeaders()).range ?? "", /^bytes=\d+-\d*$/u);
+    assert.equal((await request.response())?.status(), 206);
+  }
   await page.emulateMedia({ colorScheme: "dark" });
   await page.waitForFunction(() => document.querySelector("picture img").naturalWidth === 1);
   const promisedDownload = page.waitForEvent("download");
@@ -222,7 +252,7 @@ window.stream.addEventListener("preview-state", event => window.accept(JSON.pars
   );
   await page.evaluate(() => window.dispose());
   console.log(
-    "Verified packed CLI preview feed and browser image, light/dark figure, download and recovery integration",
+    "Verified packed CLI preview feed and browser image, light/dark figure, streamed video, download and recovery integration",
   );
 } finally {
   await browser?.close();

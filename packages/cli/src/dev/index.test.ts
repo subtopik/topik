@@ -445,6 +445,72 @@ describe("dev command", () => {
     expect(sourcePathRes.status).toBe(404);
   });
 
+  test("serves byte ranges, so browsers can stream and seek video", async () => {
+    // An ISO base media file with the mp42 brand, followed by an empty mdat box.
+    const mp4 = Buffer.concat([
+      Buffer.from([0, 0, 0, 0x14]),
+      Buffer.from("ftypmp42\0\0\0\0mp42", "latin1"),
+      Buffer.from([0, 0, 0, 8]),
+      Buffer.from("mdat", "latin1"),
+    ]);
+    await writeFile(join(dir, "intro.mp4"), mp4);
+    await writeFile(
+      join(dir, "intro.md"),
+      '# Intro\n\n{% video src="intro.mp4" title="Intro" /%}\n',
+    );
+    const port = await start();
+
+    const asset = [...runningServer!.watcher.resources.values()].find(
+      (resource) => resource.type === "Asset",
+    );
+    expect(asset?.spec.mediaType).toBe("video/mp4");
+    const url = `http://127.0.0.1:${port}/${asset?.spec.uri}`;
+    const get = (range?: string, method = "GET") =>
+      fetch(url, {
+        method,
+        headers: { Origin: WRITE_ORIGIN, ...(range === undefined ? {} : { Range: range }) },
+      });
+
+    const whole = await get();
+    expect(whole.status).toBe(200);
+    expect(whole.headers.get("accept-ranges")).toBe("bytes");
+    expect(Buffer.from(await whole.arrayBuffer())).toEqual(mp4);
+
+    const cases = [
+      ["bytes=4-11", 4, 11],
+      ["bytes=20-", 20, 27],
+      ["bytes=-8", 20, 27],
+      ["bytes=24-1000", 24, 27],
+    ] as const;
+    for (const [range, start, end] of cases) {
+      const partial = await get(range);
+      expect(partial.status).toBe(206);
+      expect(partial.headers.get("content-range")).toBe(`bytes ${start}-${end}/${mp4.byteLength}`);
+      expect(partial.headers.get("content-length")).toBe(String(end - start + 1));
+      expect(partial.headers.get("content-type")).toBe("video/mp4");
+      expect(partial.headers.get("access-control-allow-origin")).toBe(WRITE_ORIGIN);
+      expect(Buffer.from(await partial.arrayBuffer())).toEqual(mp4.subarray(start, end + 1));
+    }
+
+    const head = await get("bytes=0-3", "HEAD");
+    expect(head.status).toBe(206);
+    expect(head.headers.get("content-range")).toBe(`bytes 0-3/${mp4.byteLength}`);
+    expect((await head.arrayBuffer()).byteLength).toBe(0);
+
+    for (const range of ["bytes=28-", "bytes=-0"]) {
+      const unsatisfiable = await get(range);
+      expect(unsatisfiable.status).toBe(416);
+      expect(unsatisfiable.headers.get("content-range")).toBe(`bytes */${mp4.byteLength}`);
+    }
+
+    // Malformed and multiple ranges are ignored, as HTTP allows.
+    for (const range of ["bytes=0-1,4-5", "bytes=5-2", "items=0-1", "bytes=-"]) {
+      const ignored = await get(range);
+      expect(ignored.status).toBe(200);
+      expect((await ignored.arrayBuffer()).byteLength).toBe(mp4.byteLength);
+    }
+  });
+
   test("serves proven opaque downloads with enforced non-inline headers", async () => {
     await writeFile(join(dir, "manual.bin"), "offline bytes");
     await writeFile(join(dir, "intro.md"), "# Intro\n\n[Download](manual.bin)\n");

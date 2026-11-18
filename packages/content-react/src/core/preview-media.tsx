@@ -131,17 +131,24 @@ export function PreviewMedia({
       </button>
     );
   if (loaded?.attributes !== media) return <span role="status">Loading preview media…</span>;
-  const figure = [media.src, media.darkSrc].some((value) =>
-    getPreviewAssetToken(value)?.slot.startsWith("figure."),
+  const slots = [media.src, media.darkSrc, media.poster].map(
+    (value) => getPreviewAssetToken(value)?.slot,
   );
+  const block = slots.some((slot) => slot?.startsWith("figure.") || slot?.startsWith("video."));
+  // The producer serves streamed video only to CORS requests from the allowed origin.
+  const streamed = slots.includes("video.src") ? { crossOrigin: "anonymous" } : {};
   return createElement(
-    figure ? "div" : "span",
+    block ? "div" : "span",
     {
       style: { display: "contents" },
       onErrorCapture: (event: import("react").SyntheticEvent<HTMLElement>) => {
-        if (isCurrent() && event.target instanceof HTMLImageElement) setFailed(media);
+        if (
+          isCurrent() &&
+          (event.target instanceof HTMLImageElement || event.target instanceof HTMLVideoElement)
+        )
+          setFailed(media);
       },
     },
-    createElement(component, { ...loaded.values }, children),
+    createElement(component, { ...loaded.values, ...streamed }, children),
   );
 }

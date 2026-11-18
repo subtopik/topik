@@ -185,6 +185,7 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "topik-quiz-parent-required": "A question must be nested inside a quiz.",
   "topik-underline-children": "Underline requires inline content.",
   "topik-u-children": "Underline requires inline content.",
+  "topik-video-children": "A video cannot contain children; use its title and caption attributes.",
   "variable-undefined": "A referenced variable is not defined.",
 };
 

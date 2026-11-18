@@ -355,6 +355,10 @@
   }
 
   @media (forced-colors: active) {
+    .topik-kbd {
+      border-color: CanvasText;
+    }
+
     .topik-code-block {
       background: Canvas;
       border-color: CanvasText;
@@ -549,6 +553,20 @@
     color: var(--topik-color-muted);
     font-size: 0.92rem;
     margin-top: 0.45rem;
+  }
+
+  /* A key cap: monospace label with a raised lower edge, sized to sit in running text. */
+  .topik-kbd {
+    background: var(--topik-color-panel);
+    border: 1px solid var(--topik-color-border);
+    border-bottom-width: 2px;
+    border-radius: 0.3rem;
+    color: var(--topik-color-text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.82em;
+    line-height: 1;
+    padding: 0.15em 0.4em;
+    white-space: nowrap;
   }
 
   .topik-badge {

@@ -115,15 +115,28 @@
     margin-block: 0 0.35rem;
   }
 
-  .topik-card-grid {
+  .topik-columns {
     display: grid;
     gap: 0.85rem;
-    grid-template-columns: repeat(var(--topik-card-grid-columns, 3), minmax(0, 1fr));
+    grid-template-columns: repeat(var(--topik-columns-count, 2), minmax(0, 1fr));
     margin-block: 1rem;
   }
 
+  /* A cell may shrink below its content's width; wide content scrolls or wraps inside it. */
+  .topik-column {
+    min-width: 0;
+  }
+
+  .topik-column > :first-child {
+    margin-top: 0;
+  }
+
+  .topik-column > :last-child {
+    margin-bottom: 0;
+  }
+
   @media (max-width: 700px) {
-    .topik-card-grid {
+    .topik-columns {
       grid-template-columns: 1fr;
     }
   }
@@ -726,6 +739,7 @@
 
     .topik-callout,
     .topik-card,
+    .topik-column,
     .topik-figure,
     .topik-step,
     .topik-question,

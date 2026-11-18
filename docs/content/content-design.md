@@ -72,7 +72,8 @@ hiding a branch does not rename the anchors in the remaining content.
 | ------------------------------------------- | ------------------------------------------------------------------------- |
 | `callout`                                   | A block of prose with an optional `title` and `variant`.                  |
 | `accordion`                                 | Collapsible block content with a required `title`.                        |
-| `cardGrid`, `card`                          | A grid of cards with titles and optional links and icons.                 |
+| `columns`, `column`                         | Side-by-side cells: cards or columns of any block content.                |
+| `card`                                      | A card with a title and optional link, icon and body.                     |
 | `tabs`, `tab`                               | Tab panels; each `tab` needs a `title`.                                   |
 | `steps`, `step`                             | An ordered sequence of blocks, with optional step titles.                 |
 | `codeGroup`, `codeTab`                      | Labeled code panels containing fenced code.                               |
@@ -94,6 +95,35 @@ Start your application.
 {% /tab %}
 {% /tabs %}
 ```
+
+### Columns
+
+`columns` places its cells side by side. Each cell is a `card`, or a `column`
+holding any block content, and the two can be mixed:
+
+```markdown
+{% columns count=3 %}
+{% card title="Install" href="./install" /%}
+{% card title="Configure" href="./configure" /%}
+{% card title="Deploy" href="./deploy" /%}
+{% /columns %}
+
+{% columns %}
+{% column %}
+Install the package, then import the renderer.
+{% /column %}
+{% column %}
+{% figure src="images/architecture.png" alt="Architecture" /%}
+{% /column %}
+{% /columns %}
+```
+
+- `count` sets the number of columns, from 1 to 4, and defaults to 2. More cells
+  than `count` flow into further rows.
+- Cells stack on narrow screens.
+- A `column` is allowed only directly inside `columns`. A `card` also stands
+  alone.
+- `columns` is placed wherever block content is allowed.
 
 The exported `components` registry describes each component's complete property
 and child rules:

@@ -12,7 +12,7 @@ describe("catalog validation", () => {
     const source =
       "# Prepare\n\n" +
       '{% callout variant="tip" %}\n\nRead the guide.\n\n{% /callout %}\n\n' +
-      '{% cardGrid columns=2 %}\n\n{% card title="Guide" href="/guide" /%}\n\n{% /cardGrid %}\n\n' +
+      '{% columns count=2 %}\n\n{% card title="Guide" href="/guide" /%}\n\n{% /columns %}\n\n' +
       '{% codeGroup %}\n\n{% codeTab title="TypeScript" %}\n\n```ts\nconst ready = true;\n```\n\n{% /codeTab %}\n\n{% /codeGroup %}\n\n' +
       '{% figure src="images/hero.png" darkSrc="images/hero-dark.png" alt="Hero" /%}\n\n' +
       "{% quiz %}\n\n{% question %}\n\n{% choice correct=true %}\n\nA.\n\n{% /choice %}\n\n" +
@@ -28,7 +28,7 @@ describe("catalog validation", () => {
     ],
     ['{% badge variant="unknown" %}X{% /badge %}', "attribute-value-invalid"],
     ['{% callout unknown="x" %}\n\nText.\n\n{% /callout %}', "attribute-undefined"],
-    ["{% cardGrid columns=5 %}\n\n{% /cardGrid %}", "topik-columns-range"],
+    ['{% columns count=5 %}\n\n{% card title="A" /%}\n\n{% /columns %}', "topik-count-range"],
   ])("reports stable attribute IDs and retains source", (source, id) => {
     const result = validateTopikContent(source);
     expect(result).toMatchObject({ source, valid: false });

@@ -2,8 +2,9 @@ import type { AuthoredAttributeValue, Component, Scalar } from "./model.js";
 import { accordionDefinition } from "./extensions/accordion.js";
 import { badgeDefinition } from "./extensions/badge.js";
 import { calloutDefinition } from "./extensions/callout.js";
-import { cardDefinition, cardGridDefinition } from "./extensions/cards.js";
+import { cardDefinition } from "./extensions/cards.js";
 import { codeGroupDefinition, codeTabDefinition } from "./extensions/code.js";
+import { columnDefinition, columnsDefinition } from "./extensions/columns.js";
 import { figureDefinition } from "./extensions/figure.js";
 import { mathDefinition, mathInlineDefinition } from "./extensions/math.js";
 import { nativeComponents } from "./extensions/native.js";
@@ -142,13 +143,14 @@ const authoredComponents = {
   badge: badgeDefinition,
   callout: textAttributes(calloutDefinition, ["title"]),
   card: textAttributes(cardDefinition, ["title"]),
-  cardGrid: cardGridDefinition,
   codeGroup: codeGroupDefinition,
   codeTab: {
     ...textAttributes(codeTabDefinition, ["title"]),
     children: { nodes: ["code", "topikCodeTemplate", "topikCodePresentation"], min: 1 },
   },
   choice: choiceDefinition,
+  column: columnDefinition,
+  columns: columnsDefinition,
   explanation: explanationDefinition,
   figure: textAttributes(figureDefinition, ["alt", "caption"]),
   math: mathDefinition,

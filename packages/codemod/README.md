@@ -130,7 +130,7 @@ or dropdowns with groups, the codemod keeps the first kind and reports the rest.
 | --------------------------------------------------------------- | ------------------------- | ----------------------------------------------------------------------------------- |
 | `<Note>`, `<Info>`, `<Tip>`, `<Check>`, `<Warning>`, `<Danger>` | `callout`                 | `variant` is `info`, `info`, `tip`, `tip`, `warning` or `danger`.                   |
 | `<Card>`                                                        | `card`                    |                                                                                     |
-| `<CardGroup>`                                                   | `cardGrid`                | `cols` becomes `columns`.                                                           |
+| `<CardGroup>`, `<Columns>`, `<Column>`                          | `columns`, `column`       | `cols` becomes `count`.                                                             |
 | `<Tabs>`, `<Tab>`                                               | `tabs`, `tab`             | `icon` on a tab is dropped with a warning.                                          |
 | `<Steps>`, `<Step>`                                             | `steps`, `step`           | `icon` on a step is dropped with a warning.                                         |
 | `<Accordion>`                                                   | `accordion`               | `defaultOpen` becomes `open`; `icon` is dropped with a warning.                     |

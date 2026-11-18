@@ -105,7 +105,9 @@ order: 0
 The configuration supplies the Course and module metadata and each page's module
 membership. Markdown supplies the page metadata and body.
 
-- Course and module descriptions distinguish absence from null; labels are
+- A page requires `id`, `title`, `slug` and `order`. It may also set
+  `description` (at most 1024 characters), `authors` and string-valued `labels`.
+- Course, module and page descriptions distinguish absence from null; labels are
   string maps.
 - Course and page authors refer to Persons declared in the configuration's
   `persons` list.

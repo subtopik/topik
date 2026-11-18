@@ -658,7 +658,7 @@ function writeInitialDocuments(draft: InitializationDraft): void {
     const metadata = {
       id: resource.name,
       title: resource.spec.title,
-      ...(resource.type !== "CoursePage" && Object.hasOwn(resource.spec, "description")
+      ...(Object.hasOwn(resource.spec, "description")
         ? { description: resource.spec.description }
         : {}),
       ...(resource.type === "CoursePage"

@@ -362,3 +362,49 @@ test("link compilation skips a CoursePage that has no source-path binding", asyn
   expect(result.resources).toHaveLength(3);
   expect(result.diagnostics).toEqual([]);
 });
+
+test("a Course page description compiles as written, including an explicit null, and is bounded", async () => {
+  const page = (id: string, extra: string) =>
+    `---\nid: ${id}\ntitle: ${id}\nslug: ${id}\norder: 0\n${extra}---\n# ${id}\n`;
+  const config = JSON.stringify({
+    sourceVersion: 1,
+    id: "learning",
+    title: "Learning",
+    slug: "learning",
+    modules: [
+      { id: "m", title: "M", slug: "m", order: 0, pages: ["described", "cleared", "plain"] },
+    ],
+  });
+  const dir = await fixture({
+    "course.yaml": config,
+    "described.md": page("described", "description: What this lesson covers.\n"),
+    "cleared.md": page("cleared", "description: null\n"),
+    "plain.md": page("plain", ""),
+  });
+  const result = await compileCourse({ dir });
+  expect(validateResources(result.resources).valid).toBe(true);
+  const spec = (name: string) => {
+    const resource = result.resources.find(
+      (candidate) => candidate.type === "CoursePage" && candidate.name === name,
+    )!;
+    if (resource.type !== "CoursePage") throw new Error("Expected a Course page");
+    return resource.spec;
+  };
+  expect(spec("described").description).toBe("What this lesson covers.");
+  expect(spec("cleared").description).toBeNull();
+  expect(Object.hasOwn(spec("plain"), "description")).toBe(false);
+
+  for (const invalid of [`description: ${"a".repeat(1025)}\n`, "description: 42\n"]) {
+    const broken = await fixture({
+      "course.yaml": config,
+      "described.md": page("described", invalid),
+      "cleared.md": page("cleared", ""),
+      "plain.md": page("plain", ""),
+    });
+    await expect(compileCourse({ dir: broken })).rejects.toMatchObject({
+      id: "frontmatter-invalid",
+      location: "described.md",
+      field: "description",
+    });
+  }
+});

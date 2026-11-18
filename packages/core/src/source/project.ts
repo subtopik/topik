@@ -566,16 +566,12 @@ function markdownOrigins(
     typeof metadata.title === "string"
       ? explicit("spec/title", "title")
       : origin("spec/title", "derived", path, undefined, [], body),
-    ...(resource.type === "CoursePage"
-      ? []
-      : [
-          explicit(
-            "spec/description",
-            "description",
-            typeof metadata.description === "string" ||
-              (sourceVersion === 1 && metadata.description === null),
-          ),
-        ]),
+    explicit(
+      "spec/description",
+      "description",
+      typeof metadata.description === "string" ||
+        (sourceVersion === 1 && metadata.description === null),
+    ),
     origin("spec/content", "explicit", path, undefined, [], body),
   ];
   if (resource.type === "WikiPage")

@@ -5,6 +5,7 @@ import { act } from "react";
 import { createRoot, hydrateRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup, renderToString } from "react-dom/server";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
+import { getTopikComponents } from "../core/components";
 import { renderTopikMarkdown } from "../core/render";
 import { createPreviewAssetAdapter, type PreviewAssetAdapter } from "../core/preview-assets";
 import { TopikContent } from "./TopikContent";
@@ -182,6 +183,39 @@ describe("TopikVideo", () => {
     expect(container.querySelector("a")?.getAttribute("href")).toBe("/broken.mp4");
   });
 
+  test("a source that failed before gets a fresh attempt after another source", async () => {
+    const { container, root } = mount();
+    const render = (src: string) =>
+      act(async () => root.render(<TopikVideo src={src} title="Intro" />));
+    await render("/a.mp4");
+    await act(async () => container.querySelector("video")!.dispatchEvent(new Event("error")));
+    expect(container.querySelector("video")).toBeNull();
+    await render("/b.mp4");
+    await render("/a.mp4");
+    expect(container.querySelector("video")?.getAttribute("src")).toBe("/a.mp4");
+  });
+
+  test("leaving clip mode restores sound and controls", async () => {
+    stubReducedMotion(false);
+    stubPlayback();
+    const { container, root } = mount();
+    await act(async () => root.render(<TopikVideo src="/a.webm" title="Clip" loop />));
+    expect(container.querySelector("video")!.muted).toBe(true);
+    await act(async () => root.render(<TopikVideo src="/a.webm" title="Clip" loop={false} />));
+    const video = container.querySelector("video")!;
+    expect(video.muted).toBe(false);
+    expect(video.hasAttribute("controls")).toBe(true);
+    expect(container.querySelector(".topik-video__toggle")).toBeNull();
+  });
+
+  test("a blank title leaves the link named by its address", async () => {
+    const { container, root } = mount();
+    await act(async () => root.render(<TopikVideo src="/a.mp4" title="  " />));
+    expect(container.querySelector("video")?.hasAttribute("aria-label")).toBe(false);
+    await act(async () => container.querySelector("video")!.dispatchEvent(new Event("error")));
+    expect(container.querySelector("a")?.textContent).toBe("/a.mp4");
+  });
+
   test("an unresolved source keeps the title and caption readable", () => {
     expect(renderToStaticMarkup(<TopikVideo title="Intro" caption="A tour" />)).toBe(
       '<figure class="topik-video"><div class="topik-video__fallback"><span class="topik-video__title">Intro</span></div><figcaption>A tour</figcaption></figure>',
@@ -222,6 +256,25 @@ describe("video content", () => {
     // React may hoist an image preload hint ahead of the figure.
     expect(html).toContain(
       '<figure><a href="https://cdn.example.com/a.mp4"><img alt="" src="https://cdn.example.com/a.png"/>Intro</a><figcaption>A tour</figcaption></figure>',
+    );
+  });
+
+  test("the plain renderer never links a CORS-only source and names a link without a title", () => {
+    const PlainVideo = getTopikComponents().TopikVideo;
+    const plain = (props: Record<string, unknown>) =>
+      renderToStaticMarkup(
+        <PlainVideo
+          src="https://cdn.example.com/a.mp4"
+          title="Intro"
+          caption="A tour"
+          {...props}
+        />,
+      );
+    expect(plain({ crossOrigin: "anonymous" })).toBe(
+      "<figure>Intro<figcaption>A tour</figcaption></figure>",
+    );
+    expect(plain({ title: "" })).toBe(
+      '<figure><a href="https://cdn.example.com/a.mp4">https://cdn.example.com/a.mp4</a><figcaption>A tour</figcaption></figure>',
     );
   });
 
@@ -359,6 +412,74 @@ describe("video preview", () => {
     expect(container.textContent).toContain("Text survives.");
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
       "Preview media unavailable.",
+    );
+  });
+
+  function stubPosterFetch(response: () => Response | Promise<Response>) {
+    vi.stubGlobal("crypto", webcrypto);
+    vi.stubGlobal(
+      "URL",
+      class extends URL {
+        static createObjectURL() {
+          return "blob:poster";
+        }
+        static revokeObjectURL() {}
+      },
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: URL | string) =>
+        Object.defineProperty(await response(), "url", { value: String(url) }),
+      ),
+    );
+  }
+
+  async function renderPreview(content: string) {
+    const { container, root } = mount();
+    await act(async () => root.render(<TopikContent content={content} previewAssets={adapter} />));
+    await vi.waitFor(async () => {
+      await act(async () => {});
+      expect(container.querySelector('[role="status"]')).toBeNull();
+    });
+    return container;
+  }
+
+  test("a poster that fails verification is dropped and the video still plays", async () => {
+    stubPosterFetch(
+      () => new Response(new Uint8Array([9, 9, 9]), { headers: { "content-type": "image/png" } }),
+    );
+    adapter = createAdapter();
+    const container = await renderPreview(
+      `{% video src="asset:${video}" title="Intro" poster="asset:${poster}" /%}`,
+    );
+    const element = container.querySelector("video")!;
+    expect(element.getAttribute("src")).toContain(videoDigest);
+    expect(element.hasAttribute("poster")).toBe(false);
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  test("a poster that cannot decode is dropped and the video stays", async () => {
+    stubPosterFetch(() => new Response(posterBytes, { headers: { "content-type": "image/png" } }));
+    adapter = createAdapter();
+    const container = await renderPreview(
+      `{% video src="asset:${video}" title="Intro" poster="asset:${poster}" /%}`,
+    );
+    await act(async () => container.querySelector("img")!.dispatchEvent(new Event("error")));
+    expect(container.querySelector("video")?.hasAttribute("poster")).toBe(false);
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  test("an external video with a preview poster falls back to the theme's link", async () => {
+    stubPosterFetch(() => new Response(posterBytes, { headers: { "content-type": "image/png" } }));
+    adapter = createAdapter();
+    const container = await renderPreview(
+      `{% video src="https://cdn.example.com/a.mp4" title="Intro" poster="asset:${poster}" /%}`,
+    );
+    await act(async () => container.querySelector("video")!.dispatchEvent(new Event("error")));
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.querySelector("a")?.getAttribute("href")).toBe(
+      "https://cdn.example.com/a.mp4",
     );
   });
 

@@ -50,6 +50,8 @@ export function PreviewMedia({
     values: TopikComponentProps;
   }>();
   const [failed, setFailed] = useState<TopikComponentProps>();
+  // An optional video poster that fails to load or decode is dropped; the video stays.
+  const [brokenPoster, setBrokenPoster] = useState<TopikComponentProps>();
   const mounted = useRef(true);
   const currentAttributes = useRef(media);
   // Downloads act for the exact committed content, including changed link text. Every committed
@@ -83,7 +85,13 @@ export function PreviewMedia({
       void Promise.all(
         Object.entries(media).map(async ([key, value]) => {
           const token = getPreviewAssetToken(value);
-          return [key, token ? await token.state.load(token.name, token.slot) : value] as const;
+          if (!token) return [key, value] as const;
+          try {
+            return [key, await token.state.load(token.name, token.slot)] as const;
+          } catch (error) {
+            if (token.slot === "video.poster") return [key, undefined] as const;
+            throw error;
+          }
         }),
       ).then(
         (entries) => {
@@ -134,21 +142,29 @@ export function PreviewMedia({
   const slots = [media.src, media.darkSrc, media.poster].map(
     (value) => getPreviewAssetToken(value)?.slot,
   );
-  const block = slots.some((slot) => slot?.startsWith("figure.") || slot?.startsWith("video."));
+  const video = slots.some((slot) => slot?.startsWith("video."));
+  const block = video || slots.some((slot) => slot?.startsWith("figure."));
+  const streamed = slots.includes("video.src");
+  const values = { ...loaded.values };
   // The producer serves streamed video only to CORS requests from the allowed origin.
-  const streamed = slots.includes("video.src") ? { crossOrigin: "anonymous" } : {};
+  if (streamed) values.crossOrigin = "anonymous";
+  if (brokenPoster === media) values.poster = undefined;
   return createElement(
     block ? "div" : "span",
     {
       style: { display: "contents" },
       onErrorCapture: (event: import("react").SyntheticEvent<HTMLElement>) => {
-        if (
-          isCurrent() &&
-          (event.target instanceof HTMLImageElement || event.target instanceof HTMLVideoElement)
-        )
+        if (!isCurrent()) return;
+        if (event.target instanceof HTMLImageElement) {
+          // In a video the only images are its optional poster.
+          if (video) setBrokenPoster(media);
+          else setFailed(media);
+        } else if (event.target instanceof HTMLVideoElement && streamed) {
+          // An external source that fails is the theme's to replace with a link.
           setFailed(media);
+        }
       },
     },
-    createElement(component, { ...loaded.values, ...streamed }, children),
+    createElement(component, values, children),
   );
 }

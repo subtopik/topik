@@ -1,4 +1,23 @@
-import type { ComponentDefinition } from "../registry.js";
+import type { AuthoredAttributeValue } from "../model.js";
+import type { ComponentDefinition, ValidationIssue } from "../registry.js";
+
+/** The title names the player for assistive technology, so it cannot be blank. */
+function validateVideo(
+  _component: unknown,
+  props: Record<string, AuthoredAttributeValue>,
+): ValidationIssue[] {
+  const { title } = props;
+  const blank =
+    typeof title === "string"
+      ? title.trim() === ""
+      : typeof title === "object" &&
+        title.segments.every(
+          (segment) => segment.type === "literal" && segment.value.trim() === "",
+        );
+  return blank
+    ? [{ id: "topik-video-title", message: "video requires a non-blank title", attribute: "title" }]
+    : [];
+}
 
 export const videoDefinition: ComponentDefinition = {
   kind: "block",
@@ -32,4 +51,5 @@ export const videoDefinition: ComponentDefinition = {
     },
   },
   children: "none",
+  validate: validateVideo,
 };

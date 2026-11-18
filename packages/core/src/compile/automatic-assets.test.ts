@@ -964,7 +964,7 @@ describe("compilation-wide automatic Assets", () => {
     });
   });
 
-  test("rejects a video whose title is blank", async () => {
+  test("rejects a video whose title is blank before compiling its asset", async () => {
     await writeFile(join(dir, "intro.mp4"), isoMedia("mp42"));
     await writeFile(join(dir, "guide.md"), "source\n");
 
@@ -979,7 +979,7 @@ describe("compilation-wide automatic Assets", () => {
         }),
       }),
     ).rejects.toMatchObject({
-      diagnostics: [expect.objectContaining({ id: "TOPIK_ASSET_REFERENCE_ACCESSIBILITY_INVALID" })],
+      diagnostics: [expect.objectContaining({ id: "TOPIK_ASSET_SCHEMA_INVALID" })],
     });
   });
 

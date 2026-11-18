@@ -186,6 +186,7 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "topik-underline-children": "Underline requires inline content.",
   "topik-u-children": "Underline requires inline content.",
   "topik-video-children": "A video cannot contain children; use its title and caption attributes.",
+  "topik-video-title": "A video requires a title that is not blank.",
   "variable-undefined": "A referenced variable is not defined.",
 };
 

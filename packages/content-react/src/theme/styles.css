@@ -796,7 +796,7 @@
       display: block;
     }
 
-    .topik-video__print .topik-video__link::after {
+    .topik-video .topik-video__link::after {
       content: attr(href);
       display: block;
       font-size: 0.85em;

@@ -107,7 +107,7 @@ Start your application.
 | Property  | Use                                                                                                 |
 | --------- | --------------------------------------------------------------------------------------------------- |
 | `src`     | Required. A local MP4 or WebM file, or a credential-free HTTPS URL.                                 |
-| `title`   | Required. The video's accessible name and the text of its fallback link.                            |
+| `title`   | Required, not blank. The accessible name and the text of the fallback link.                         |
 | `caption` | Optional caption below the video.                                                                   |
 | `poster`  | Optional image shown before playback, and in print and fallback output.                             |
 | `loop`    | `true` plays a silent looping clip with a pause button instead of player controls. Default `false`. |

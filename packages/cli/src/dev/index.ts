@@ -82,7 +82,7 @@ type ByteRange = { start: number; end: number } | "unsatisfiable" | undefined;
  * early and to seek. Absent, malformed and multiple ranges are ignored: the whole payload follows.
  */
 function parseByteRange(header: string | undefined, size: number): ByteRange {
-  const match = header === undefined ? null : /^bytes=(\d*)-(\d*)$/u.exec(header.trim());
+  const match = header === undefined ? null : /^bytes=(\d*)-(\d*)$/iu.exec(header.trim());
   if (match === null) return undefined;
   const [, first, last] = match;
   if (first === "" && last === "") return undefined;
@@ -147,7 +147,7 @@ function handleAssetPayload(
       "Content-Length": String(range.end - range.start + 1),
       "Content-Range": `bytes ${range.start}-${range.end}/${payload.size}`,
     });
-    res.end(method === "HEAD" ? undefined : payload.bytes.subarray(range.start, range.end + 1));
+    res.end(payload.bytes.subarray(range.start, range.end + 1));
     return true;
   }
   res.writeHead(200, { ...headers, "Content-Length": String(payload.size) });
@@ -317,7 +317,18 @@ function createRequestHandler(watcher: Watcher, getPort: () => number, allowedOr
     const rawPathname = queryOffset === -1 ? requestTarget : requestTarget.slice(0, queryOffset);
     if (
       (req.method === "GET" || req.method === "HEAD") &&
-      handleAssetPayload(watcher, rawPathname, req.method, req.headers.range, res, corsHeaders)
+      handleAssetPayload(
+        watcher,
+        rawPathname,
+        req.method,
+        // Ranges apply to GET only. Payload responses carry no validator, so a conditional
+        // If-Range cannot match and the whole payload follows (RFC 9110).
+        req.method === "GET" && req.headers["if-range"] === undefined
+          ? req.headers.range
+          : undefined,
+        res,
+        corsHeaders,
+      )
     ) {
       return;
     }

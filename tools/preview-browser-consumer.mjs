@@ -158,6 +158,20 @@ window.stream.addEventListener("preview-state", event => window.accept(JSON.pars
   await page.waitForFunction(() => document.querySelector("video")?.readyState >= 1);
   assert.ok(Math.abs((await page.locator("video").evaluate((video) => video.duration)) - 2) < 0.5);
   assert.equal(await page.locator("video").getAttribute("crossorigin"), "anonymous");
+  // The stream plays and seeks, not just reports metadata.
+  await page.locator("video").evaluate((video) => {
+    video.muted = true;
+    return video.play();
+  });
+  await page.waitForFunction(() => document.querySelector("video").currentTime > 0);
+  await page.locator("video").evaluate(
+    (video) =>
+      new Promise((resolve) => {
+        video.addEventListener("seeked", resolve, { once: true });
+        video.currentTime = 1.5;
+      }),
+  );
+  assert.ok((await page.locator("video").evaluate((video) => video.currentTime)) >= 1.4);
   const videoRequests = requests.filter((request) => request.resourceType() === "media");
   assert.ok(videoRequests.length >= 1);
   for (const request of videoRequests) {

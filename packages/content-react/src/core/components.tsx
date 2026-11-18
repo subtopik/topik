@@ -69,9 +69,11 @@ function MissingTopikComponent({ children }: TopikComponentProps) {
 }
 
 /** Without a themed component, a video stays readable: its poster and title link to the source. */
-function PlainTopikVideo({ caption, poster, src, title }: TopikComponentProps) {
-  const source = typeof src === "string" ? src : undefined;
-  const titleText = typeof title === "string" ? title : undefined;
+function PlainTopikVideo({ caption, crossOrigin, poster, src, title }: TopikComponentProps) {
+  // A CORS-only source, such as a local preview stream, cannot open by navigation.
+  const source = typeof src === "string" && crossOrigin !== "anonymous" ? src : undefined;
+  // A link needs a name: without a title, the address names it.
+  const titleText = (typeof title === "string" && title.trim()) || source;
   const captionText = typeof caption === "string" && caption ? caption : undefined;
   const posterSource = typeof poster === "string" ? poster : undefined;
   if (!titleText && !captionText && !posterSource) return null;

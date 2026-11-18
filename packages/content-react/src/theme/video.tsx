@@ -36,10 +36,12 @@ function VideoLink({
   source: string | undefined;
   title: string;
 }) {
+  // A link needs a name: without a title, the address names it.
+  const label = title || source;
   const content = (
     <>
       {poster ? <img alt="" src={poster} /> : null}
-      <span className="topik-video__title">{title}</span>
+      {label ? <span className="topik-video__title">{label}</span> : null}
     </>
   );
   return source ? (
@@ -95,7 +97,7 @@ function VideoPlayer({
     <div className="topik-video__frame">
       <video
         ref={video}
-        aria-label={title}
+        aria-label={title || undefined}
         className="topik-video__player"
         controls={!clip}
         crossOrigin={crossOrigin}
@@ -108,13 +110,13 @@ function VideoPlayer({
         onPause={() => setPlaying(false)}
         onPlay={() => setPlaying(true)}
       >
-        {crossOrigin ? title : <a href={source}>{title}</a>}
+        {crossOrigin ? title : <a href={source}>{title || source}</a>}
       </video>
       {clip ? (
         <button
           type="button"
           className="topik-video__toggle"
-          aria-label={`${playing ? "Pause" : "Play"} ${title}`}
+          aria-label={title ? `${playing ? "Pause" : "Play"} ${title}` : undefined}
           onClick={() => {
             const element = video.current;
             if (!element) return;
@@ -133,27 +135,26 @@ function VideoPlayer({
  * A native video player. A source the browser cannot play, such as a video page on a hosting
  * service, falls back to a link; applications that embed such services supply their own component.
  */
-export function TopikVideo({
-  caption,
-  crossOrigin,
-  loop,
-  poster,
-  src,
-  title,
-}: TopikComponentProps) {
+export function TopikVideo(props: TopikComponentProps) {
+  // A changed source, including a return to one that failed before, gets a fresh attempt.
+  return <VideoFigure key={stringAttribute(props.src) ?? ""} {...props} />;
+}
+
+function VideoFigure({ caption, crossOrigin, loop, poster, src, title }: TopikComponentProps) {
   const source = stringAttribute(src);
-  const titleText = stringAttribute(title) ?? "";
+  const titleText = stringAttribute(title)?.trim() ?? "";
   const captionText = stringAttribute(caption);
   const posterSource = stringAttribute(poster);
   const corsOnly = crossOrigin === "anonymous";
-  const [failedSource, setFailedSource] = useState<string>();
+  const [failed, setFailed] = useState(false);
   const link = (
     <VideoLink poster={posterSource} source={corsOnly ? undefined : source} title={titleText} />
   );
   const figcaption = captionText ? <figcaption>{captionText}</figcaption> : null;
 
-  if (source === undefined || failedSource === source) {
-    if (!titleText && !captionText && !posterSource) return null;
+  if (source === undefined || failed) {
+    if (!titleText && !captionText && !posterSource && (corsOnly || source === undefined))
+      return null;
     return (
       <figure className="topik-video">
         {link}
@@ -164,11 +165,11 @@ export function TopikVideo({
   return (
     <figure className="topik-video">
       <VideoPlayer
-        // A changed source starts a fresh player, with its own playback and failure state.
-        key={source}
+        // Switching between a clip and a player starts afresh, restoring sound and controls.
+        key={loop === true ? "clip" : "player"}
         crossOrigin={corsOnly ? "anonymous" : undefined}
         loop={loop === true}
-        onFailure={() => setFailedSource(source)}
+        onFailure={() => setFailed(true)}
         poster={posterSource}
         source={source}
         title={titleText}

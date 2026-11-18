@@ -81,6 +81,16 @@ test("video is allowed where figure is", () => {
   expect(parseDocument(source)).toMatchObject({ ok: true });
 });
 
+test("the title cannot be blank, unless a template variable fills it", () => {
+  for (const title of ['"   "', '""', 't"  "'])
+    expect(
+      diagnosticIds(`{% video src="https://videos.example.com/a.mp4" title=${title} /%}`),
+    ).toContain("topik-video-title");
+  expect(
+    parseDocument('{% video src="https://videos.example.com/a.mp4" title=t"{% $name %}" /%}'),
+  ).toMatchObject({ ok: true });
+});
+
 test("loop must be a boolean", () => {
   expect(diagnosticIds('{% video src="a.mp4" title="Intro" loop="yes" /%}')).toContain(
     "attribute-type-invalid",
@@ -171,6 +181,18 @@ test("an unsafe poster is dropped and the video stays", () => {
   expect(videos(transformTopikContent(document))).toEqual([
     { src: "a.mp4", title: "Intro", loop: false },
   ]);
+});
+
+test("an unsafe source keeps template variables in the remaining text", () => {
+  const source =
+    '{% video src="http://example.com/a.mp4" title=t"Intro for {% $name %}" caption=t"Tour" /%}';
+  const document = parseTopikContent(source);
+  removeInvalidTopikAssetReferences(document, source);
+  expect(validateDocument(document)).toEqual([]);
+  expect(JSON.stringify(document)).not.toContain("example.com");
+  expect(
+    transformTopikContent(document, { components: {}, variables: { name: "Ada" } }),
+  ).toMatchObject({ children: [{ name: "p", children: ["Intro for Ada\nTour"] }] });
 });
 
 test("an unsafe source leaves the title and caption as text", () => {

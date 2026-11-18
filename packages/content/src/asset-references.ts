@@ -268,6 +268,38 @@ export function rewriteDocumentAssetOccurrences(
   }
 }
 
+/**
+ * A removed component's text attributes as inline content, one per line. Templates become text
+ * and variable nodes, so evaluation still fills them in; the removed destination is not kept.
+ */
+function describedText(values: readonly unknown[], position: Node["position"]): TreeNode[] {
+  const lines = values.map((value): TreeNode[] => {
+    if (typeof value === "string") return value ? [{ type: "text", value, position }] : [];
+    if (!value || typeof value !== "object" || (value as TextTemplate).type !== "topikTextTemplate")
+      return [];
+    return (value as TextTemplate).segments.flatMap((segment): TreeNode[] =>
+      segment.type === "variable"
+        ? [{ type: "topikVariable", path: [...segment.path], position } as TreeNode]
+        : segment.value
+          ? [{ type: "text", value: segment.value, position }]
+          : [],
+    );
+  });
+  return lines
+    .filter((line) => line.length > 0)
+    .flatMap((line, index) =>
+      index === 0 ? line : [{ type: "text", value: "\n", position }, ...line],
+    )
+    .reduce<TreeNode[]>((merged, node) => {
+      // Adjacent text joins into one node, as the parser would produce.
+      const previous = merged.at(-1);
+      if (previous?.type === "text" && node.type === "text")
+        merged[merged.length - 1] = { ...previous, value: `${previous.value}${node.value}` };
+      else merged.push(node);
+      return merged;
+    }, []);
+}
+
 /** Remove unsafe destinations from a preview tree, retaining readable descriptions. */
 export function removeInvalidTopikAssetReferences(
   document: ContentDocument,
@@ -303,17 +335,15 @@ export function removeInvalidTopikAssetReferences(
     }
     if (removed.has(node)) {
       if (node.type === "link" || node.type === "linkReference") return node.children ?? [];
-      const component = node.type === "topikComponent";
-      const value = component
-        ? [node.name === "video" ? node.props?.title : node.props?.alt, node.props?.caption]
-            .filter((part): part is string => typeof part === "string" && part.length > 0)
-            .join("\n")
-        : ((node as ResourceNode).alt ?? "");
-      if (!value) return [];
-      const text: TreeNode = { type: "text", value, position: node.position };
-      return component
-        ? [{ type: "paragraph", children: [text], position: node.position }]
-        : [text];
+      if (node.type === "topikComponent") {
+        const children = describedText(
+          [node.name === "video" ? node.props?.title : node.props?.alt, node.props?.caption],
+          node.position,
+        );
+        return children.length ? [{ type: "paragraph", children, position: node.position }] : [];
+      }
+      const value = (node as ResourceNode).alt ?? "";
+      return value ? [{ type: "text", value, position: node.position }] : [];
     }
     // Removing decorative images can empty a paragraph, mark, or paired inline
     // component. Keep block containers and self-closing inline components intact.

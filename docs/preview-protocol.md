@@ -251,13 +251,14 @@ and no cache. It binds each fetch to the snapshot with
 | Request                                               | CLI response                                         |
 | ----------------------------------------------------- | ---------------------------------------------------- |
 | Bound to the current session and generation           | The payload bytes                                    |
-| With a single `Range: bytes=…` header                 | 206 with that part, or 416 when it lies past the end |
+| A `GET` with a single `Range: bytes=…` header         | 206 with that part, or 416 when it lies past the end |
 | Bound to an obsolete session or generation            | 409                                                  |
 | Without `sessionId` and `generation`                  | The payload bytes                                    |
 | For a payload that the current state does not contain | 404                                                  |
 
 Every payload response carries `Accept-Ranges: bytes`. Multiple or malformed
-ranges are ignored and return the whole payload.
+ranges, a `Range` on `HEAD`, and any `If-Range` (payloads carry no validator) are
+ignored and return the whole payload.
 
 ### Verification
 
@@ -305,6 +306,12 @@ hash it before playback. Instead:
   checked against the SHA-256 before the browser plays them.
 - A load failure shows the same alert as other preview media. The stream URL is
   never a link, since navigation cannot make a CORS request.
+- A poster that fails to load or decode is left out; the video stays.
+- The browser makes the stream requests, not the adapter. Redirect rejection,
+  cache bypass and abort on disposal apply to verified fetches only. When the
+  generation changes, unmount or replace the old player as well as disposing
+  the adapter; the producer answers its later requests for the old generation
+  with 409.
 
 ### Host responsibilities
 

@@ -492,10 +492,24 @@ describe("dev command", () => {
       expect(Buffer.from(await partial.arrayBuffer())).toEqual(mp4.subarray(start, end + 1));
     }
 
+    // The range unit is case-insensitive.
+    const mixedCase = await get("Bytes=4-11");
+    expect(mixedCase.status).toBe(206);
+    expect(Buffer.from(await mixedCase.arrayBuffer())).toEqual(mp4.subarray(4, 12));
+
+    // HEAD describes the whole payload; ranges apply to GET only.
     const head = await get("bytes=0-3", "HEAD");
-    expect(head.status).toBe(206);
-    expect(head.headers.get("content-range")).toBe(`bytes 0-3/${mp4.byteLength}`);
+    expect(head.status).toBe(200);
+    expect(head.headers.get("content-length")).toBe(String(mp4.byteLength));
+    expect(head.headers.get("content-range")).toBeNull();
     expect((await head.arrayBuffer()).byteLength).toBe(0);
+
+    // Payloads carry no validator, so If-Range never matches and the whole payload follows.
+    const conditional = await fetch(url, {
+      headers: { Origin: WRITE_ORIGIN, Range: "bytes=4-11", "If-Range": '"stale"' },
+    });
+    expect(conditional.status).toBe(200);
+    expect((await conditional.arrayBuffer()).byteLength).toBe(mp4.byteLength);
 
     for (const range of ["bytes=28-", "bytes=-0"]) {
       const unsatisfiable = await get(range);

@@ -147,24 +147,38 @@ describe("TopikVideo", () => {
     expect(container.querySelector(".topik-video__toggle")).not.toBeNull();
   });
 
-  test("a source the browser cannot play falls back to a link", async () => {
-    const { container, root } = mount();
-    await act(async () =>
-      root.render(
-        <TopikVideo
-          src="https://www.youtube.com/watch?v=abc123&t=90s"
-          title="Intro"
-          caption="A tour"
-        />,
-      ),
+  test("a page on a hosting service renders as a link, even without script", async () => {
+    const page = (
+      <TopikVideo
+        src="https://www.youtube.com/watch?v=abc123&t=90s"
+        title="Intro"
+        caption="A tour"
+      />
     );
-    await act(async () => container.querySelector("video")!.dispatchEvent(new Event("error")));
+    const html = renderToStaticMarkup(page);
+    expect(html).not.toContain("<video");
+    expect(html).toContain('href="https://www.youtube.com/watch?v=abc123&amp;t=90s"');
 
+    const { container, root } = mount();
+    await act(async () => root.render(page));
     expect(container.querySelector("video")).toBeNull();
     const link = container.querySelector("a")!;
     expect(link.getAttribute("href")).toBe("https://www.youtube.com/watch?v=abc123&t=90s");
     expect(link.textContent).toBe("Intro");
     expect(container.querySelector("figcaption")?.textContent).toBe("A tour");
+  });
+
+  test("a file the browser cannot play falls back to a link", async () => {
+    const { container, root } = mount();
+    await act(async () =>
+      root.render(<TopikVideo src="https://cdn.example.com/a.mp4?v=2" title="Intro" />),
+    );
+    await act(async () => container.querySelector("video")!.dispatchEvent(new Event("error")));
+
+    expect(container.querySelector("video")).toBeNull();
+    expect(container.querySelector("a")!.getAttribute("href")).toBe(
+      "https://cdn.example.com/a.mp4?v=2",
+    );
   });
 
   test("an error before hydration also falls back to a link", async () => {

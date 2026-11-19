@@ -141,8 +141,13 @@ video's `title`:
   and shows a Pause button instead of player controls. A reader who prefers
   reduced motion gets it paused, with a Play button. Server-rendered HTML keeps
   the native controls until hydration, so the clip stays playable without script.
-- When the browser cannot play the source, for example a video page on a hosting
-  service, the player is replaced by the poster and title as a link to `src`.
+- A compiled source is an MP4 or WebM file and always gets the player. Any other
+  source gets the player only when its path ends in `.mp4`, `.m4v` or `.webm`.
+  Anything else, such as a video page on a hosting service, renders as the poster
+  and title as a link to `src`: it works without script and the reader's browser
+  makes no request to the service until the reader follows it.
+- When the browser cannot play a source it tried, the player is replaced by the
+  same link.
 - An unresolved source leaves the title, caption and poster as text.
 
 Each prop is the evaluated attribute: `src`, `title`, `caption`, `poster` and

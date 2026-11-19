@@ -297,6 +297,8 @@ export function resolveTopikAssetReferences<T>(
       continue;
     }
     const generatedName = validation.name;
+    // A compiled video source is an MP4 or WebM file, whatever its resolved URL looks like.
+    if (slot === "video.src") attributes.__topikVideoFile = true;
     const token = previewAssetToken(options.previewAssets, generatedName, slot);
     if (token) {
       attributes[attribute] = token;
@@ -314,6 +316,7 @@ export function resolveTopikAssetReferences<T>(
       !isSafeResolvedAssetReference(resolved)
     ) {
       delete attributes[attribute];
+      delete attributes.__topikVideoFile;
       options.onDiagnostic?.({
         id: "TOPIK_ASSET_REFERENCE_MISSING",
         message: "Asset name could not be resolved",

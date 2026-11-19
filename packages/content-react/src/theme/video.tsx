@@ -131,6 +131,15 @@ function VideoPlayer({
   );
 }
 
+/** Whether a URL names a video file a browser can play, judged by its path. */
+function isVideoFileUrl(source: string): boolean {
+  try {
+    return /\.(?:mp4|m4v|webm)$/iu.test(new URL(source, "https://topik.invalid/").pathname);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * A native video player. A source the browser cannot play, such as a video page on a hosting
  * service, falls back to a link; applications that embed such services supply their own component.
@@ -140,7 +149,15 @@ export function TopikVideo(props: TopikComponentProps) {
   return <VideoFigure key={stringAttribute(props.src) ?? ""} {...props} />;
 }
 
-function VideoFigure({ caption, crossOrigin, loop, poster, src, title }: TopikComponentProps) {
+function VideoFigure({
+  __topikVideoFile,
+  caption,
+  crossOrigin,
+  loop,
+  poster,
+  src,
+  title,
+}: TopikComponentProps) {
   const source = stringAttribute(src);
   const titleText = stringAttribute(title)?.trim() ?? "";
   const captionText = stringAttribute(caption);
@@ -152,7 +169,12 @@ function VideoFigure({ caption, crossOrigin, loop, poster, src, title }: TopikCo
   );
   const figcaption = captionText ? <figcaption>{captionText}</figcaption> : null;
 
-  if (source === undefined || failed) {
+  // A compiled source is a verified file. Any other source plays only when its path names a
+  // video file; a page on a hosting service renders as a link, which works without script and
+  // makes no request to the service until the reader follows it.
+  const playable =
+    source !== undefined && (__topikVideoFile === true || corsOnly || isVideoFileUrl(source));
+  if (source === undefined || failed || !playable) {
     if (!titleText && !captionText && !posterSource && (corsOnly || source === undefined))
       return null;
     return (

@@ -113,9 +113,9 @@ Start your application.
 | `loop`    | `true` plays a silent looping clip with a pause button instead of player controls. Default `false`. |
 
 Topik does not know video hosting services. An external URL, including its query
-such as a start time, is kept exactly as written. The default renderer plays it
-in a native video player and shows a link when the browser cannot play it, as
-with a YouTube page. An application that embeds a service, or allows only some,
+such as a start time, is kept exactly as written. The default renderer plays a
+URL whose path names a video file (`.mp4`, `.m4v`, `.webm`) in a native player,
+and shows any other URL, such as a YouTube page, as a link. An application that embeds a service, or allows only some,
 checks `video.src` with
 [`extractTopikAssetOccurrences`](https://github.com/subtopik/topik/blob/main/packages/content/README.md)
 and supplies its own [`TopikVideo`](./rendering.md#video) component.

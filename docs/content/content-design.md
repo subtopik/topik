@@ -290,17 +290,20 @@ Formatting the canonical output again returns it unchanged.
 ### Delimiters and rules
 
 Formatting spells Markdown the way Prettier and Oxfmt do, so a project can run
-both formatters over the same files without them rewriting each other:
+both formatters over the same files without them rewriting each other, except
+for the two rule spellings noted below:
 
 - Emphasis is `_a_`, or `*a*` when a character other than whitespace or
   punctuation touches either side: a letter or digit, as in `a*b*c`, where
   underscores would not form emphasis, or a symbol such as `€`. Strong is
   `**a**`. Adjacent marks that would merge use the other delimiter.
 - A horizontal rule is `---`. Inside a list item it is `***`, or `---` when the
-  list's bullet is `*`, and a rule that opens the document is `***`, because a
-  leading `---` starts frontmatter. Directly under a paragraph in a tight list
-  item a rule stays `***`, where `---` would turn the paragraph into a heading;
-  Prettier writes `---` there, so the two formatters differ only in that case.
+  list's bullet is `*`.
+- Two rules keep `***` where Prettier writes `---`, because `---` would change
+  the document: a rule that opens the document, where a leading `---` starts
+  frontmatter, and a rule directly under a paragraph in a tight list item,
+  where `---` would turn the paragraph into a heading. In these two cases the
+  formatters rewrite each other's spelling.
 
 ## Work with trees
 

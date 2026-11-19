@@ -82,7 +82,10 @@ interface PreviewDiagnostic {
 ```
 
 - `location.path` is relative to the project root, as the CLI prints it, never an
-  absolute path. `line` and `column` start at 1 and are present when known; a
+  absolute path. It is the path as written, including spaces and non-ASCII
+  letters. A path containing a `:`, a percent-escape such as `%2F`, a control,
+  invisible or bidirectional character, or whitespace other than a space has no
+  `location`. `line` and `column` start at 1 and are present when known; a
   `column` only with a `line`.
 - `resource` names the resource whose source file the diagnostic is in, as of the
   last successful generation. A file that has never compiled, and every

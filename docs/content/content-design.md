@@ -58,6 +58,14 @@ on, and this applies to `section` too.
 Headings in every conditional branch reserve their IDs before evaluation, so
 hiding a branch does not rename the anchors in the remaining content.
 
+A generated ID that carries a number depends on position: adding or removing
+an earlier heading with the same title moves `details-1` to another heading,
+and links to it still resolve, now to the wrong section. The compiler warns
+about links to a generated ID whose title other headings share, including the
+first one, `details` (`link-fragment-positional`). Titles that differ only in
+punctuation can count as shared too: `C++` and `C#` both slug to `c`, so they
+get `c` and `c-1`. Give such a heading an explicit ID and link to that instead.
+
 ### Footnotes
 
 ```markdown
@@ -125,6 +133,7 @@ text; a tree built in code reports `topik-footnote-missing`.
 | `figure`                                    | A self-closing image with `src`, `alt`, and optional caption/dark source. |
 | `math`, `mathInline`                        | Self-closing block or inline formulas with a `content` property.          |
 | `badge`, `underline` (alias `u`)            | Inline status text or underlined text.                                    |
+| `kbd`                                       | An inline key, such as `{% kbd %}Ctrl{% /kbd %}+{% kbd %}C{% /kbd %}`.    |
 | `quiz`, `question`, `choice`, `explanation` | Questions, answer choices, and explanations.                              |
 
 Some components accept only specific children. For example, the direct children

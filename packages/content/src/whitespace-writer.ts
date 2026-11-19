@@ -1,6 +1,22 @@
 import { defaultHandlers, type State, type Info } from "mdast-util-to-markdown";
 import { decodeString } from "micromark-util-decode-string";
 
+/** Index of each child, built once per container instead of searched per text. */
+const indexes = new WeakMap<object, Map<unknown, number>>();
+function position(
+  node: unknown,
+  parent: unknown,
+): { index: number; count: number; children: readonly unknown[] } {
+  const children = (parent as { children?: unknown[] } | undefined)?.children;
+  if (!children) return { index: -1, count: 0, children: [] };
+  let map = indexes.get(children);
+  if (!map) {
+    map = new Map(children.map((child, index) => [child, index]));
+    indexes.set(children, map);
+  }
+  return { index: map.get(node) ?? -1, count: children.length, children };
+}
+
 export function boundaryWhitespaceWriterExtension() {
   return {
     handlers: {
@@ -17,6 +33,25 @@ export function boundaryWhitespaceWriterExtension() {
         let last = characters.length;
         while (first < last && /^\s$/u.test(characters[first])) first++;
         while (last > first && /^\s$/u.test(characters[last - 1])) last--;
+        // Markdown trims whitespace only at the edges of a paragraph, cell or
+        // strikethrough. Next to inline siblings such as code, plain spaces and a
+        // single line ending survive as written and need no references.
+        const { index, count, children } = position(node, parent);
+        const literal = (run: string) => /^[ \t]*$/u.test(run) || run === "\n";
+        const hasBefore = index > 0;
+        const hasAfter = index !== -1 && index < count - 1;
+        // A footnote reference that starts a line followed by `:` reads as a definition, so a
+        // line ending before one keeps its reference.
+        const beforeFootnote =
+          hasAfter && (children[index + 1] as { type?: string }).type === "footnoteReference";
+        const trailing = (run: string) => literal(run) && !(beforeFootnote && run.includes("\n"));
+        if (first === characters.length) {
+          // Text that is all whitespace touches both sides, so it needs a sibling on each.
+          if (hasBefore && hasAfter && trailing(node.value)) first = 0;
+        } else {
+          if (hasBefore && literal(characters.slice(0, first).join(""))) first = 0;
+          if (hasAfter && trailing(characters.slice(last).join(""))) last = characters.length;
+        }
         const blankLines = /\n[ \t]*\n/.test(node.value);
         if (first === 0 && last === characters.length && !blankLines)
           return defaultHandlers.text(node as never, parent as never, state, info);

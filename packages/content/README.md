@@ -107,6 +107,7 @@ reported as a diagnostic, never silently discarded.
 | `math`, `mathInline`                        | Self-closing block/inline formula with required `content`                                           |
 | `badge`                                     | Inline content; optional `variant`                                                                  |
 | `underline` (alias `u`)                     | Inline content                                                                                      |
+| `kbd`                                       | Inline content naming one key; write combinations as several keys, such as `Ctrl`+`C`               |
 | `quiz`, `question`, `choice`, `explanation` | Questions with at least two choices; `type` selects single/multiple choice, `correct` marks answers |
 
 The exported `components` registry contains the complete property, placement,

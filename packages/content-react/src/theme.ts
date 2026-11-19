@@ -20,6 +20,7 @@ export {
   TopikFootnotes,
   TopikImage,
   TopikInlineCode,
+  TopikKbd,
   TopikLink,
   TopikMath,
   TopikMathInline,

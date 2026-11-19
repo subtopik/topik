@@ -93,7 +93,12 @@ next content page and the assets page:
 ```
 
 Fragments refer to the destination's heading IDs. The compiler checks page targets
-and fragments against the wiki's navigation and analyzed headings. A file present
+and fragments against the wiki's navigation and analyzed headings. A fragment
+that matches a generated ID whose title other headings on that page share
+compiles, but warns with `link-fragment-positional`, because the ID moves when
+an earlier heading with that title is added or removed. Give the heading an
+explicit `{% #id %}` instead; see
+[Heading anchors](../content/content-design.md#heading-anchors). A file present
 on disk is not automatically a wiki page: it must be listed in navigation.
 
 The compiler resolves relative document links against declared source resources,

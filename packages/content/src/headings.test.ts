@@ -26,6 +26,25 @@ describe("assignTopikHeadingIds", () => {
     ]);
   });
 
+  test("marks generated IDs whose titles other headings share as positional", () => {
+    const ast = parseTopikContent(
+      "## Setup\n\n## Setup {% #own %}\n\n## C++\n\n## C#\n\n## Setup\n\n## Unique",
+    );
+
+    expect(
+      assignTopikHeadingIds(ast).map(({ id, positional }) => (positional ? `${id}*` : id)),
+    ).toEqual(["setup*", "own", "c*", "c-1*", "setup-1*", "unique"]);
+  });
+
+  test("an explicit ID does not make the generated ID that skips it positional", () => {
+    const ast = parseTopikContent("## Setup {% #setup %}\n\n## Setup");
+
+    expect(assignTopikHeadingIds(ast)).toEqual([
+      { id: "setup", level: 2, title: "Setup" },
+      { id: "setup-1", level: 2, title: "Setup" },
+    ]);
+  });
+
   test("gives headings without sluggable text a deduplicated fallback ID", () => {
     const source =
       "#\n\n# \n\n# ![](https://e.com/a.png)\n\n## !!!\n\n## Section\n\n## Taken {% #section-5 %}";

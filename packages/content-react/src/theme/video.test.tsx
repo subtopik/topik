@@ -305,6 +305,20 @@ describe("video content", () => {
     expect(html).toContain(`poster="https://cdn.example.com/${poster}"`);
   });
 
+  test("an unresolved poster leaves a compiled source as a player", () => {
+    const video = `auto-v1-${"a".repeat(52)}`;
+    const poster = `auto-v1-${"b".repeat(51)}a`;
+    const html = renderToStaticMarkup(
+      <TopikContent
+        content={`{% video src="asset:${video}" title="Intro" poster="asset:${poster}" /%}`}
+        resolveAsset={(name) => (name === video ? `https://cdn.example.com/${name}` : undefined)}
+      />,
+    );
+    expect(html).toContain(`<video`);
+    expect(html).toContain(`src="https://cdn.example.com/${video}"`);
+    expect(html).not.toContain("poster=");
+  });
+
   test("reports an unresolved video asset and keeps the title", async () => {
     const video = `auto-v1-${"a".repeat(52)}`;
     const onAssetDiagnostic = vi.fn();

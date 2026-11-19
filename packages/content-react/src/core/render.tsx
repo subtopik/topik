@@ -316,7 +316,8 @@ export function resolveTopikAssetReferences<T>(
       !isSafeResolvedAssetReference(resolved)
     ) {
       delete attributes[attribute];
-      delete attributes.__topikVideoFile;
+      // Only the source decides how a video renders; a missing poster leaves the player.
+      if (slot === "video.src") delete attributes.__topikVideoFile;
       options.onDiagnostic?.({
         id: "TOPIK_ASSET_REFERENCE_MISSING",
         message: "Asset name could not be resolved",

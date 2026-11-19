@@ -676,8 +676,11 @@ navigation:
 `);
 
     const pages = [
-      ["index.md", "# Home\n\n[Root](./root.md#root)\n\n[Runtime](/runtime/#runtime)\n\n## Home\n"],
-      ["root.md", "# Root\n\n[Home](/index.md#home)\n\n## Root\n"],
+      [
+        "index.md",
+        "# Home\n\n[Root](./root.md#root)\n\n[Runtime](/runtime/#runtime)\n\n## Details\n",
+      ],
+      ["root.md", "# Root\n\n[Home](/index.md#home)\n\n## Details\n"],
       [
         "runtime/index.md",
         [
@@ -689,12 +692,12 @@ navigation:
           "",
           '{% card title="Child card" href="./child.mdx#child" /%}',
           "",
-          "## Runtime",
+          "## Details",
           "",
         ].join("\n"),
       ],
-      ["runtime/child.mdx", "# Child\n\n[Sibling](./sibling.md#sibling)\n\n## Child\n"],
-      ["runtime/sibling.md", "# Sibling\n\n## Sibling\n"],
+      ["runtime/child.mdx", "# Child\n\n[Sibling](./sibling.md#sibling)\n\n## Details\n"],
+      ["runtime/sibling.md", "# Sibling\n\n## Details\n"],
     ] as const;
 
     for (const [path, content] of pages) {

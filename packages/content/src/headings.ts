@@ -22,6 +22,14 @@ export function assignTopikHeadingIds(document: ContentDocument): TopikHeading[]
 
 /** @internal Reuse headings collected by a bounded document index. */
 export function assignHeadingIds(headings: readonly Heading[]): TopikHeading[] {
+  const assigned = headingIds(headings);
+  for (const [index, heading] of headings.entries())
+    heading.data = { ...heading.data, hProperties: { id: assigned[index]!.id } };
+  return assigned;
+}
+
+/** @internal The IDs {@link assignHeadingIds} gives, without writing them into the tree. */
+export function headingIds(headings: readonly Heading[]): TopikHeading[] {
   const slugger = new GithubSlugger();
   const explicitIds = new Set<string>();
   for (const heading of headings) {
@@ -39,7 +47,6 @@ export function assignHeadingIds(headings: readonly Heading[]): TopikHeading[] {
         id = slugger.slug(base);
       } while (explicitIds.has(id));
     }
-    heading.data = { ...heading.data, hProperties: { id } };
     return { id, level: heading.depth, title };
   });
 }

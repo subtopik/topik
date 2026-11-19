@@ -1,6 +1,8 @@
 import {
   analyzeTopikContent,
+  createTopikContentCache,
   validateTopikContent,
+  type TopikContentCache,
   type AnalyzeTopikContentResult,
   type ValidateTopikContentResult,
 } from "@topik/content";
@@ -11,6 +13,8 @@ import {
  * repeated call returns what a fresh call would. Create one per call; never keep it across calls.
  */
 export interface ContentMemo {
+  /** Parsed documents shared by every content call of this compilation; pass it to each. */
+  readonly cache: TopikContentCache;
   validate(source: string, file: string): ValidateTopikContentResult;
   analyze(source: string, file: string): AnalyzeTopikContentResult;
 }
@@ -30,10 +34,12 @@ export function createContentMemo(): ContentMemo {
     if (result === undefined) byFile.set(file, (result = compute()));
     return result;
   }
+  const cache = createTopikContentCache();
   return {
+    cache,
     validate: (source, file) =>
-      remember(validations, source, file, () => validateTopikContent(source, { file })),
+      remember(validations, source, file, () => validateTopikContent(source, { file, cache })),
     analyze: (source, file) =>
-      remember(analyses, source, file, () => analyzeTopikContent(source, { file })),
+      remember(analyses, source, file, () => analyzeTopikContent(source, { file, cache })),
   };
 }

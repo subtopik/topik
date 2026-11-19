@@ -58,6 +58,7 @@ export {
   type TopikGeneratedAssetName,
 } from "./asset-references";
 export { parseTopikContent, type ParseTopikContentOptions, type TopikContentNode } from "./content";
+export { createTopikContentCache, type TopikContentCache } from "./parse-cache";
 export {
   formatTopikContent,
   type FormatTopikContentFailure,

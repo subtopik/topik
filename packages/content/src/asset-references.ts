@@ -1,3 +1,4 @@
+import type { TopikContentCache } from "./parse-cache.js";
 import type { Node } from "mdast";
 import type { ContentDocument, TextTemplate, TreeNode } from "./model.js";
 import type { TopikAssetReferenceRole } from "./registry.js";
@@ -88,6 +89,8 @@ export interface ExtractTopikAssetOccurrencesOptions {
   provenDownloadPaths?: ReadonlySet<string> | readonly string[];
   /** Return generic-link candidates so a compiler can prove plain-mode downloads. */
   includeGenericLinkCandidates?: boolean;
+  /** @internal Parse results shared with other calls given the same cache. */
+  cache?: TopikContentCache;
 }
 
 type ResourceNode = TreeNode & {
@@ -143,7 +146,9 @@ export function locateDocumentAssetOccurrences(
     source === undefined
       ? undefined
       : createReferenceSourceLookup(source, () =>
-          indexDocument(parseTopikContent(source, { config: options.config })),
+          indexDocument(
+            parseTopikContent(source, { config: options.config, cache: options.cache }),
+          ),
         );
   const result: LocatedOccurrence[] = [];
   for (const { node: untyped, path } of index.entries) {
@@ -228,7 +233,7 @@ export function extractTopikAssetOccurrences(
   source: string,
   options: ExtractTopikAssetOccurrencesOptions = {},
 ): TopikAssetOccurrence[] {
-  const document = parseTopikContent(source, { config: options.config });
+  const document = parseTopikContent(source, { config: options.config, cache: options.cache });
   return extractDocumentAssetOccurrences(document, source, options);
 }
 

@@ -393,7 +393,11 @@ export async function compileResourceLinksInSession(
         });
         return serializeTopikResourceReference(replacement.reference);
       },
-      { file: sourcePath, allowCompiledAssetReferences: input.allowCompiledAssetReferences },
+      {
+        file: sourcePath,
+        allowCompiledAssetReferences: input.allowCompiledAssetReferences,
+        cache: memo.cache,
+      },
     );
     if (!rewritten.ok) {
       diagnostics.push(...rewritten.diagnostics);

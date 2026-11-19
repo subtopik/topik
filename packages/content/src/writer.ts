@@ -363,16 +363,20 @@ const blockquote: Handle = (node: Blockquote, parent, state, info) => {
 };
 
 /**
- * A list after another list switches to the other bullet, which can equal the
- * rule marker. A rule on an item's first line then reads as one longer rule.
+ * Like Prettier: `---`, except inside a list item, where a rule that matched the
+ * bullet could read as another item or a longer rule, so it uses `***` (or `---`
+ * when the bullet is `*`). A rule that opens the document also uses `***`,
+ * because a leading `---` starts frontmatter.
  */
 const thematicBreak: Handle = (node: ThematicBreak, parent, state) => {
-  const written = defaultHandlers.thematicBreak(node, parent, state);
-  return parent?.type === "listItem" &&
-    parent.children[0] === node &&
-    written[0] === state.bulletCurrent
-    ? written.replaceAll(written[0], written[0] === "*" ? "-" : "*")
-    : written;
+  const marker = state.stack.includes("listItem")
+    ? state.bulletCurrent === "*"
+      ? "-"
+      : "*"
+    : parent?.type === "root" && parent.children[0] === node
+      ? "*"
+      : "-";
+  return marker.repeat(3);
 };
 
 function writeMarkdown(tree: Root, registry: Registry): string {

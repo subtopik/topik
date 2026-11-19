@@ -1,6 +1,18 @@
 import { defaultHandlers, type Handle, type Options } from "mdast-util-to-markdown";
 import type { TreeNode } from "./model.js";
 
+const WORD = /[\p{L}\p{N}]/u;
+
+/** Whether the text right before or after a sibling is a letter or digit. */
+function touchesWord(siblings: readonly TreeNode[], index: number): boolean {
+  const before = siblings[index - 1];
+  const after = siblings[index + 1];
+  return (
+    (before?.type === "text" && WORD.test(Array.from(before.value ?? "").at(-1) ?? "")) ||
+    (after?.type === "text" && WORD.test(Array.from(after.value ?? "")[0] ?? ""))
+  );
+}
+
 /** Choose delimiters before writing so handlers and their lookahead agree. */
 export function markWriterExtension(root: TreeNode): NonNullable<Options["extensions"]>[number] {
   const markers = new WeakMap<TreeNode, "*" | "_">();
@@ -9,7 +21,8 @@ export function markWriterExtension(root: TreeNode): NonNullable<Options["extens
     active: Partial<Record<"emphasis" | "strong", "*" | "_">> = {},
   ): void {
     let previous: "*" | "_" | undefined;
-    for (const child of node.children ?? []) {
+    const children = node.children ?? [];
+    for (const [index, child] of children.entries()) {
       const kind = child.type === "emphasis" || child.type === "strong" ? child.type : undefined;
       // Adjacent siblings need distinct delimiters too: *one**two* would
       // introduce literal asterisks instead of preserving two emphasis nodes.
@@ -19,7 +32,11 @@ export function markWriterExtension(root: TreeNode): NonNullable<Options["extens
         (kind === "emphasis" && node.type === "strong" && node.children?.length === 1
           ? markers.get(node)
           : undefined);
-      const marker = neighbor === "*" ? "_" : "*";
+      // Like Prettier: `_emphasis_` and `**strong**`. Underscores cannot open or
+      // close emphasis inside a word, so emphasis touching a letter or digit uses
+      // asterisks.
+      const preferred = kind === "emphasis" && !touchesWord(children, index) ? "_" : "*";
+      const marker = neighbor === preferred ? (preferred === "*" ? "_" : "*") : preferred;
       if (kind) markers.set(child, marker);
       walk(child, kind ? { ...active, [kind]: marker } : active);
       previous = kind ? marker : undefined;

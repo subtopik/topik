@@ -278,8 +278,7 @@ heading, table cell, and inline component:
 1. Adjacent text with the same marks is merged.
 2. At each position, the mark whose run of consecutive marked content reaches
    farthest opens first and covers that whole run. Ties prefer emphasis, then
-   strong, then strikethrough, so bold italics are written as one `***a***`
-   delimiter run.
+   strong, then strikethrough, so bold italics are written `_**a**_`.
 3. Marks that cover exactly one link are written outside it, as in
    `**[a](u)**`. They move inside, as in `[**a**](u)s`, when a letter or other
    non-punctuation character of unmarked neighboring text would otherwise touch a
@@ -287,6 +286,18 @@ heading, table cell, and inline component:
    break.
 
 Formatting the canonical output again returns it unchanged.
+
+### Delimiters and rules
+
+Formatting spells Markdown the way Prettier and Oxfmt do, so a project can run
+both formatters over the same files without them rewriting each other:
+
+- Emphasis is `_a_`, or `*a*` when a letter or digit touches either side, as in
+  `a*b*c`, where underscores would not form emphasis. Strong is `**a**`. Adjacent
+  marks that would merge use the other delimiter.
+- A horizontal rule is `---`. Inside a list item it is `***`, or `---` when the
+  list's bullet is `*`, and a rule that opens the document is `***`, because a
+  leading `---` starts frontmatter.
 
 ## Work with trees
 

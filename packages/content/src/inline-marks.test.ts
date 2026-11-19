@@ -37,22 +37,22 @@ function expectCanonical(source: string): string {
 describe("equivalent inline mark nestings", () => {
   test.each([
     [["**[a](https://e.com)**", "[**a**](https://e.com)"], "**[a](https://e.com)**\n"],
-    [["*[a](https://e.com)*", "[*a*](https://e.com)"], "*[a](https://e.com)*\n"],
-    [["***a***", "**_a_**", "_**a**_", "*__a__*"], "***a***\n"],
+    [["*[a](https://e.com)*", "[*a*](https://e.com)"], "_[a](https://e.com)_\n"],
+    [["***a***", "**_a_**", "_**a**_", "*__a__*"], "_**a**_\n"],
     [["~~**a**~~", "**~~a~~**"], "**~~a~~**\n"],
-    [["*[**a**](u)*", "***[a](u)***", "[***a***](u)", "**[*a*](u)**"], "***[a](u)***\n"],
-    [["[~~*a*~~](u)", "*~~[a](u)~~*", "~~[*a*](u)~~"], "*~~[a](u)~~*\n"],
+    [["*[**a**](u)*", "***[a](u)***", "[***a***](u)", "**[*a*](u)**"], "_**[a](u)**_\n"],
+    [["[~~*a*~~](u)", "*~~[a](u)~~*", "~~[*a*](u)~~"], "_~~[a](u)~~_\n"],
     [["**a*b***_c_", "**a**_**b**c_"], "**a*b***_c_\n"],
     [["**[a](u)b**", "[**a**](u)**b**"], "**[a](u)b**\n"],
     [["**[a][r]**\n\n[r]: /x", "[**a**][r]\n\n[r]: /x"], "**[a][r]**\n\n[r]: /x\n"],
     [["**a**__b__", "__a__**b**"], "**ab**\n"],
-    [["*first*_second_", "*firstsecond*"], "*firstsecond*\n"],
-    [["***_a_****_a_***", "***aa***"], "***aa***\n"],
-    [["*a *b* c*", "*a b c*"], "*a b c*\n"],
+    [["*first*_second_", "*firstsecond*"], "_firstsecond_\n"],
+    [["***_a_****_a_***", "***aa***"], "_**aa**_\n"],
+    [["*a *b* c*", "*a b c*"], "_a b c_\n"],
     [["# [**a**](u) b", "# **[a](u)** b"], "# **[a](u)** b\n"],
     [
       ["| [*a*](u) | **_b_** |\n| --- | --- |", "| *[a](u)* | ***b*** |\n| --- | --- |"],
-      "| *[a](u)* | ***b*** |\n| -------- | ------- |\n",
+      "| _[a](u)_ | _**b**_ |\n| -------- | ------- |\n",
     ],
     [["- [~~**a**~~](u) item", "- **~~[a](u)~~** item"], "- **~~[a](u)~~** item\n"],
     [
@@ -64,7 +64,7 @@ describe("equivalent inline mark nestings", () => {
         "{% callout %}\n_**a**_ [*b*](u)\n{% /callout %}",
         "{% callout %}\n***a*** *[b](u)*\n{% /callout %}",
       ],
-      "{% callout %}\n***a*** *[b](u)*\n{% /callout %}\n",
+      "{% callout %}\n_**a**_ _[b](u)_\n{% /callout %}\n",
     ],
   ])("%j share one canonical form", (sources, expected) => {
     for (const source of sources) expect(expectCanonical(source)).toBe(expected);
@@ -100,7 +100,7 @@ describe("canonical writer output", () => {
     ["x [**a**](u)y", "x [**a**](u)y\n"],
     ["(**[a](u)**)", "(**[a](u)**)\n"],
     ["**[a](u)**, b", "**[a](u)**, b\n"],
-    ["*a* **[b](u)** c", "*a* **[b](u)** c\n"],
+    ["*a* **[b](u)** c", "_a_ **[b](u)** c\n"],
     ["**[a](u)[b](v)**", "**[a](u)[b](v)**\n"],
     ["**[ a ](u)**", "**[ a ](u)**\n"],
     ["**[a\\\n](u)**", "**[a\\\n](u)**\n"],
@@ -110,29 +110,29 @@ describe("canonical writer output", () => {
     ["a*b*c", "a*b*c\n"],
     ["**a**.", "**a**.\n"],
     ['**"a"**', '**"a"**\n'],
-    ["**a**, *b*!", "**a**, *b*!\n"],
-    ["***a*** b", "***a*** b\n"],
-    ["***a** b*", "***a** b*\n"],
-    ["**a *b***", "**a *b***\n"],
-    ["**a *b* c**", "**a *b* c**\n"],
-    ["*a **b** c*", "*a **b** c*\n"],
+    ["**a**, *b*!", "**a**, _b_!\n"],
+    ["***a*** b", "_**a**_ b\n"],
+    ["***a** b*", "_**a** b_\n"],
+    ["**a *b***", "**a _b_**\n"],
+    ["**a *b* c**", "**a _b_ c**\n"],
+    ["*a **b** c*", "_a **b** c_\n"],
     ["**a**~~*b*~~", "**a**_~~b~~_\n"],
     // Other inline leaves carry the marks around them.
     ["**`a`**`b`", "**`a`**`b`\n"],
-    ["_**`a`**_", "***`a`***\n"],
+    ["_**`a`**_", "_**`a`**_\n"],
     ["**![i](p.png)**", "**![i](p.png)**\n"],
     ["[**![i](p.png)**](u)", "**[![i](p.png)](u)**\n"],
     ["**a\\\nb**", "**a\\\nb**\n"],
-    ["**a\\\n*b***", "**a\\\n*b***\n"],
+    ["**a\\\n*b***", "**a\\\n_b_**\n"],
     ["**a {% $x %} b**", "**a {% $x %} b**\n"],
-    ["_**{% $x %}**_", "***{% $x %}***\n"],
-    ["**{% badge %}*a*{% /badge %}**", "**{% badge %}*a*{% /badge %}**\n"],
+    ["_**{% $x %}**_", "_**{% $x %}**_\n"],
+    ["**{% badge %}*a*{% /badge %}**", "**{% badge %}_a_{% /badge %}**\n"],
     ["## [**a**](u) {% #id %}", "## **[a](u)** {% #id %}\n"],
-    ["- [x] **_done_**", "- [x] ***done***\n"],
+    ["- [x] **_done_**", "- [x] _**done**_\n"],
     ["> [~~a~~](u)", "> ~~[a](u)~~\n"],
     [
       "{% if $x %}\n[**a**](u)\n{% else /%}\n_**b**_\n{% /if %}",
-      "{% if $x %}\n**[a](u)**\n{% else /%}\n***b***\n{% /if %}\n",
+      "{% if $x %}\n**[a](u)**\n{% else /%}\n_**b**_\n{% /if %}\n",
     ],
   ])("formats %j as %j", (source, expected) => {
     expect(expectCanonical(source)).toBe(expected);
@@ -143,7 +143,7 @@ describe("canonical writer output", () => {
     const original = structuredClone(document);
     const canonical = canonicalizeInlineMarks(document);
     expect(canonical).not.toBe(document);
-    expect(writeDocument(document)).toBe("***[a](u)** **b***\n");
+    expect(writeDocument(document)).toBe("_**[a](u)** **b**_\n");
     expect(sameDocumentMeaning(document, canonical)).toBe(true);
     expect(document).toEqual(original);
   });
@@ -199,13 +199,13 @@ describe("canonical writer output", () => {
       ],
     });
     const sample = writeDocument(document(10, 0));
-    expect(sample).toBe(`***${"\\*".repeat(10)}***\n`);
+    expect(sample).toBe(`_**${"\\*".repeat(10)}**_\n`);
     const fixed = sample.length - 20;
     const letters = (CONTENT_LIMITS.sourceLength - fixed) % 2;
     const stars = (CONTENT_LIMITS.sourceLength - fixed - letters) / 2;
     const written = serializeDocument(document(stars, letters));
     expect(written).toHaveLength(CONTENT_LIMITS.sourceLength);
-    expect(written.startsWith("***\\*")).toBe(true);
+    expect(written.startsWith("_**\\*")).toBe(true);
     expect(() => serializeDocument(document(stars, letters + 1))).toThrow(ContentLimitError);
   });
 });

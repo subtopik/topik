@@ -275,7 +275,7 @@ describe("autolink spelling", () => {
     "<https://example.test/a*b*c>",
     "<https://a.test/x_y_>",
     "<https://例え.jp/道>",
-    "**<https://example.test>** and *<a@b.test>*",
+    "**<https://example.test>** and _<a@b.test>_",
     "> - <https://example.test/item>",
     "| Link                        |\n| --------------------------- |\n| <https://example.test/cell> |",
     "[https://example.test](https://example.test)",

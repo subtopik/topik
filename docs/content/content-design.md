@@ -87,6 +87,7 @@ get `c` and `c-1`. Give such a heading an explicit ID and link to that instead.
 | `figure`                                    | A self-closing image with `src`, `alt`, and optional caption/dark source. |
 | `math`, `mathInline`                        | Self-closing block or inline formulas with a `content` property.          |
 | `badge`, `underline` (alias `u`)            | Inline status text or underlined text.                                    |
+| `kbd`                                       | An inline key, such as `{% kbd %}Ctrl{% /kbd %}+{% kbd %}C{% /kbd %}`.    |
 | `quiz`, `question`, `choice`, `explanation` | Questions, answer choices, and explanations.                              |
 
 Some components accept only specific children. For example, the direct children

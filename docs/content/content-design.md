@@ -62,7 +62,7 @@ an earlier heading with the same title moves `details-1` to another heading,
 and links to it still resolve, now to the wrong section. The compiler warns
 about links to a generated ID whose title other headings share, including the
 first one, `details` (`link-fragment-positional`). Titles that differ only in
-punctuation, such as `C++` and `C#`, share an ID too. Give such a heading an
+punctuation, such as `C++` and `C#`, can share an ID too. Give such a heading an
 explicit ID and link to that instead.
 
 ### Links, tables and inline marks

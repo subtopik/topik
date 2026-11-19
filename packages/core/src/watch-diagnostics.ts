@@ -25,6 +25,7 @@ export interface PreviewDiagnostics {
 }
 
 const ASSET_DIAGNOSTIC_ID = /^[A-Z0-9_]{1,64}$/u;
+const UNSHOWN_PATH = "content";
 
 function positive(value: unknown): number | undefined {
   return Number.isSafeInteger(value) && (value as number) > 0 ? (value as number) : undefined;
@@ -36,7 +37,8 @@ function located(
   line?: number,
   column?: number,
 ): Pick<PreviewDiagnostic, "location" | "resource"> {
-  if (path === undefined) return {};
+  // The sanitizer's stand-in for a path it cannot show safely is not a location.
+  if (path === undefined || path === UNSHOWN_PATH) return {};
   const location: PreviewDiagnosticLocation = { path };
   const safeLine = positive(line);
   if (safeLine !== undefined) {

@@ -348,11 +348,12 @@ export function sanitizeTopikDiagnosticFile(file: string | undefined): string | 
     return safeDiagnosticBasename(file);
   }
 
+  // Only URLs and absolute paths carry a query or fragment to strip. In a relative path, `?`
+  // and `#` are part of a file or directory name: stripping there names a different file.
   if (
     EXPLICIT_URL_SCHEME.test(file) ||
     file.startsWith("//") ||
-    file.includes("?") ||
-    file.includes("#")
+    (file.startsWith("/") && (file.includes("?") || file.includes("#")))
   ) {
     try {
       const url = new URL(file, DIAGNOSTIC_URL_BASE);

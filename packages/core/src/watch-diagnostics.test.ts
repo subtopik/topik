@@ -56,6 +56,21 @@ describe("previewErrorDiagnostics", () => {
     expect(previewErrorDiagnostics(error, resources).diagnostics[0]).not.toHaveProperty("resource");
   });
 
+  test("publishes no location for a path the label policy cannot show", () => {
+    const error = new CompileError([
+      diagnostic({
+        id: "link-page-not-found",
+        level: "error",
+        file: "wiki/chapter#1/intro.md",
+        lines: [2],
+      }),
+    ]);
+    const [published] = previewErrorDiagnostics(error, resources).diagnostics;
+    expect(published).toMatchObject({ id: "link-page-not-found", severity: "error" });
+    expect(published).not.toHaveProperty("location");
+    expect(published).not.toHaveProperty("resource");
+  });
+
   test("keeps warnings of a failed compile after its errors and drops informational levels", () => {
     const error = new CompileError([
       diagnostic({ id: "first-warning", level: "warning" }),

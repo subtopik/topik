@@ -246,6 +246,10 @@ export function TopikInlineCode({ children, content }: TopikComponentProps) {
   return <code>{stringAttribute(content) ?? children}</code>;
 }
 
+export function TopikKbd({ children }: TopikComponentProps) {
+  return <kbd className="topik-kbd">{children}</kbd>;
+}
+
 export function TopikUnderline({ children }: TopikComponentProps) {
   return <u>{children}</u>;
 }
@@ -641,6 +645,7 @@ export const defaultTopikComponents = {
   TopikFigure,
   TopikImage,
   TopikInlineCode,
+  TopikKbd,
   TopikLink,
   TopikMath,
   TopikMathInline,

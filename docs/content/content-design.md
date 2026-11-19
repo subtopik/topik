@@ -111,6 +111,7 @@ accordion, or to an element inside one, opens the accordion.
 | `figure`                                    | A self-closing image with `src`, `alt`, and optional caption/dark source. |
 | `math`, `mathInline`                        | Self-closing block or inline formulas with a `content` property.          |
 | `badge`, `underline` (alias `u`)            | Inline status text or underlined text.                                    |
+| `kbd`                                       | An inline key, such as `{% kbd %}Ctrl{% /kbd %}+{% kbd %}C{% /kbd %}`.    |
 | `quiz`, `question`, `choice`, `explanation` | Questions, answer choices, and explanations.                              |
 
 Some components accept only specific children. For example, the direct children

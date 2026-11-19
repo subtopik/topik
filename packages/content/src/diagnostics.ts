@@ -187,6 +187,7 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "topik-tag-placement": "The component cannot appear in this location.",
   "topik-card-grid-children": "A card grid may contain only cards.",
   "topik-quiz-parent-required": "A question must be nested inside a quiz.",
+  "topik-kbd-children": "A keyboard key requires inline content, such as the key name.",
   "topik-underline-children": "Underline requires inline content.",
   "topik-u-children": "Underline requires inline content.",
   "variable-undefined": "A referenced variable is not defined.",

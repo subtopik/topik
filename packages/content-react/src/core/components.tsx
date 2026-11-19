@@ -15,6 +15,7 @@ export const topikComponentNames = [
   "TopikFigure",
   "TopikImage",
   "TopikInlineCode",
+  "TopikKbd",
   "TopikLink",
   "TopikMath",
   "TopikMathInline",
@@ -67,6 +68,11 @@ function MissingTopikComponent({ children }: TopikComponentProps) {
   return <>{children}</>;
 }
 
+/** A key keeps its meaning without a theme: `<kbd>` is semantic HTML that browsers style. */
+function PlainTopikKbd({ children }: TopikComponentProps) {
+  return <kbd>{children}</kbd>;
+}
+
 const fallbackTopikComponents = {
   TopikAccordion: MissingTopikComponent,
   TopikBadge: MissingTopikComponent,
@@ -81,6 +87,7 @@ const fallbackTopikComponents = {
   TopikFigure: MissingTopikComponent,
   TopikImage: MissingTopikComponent,
   TopikInlineCode: MissingTopikComponent,
+  TopikKbd: PlainTopikKbd,
   TopikLink: MissingTopikComponent,
   TopikMath: MissingTopikComponent,
   TopikMathInline: MissingTopikComponent,
@@ -127,6 +134,7 @@ export function getTopikComponents(overrides: TopikComponentOverrides = {}): Top
     TopikFigure: overrides.TopikFigure ?? fallbackTopikComponents.TopikFigure,
     TopikImage: overrides.TopikImage ?? fallbackTopikComponents.TopikImage,
     TopikInlineCode: overrides.TopikInlineCode ?? fallbackTopikComponents.TopikInlineCode,
+    TopikKbd: overrides.TopikKbd ?? fallbackTopikComponents.TopikKbd,
     TopikLink: overrides.TopikLink ?? fallbackTopikComponents.TopikLink,
     TopikMath: overrides.TopikMath ?? fallbackTopikComponents.TopikMath,
     TopikMathInline: overrides.TopikMathInline ?? fallbackTopikComponents.TopikMathInline,

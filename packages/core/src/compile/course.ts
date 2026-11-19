@@ -147,6 +147,7 @@ export async function discoverCourse(
           title: metadata.title,
           slug: metadata.slug,
           order: metadata.order,
+          ...(metadata.description !== undefined ? { description: metadata.description } : {}),
           ...(metadata.authors !== undefined ? { authors: metadata.authors } : {}),
           content: { format: "topik", value: parsed.content },
         },

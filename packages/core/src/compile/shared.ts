@@ -18,6 +18,11 @@ export interface CompileResult {
   diagnostics: TopikContentDiagnostic[];
   resources: CompiledResource[];
   payloads: AssetPayload[];
+  /**
+   * Source file of each generated local Asset: Asset name to project-relative path. See
+   * `AssetCompilationResult.assetSourcePaths`. Never written to compile output.
+   */
+  assetSourcePaths: Readonly<Record<string, string>>;
   semantic: TopikAssetSemanticRecordV1;
   materialization: TopikMaterializationRecordV1;
   /** Portable document references and their compilation-time validation state. */

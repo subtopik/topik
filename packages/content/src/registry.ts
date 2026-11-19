@@ -5,6 +5,7 @@ import { calloutDefinition } from "./extensions/callout.js";
 import { cardDefinition, cardGridDefinition } from "./extensions/cards.js";
 import { codeGroupDefinition, codeTabDefinition } from "./extensions/code.js";
 import { figureDefinition } from "./extensions/figure.js";
+import { kbdDefinition } from "./extensions/kbd.js";
 import { mathDefinition, mathInlineDefinition } from "./extensions/math.js";
 import { nativeComponents } from "./extensions/native.js";
 import {
@@ -158,6 +159,7 @@ const authoredComponents = {
   choice: choiceDefinition,
   explanation: explanationDefinition,
   figure: textAttributes(figureDefinition, ["alt", "caption"]),
+  kbd: kbdDefinition,
   math: mathDefinition,
   mathInline: mathInlineDefinition,
   question: questionDefinition,

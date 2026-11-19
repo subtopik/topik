@@ -114,10 +114,11 @@ async function loadCompiledWiki(
   pageResources: WikiPage[];
   resources: Awaited<ReturnType<typeof compileWiki>>["resources"];
   payloads: Awaited<ReturnType<typeof compileWiki>>["payloads"];
+  assetSourcePaths: Awaited<ReturnType<typeof compileWiki>>["assetSourcePaths"];
   semantic: Awaited<ReturnType<typeof compileWiki>>["semantic"];
   materialization: Awaited<ReturnType<typeof compileWiki>>["materialization"];
 }> {
-  const { resources, payloads, semantic, materialization } = await compileWiki({
+  const { resources, payloads, assetSourcePaths, semantic, materialization } = await compileWiki({
     dir,
     assets,
   });
@@ -125,6 +126,7 @@ async function loadCompiledWiki(
   return {
     navigation: wiki?.spec.navigation ?? [],
     payloads,
+    assetSourcePaths,
     resources,
     semantic,
     materialization,

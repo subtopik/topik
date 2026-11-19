@@ -619,6 +619,7 @@ function initializedGraph(): Resource[] {
       title: "Welcome",
       slug: "welcome",
       order: 8,
+      description: "What the course starts with.",
       authors: ["teacher"],
       content: { format: "topik", value: "# Welcome\n" },
     },
@@ -657,6 +658,9 @@ test("explicit Course initialization preserves all metadata and custom paths and
     expect.arrayContaining(request.resources),
   );
   expect(rawFile(result.plan.candidate, "README.txt")).toBe("unchanged\n");
+  expect(rawFile(result.plan.candidate, "training/content/start.md")).toContain(
+    'description: "What the course starts with."\n',
+  );
   expect(result.plan.candidate.courseContexts["Course/portable"].pages[0].sourcePath).toBe(
     "content/start",
   );
@@ -843,4 +847,61 @@ test("Course initialization transports retained source-relative links and exact 
       resource(current.compilation.resources, "CoursePage", "next"),
     );
   }
+});
+
+test("a Course page description is read with its origin and added, changed, cleared and removed in place", async () => {
+  const project = await courseProject();
+  const origin = (candidate: SourceProject, name: string) =>
+    candidate.documents
+      .find((document) => document.resource === `CoursePage/${name}`)!
+      .fieldOrigins.find((field) => field.field === "spec/description");
+  expect(origin(project, "intro")).toMatchObject({ origin: "default" });
+
+  const step = async (
+    current: SourceProject,
+    edit: (page: CoursePage) => void,
+  ): Promise<SourceProject> => {
+    const desired = structuredClone(current.compilation.resources);
+    edit(resource(desired, "CoursePage", "intro"));
+    const result = await plan(current, desired, [{ kind: "update", resource: "CoursePage/intro" }]);
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    if (!result.ok) throw new Error("Expected a plan");
+    expect(result.plan.changes.map((change) => change.path)).toEqual(["lessons/pages/intro.md"]);
+    return result.plan.candidate;
+  };
+  const intro = "lessons/pages/intro.md";
+
+  const added = await step(project, (page) => {
+    page.spec.description = "A first look.";
+  });
+  expect(rawFile(added, intro)).toContain('description: "A first look."\n');
+  // Every other authored line is kept exactly.
+  expect(rawFile(added, intro).replace('description: "A first look."\n', "")).toBe(
+    rawFile(project, intro),
+  );
+  expect(resource(added.compilation.resources, "CoursePage", "intro").spec.description).toBe(
+    "A first look.",
+  );
+  expect(origin(added, "intro")).toMatchObject({ origin: "explicit", selector: "description" });
+  expect(rawFile(added, "lessons/pages/target.md")).toBe(
+    rawFile(project, "lessons/pages/target.md"),
+  );
+
+  const changed = await step(added, (page) => {
+    page.spec.description = "A second look.";
+  });
+  expect(rawFile(changed, intro)).toContain('description: "A second look."\n');
+
+  const cleared = await step(changed, (page) => {
+    page.spec.description = null;
+  });
+  expect(rawFile(cleared, intro)).toContain("description: null\n");
+  expect(
+    resource(cleared.compilation.resources, "CoursePage", "intro").spec.description,
+  ).toBeNull();
+
+  const removed = await step(cleared, (page) => {
+    delete page.spec.description;
+  });
+  expect(rawFile(removed, intro)).toBe(rawFile(project, intro));
 });

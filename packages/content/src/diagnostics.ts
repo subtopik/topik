@@ -44,6 +44,8 @@ const TOPIK_LINK_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "link-asset-invalid": "Asset link target is not a canonical generated name.",
   "link-asset-navigation-unsupported": "Navigation targets cannot use generated Asset names.",
   "link-fragment-not-found": "Link target heading was not found.",
+  "link-fragment-positional":
+    "Link target heading shares its title with another heading, so its generated ID depends on position; give the heading an explicit ID.",
   "link-href-empty": "Link target is required.",
   "link-page-not-found": "Internal link target page was not found.",
   "link-reference-ambiguous": "Resource reference target is ambiguous.",
@@ -183,6 +185,7 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "topik-tag-placement": "The component cannot appear in this location.",
   "topik-card-grid-children": "A card grid may contain only cards.",
   "topik-quiz-parent-required": "A question must be nested inside a quiz.",
+  "topik-kbd-children": "A keyboard key requires inline content, such as the key name.",
   "topik-underline-children": "Underline requires inline content.",
   "topik-u-children": "Underline requires inline content.",
   "topik-video-children": "A video cannot contain children; use its title and caption attributes.",

@@ -71,6 +71,7 @@
       }
     ],
     "payloads": [],
+    "assetSourcePaths": {},
     "semantic": {
       "descriptor": "topik-asset-semantic-v1",
       "assetNames": [],
@@ -151,6 +152,7 @@
       }
     ],
     "payloads": [],
+    "assetSourcePaths": {},
     "semantic": {
       "descriptor": "topik-asset-semantic-v1",
       "assetNames": [],
@@ -280,6 +282,7 @@
       }
     ],
     "payloads": [],
+    "assetSourcePaths": {},
     "semantic": {
       "descriptor": "topik-asset-semantic-v1",
       "assetNames": [],

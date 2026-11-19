@@ -2,6 +2,7 @@ import type {
   AnalyzeTopikContentResult,
   TopikContentDiagnostic,
   TopikContentLink,
+  TopikHeading,
   TopikResourceReference,
 } from "@topik/content";
 import {
@@ -218,7 +219,7 @@ export async function compileResourceLinksInSession(
         if (target) {
           status = validateFragment(
             explicit.hash,
-            analyses.get(targetKey)?.headings.map((heading) => heading.id) ?? [],
+            analyses.get(targetKey)?.headings ?? [],
             link,
             policy,
             diagnostics,
@@ -228,7 +229,13 @@ export async function compileResourceLinksInSession(
           status =
             explicit.hash && headings === undefined
               ? "deferred"
-              : validateFragment(explicit.hash, headings ?? [], link, policy, diagnostics);
+              : validateFragment(
+                  explicit.hash,
+                  (headings ?? []).map((id) => ({ id })),
+                  link,
+                  policy,
+                  diagnostics,
+                );
         } else if (entries && entries.length > 1) {
           status = "invalid";
           appendLinkDiagnostic("link-reference-ambiguous", link, policy, diagnostics);
@@ -239,13 +246,7 @@ export async function compileResourceLinksInSession(
       if (NON_PAGE_SCHEME.test(link.href) || link.href.startsWith("//")) continue;
       if (link.href.startsWith("#")) {
         if (link.href !== "#" && (resource.type !== "CoursePage" || link.kind === "link"))
-          validateFragment(
-            link.href.slice(1),
-            analysis.headings.map((heading) => heading.id),
-            link,
-            policy,
-            diagnostics,
-          );
+          validateFragment(link.href.slice(1), analysis.headings, link, policy, diagnostics);
         continue;
       }
       const path = resolveSourceReferencePath(link.href, sourcePath, directory);
@@ -354,7 +355,7 @@ export async function compileResourceLinksInSession(
         };
         const status = validateFragment(
           reference.hash,
-          analyses.get(resourceKey(target))?.headings.map((heading) => heading.id) ?? [],
+          analyses.get(resourceKey(target))?.headings ?? [],
           link,
           policy,
           diagnostics,
@@ -415,15 +416,21 @@ export async function compileResourceLinksInSession(
 
 function validateFragment(
   hash: string,
-  headings: readonly string[],
+  headings: readonly Pick<TopikHeading, "id" | "positional">[],
   link: TopikContentLink,
   policy: LinkValidationPolicy,
   diagnostics: TopikContentDiagnostic[],
 ): CompiledResourceReference["status"] {
-  if (hash && !headings.includes(decodeFragment(hash))) {
+  if (!hash) return "verified";
+  const id = decodeFragment(hash);
+  const heading = headings.find((candidate) => candidate.id === id);
+  if (!heading) {
     appendLinkDiagnostic("link-fragment-not-found", link, policy, diagnostics);
     return "invalid";
   }
+  // The link works today, but an earlier heading with the same title would take its ID.
+  if (heading.positional && policy !== "off")
+    diagnostics.push(linkDiagnostic("link-fragment-positional", "warning", link));
   return "verified";
 }
 

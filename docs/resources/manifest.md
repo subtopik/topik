@@ -91,6 +91,34 @@ A file that cannot be read fails with the ID `config-read-failed` and a fixed ex
 
 The message never includes absolute paths.
 
+#### Classify a failure
+
+Compilation throws three unrelated error classes. `classifyCompileFailure(error)` answers who has to act, without `instanceof` checks:
+
+```ts
+import { classifyCompileFailure, compileManifest } from "@topik/core";
+
+try {
+  await compileManifest({ dir: projectRoot });
+} catch (error) {
+  const failure = classifyCompileFailure(error);
+  // { kind: "asset", reason: "git-lfs-pointer" }
+}
+```
+
+| `kind`          | Meaning                                                                                                                                      | Thrown as                                        |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `configuration` | The manifest or a source configuration is missing or invalid.                                                                                | `PublicCompileError`                             |
+| `content`       | A document the project reads is missing, misnamed or invalid.                                                                                | `CompileError`, `PublicCompileError`             |
+| `asset`         | A local image or download that a document references was refused.                                                                            | `AssetCompilationError`                          |
+| `environment`   | The platform, the Git installation or a file that changed during the read prevented a safe read. Another machine or a retry can succeed.     | Either class, with one of the four reasons below |
+| `tool`          | The compiler or the calling program failed (`manifest-source-failed`, `reference-targets-invalid`). The author cannot fix it in the project. | `PublicCompileError`                             |
+| `unknown`       | The value is not an error the compiler raises.                                                                                               | Anything else                                    |
+
+The result also carries the `id` and `location` of a `PublicCompileError`, and the `reason` of a refused file read when one is known. The reasons `platform-unsupported`, `git-evidence-unavailable`, `git-repository-untrusted` and `changed-during-read` make the kind `environment`; every other reason describes the author's own file and leaves the kind as it is.
+
+An `AssetCompilationError` raised for a compiler invariant, such as an invalid name from a custom name generator, is also reported as `asset`.
+
 ### Inside a Git checkout
 
 A checkout is optional. When the project directory or any ancestor contains a `.git` entry, the compiler asks Git to prove that each manifest, configuration and local asset file is a plain worktree file. That places requirements on Git, on the repository and on the files.
@@ -140,6 +168,8 @@ const project = await compileManifest({ dir: projectRoot });
 | `compileManifest`                                                                                                | Compiles the project and returns its `provenance`. |
 
 `provenance` lists the sources in declaration order. Each entry has the kind, config path, local directory, project namespace, resolved new-media destination, and the authored resource keys mapped to manifest-relative source paths.
+
+`assetSourcePaths` maps each generated local Asset name to the manifest-relative path of its source file. See [Find an asset's source file](./assets.md#find-an-assets-source-file).
 
 ### Compile one source without a manifest
 

@@ -79,6 +79,8 @@ export const Code: Story = {
       "{% /codeGroup %}",
       "",
       "Use {% underline %}`TopikContent`{% /underline %} to render the compiled content.",
+      "",
+      "Press {% kbd %}Ctrl{% /kbd %}+{% kbd %}Enter{% /kbd %} to run it.",
     ].join("\n"),
   },
   play: async ({ canvas, userEvent }) => {

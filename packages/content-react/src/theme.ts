@@ -17,6 +17,7 @@ export {
   TopikFigure,
   TopikImage,
   TopikInlineCode,
+  TopikKbd,
   TopikLink,
   TopikMath,
   TopikMathInline,

@@ -62,6 +62,7 @@ const coursePageMetadataSchema = z.object({
   title,
   slug,
   order,
+  description: z.string().max(1024).nullable().optional(),
   authors: authors.optional(),
   labels: sourceLabelsSchema.optional(),
 });

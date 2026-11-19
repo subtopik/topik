@@ -15,7 +15,7 @@ import {
 
 import { version } from "../../package.json";
 
-import { printDiagnostics } from "../diagnostics";
+import { printDiagnostics, printPreviewWarnings } from "../diagnostics";
 import { formatPublicCliError, PublicCliError, withProjectPlatformRequirement } from "../errors";
 import { fileSafetyOption, notePortableReads } from "../file-safety";
 
@@ -334,6 +334,15 @@ export async function startDevServer(options: {
     throw platformFailure;
   }
   if (watcher.state.status !== "error") console.log(`Compiled ${watcher.resources.size} resources`);
+  // Errors arrive through onError; warnings of a successful compile only in the preview state.
+  let warnedGeneration: number | null = null;
+  const reportWarnings = (state: PreviewState) => {
+    if (state.status !== "ready" || state.generation === warnedGeneration) return;
+    warnedGeneration = state.generation;
+    printPreviewWarnings(state);
+  };
+  reportWarnings(watcher.state);
+  watcher.on("preview-state", reportWarnings);
 
   watcher.on("update", (key: string) => {
     console.log(`Updated ${key}`);

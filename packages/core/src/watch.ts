@@ -2,17 +2,17 @@ import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { relative, resolve } from "node:path";
 import { watch as chokidarWatch } from "chokidar";
-import {
-  compile,
-  PublicCompileError,
-  publicCompileErrorMessage,
-  type CompileValidationOptions,
-} from "./compile";
+import { compile, type CompileValidationOptions } from "./compile";
 import type { AssetPayload } from "./compile/assets";
 import { validateGitExecutableOption, type FileSafety } from "./assets/files";
 import { digestTopikMaterializationRecord } from "./assets/identity";
 import type { Resource } from "./resource";
 import { TOPIK_PREVIEW_PROTOCOL, type PreviewState } from "./preview";
+import {
+  previewErrorDiagnostics,
+  previewResultDiagnostics,
+  type ResourcesByPath,
+} from "./watch-diagnostics";
 
 export type UpdateListener = (key: string, resource: Resource) => void;
 export type ErrorListener = (error: Error) => void;
@@ -132,8 +132,13 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
       }
     }
   }
+  // Diagnostics name the resource whose source they are in, from the last success.
+  let resourcesByPath: ResourcesByPath = new Map();
   function publish(patch: Partial<PreviewState>) {
-    state = freeze({ ...state, ...patch, sequence: state.sequence + 1 });
+    const { omittedDiagnostics: _previous, ...rest } = state;
+    const next: PreviewState = { ...rest, ...patch, sequence: state.sequence + 1 };
+    if (next.omittedDiagnostics === undefined) delete next.omittedDiagnostics;
+    state = freeze(next);
     dispatch("preview-state", state);
   }
 
@@ -165,10 +170,17 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
         for (const resource of result.resources)
           resources.set(`${resource.type}/${resource.name}`, resource);
         for (const payload of result.payloads) payloads.set(payload.path, payload);
+        const paths = new Map<string, { type: string; name: string }>();
+        for (const source of result.provenance ?? [])
+          for (const [key, path] of Object.entries(source.sourcePathsByResource)) {
+            const separator = key.indexOf("/");
+            paths.set(path, { type: key.slice(0, separator), name: key.slice(separator + 1) });
+          }
+        resourcesByPath = paths;
         publish({
           status: "ready",
           generation: (state.generation ?? 0) + 1,
-          diagnostics: [],
+          ...previewResultDiagnostics(result.diagnostics, resourcesByPath),
           resources: result.resources,
           courseNavigation: result.courseNavigation,
           payloads: result.payloads.map(({ bytes: _bytes, ...descriptor }) => descriptor),
@@ -178,18 +190,7 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
       } catch (error) {
         if (closed || watchFailed) return;
         if (revision !== requested) continue;
-        const id = error instanceof PublicCompileError ? error.id : "compilation-failed";
-        publish({
-          status: "error",
-          diagnostics: [
-            {
-              id,
-              message:
-                publicCompileErrorMessage(id) ??
-                "Compilation failed. Check the source and try again.",
-            },
-          ],
-        });
+        publish({ status: "error", ...previewErrorDiagnostics(error, resourcesByPath) });
         // State-only consumers are supported: no error listener is not a crash.
         reportError(error, "Compilation failed");
       }
@@ -258,6 +259,7 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
         {
           id: "watch-failed",
           message: "Source watching failed. Restart the preview to resume updates.",
+          severity: "error",
         },
       ],
     });

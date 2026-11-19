@@ -13,9 +13,27 @@ export interface CourseNavigationModule {
 }
 export type CourseNavigationIndex = Record<string, { modules: CourseNavigationModule[] }>;
 export type PreviewPayloadDescriptor = Omit<AssetPayload, "bytes">;
+/** Most diagnostics one state carries; the rest are counted in `omittedDiagnostics`. */
+export const PREVIEW_DIAGNOSTIC_LIMIT = 100;
+/** Project-relative source position of a diagnostic, as the CLI prints it. */
+export interface PreviewDiagnosticLocation {
+  /** Root-relative path with `/` separators, never absolute. */
+  path: string;
+  /** One-based line, when known. */
+  line?: number;
+  /** One-based column, when known. */
+  column?: number;
+}
 export interface PreviewDiagnostic {
+  /** Stable identifier, such as `link-page-not-found`. */
   id: string;
+  /** Display wording; not a stable surface. */
   message: string;
+  /** `error` blocks the compilation; `warning` is published on `ready` states too. */
+  severity?: "error" | "warning";
+  location?: PreviewDiagnosticLocation;
+  /** Resource whose source the diagnostic is in, when known from the last successful generation. */
+  resource?: { type: string; name: string };
 }
 /**
  * One complete preview snapshot, as sent in each `preview-state` event.
@@ -32,7 +50,10 @@ export interface PreviewState<R = Resource> {
   /** Last successful generation, retained during compiling/error; null before first success. */
   generation: number | null;
   status: "compiling" | "ready" | "error";
+  /** At most {@link PREVIEW_DIAGNOSTIC_LIMIT}, errors first. */
   diagnostics: PreviewDiagnostic[];
+  /** How many further diagnostics were left out; present only when some were. */
+  omittedDiagnostics?: number;
   resources: R[];
   payloads: PreviewPayloadDescriptor[];
   courseNavigation: CourseNavigationIndex;

@@ -366,16 +366,19 @@ const blockquote: Handle = (node: Blockquote, parent, state, info) => {
  * Like Prettier: `---`, except inside a list item, where a rule that matched the
  * bullet could read as another item or a longer rule, so it uses `***` (or `---`
  * when the bullet is `*`). A rule that opens the document also uses `***`,
- * because a leading `---` starts frontmatter.
+ * because a leading `---` starts frontmatter. In a tight item a rule directly
+ * under a paragraph keeps `***`: `---` there would turn the paragraph into a
+ * heading (Prettier writes that heading).
  */
 const thematicBreak: Handle = (node: ThematicBreak, parent, state) => {
-  const marker = state.stack.includes("listItem")
-    ? state.bulletCurrent === "*"
-      ? "-"
-      : "*"
-    : parent?.type === "root" && parent.children[0] === node
-      ? "*"
-      : "-";
+  let marker: "*" | "-" = "-";
+  if (state.stack.includes("listItem")) {
+    marker = state.bulletCurrent === "*" ? "-" : "*";
+    if (marker === "-" && parent?.type === "listItem" && !parent.spread) {
+      const previous = parent.children[parent.children.indexOf(node) - 1];
+      if (previous?.type === "paragraph") marker = "*";
+    }
+  } else if (parent?.type === "root" && parent.children[0] === node) marker = "*";
   return marker.repeat(3);
 };
 

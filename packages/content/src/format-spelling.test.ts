@@ -21,6 +21,11 @@ test.each([
   ["**a *b* c**", "**a _b_ c**"],
   ["*a __b__ c*", "_a **b** c_"],
   ["***x***", "_**x**_"],
+  // Non-ASCII symbols count as word characters; ASCII ones as punctuation.
+  ["€*100*", "€*100*"],
+  ["🎉*x*", "🎉*x*"],
+  ["$*x*", "$_x_"],
+  ["+*x*", "+_x_"],
 ])("writes emphasis like Prettier: %s", (source, expected) => {
   expect(formatted(`${source}\n`)).toBe(`${expected}\n`);
 });
@@ -41,4 +46,10 @@ test("a rule that opens the document stays apart from frontmatter", () => {
   expect(formatted("---\ntitle: x\n---\n\n***\n\ntext\n")).toBe(
     "---\ntitle: x\n---\n\n---\n\ntext\n",
   );
+});
+
+test("a rule directly under a paragraph in a tight `*` item keeps `***`", () => {
+  // `---` there would make the paragraph a heading, which Prettier writes.
+  expect(formatted("- x\n\n* y\n  ***\n")).toBe("- x\n\n* y\n  ***\n");
+  expect(formatted("- x\n\n* y\n\n  ***\n")).toBe("- x\n\n* y\n\n  ---\n");
 });

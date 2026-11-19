@@ -1,15 +1,23 @@
 import { defaultHandlers, type Handle, type Options } from "mdast-util-to-markdown";
 import type { TreeNode } from "./model.js";
 
-const WORD = /[\p{L}\p{N}]/u;
+/** ASCII punctuation, as CommonMark defines it, and Unicode punctuation. */
+const PUNCTUATION = /^[!-/:-@[-`{-~\p{P}]$/u;
 
-/** Whether the text right before or after a sibling is a letter or digit. */
+/**
+ * Whether the text right before or after a sibling touches it with a character
+ * that is neither whitespace nor punctuation, such as a letter, a digit or `€`.
+ * Prettier writes `*` next to these, and underscores cannot open or close
+ * emphasis next to a letter or digit.
+ */
 function touchesWord(siblings: readonly TreeNode[], index: number): boolean {
+  const word = (character: string | undefined) =>
+    character !== undefined && !/^\s$/u.test(character) && !PUNCTUATION.test(character);
   const before = siblings[index - 1];
   const after = siblings[index + 1];
   return (
-    (before?.type === "text" && WORD.test(Array.from(before.value ?? "").at(-1) ?? "")) ||
-    (after?.type === "text" && WORD.test(Array.from(after.value ?? "")[0] ?? ""))
+    (before?.type === "text" && word(Array.from(before.value ?? "").at(-1))) ||
+    (after?.type === "text" && word(Array.from(after.value ?? "")[0]))
   );
 }
 
@@ -32,9 +40,8 @@ export function markWriterExtension(root: TreeNode): NonNullable<Options["extens
         (kind === "emphasis" && node.type === "strong" && node.children?.length === 1
           ? markers.get(node)
           : undefined);
-      // Like Prettier: `_emphasis_` and `**strong**`. Underscores cannot open or
-      // close emphasis inside a word, so emphasis touching a letter or digit uses
-      // asterisks.
+      // Like Prettier: `_emphasis_` and `**strong**`, with asterisks for emphasis
+      // that touches a word character.
       const preferred = kind === "emphasis" && !touchesWord(children, index) ? "_" : "*";
       const marker = neighbor === preferred ? (preferred === "*" ? "_" : "*") : preferred;
       if (kind) markers.set(child, marker);

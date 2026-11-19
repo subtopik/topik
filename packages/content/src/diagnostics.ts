@@ -45,7 +45,7 @@ const TOPIK_LINK_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "link-asset-navigation-unsupported": "Navigation targets cannot use generated Asset names.",
   "link-fragment-not-found": "Link target heading or accordion was not found.",
   "link-fragment-positional":
-    "Link target heading shares its title with another heading, so its generated ID depends on position; give the heading an explicit ID.",
+    "Link target shares its title with another heading or accordion, so its generated ID depends on position; give the heading an explicit {% #id %} or the accordion an explicit id.",
   "link-href-empty": "Link target is required.",
   "link-page-not-found": "Internal link target page was not found.",
   "link-reference-ambiguous": "Resource reference target is ambiguous.",

@@ -81,7 +81,9 @@ See [grading](#grading).
 ```
 
 Explicit IDs use the same characters as `{% #id %}` (`topik-accordion-id`) and
-are unique across headings and accordions (`heading-id-duplicate`). Variables in
+are unique across headings and accordions (`heading-id-duplicate`). A link to a
+generated accordion ID whose title another heading or accordion shares warns
+with `link-fragment-positional`, as for headings; give the accordion an `id`. Variables in
 a template title, such as `title=t"Week {% $week %}"`, do not contribute to the
 generated ID, like variables in a heading. Accordions are not headings: they do
 not appear in a page's outline or provide its title. Opening a link to an

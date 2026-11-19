@@ -64,7 +64,9 @@ hiding a branch does not rename the anchors in the remaining content.
 - The table header sets the column count. Missing body cells become empty cells;
   extra body cells are refused.
 - Formatting pads table columns by display width: an emoji or CJK character
-  counts as two columns, so the pipes line up in an editor.
+  counts as two columns and a combining mark as none, so the pipes line up in
+  an editor. This matches Prettier, except that Prettier counts combining marks
+  outside U+0300–U+036F (such as U+1AB0) as one column.
 - Emphasis and strong each support at most two nesting levels of their own
   kind. Strikethrough cannot contain strikethrough.
 

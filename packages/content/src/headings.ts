@@ -41,6 +41,7 @@ export function assignHeadingIds(headings: readonly Heading[]): TopikHeading[] {
     if (typeof heading.data?.topikId !== "string")
       generatedBases.set(bases[index], (generatedBases.get(bases[index]) ?? 0) + 1);
   });
+  const unstable = positionalBases(generatedBases);
   return headings.map((heading, index) => {
     const title = titles[index];
     const explicit = heading.data?.topikId;
@@ -58,9 +59,33 @@ export function assignHeadingIds(headings: readonly Heading[]): TopikHeading[] {
       id,
       level: heading.depth,
       title,
-      ...(typeof explicit !== "string" && generatedBases.get(bases[index])! > 1
+      ...(typeof explicit !== "string" && unstable.has(bases[index])
         ? { positional: true as const }
         : {}),
     };
   });
+}
+
+/**
+ * Generated ID bases whose IDs depend on heading order. A base shared by several headings is
+ * numbered by position (`step`, `step-1`). Numbering can then reach another base: `step-1`, the
+ * base of "Step 1", is taken by whichever comes first, so "Step 1" is positional too, and so on.
+ */
+function positionalBases(generatedBases: ReadonlyMap<string, number>): Set<string> {
+  const unstable = new Set(
+    [...generatedBases].filter(([, count]) => count > 1).map(([base]) => base),
+  );
+  let changed = unstable.size > 0;
+  while (changed) {
+    changed = false;
+    for (const base of generatedBases.keys()) {
+      if (unstable.has(base)) continue;
+      const match = /^(.+)-\d+$/u.exec(base);
+      if (match && unstable.has(match[1]!)) {
+        unstable.add(base);
+        changed = true;
+      }
+    }
+  }
+  return unstable;
 }

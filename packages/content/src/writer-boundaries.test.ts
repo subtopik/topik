@@ -178,3 +178,9 @@ describe("whitespace next to inline siblings", () => {
     }
   });
 });
+
+test("whitespace after a hard break keeps its reference spelling", () => {
+  for (const source of ["`c`\\\n&#xa;`d`\n", "`c`\\\n&#x20;`d`\n"]) {
+    expect(formatTopikContent(source)).toMatchObject({ ok: true, formatted: source });
+  }
+});

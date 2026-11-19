@@ -52,3 +52,20 @@ test("kbd takes no attributes", () => {
     "attribute-undefined",
   );
 });
+
+test("the backslash and pipe keys are written escaped, as the docs describe", () => {
+  for (const source of [
+    "Press {% kbd %}\\\\{% /kbd %} now.\n",
+    "| a | b |\n| - | - |\n| x | {% kbd %}\\|{% /kbd %} |\n",
+  ]) {
+    expect(diagnosticIds(source)).toEqual([]);
+    const formatted = formatTopikContent(source);
+    expect(formatted.ok).toBe(true);
+    if (formatted.ok)
+      expect(formatTopikContent(formatted.formatted)).toMatchObject({
+        formatted: formatted.formatted,
+      });
+  }
+  // Unescaped, the backslash escapes the closing tag.
+  expect(diagnosticIds("Press {% kbd %}\\{% /kbd %} now.")).toContain("missing-closing");
+});

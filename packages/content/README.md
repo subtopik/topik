@@ -109,6 +109,11 @@ reported as a diagnostic, never silently discarded.
 | `kbd`                                       | Inline content naming one key; write combinations as several keys, such as `Ctrl`+`C`               |
 | `quiz`, `question`, `choice`, `explanation` | Questions with at least two choices; `type` selects single/multiple choice, `correct` marks answers |
 
+A `kbd` holds one key; write a combination as several keys. Two keys need an
+escape: write the backslash key as `{% kbd %}\\{% /kbd %}`, since a single
+backslash escapes the closing tag, and in a table cell write the pipe key as
+`\|`, since a bare `|` ends the cell.
+
 The exported `components` registry contains the complete property, placement,
 and child constraints. Defaults apply when content is read or rendered; writing
 a document does not add properties the author left out.

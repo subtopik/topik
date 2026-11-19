@@ -3,15 +3,18 @@ import { decodeString } from "micromark-util-decode-string";
 
 /** Index of each child, built once per container instead of searched per text. */
 const indexes = new WeakMap<object, Map<unknown, number>>();
-function position(node: unknown, parent: unknown): { index: number; count: number } {
+function position(
+  node: unknown,
+  parent: unknown,
+): { index: number; count: number; children: readonly unknown[] } {
   const children = (parent as { children?: unknown[] } | undefined)?.children;
-  if (!children) return { index: -1, count: 0 };
+  if (!children) return { index: -1, count: 0, children: [] };
   let map = indexes.get(children);
   if (!map) {
     map = new Map(children.map((child, index) => [child, index]));
     indexes.set(children, map);
   }
-  return { index: map.get(node) ?? -1, count: children.length };
+  return { index: map.get(node) ?? -1, count: children.length, children };
 }
 
 export function boundaryWhitespaceWriterExtension() {
@@ -33,9 +36,10 @@ export function boundaryWhitespaceWriterExtension() {
         // Markdown trims whitespace only at the edges of a paragraph, cell or
         // strikethrough. Next to inline siblings such as code, plain spaces and a
         // single line ending survive as written and need no references.
-        const { index, count } = position(node, parent);
+        const { index, count, children } = position(node, parent);
         const literal = (run: string) => /^[ \t]*$/u.test(run) || run === "\n";
-        const hasBefore = index > 0;
+        // A hard break ends its line, so whitespace after it keeps its reference, as before.
+        const hasBefore = index > 0 && (children[index - 1] as { type?: string }).type !== "break";
         const hasAfter = index !== -1 && index < count - 1;
         if (first === characters.length) {
           // Text that is all whitespace touches both sides, so it needs a sibling on each.

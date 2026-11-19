@@ -158,6 +158,7 @@ describe("whitespace next to inline siblings", () => {
     ["spaces around inline code in a strikethrough", "~~a `b` c~~\n"],
     ["a line ending after inline code", "`code` ends\nthe line\n"],
     ["a line ending between marks", "*a*\n**b**\n"],
+    ["a lone space between inline code in a table cell", "| A       |\n| ------- |\n| `x` `y` |\n"],
   ])("writes %s literally", (_name, source) => {
     expect(formatted(source)).toBe(source);
     roundtrip(source);
@@ -165,7 +166,13 @@ describe("whitespace next to inline siblings", () => {
 
   test("whitespace at the edge of a cell or strikethrough still needs a reference", () => {
     // Markdown trims these, so only a character reference keeps them.
-    for (const source of ["| A |\n| - |\n| &#x20;x |\n", "~~&#x20;a~~\n"]) {
+    for (const source of [
+      "| A |\n| - |\n| &#x20;x |\n",
+      "~~&#x20;a~~\n",
+      // A text of only whitespace after inline code ends the cell.
+      "| A |\n| - |\n| `x`&#x20; |\n",
+      "| A |\n| - |\n| &#x20;`x` |\n",
+    ]) {
       expect(formatted(source)).toContain("&#x20;");
       roundtrip(source);
     }

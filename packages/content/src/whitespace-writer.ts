@@ -17,6 +17,15 @@ export function boundaryWhitespaceWriterExtension() {
         let last = characters.length;
         while (first < last && /^\s$/u.test(characters[first])) first++;
         while (last > first && /^\s$/u.test(characters[last - 1])) last--;
+        // Markdown trims whitespace only at the edges of a paragraph, cell or
+        // strikethrough. Next to inline siblings such as code, plain spaces and a
+        // single line ending survive as written and need no references.
+        const siblings = (parent as { children?: unknown[] } | undefined)?.children ?? [];
+        const index = siblings.indexOf(node);
+        const literal = (run: string) => /^[ \t]*$/u.test(run) || run === "\n";
+        if (index > 0 && literal(characters.slice(0, first).join(""))) first = 0;
+        if (index !== -1 && index < siblings.length - 1 && literal(characters.slice(last).join("")))
+          last = characters.length;
         const blankLines = /\n[ \t]*\n/.test(node.value);
         if (first === 0 && last === characters.length && !blankLines)
           return defaultHandlers.text(node as never, parent as never, state, info);

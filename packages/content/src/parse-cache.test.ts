@@ -3,6 +3,7 @@ import {
   analyzeTopikContent,
   createTopikContentCache,
   extractTopikAssetOccurrences,
+  pruneTopikContentCache,
   parseTopikContent,
   rewriteTopikAssetOccurrences,
   rewriteTopikNavigationReferences,
@@ -72,6 +73,17 @@ describe("TopikContentCache", () => {
     const first = parseTopikContent(custom, { cache, config });
     expect(parseTopikContent(custom, { cache, config })).not.toBe(first);
     expect(Object.isFrozen(first)).toBe(false);
+  });
+
+  test("keeps what was read since the previous prune and drops the rest", () => {
+    const cache = createTopikContentCache();
+    const kept = parseTopikContent("# Kept\n", { cache });
+    const dropped = parseTopikContent("# Dropped\n", { cache });
+    pruneTopikContentCache(cache);
+    expect(parseTopikContent("# Kept\n", { cache })).toBe(kept);
+    pruneTopikContentCache(cache);
+    expect(parseTopikContent("# Kept\n", { cache })).toBe(kept);
+    expect(parseTopikContent("# Dropped\n", { cache })).not.toBe(dropped);
   });
 
   test("skips the data-limit check only for a shared tree that passed it", () => {

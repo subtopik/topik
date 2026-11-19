@@ -17,15 +17,32 @@ export interface TopikContentCache {
   readonly [cacheBrand]: true;
 }
 
-/** Documents parsed with the built-in components, by source text. */
-const states = new WeakMap<TopikContentCache, Map<string, DocumentTreeResult>>();
+/** Documents parsed with the built-in components, by source text: read since the last prune, and before. */
+interface CacheState {
+  current: Map<string, DocumentTreeResult>;
+  previous: Map<string, DocumentTreeResult>;
+}
+
+const states = new WeakMap<TopikContentCache, CacheState>();
 const BUILT_IN_COUNT = Object.keys(components).length;
 
 /** @internal */
 export function createTopikContentCache(): TopikContentCache {
   const cache = Object.freeze({}) as TopikContentCache;
-  states.set(cache, new Map());
+  states.set(cache, { current: new Map(), previous: new Map() });
   return cache;
+}
+
+/**
+ * @internal Drops every document no call read since the previous prune. A caller that keeps
+ * a cache across batches, such as a watcher across compilations, prunes after each batch, so
+ * the cache holds at most the documents of the last two.
+ */
+export function pruneTopikContentCache(cache: TopikContentCache): void {
+  const state = states.get(cache);
+  if (state === undefined) return;
+  state.previous = state.current;
+  state.current = new Map();
 }
 
 /**
@@ -53,18 +70,19 @@ export function parseCachedDocumentTree(
   registry: Registry,
   cache: TopikContentCache | undefined,
 ): DocumentTreeResult {
-  const documents = cache === undefined ? undefined : states.get(cache);
+  const state = cache === undefined ? undefined : states.get(cache);
   // A resolved registry always holds every built-in component, under its canonical definition.
-  if (documents === undefined || Object.keys(registry).length !== BUILT_IN_COUNT)
+  if (state === undefined || Object.keys(registry).length !== BUILT_IN_COUNT)
     return parseDocumentTree(source, registry);
-  let result = documents.get(source);
-  if (result === undefined) {
+  let result = state.current.get(source) ?? state.previous.get(source);
+  if (result !== undefined) state.current.set(source, result);
+  else {
     result = parseDocumentTree(source, registry);
     // The parser indexes a document only after it passed the data and tree limits.
     if (result.document !== undefined) deepFreeze(result.document, result.index !== undefined);
     Object.freeze(result.diagnostics);
     for (const diagnostic of result.diagnostics) Object.freeze(diagnostic);
-    documents.set(source, result);
+    state.current.set(source, result);
   }
   return result;
 }

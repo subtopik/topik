@@ -72,6 +72,11 @@ export interface CompileOptions {
   validation?: CompileValidationOptions;
   /** Optional application-supplied inventory for explicit resource references. */
   referenceTargets?: readonly import("./links").CompileResourceReferenceTarget[];
+  /**
+   * @internal Content results kept from earlier compilations of this project, so unchanged
+   * documents are not parsed and validated again. The caller prunes it after each compilation.
+   */
+  contentMemo?: import("./content-memo").ContentMemo;
 }
 
 /** Compile exactly the project declared by .topik.yaml in dir. */

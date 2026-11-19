@@ -6,7 +6,6 @@ import type {
 } from "@topik/content";
 import {
   parseTopikResourceReference,
-  rewriteTopikNavigationReferences,
   serializeTopikResourceReference,
   topikLinkDiagnosticMessage,
   validateTopikAssetReference,
@@ -379,26 +378,28 @@ export async function compileResourceLinksInSession(
     }
 
     if (replacements.size === 0) continue;
-    const rewritten = rewriteTopikNavigationReferences(
-      resource.spec.content.value,
-      (navigationReference) => {
-        const replacement = replacements.get(navigationReferenceKey(navigationReference));
-        if (!replacement) return undefined;
-        references.push({
-          resource: key,
-          sourcePath,
-          ...navigationReference,
-          reference: replacement.reference,
-          status: replacement.status,
-        });
-        return serializeTopikResourceReference(replacement.reference);
-      },
-      {
-        file: sourcePath,
-        allowCompiledAssetReferences: input.allowCompiledAssetReferences,
-        cache: memo.cache,
-      },
+    const hrefs = new Map(
+      [...replacements].map(([linkKey, { reference }]) => [
+        linkKey,
+        serializeTopikResourceReference(reference),
+      ]),
     );
+    const { result: rewritten, replaced } = memo.rewriteNavigation(
+      resource.spec.content.value,
+      { file: sourcePath, allowCompiledAssetReferences: input.allowCompiledAssetReferences },
+      hrefs,
+      navigationReferenceKey,
+    );
+    for (const navigationReference of replaced) {
+      const replacement = replacements.get(navigationReferenceKey(navigationReference))!;
+      references.push({
+        resource: key,
+        sourcePath,
+        ...navigationReference,
+        reference: replacement.reference,
+        status: replacement.status,
+      });
+    }
     if (!rewritten.ok) {
       diagnostics.push(...rewritten.diagnostics);
       continue;

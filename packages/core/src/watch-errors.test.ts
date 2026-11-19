@@ -287,3 +287,15 @@ test("a filesystem watcher failure closes the underlying watcher immediately", a
   await watcher.close();
   expect(control.close).toHaveBeenCalledTimes(1);
 });
+
+test("passes one content memo to every compilation and prunes it after each", async () => {
+  const fixtureData = await fixture();
+  watcher = await watch({ dir: fixtureData.dir, debounceMs: 0 });
+  const [first] = control.compile.mock.calls[0] as [{ contentMemo: { prune(): void } }];
+  const prune = vi.spyOn(first.contentMemo, "prune");
+  fs().emit("change", "page.md");
+  await vi.waitFor(() => expect(control.compile).toHaveBeenCalledTimes(2));
+  await vi.waitFor(() => expect(prune).toHaveBeenCalledTimes(1));
+  const [second] = control.compile.mock.calls[1] as [{ contentMemo: unknown }];
+  expect(second.contentMemo).toBe(first.contentMemo);
+});

@@ -220,8 +220,9 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
   const root = resolve(options.dir);
   // One session shares Git repository evidence across every portable read of this build.
   const session = createPortableReadSession(options.fileSafety, options.gitExecutable);
-  // Repeated admission and analysis of the same document text is shared within this call only.
-  const memo = createContentMemo();
+  // Repeated admission and analysis of the same document text is shared within this call, and
+  // with earlier calls when the caller keeps a memo across them.
+  const memo = options.contentMemo ?? createContentMemo();
   const manifest = await loadTopikManifestInSession(root, session);
   const sources = manifestSourceDescriptors(manifest);
   const provenance: ManifestSourceProvenance[] = [];

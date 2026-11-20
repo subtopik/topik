@@ -241,10 +241,12 @@ function validateChildren(component: Component, registry: Registry): ValidationI
         : constraint.nodes[0] === "code"
           ? "fence"
           : constraint.nodes[0];
+    // The ID names the first kind for stability; the message names every kind that satisfies it.
+    const satisfying = "components" in constraint ? constraint.components.join(" or ") : required;
     errors.push(
       issue(
         `topik-${kebab(name)}-requires-${kebab(required)}`,
-        `${name} requires at least one ${required} child`,
+        `${name} requires at least one ${satisfying} child`,
       ),
     );
   }

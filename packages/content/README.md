@@ -98,7 +98,8 @@ reported as a diagnostic, never silently discarded.
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | `callout`                                   | Block content; optional `variant` and `title`                                                       |
 | `accordion`                                 | Block content; required `title`, optional `open` and `id` (link target)                             |
-| `cardGrid`, `card`                          | Cards; grid `columns` from 1 to 4; card requires `title` and accepts `href`, `icon`                 |
+| `columns`, `column`                         | Cards or columns of block content side by side; `count` from 1 to 4, default 2                      |
+| `card`                                      | Requires `title`; accepts `href`, `icon` and block content                                          |
 | `tabs`, `tab`                               | One or more tabs, each with a required `title`                                                      |
 | `steps`, `step`                             | One or more steps; optional step `title`                                                            |
 | `codeGroup`, `codeTab`                      | One or more code tabs; each requires `title` and fenced code                                        |
@@ -358,9 +359,11 @@ Rewriting rules:
 Accepted references:
 
 - Images, figure sources, and video sources and posters accept canonical
-  relative paths or credential-free HTTPS URLs. A `video.src` occurrence has the
-  `video` role and its title in `semantics.title` or `semantics.titleTemplate`;
-  an application that allows only some video services checks it here.
+  relative paths or credential-free HTTPS URLs. An HTTPS URL with trailing
+  whitespace or an undecodable fragment, such as `#%E9`, is refused, because
+  rendering would drop it. A `video.src` occurrence has the `video` role and its
+  title in `semantics.title` or `semantics.titleTemplate`; an application that
+  allows only some video services checks it here.
 - Compiler-generated `asset:` references are accepted in rewritten output.
   Source admission accepts them only with `allowCompiledAssetReferences: true`.
 - Generic links count as download assets only when their decoded file path is

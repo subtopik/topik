@@ -20,11 +20,14 @@ const allComponentsContent = `
 Use the helper.
 {% /callout %}
 
-{% cardGrid columns=2 %}
+{% columns count=2 %}
 {% card title="One" href="/one" icon="1" %}
 First card.
 {% /card %}
-{% /cardGrid %}
+{% column %}
+Beside the card.
+{% /column %}
+{% /columns %}
 
 {% accordion title="Details" open=true %}
 Hidden text.
@@ -775,7 +778,8 @@ describe("content-react core", () => {
       TopikBadge: ({ children }) => <mark>{children}</mark>,
       TopikCallout: ({ children, title }) => <aside data-callout={String(title)}>{children}</aside>,
       TopikCard: ({ children, title }) => <article data-card={String(title)}>{children}</article>,
-      TopikCardGrid: ({ children }) => <div data-card-grid>{children}</div>,
+      TopikColumn: ({ children }) => <div data-column>{children}</div>,
+      TopikColumns: ({ children, count }) => <div data-columns={String(count)}>{children}</div>,
       TopikCodeBlock: ({ content, language }) => (
         <pre data-code-block={String(language)}>{String(content)}</pre>
       ),
@@ -814,7 +818,8 @@ describe("content-react core", () => {
     );
 
     expect(html).toContain('data-callout="Remember"');
-    expect(html).toContain("data-card-grid");
+    expect(html).toContain('data-columns="2"');
+    expect(html).toContain('<div data-column="true"><p>Beside the card.</p></div>');
     expect(html).toContain('data-card="One"');
     expect(html).toContain('data-accordion="Details"');
     expect(html).toContain("data-tabs");

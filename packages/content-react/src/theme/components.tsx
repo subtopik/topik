@@ -164,16 +164,21 @@ export function TopikCallout({ children, title, variant = "info" }: TopikCompone
   );
 }
 
-export function TopikCardGrid({ children, columns }: TopikComponentProps) {
-  const columnCount = numberAttribute(columns);
+/** Cells flow into rows of `count` columns and stack on narrow screens. */
+export function TopikColumns({ children, count }: TopikComponentProps) {
+  const columnCount = numberAttribute(count);
   const style = columnCount
-    ? ({ "--topik-card-grid-columns": columnCount } as React.CSSProperties)
+    ? ({ "--topik-columns-count": columnCount } as React.CSSProperties)
     : undefined;
   return (
-    <div className="topik-card-grid" style={style}>
+    <div className="topik-columns" style={style}>
       {children}
     </div>
   );
+}
+
+export function TopikColumn({ children }: TopikComponentProps) {
+  return <div className="topik-column">{children}</div>;
 }
 
 export function TopikCard({
@@ -639,7 +644,8 @@ export const defaultTopikComponents = {
   TopikBadge,
   TopikCallout,
   TopikCard,
-  TopikCardGrid,
+  TopikColumn,
+  TopikColumns,
   TopikCodeBlock,
   TopikCodeGroup,
   TopikCodeTab,

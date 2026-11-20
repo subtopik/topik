@@ -37,6 +37,7 @@ export interface ValidationError {
     | "resource-unsupported-version"
     | "resource-duplicate"
     | "reference-unresolved"
+    | "order-duplicate"
     | "content-invalid"
     | TopikAssetDiagnosticId;
   resource: string;
@@ -182,7 +183,7 @@ function ownRecord(
 
 /** A graph diagnostic, with the position of the resource it belongs to in the input. */
 export interface ResourceGraphError extends ValidationError {
-  id: "resource-duplicate" | "reference-unresolved";
+  id: "resource-duplicate" | "reference-unresolved" | "order-duplicate";
   /** Index of the resource this error belongs to in the validated list. */
   index: number;
 }
@@ -197,6 +198,7 @@ export interface ResourceGraphResult {
  * by-name reference names a resource in the set. The references checked are a Wiki navigation
  * page entry to its WikiPage, a WikiPage to its Wiki, a CourseModule to its Course, a CoursePage
  * to its CourseModule, and each `spec.authors` entry of a Course, CoursePage or Guide to a Person.
+ * The modules of one Course, and the pages of one module, must have distinct `spec.order` values.
  *
  * Run it only on a complete set, such as a whole compilation output: a partial set reports each
  * reference to a resource it leaves out. It does not check schemas. Resources that are not
@@ -237,8 +239,29 @@ export function validateResourceGraph(resources: readonly unknown[]): ResourceGr
   const target = (type: string, name: string) =>
     isResourceName(name) ? `${type}/${name}` : `the ${type}`;
 
+  // Course order is defined by `spec.order` alone, so siblings must not share a value.
+  const siblingOrders = new Map<string, Set<number>>();
   for (const { index, resource, type, name } of entries) {
     const label = `${type}/${name}`;
+    const parent =
+      type === "CourseModule" ? "course" : type === "CoursePage" ? "module" : undefined;
+    const orderSpec = parent ? ownRecord(resource, "spec") : undefined;
+    const parentName = orderSpec ? ownValue(orderSpec, parent!) : undefined;
+    const order = orderSpec ? ownValue(orderSpec, "order") : undefined;
+    if (typeof parentName === "string" && typeof order === "number") {
+      const key = `${type}:${parentName}`;
+      const orders = siblingOrders.get(key) ?? new Set<number>();
+      siblingOrders.set(key, orders);
+      if (orders.has(order))
+        errors.push({
+          id: "order-duplicate",
+          index,
+          resource: label,
+          path: "/spec/order",
+          message: `must be unique: another ${type} in the same ${parent === "course" ? "Course" : "CourseModule"} has the same order`,
+        });
+      orders.add(order);
+    }
     const spec = ownRecord(resource, "spec");
     if (!spec) continue;
 

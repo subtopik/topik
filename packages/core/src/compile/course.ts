@@ -126,6 +126,7 @@ export async function discoverCourse(
       },
     };
     resources.push(resource);
+    const pathsByOrder = new Map<number, string>();
     for (const [pageIndex, sourcePath] of module.pages.entries()) {
       const file = await readCoursePage(dir, sourcePath);
       const parsed = parseMarkdownFrontmatter(file.raw, file.path, 1);
@@ -148,6 +149,14 @@ export async function discoverCourse(
           field: "slug",
           relatedLocation: sameRoute,
         });
+      // Resources carry only `order`, so a tie would leave the page order undefined.
+      const sameOrder = pathsByOrder.get(metadata.order);
+      if (sameOrder !== undefined)
+        throw new PublicCompileError("frontmatter-invalid", file.path, {
+          field: "order",
+          relatedLocation: sameOrder,
+        });
+      pathsByOrder.set(metadata.order, file.path);
       const validation = memo.validate(parsed.content, file.path);
       diagnostics.push(...withFileLines(validation.errors, parsed.bodyLineOffset));
       if (!validation.valid) continue;

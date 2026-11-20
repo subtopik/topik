@@ -55,6 +55,17 @@ const courseConfigSchema = z
         code: "custom",
         message: "Course modules and page sources must be unique and portable",
       });
+    // Resources carry only `order`, so a tie would leave the module order undefined.
+    const orders = new Set<number>();
+    for (const [index, module] of config.modules.entries()) {
+      if (orders.has(module.order))
+        context.addIssue({
+          code: "custom",
+          path: ["modules", index, "order"],
+          message: "Module order values must be unique within a Course",
+        });
+      orders.add(module.order);
+    }
   });
 
 const coursePageMetadataSchema = z.object({

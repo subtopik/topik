@@ -244,7 +244,8 @@ export async function compileResourceLinksInSession(
       }
       if (NON_PAGE_SCHEME.test(link.href) || link.href.startsWith("//")) continue;
       if (link.href.startsWith("#")) {
-        if (link.href !== "#" && (resource.type !== "CoursePage" || link.kind === "link"))
+        // A fragment-only destination names this document, whatever kind of link holds it.
+        if (link.href !== "#")
           validateFragment(link.href.slice(1), analysis.headings, link, policy, diagnostics);
         continue;
       }

@@ -78,7 +78,7 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "heading-id-duplicate": "Explicit heading IDs must be unique within a document.",
   "missing-closing": "A tag has no matching closing tag.",
   "missing-opening": "A closing tag has no matching opening tag.",
-  "node-undefined": "This Markdown construct is not supported, such as raw HTML or footnotes.",
+  "node-undefined": "This Markdown construct is not supported, such as raw HTML.",
   "no-inline-annotations": "Inline annotations are not supported in this location.",
   "parameter-missing-required": "A required function parameter is missing.",
   "parameter-type-invalid": "A function parameter has an invalid type.",
@@ -109,7 +109,7 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "topik-code-tab-parent-required": "A code tab must be nested inside a code group.",
   "topik-code-tab-children": "A code tab may contain only fenced code blocks.",
   "topik-code-tab-requires-fence": "A code tab requires a fenced code block.",
-  "topik-columns-range": "Card grid columns must be an integer from 1 to 4.",
+  "topik-count-range": "A count is outside its supported range; columns take 1 to 4.",
   "topik-config-invalid": "Content configuration is invalid.",
   "topik-content-limit": "Content exceeds the supported complexity limits.",
   "topik-node-invalid": "A Markdown node cannot be represented without changing its meaning.",
@@ -118,6 +118,18 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "topik-write-failed": "Content could not be written without changing its meaning.",
   "topik-extension-failed": "Content extension validation failed.",
   "topik-explanation-children": "An explanation may contain only block content.",
+  "topik-footnote-placement":
+    "Write footnote definitions at the top level of the document, and footnote references outside links and quiz explanations.",
+  "topik-footnote-duplicate":
+    "A footnote label is defined more than once; give each footnote its own label.",
+  "topik-footnote-missing": "A footnote reference has no definition with the same label.",
+  "topik-footnote-unreferenced":
+    "A footnote definition is never referenced; reference it or remove it.",
+  "topik-footnote-nested": "A footnote definition cannot contain footnote references.",
+  "topik-footnote-content":
+    "A footnote definition cannot contain headings, link definitions or conditionals; make the reference conditional instead.",
+  "topik-heading-id-reserved":
+    "Explicit heading IDs cannot start with fn: or fnref:, which footnote anchors use.",
   "topik-figure-children": "A figure cannot contain children; use its alt and caption attributes.",
   "topik-math-children": "Block math cannot contain children; use its content attribute.",
   "topik-math-inline-children": "Inline math cannot contain children; use its content attribute.",
@@ -183,11 +195,16 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "topik-conditional-children": "Conditional branches must contain block content.",
   "topik-tag-children": "The component requires a different opening or closing form.",
   "topik-tag-placement": "The component cannot appear in this location.",
-  "topik-card-grid-children": "A card grid may contain only cards.",
+  "topik-columns-children": "Columns may contain only cards and columns.",
+  "topik-columns-requires-card": "Columns require at least one card or column.",
+  "topik-columns-parent-required":
+    "A component must be nested inside its required parent, such as a column inside columns.",
   "topik-quiz-parent-required": "A question must be nested inside a quiz.",
   "topik-kbd-children": "A keyboard key requires inline content, such as the key name.",
   "topik-underline-children": "Underline requires inline content.",
   "topik-u-children": "Underline requires inline content.",
+  "topik-video-children": "A video cannot contain children; use its title and caption attributes.",
+  "topik-video-title": "A video requires a title that is not blank.",
   "variable-undefined": "A referenced variable is not defined.",
 };
 

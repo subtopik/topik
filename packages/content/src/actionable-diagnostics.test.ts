@@ -160,10 +160,10 @@ describe("unsupported Markdown nodes", () => {
     ]);
   });
 
-  test("footnotes report each unsupported node", () => {
-    expect(validateTopikContent("Text[^1]\n\n[^1]: Note").errors).toEqual([
-      expect.objectContaining({ id: "node-undefined", type: "footnoteReference", lines: [1] }),
-      expect.objectContaining({ id: "node-undefined", type: "footnoteDefinition", lines: [3] }),
+  test("footnote errors locate the definition", () => {
+    // Without a definition, `[^1]` stays text; the lone definition is unreferenced.
+    expect(validateTopikContent("Text[^1]\n\n[^2]: Note").errors).toEqual([
+      expect.objectContaining({ id: "topik-footnote-unreferenced", lines: [3], column: 1 }),
     ]);
   });
 

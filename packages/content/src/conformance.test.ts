@@ -344,7 +344,7 @@ describe("explicit refusal with raw source", () => {
     ["unsupported expression syntax", "{% $name + 1 %}"],
     ["expression attribute", '{% badge text={name} tone="info" /%}'],
     ["raw HTML", "<script>alert(1)</script>"],
-    ["footnote", "Note[^a]\n\n[^a]: Value"],
+    ["nested footnote definition", "Note[^a]\n\n> [^a]: Value"],
     ["block inline", 'Text {% callout variant="info" %}'],
     ["unterminated tag", '{% callout variant="info"'],
   ])("refuses %s", (_label, source) => {

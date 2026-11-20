@@ -30,14 +30,39 @@ Callout body.
 
 export const Cards: Story = {
   args: {
-    content: `{% cardGrid columns=2 %}
+    content: `{% columns count=2 %}
 {% card title="Alpha" href="/alpha" icon="A" %}
 First card.
 {% /card %}
 {% card title="Beta" icon="B" %}
 Second card.
 {% /card %}
-{% /cardGrid %}`,
+{% /columns %}`,
+  },
+};
+
+export const Columns: Story = {
+  args: {
+    content: `{% columns count=2 %}
+{% column %}
+**Install** the package, then import the renderer.
+{% /column %}
+{% column %}
+\`\`\`sh
+npm install @topik/content-react
+\`\`\`
+{% /column %}
+{% /columns %}`,
+  },
+};
+
+export const Footnotes: Story = {
+  args: {
+    content: `Topik validates content[^v] before it compiles it.[^c] It checks every branch, again[^v].
+
+[^v]: Validation runs before rendering.
+
+[^c]: Compilation also resolves **assets**.`,
   },
 };
 

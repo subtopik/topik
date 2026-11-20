@@ -64,7 +64,7 @@ export interface TopikAssetResolutionDiagnostic {
   id: "TOPIK_ASSET_REFERENCE_MALFORMED" | "TOPIK_ASSET_REFERENCE_MISSING";
   message: string;
   name?: string;
-  slot: "image.src" | "figure.src" | "figure.darkSrc" | "link.href";
+  slot: "image.src" | "figure.src" | "figure.darkSrc" | "video.src" | "video.poster" | "link.href";
 }
 
 export interface TopikNavigationResolutionDiagnostic {
@@ -297,6 +297,8 @@ export function resolveTopikAssetReferences<T>(
       continue;
     }
     const generatedName = validation.name;
+    // A compiled video source is an MP4 or WebM file, whatever its resolved URL looks like.
+    if (slot === "video.src") attributes.__topikVideoFile = true;
     const token = previewAssetToken(options.previewAssets, generatedName, slot);
     if (token) {
       attributes[attribute] = token;
@@ -314,6 +316,8 @@ export function resolveTopikAssetReferences<T>(
       !isSafeResolvedAssetReference(resolved)
     ) {
       delete attributes[attribute];
+      // Only the source decides how a video renders; a missing poster leaves the player.
+      if (slot === "video.src") delete attributes.__topikVideoFile;
       options.onDiagnostic?.({
         id: "TOPIK_ASSET_REFERENCE_MISSING",
         message: "Asset name could not be resolved",
@@ -406,6 +410,12 @@ function renderedReferenceSlots(name: string): readonly RenderedReferenceSlot[] 
     return [
       { kind: "asset", attribute: "src", slot: "figure.src" },
       { kind: "asset", attribute: "darkSrc", slot: "figure.darkSrc" },
+    ];
+  }
+  if (name === "TopikVideo") {
+    return [
+      { kind: "asset", attribute: "src", slot: "video.src" },
+      { kind: "asset", attribute: "poster", slot: "video.poster" },
     ];
   }
   if (name === "TopikLink") {

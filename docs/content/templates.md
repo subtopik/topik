@@ -53,6 +53,7 @@ Only these properties accept templates:
 | -------------------------------------------------------- | ------------------- |
 | `callout`, `accordion`, `card`, `tab`, `step`, `codeTab` | `title`             |
 | `figure`                                                 | `alt`, `caption`    |
+| `video`                                                  | `title`, `caption`  |
 
 A quoted string without `t` is literal, even when it contains text that looks
 like a variable.

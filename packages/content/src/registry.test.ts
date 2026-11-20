@@ -52,6 +52,7 @@ test("the complete legacy catalog maps authored tags and native Markdown nodes",
       "tableRow",
       "tabs",
       "underline",
+      "video",
     ].sort(),
   );
   expect(topikComponents.codeGroup.requiredChildren).toEqual(["codeTab"]);

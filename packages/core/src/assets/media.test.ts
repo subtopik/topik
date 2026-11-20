@@ -239,6 +239,26 @@ describe("reference roles for the TIFF, AAC and WebM types", () => {
   });
 });
 
+describe("the video reference role", () => {
+  test.each([
+    ["video/mp4", true],
+    ["video/webm", true],
+    ["video/quicktime", false],
+    ["video/3gpp", false],
+    ["audio/mp4", false],
+    ["audio/mpeg", false],
+    ["image/png", false],
+    ["application/octet-stream", false],
+  ] as const)("admits %s: %s", (mediaType, admitted) => {
+    expect(isInlineMediaCompatible(mediaType, "video")).toBe(admitted);
+  });
+
+  test("leaves the generic media role unchanged", () => {
+    expect(isInlineMediaCompatible("video/quicktime", "media")).toBe(true);
+    expect(isInlineMediaCompatible("audio/mp4", "media")).toBe(true);
+  });
+});
+
 describe("ISO base media brands", () => {
   test.each([
     ["avif", [], "image/avif"],

@@ -15,4 +15,4 @@ diagnostics now always include an `id`. Unsupported expressions report a single
 attribute or field, wrap causes, and reject unknown `allowedParents` and
 `children.components` names. Custom component rule IDs get fixed per-rule messages.
 
-Breaking: the diagnostic IDs `topik-transform-failed` and `parse-error` are replaced by the specific IDs above. Code that matched on either must match the new IDs.
+Breaking: the failures above report the specific IDs instead of `topik-transform-failed` and `parse-error`, which remain only as fallbacks for failures without a specific ID. Code that matched on either for these failures must match the new IDs.

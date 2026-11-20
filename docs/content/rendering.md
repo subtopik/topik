@@ -670,8 +670,9 @@ A caller that already owns a validated reader tree can use
 
 1. A hand-written complete `TopikComponentMap` must add `TopikColumns`,
    `TopikColumn`, `TopikKbd`, `TopikVideo`, `TopikYouTube`, `TopikFootnote`,
-   `TopikFootnoteReference` and `TopikFootnotes`, and drop `TopikCardGrid`.
-   Partial override maps need no change.
+   `TopikFootnoteReference` and `TopikFootnotes`, and drop `TopikCardGrid`. A
+   partial override map needs no change unless it names `TopikCardGrid`; remove
+   that key.
 2. Stylesheets that target the theme's card grid must use `.topik-columns` for
    `.topik-card-grid`, and `--topik-columns-count` for
    `--topik-card-grid-columns`.

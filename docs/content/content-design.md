@@ -536,5 +536,6 @@ canonical form:
 4. Code that passes a format version to `parseDocument` or `writeDocument` must
    pass `2`, or leave it out. Version `1` is refused.
 5. Code that matched the diagnostic IDs `topik-transform-failed` or
-   `parse-error` must match the specific IDs that replace them, such as
-   `topik-variable-missing`, `missing-closing` or `tag-unterminated`.
+   `parse-error` must also match the specific IDs most of those failures now
+   report, such as `topik-variable-missing`, `missing-closing` or
+   `tag-unterminated`. The two IDs remain for failures without a specific ID.

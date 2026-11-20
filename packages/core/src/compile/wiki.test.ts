@@ -889,6 +889,14 @@ navigation:
     await expect(compileWiki({ dir })).rejects.toMatchObject({
       diagnostics: [expect.objectContaining({ file: "intro.md", lines: [7] })],
     });
+
+    // A page whose only link problem is a missing same-page section is counted the same way.
+    await writePage("intro", "---\nid: intro\ntitle: Intro\n---\n# Intro\n\n[Gone](#missing)\n");
+    await expect(compileWiki({ dir })).rejects.toMatchObject({
+      diagnostics: [
+        expect.objectContaining({ id: "link-fragment-not-found", file: "intro.md", lines: [7] }),
+      ],
+    });
   });
 
   test("names the page whose frontmatter id repeats another page's", async () => {

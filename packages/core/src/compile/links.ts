@@ -206,11 +206,14 @@ export async function compileResourceLinksInSession(
     const analysis = analyses.get(key);
     if (!analysis || sourcePath === undefined) continue;
     // Diagnostics for this document count body lines until they are shifted to file lines.
-    const firstDiagnostic = diagnostics.length;
-    const toFileLines = () =>
+    // Each call shifts only what was added since the previous one.
+    let firstDiagnostic = diagnostics.length;
+    const toFileLines = () => {
       diagnostics.push(
         ...withFileLines(diagnostics.splice(firstDiagnostic), input.bodyLinesByResource?.[key]),
       );
+      firstDiagnostic = diagnostics.length;
+    };
     const directory = input.sourceDirectoriesByResource?.[key] ?? "";
     const replacements = new Map<
       string,
@@ -388,6 +391,7 @@ export async function compileResourceLinksInSession(
       appendLinkDiagnostic("link-page-not-found", link, policy, diagnostics);
     }
 
+    toFileLines();
     if (replacements.size === 0) continue;
     const hrefs = new Map(
       [...replacements].map(([linkKey, { reference }]) => [

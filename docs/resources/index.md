@@ -475,8 +475,8 @@ system paths such as `/var` and `/tmp` are links there.
 1. Use Node.js 22.22 or later.
 2. Install every `@topik/*` package from the `alpha` tag, such as
    `npm install @topik/cli@alpha`, so the packages match.
-3. Run `topik migrate` in the project directory to create or update the Topik
-   section of `AGENTS.md`.
+3. Run `npx topik migrate` in the project directory to create or update the
+   Topik section of `AGENTS.md`.
 4. Compile the project once and fix what now fails:
    - A misspelled top-level configuration key or Wiki `theme` key fails with
      `config-field-unknown`.

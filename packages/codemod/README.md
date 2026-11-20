@@ -149,8 +149,12 @@ the file contains any of these:
 - MDX imports, exports and expressions
 - mismatched closing tags
 - components inside tables, headings, lists, blockquotes or paragraph text
-- root-absolute image or file paths, such as `/images/a.png`: Topik assets are
-  relative to the page, so rewrite them, for example to `../images/a.png`
+- root-absolute image paths, such as `/images/a.png`: Topik assets are relative
+  to the page, so rewrite them, for example to `../images/a.png`
+
+A root-absolute link to a file, such as `[Download](/files/a.pdf)`, converts as a
+page link without a warning. Check such links after converting, and make them
+relative so they compile as downloads.
 
 ## Documentation
 

@@ -1,10 +1,12 @@
 import { afterEach, expect, test, vi } from "vite-plus/test";
 import { rewriteTopikNavigationReferences } from "./navigation-rewrite";
-import { analyzeTopikContent } from "./links";
+import { analyzeDocument, analyzeTopikContent } from "./links";
+import { compileTopikContent } from "./compile";
+import { parseTopikContent } from "./content";
+import { validateTopikContent } from "./validate";
 import * as parser from "./parser";
 import * as writer from "./writer";
 import type { TopikContentConfig } from "./config";
-import { ContentLimitError } from "./limits";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -119,15 +121,22 @@ test("retains branch-local reference bindings without merging same-named definit
   ]);
 });
 
-test.each([undefined, "/next"])(
-  "rejects oversized derived heading metadata before replacement returning %j",
-  (replacement) => {
-    const source = `# ${"a".repeat(500_100)}\n\n[Next](next.md)\n`;
-    const replace = vi.fn(() => replacement);
-    expect(() => rewriteTopikNavigationReferences(source, replace)).toThrow(ContentLimitError);
-    expect(replace).not.toHaveBeenCalled();
-  },
-);
+test("rewrites a document whose generated heading IDs only compilation would exceed limits with", () => {
+  // Analysis derives heading IDs without writing them into the authoring tree, so the rewrite
+  // agrees with validation; compilation, which produces the IDs, refuses the document.
+  const source = `# ${"a".repeat(500_100)}\n\n[Next](next.md)\n`;
+  const result = rewriteTopikNavigationReferences(source, () => "/next");
+  expect(result).toMatchObject({ ok: true, changes: [{ href: "next.md", replacement: "/next" }] });
+  expect(validateTopikContent(source).valid).toBe(true);
+  expect(compileTopikContent(source).ok).toBe(false);
+});
+
+test("leaves the analyzed authoring tree unchanged", () => {
+  const document = parseTopikContent("# Intro\n\n[Intro](#intro)\n");
+  const before = structuredClone(document);
+  analyzeDocument(document);
+  expect(document).toEqual(before);
+});
 
 test("retains the meaning check when serialization changes Markdown interpretation", () => {
   const source = "Keep **this** text.\n\n[Next](next.md)\n";

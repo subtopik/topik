@@ -1,3 +1,4 @@
+import type { TopikContentCache } from "./parse-cache.js";
 import type { Heading } from "mdast";
 import type { ContentDocument, TreeNode } from "./model.js";
 import type { TopikContentConfig } from "./config.js";
@@ -5,7 +6,7 @@ import { plainText, walkContent } from "./traversal.js";
 import { indexDocument, isReference, type DocumentIndex } from "./document-index.js";
 type ValidationError = { id: string; level: "error"; message: string };
 import { isTopikGeneratedAssetName } from "./asset-reference-policy.js";
-import { assignAnchorIds, isAnchorNode, type TopikAnchor, type TopikHeading } from "./headings";
+import { anchorIds, isAnchorNode, type TopikAnchor, type TopikHeading } from "./headings";
 import { parseTopikContent } from "./content";
 import { parseTopikResourceReference } from "./resource-references.js";
 import {
@@ -51,13 +52,19 @@ export interface AnalyzeTopikContentResult {
 export interface AnalyzeTopikContentOptions {
   file?: string;
   config?: TopikContentConfig;
+  /** @internal Parse results shared with other calls given the same cache. */
+  cache?: TopikContentCache;
 }
 
 export function analyzeTopikContent(
   source: string,
   options: AnalyzeTopikContentOptions = {},
 ): AnalyzeTopikContentResult {
-  const ast = parseTopikContent(source, { file: options.file, config: options.config });
+  const ast = parseTopikContent(source, {
+    file: options.file,
+    config: options.config,
+    cache: options.cache,
+  });
   return analyzeDocument(ast, options.file);
 }
 
@@ -80,7 +87,7 @@ export function analyzeDocument(
     explicitIdNodes.set(id, nodes);
   }
 
-  const assigned = assignAnchorIds(anchorNodes);
+  const assigned = anchorIds(anchorNodes);
   const anchors = assigned.map((anchor, index) => ({
     ...anchor,
     ...locationFields(anchorNodes[index], file),

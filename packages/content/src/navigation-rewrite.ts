@@ -1,5 +1,5 @@
-import { indexDocument, isReference } from "./document-index.js";
-import { prepareSource, writeFailure } from "./source.js";
+import { isReference } from "./document-index.js";
+import { mutablePreparedCopy, prepareSource, writeFailure } from "./source.js";
 import { serializeDocument } from "./writer.js";
 import { FORMAT_VERSION } from "./parser.js";
 import { locateMeaningDifference, sameDocumentMeaning } from "./document-meaning.js";
@@ -29,7 +29,7 @@ export function rewriteTopikNavigationReferences(
 ): RewriteTopikNavigationResult {
   const prepared = prepareSource(source, options);
   if (!prepared.ok) return prepared;
-  const index = indexDocument(prepared.document);
+  const { index } = prepared;
   const changes: Array<TopikNavigationReference & { replacement: string }> = [];
   const targets = new Map<TreeNode, string>();
   const imageDefinitions = new Set<TreeNode>();
@@ -62,14 +62,16 @@ export function rewriteTopikNavigationReferences(
     if (replacement !== href) changes.push({ ...reference, replacement });
   }
   if (!changes.length) return { ok: true, content: source, changes, diagnostics: [] };
-  for (const [node, replacement] of targets) {
+  const { document, nodeAt } = mutablePreparedCopy(prepared);
+  for (const [target, replacement] of targets) {
+    const node = nodeAt(target);
     if (node.type === "topikComponent") node.props!.href = replacement;
     else (node as TreeNode & { url: string }).url = replacement;
   }
   let content: string;
   try {
     // Unchanged content keeps its authored spelling and therefore its tree positions.
-    content = serializeDocument(prepared.document, prepared.config.components, FORMAT_VERSION, {
+    content = serializeDocument(document, prepared.config.components, FORMAT_VERSION, {
       preserveTreePositions: true,
     });
   } catch {
@@ -77,11 +79,7 @@ export function rewriteTopikNavigationReferences(
   }
   const output = prepareSource(content, { ...options, config: prepared.config });
   if (!output.ok) return writeFailure(source, options.file);
-  if (!sameDocumentMeaning(prepared.document, output.document))
-    return writeFailure(
-      source,
-      options.file,
-      locateMeaningDifference(prepared.document, output.document),
-    );
+  if (!sameDocumentMeaning(document, output.document))
+    return writeFailure(source, options.file, locateMeaningDifference(document, output.document));
   return { ok: true, content, changes, diagnostics: [] };
 }

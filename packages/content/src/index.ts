@@ -59,6 +59,11 @@ export {
 } from "./asset-references";
 export { parseTopikContent, type ParseTopikContentOptions, type TopikContentNode } from "./content";
 export {
+  createTopikContentCache,
+  pruneTopikContentCache,
+  type TopikContentCache,
+} from "./parse-cache";
+export {
   formatTopikContent,
   type FormatTopikContentFailure,
   type FormatTopikContentOptions,

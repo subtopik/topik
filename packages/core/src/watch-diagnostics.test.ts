@@ -181,7 +181,7 @@ describe("previewResultDiagnostics", () => {
       diagnostics: [
         {
           id: "link-fragment-not-found",
-          message: "Link target heading was not found.",
+          message: "Link target heading or accordion was not found.",
           severity: "warning",
           location: { path: "wiki/intro.md", line: 4 },
           resource: { type: "Wiki", name: "handbook" },

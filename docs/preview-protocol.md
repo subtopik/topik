@@ -121,6 +121,10 @@ Compilations are serialized, and filesystem notifications are coalesced:
 - A candidate invalidated by a notification during its compilation is discarded
   before publication.
 - Closing the watcher prevents pending results from being committed.
+- Each compilation reads every source file again, but reuses the parsing,
+  validation, analysis and link rewriting of documents whose text and link
+  targets are unchanged since the previous compilation. The result is the same
+  as a fresh compilation.
 
 ### Watched directories
 

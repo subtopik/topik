@@ -339,7 +339,7 @@ describe("footnotes next to other constructs", () => {
     ["after a hard break", "a\\\n[^1]\\: b\n\n[^1]: note\n"],
     ["in a list item", "- [^1]\\: b\n\n[^1]: note\n"],
     ["after a hard break in strong text", "**a\\\n[^1]\\: x**\n\n[^1]: note\n"],
-    ["after a hard break in emphasis", "*a\\\n[^1]\\: x*\n\n[^1]: note\n"],
+    ["after a hard break in emphasis", "_a\\\n[^1]\\: x_\n\n[^1]: note\n"],
     ["after a hard break in strikethrough", "~~a\\\n[^1]\\: x~~\n\n[^1]: note\n"],
     [
       "after a hard break in an inline tag",

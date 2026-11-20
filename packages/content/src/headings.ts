@@ -73,10 +73,31 @@ export function assignHeadingIds(nodes: readonly TreeNode[]): TopikHeading[] {
 
 /**
  * @internal Give each heading and accordion, in document order, its explicit ID or a generated
- * one. Generated IDs follow GitHub: the slug of the title, numbered by occurrence, skipping
- * explicit IDs. Headings keep the ID in `data.hProperties.id`, accordions in `data.topikAnchorId`.
+ * one, and write it into the tree: headings keep the ID in `data.hProperties.id`, accordions in
+ * `data.topikAnchorId`.
  */
 export function assignAnchorIds(nodes: readonly TreeNode[]): TopikAnchor[] {
+  const anchors = anchorIds(nodes);
+  for (const [index, node] of nodes.entries()) {
+    const { id, kind } = anchors[index]!;
+    if (kind === "heading") {
+      const heading = node as unknown as Heading;
+      heading.data = { ...heading.data, hProperties: { id } };
+    } else
+      (node as TreeNode & { data?: Record<string, unknown> }).data = {
+        ...(node as TreeNode & { data?: Record<string, unknown> }).data,
+        topikAnchorId: id,
+      };
+  }
+  return anchors;
+}
+
+/**
+ * @internal The IDs {@link assignAnchorIds} gives, without writing them into the tree, so that
+ * analysis can read a shared, cached document. Generated IDs follow GitHub: the slug of the
+ * title, numbered by occurrence, skipping explicit IDs.
+ */
+export function anchorIds(nodes: readonly TreeNode[]): TopikAnchor[] {
   const slugger = new GithubSlugger();
   const explicitIds = new Set<string>();
   for (const node of nodes) {
@@ -106,18 +127,9 @@ export function assignAnchorIds(nodes: readonly TreeNode[]): TopikAnchor[] {
         id = slugger.slug(base);
       } while (explicitIds.has(id));
     }
-    const kind = node.type === "heading" ? "heading" : "accordion";
-    if (kind === "heading") {
-      const heading = node as unknown as Heading;
-      heading.data = { ...heading.data, hProperties: { id } };
-    } else
-      (node as TreeNode & { data?: Record<string, unknown> }).data = {
-        ...(node as TreeNode & { data?: Record<string, unknown> }).data,
-        topikAnchorId: id,
-      };
     return {
       id,
-      kind,
+      kind: node.type === "heading" ? ("heading" as const) : ("accordion" as const),
       ...(typeof explicit !== "string" && generatedBases.get(bases[index])! > 1
         ? { positional: true as const }
         : {}),

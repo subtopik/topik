@@ -288,6 +288,8 @@ export function CodeBlockView({
 
   return (
     <div
+      // A generic div cannot take a name; a titled block is a group named by its title.
+      role={presentation?.title ? "group" : undefined}
       aria-labelledby={presentation?.title ? headingId : undefined}
       className="topik-code-block"
       data-language={language}

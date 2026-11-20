@@ -6,8 +6,11 @@ directories.
 ## Install
 
 ```sh
-npm install @topik/cli
+npm install @topik/cli@alpha
 ```
+
+Topik releases are published under the `alpha` tag; `latest` points at an older
+release. Install every `@topik/*` package from `alpha` so they match.
 
 ## Usage
 

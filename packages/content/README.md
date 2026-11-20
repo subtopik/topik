@@ -11,7 +11,7 @@ The package is ESM and requires Node.js 22.22 or later. Install it with your
 package manager:
 
 ```sh
-npm install @topik/content
+npm install @topik/content@alpha
 ```
 
 ## Validate, format, and render

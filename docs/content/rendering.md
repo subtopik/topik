@@ -14,7 +14,7 @@ application.
 ## Render with the default theme
 
 ```sh
-npm install @topik/content-react react react-dom
+npm install @topik/content-react@alpha react react-dom
 ```
 
 Import the stylesheet once in the application's stylesheet entry point:

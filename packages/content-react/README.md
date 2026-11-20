@@ -7,7 +7,7 @@ points add a default theme and rich code, math, and diagram rendering.
 ## Install
 
 ```sh
-npm install @topik/content-react react react-dom
+npm install @topik/content-react@alpha react react-dom
 ```
 
 Rich rendering uses optional peers: `shiki` for code highlighting, `katex` for

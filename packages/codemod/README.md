@@ -7,7 +7,7 @@ navigation to a Topik `wiki.yaml`.
 ## Install
 
 ```sh
-npm install --save-dev @topik/codemod
+npm install --save-dev @topik/codemod@alpha
 ```
 
 ## Usage

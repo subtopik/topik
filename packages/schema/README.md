@@ -13,7 +13,7 @@ all of them.
 ## Install
 
 ```sh
-npm install @topik/schema
+npm install @topik/schema@alpha
 ```
 
 ## Usage

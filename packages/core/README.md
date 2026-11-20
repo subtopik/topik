@@ -12,7 +12,7 @@ or [`@topik/content-react`](https://github.com/subtopik/topik/tree/main/packages
 ## Install
 
 ```sh
-npm install @topik/core
+npm install @topik/core@alpha
 ```
 
 ## Usage

@@ -91,10 +91,11 @@ navigation:
 ```
 
 Write ordinary [Topik Markdown](../content/content-design.md) in `index.md`.
-Then install and run the CLI:
+Then install and run the CLI. Topik releases are published under the `alpha`
+tag, so install from it:
 
 ```sh
-npm install @topik/cli
+npm install @topik/cli@alpha
 npx topik compile ./handbook --validate
 npx topik validate ./handbook/.topik
 ```

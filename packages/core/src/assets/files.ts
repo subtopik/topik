@@ -1355,7 +1355,9 @@ async function runGit(
     (resolvePromise) => {
       execFile(
         executable,
-        [...args],
+        // Evidence about a tree must not come from code that tree supplies: a repository's own
+        // `core.fsmonitor` would otherwise run its command when Git reads the index.
+        ["-c", "core.fsmonitor=false", ...args],
         {
           encoding: "utf8",
           env: gitEnvironment(),

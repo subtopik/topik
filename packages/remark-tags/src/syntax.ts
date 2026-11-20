@@ -166,9 +166,9 @@ export function tagSyntax(
 
       function body(code: Code): State | undefined {
         if (lineEnd(code)) {
-          if (flow) return nok(code);
-          // Keep malformed openers as markers; the reader reports their source
-          // location instead of silently treating them as ordinary text.
+          // Keep malformed openers as markers, in flow too; the reader reports their source
+          // location instead of treating them as text, and keeps a block's scope open so its
+          // valid closer is not reported as well.
           effects.exit(token);
           return ok(code);
         }

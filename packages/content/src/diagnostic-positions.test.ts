@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import {
+  parseDocument,
   compileTopikContent,
   formatTopikContent,
   rewriteTopikAssetOccurrences,
@@ -148,4 +149,22 @@ describe("write failure location", () => {
     // Output-only content has no authored node; the root is not a location.
     expect(locateMeaningDifference(parse("# Title\n"), authored)).toBe(undefined);
   });
+});
+
+test("reports an attribute problem once and an unclosed quote without a cascade", () => {
+  const ids = (source: string) => {
+    const result = parseDocument(source);
+    return result.ok ? [] : result.diagnostics.map((item) => item.id);
+  };
+  expect(ids('{% callout varian="x" %}\nhi\n{% /callout %}\n')).toEqual(["attribute-undefined"]);
+  expect(ids("{% tabs %}\n{% tab %}\nx\n{% /tab %}\n{% /tabs %}\n")).toEqual([
+    "attribute-missing-required",
+  ]);
+  // The opener is malformed, but its closer still matches it.
+  for (const source of [
+    '{% callout title="x %}\nhi\n{% /callout %}\n',
+    'Text\n{% callout title="x %}\nhi\n{% /callout %}\n',
+    '- item\n\n  {% callout title="x %}\n  hi\n  {% /callout %}\n',
+  ])
+    expect(ids(source)).toEqual(["attribute-syntax-invalid"]);
 });

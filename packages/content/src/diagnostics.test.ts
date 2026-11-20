@@ -123,6 +123,41 @@ describe("diagnostic file sanitization", () => {
     expect(label).not.toMatch(privateLabelPattern);
   });
 
+  test.each([
+    "wiki/chapter#1/intro.md",
+    "guides/a?b.md",
+    "guides/getting started.md",
+    "wiki/Übersicht.md",
+    "wiki/日本語/はじめに.md",
+    "wiki/100%.md",
+    "people/a@b.yaml",
+    String.raw`guides\Getting started.md`,
+  ])("shows a relative path as written: %s", (file) => {
+    expect(sanitizeTopikDiagnosticFile(file)).toBe(file);
+  });
+
+  test.each([
+    ["a tab", "guides/a\tb.md"],
+    ["a no-break space", "guides/a\u00a0b.md"],
+    ["a zero-width space", "guides/a\u200bb.md"],
+    ["a bidi override", "guides/\u202edm.exe"],
+    ["a line separator", "guides/a\u2028b.md"],
+    ["a percent-escape", "guides/a%2Fb.md"],
+    ["a leading space", "guides/ a.md"],
+    ["a trailing space", "guides /a.md"],
+    ["a parent segment", "guides/../secret.md"],
+    ["an empty segment", "guides//a.md"],
+    ["a colon", "guides/a:b.md"],
+  ])("refuses a relative path with %s", (_, file) => {
+    expect(sanitizeTopikDiagnosticFile(file)).toBe("content");
+  });
+
+  test("keeps only the basename of an absolute path with spaces", () => {
+    expect(sanitizeTopikDiagnosticFile("/Users/Jane Doe/project/lesson one.md")).toBe(
+      "lesson one.md",
+    );
+  });
+
   test.each(["lesson.md", "guides/lesson.md", String.raw`guides\lesson.md`])(
     "preserves safe relative file label %s",
     (file) => {

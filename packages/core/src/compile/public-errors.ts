@@ -191,12 +191,20 @@ function sanitizeCompileLocation(value: string | undefined): string | undefined 
   if (isAbsolute(value) || win32.isAbsolute(value)) return undefined;
   const normalized = value.replaceAll("\\", "/");
   const components = normalized.split("/");
+  // The same relative-path rule as content diagnostic labels: any printable name except a
+  // drive or scheme (`:`), percent-escapes that could carry an encoded URL, and segments that
+  // are empty, `.`, `..` or padded with spaces.
   if (
     components.some(
-      (component) => component.length === 0 || component === "." || component === "..",
+      (component) =>
+        component.length === 0 ||
+        component === "." ||
+        component === ".." ||
+        component.trim() !== component,
     ) ||
     containsForbiddenCodePoint(normalized) ||
-    /[?#:@%]/u.test(normalized)
+    normalized.includes(":") ||
+    /%[0-9a-f]{2}/iu.test(normalized)
   ) {
     return undefined;
   }

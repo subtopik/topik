@@ -42,6 +42,11 @@ export function referenceSourceLabel(node: Association): string {
 export function indexDocument(document: ContentDocument): DocumentIndex {
   assertDataLimits(document, { plain: true });
   assertTreeLimits(document as TreeNode);
+  return indexCheckedDocument(document);
+}
+
+/** @internal {@link indexDocument} of a document whose limits the caller has just checked. */
+export function indexCheckedDocument(document: ContentDocument): DocumentIndex {
   const entries: DocumentEntry[] = [];
   const scopes = new Map<TreeNode, ReferenceScope>();
   const rootScope: ReferenceScope = { definitions: new Map() };

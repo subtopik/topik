@@ -49,3 +49,46 @@ test("empty directory creation invalidates links and removal recovers the previe
   const fresh = await compile({ dir });
   expect(watcher.state.resources).toEqual(fresh.resources);
 });
+
+test("publishes located diagnostics with their resource, and warnings of a ready state", async () => {
+  dir = await mkdtemp(join(tmpdir(), "topik-watch-diagnostics-"));
+  await writeFile(
+    join(dir, ".topik.yaml"),
+    JSON.stringify({
+      version: 1,
+      namespace: "located-diagnostics",
+      sources: [{ kind: "wiki", config: "wiki.yaml" }],
+    }),
+  );
+  await writeFile(join(dir, "wiki.yaml"), "id: docs\ntitle: Docs\nnavigation: [intro]\n");
+  await writeFile(join(dir, "intro.md"), "# Intro\n\nText.\n");
+  watcher = await watch({ dir });
+  expect(watcher.state).toMatchObject({ status: "ready", diagnostics: [] });
+
+  await writeFile(join(dir, "intro.md"), "# Intro\n\nSee [missing](./missing).\n");
+  await vi.waitFor(() => expect(watcher?.state.status).toBe("error"), { timeout: 3000 });
+  expect(watcher.state.diagnostics).toEqual([
+    {
+      id: "link-page-not-found",
+      message: "Internal link target page was not found.",
+      severity: "error",
+      location: { path: "intro.md", line: 3 },
+      resource: { type: "WikiPage", name: expect.stringMatching(/^docs-[0-9a-f]+$/) },
+    },
+  ]);
+  expect(watcher.state).not.toHaveProperty("omittedDiagnostics");
+  await watcher.close();
+
+  watcher = await watch({ dir, validation: { links: "warning" } });
+  expect(watcher.state).toMatchObject({
+    status: "ready",
+    diagnostics: [
+      {
+        id: "link-page-not-found",
+        severity: "warning",
+        location: { path: "intro.md", line: 3 },
+        resource: { type: "WikiPage", name: expect.stringMatching(/^docs-[0-9a-f]+$/) },
+      },
+    ],
+  });
+});

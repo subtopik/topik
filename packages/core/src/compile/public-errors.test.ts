@@ -131,6 +131,27 @@ describe("public schema error fields", () => {
     },
   );
 
+  test.each([
+    "guides/getting started.md",
+    "wiki/Übersicht.md",
+    "wiki/chapter#1/intro.md",
+    "people/a@b.yaml",
+    "wiki/100%.md",
+  ])("keeps a printable relative location as written: %j", (location) => {
+    expect(new PublicCompileError("author-not-found", location).location).toBe(location);
+  });
+
+  test.each([
+    "wiki/a%2Fb.md",
+    "guides/a\tb.md",
+    "guides/\u202edm.exe",
+    "guides/ a.md",
+    "a:b.md",
+    "../outside.md",
+  ])("omits an unsafe location: %j", (location) => {
+    expect(new PublicCompileError("author-not-found", location).location).toBeUndefined();
+  });
+
   test("sanitizes related locations like primary locations", () => {
     expect(
       new PublicCompileError("guide-duplicate", "b.md", { relatedLocation: "../outside.md" }),

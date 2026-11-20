@@ -92,13 +92,15 @@ next content page and the assets page:
 [Asset identity](../resources/assets.md#generated-identity)
 ```
 
-Fragments refer to the destination's heading IDs. The compiler checks page targets
-and fragments against the wiki's navigation and analyzed headings. A fragment
-that matches a generated ID whose title other headings on that page share
-compiles, but warns with `link-fragment-positional`, because the ID moves when
-an earlier heading with that title is added or removed. Give the heading an
-explicit `{% #id %}` instead; see
-[Heading anchors](../content/content-design.md#heading-anchors). A
+Fragments refer to the destination's heading and accordion IDs. The compiler
+checks page targets and fragments against the wiki's navigation and analyzed
+headings and accordions. A fragment that matches a generated ID whose title
+other headings or accordions on that page share compiles, but warns with
+`link-fragment-positional`, because the ID moves when an earlier heading or
+accordion with that title is added or removed. Give a heading an explicit
+`{% #id %}`, or an accordion an explicit `id` attribute, instead; see
+[Heading anchors](../content/content-design.md#heading-anchors) and
+[Accordion anchors](../content/content-design.md#accordion-anchors). A
 fragment-only destination such as `#setup` names the same page, so it is checked
 for links and cards alike, including cards on course pages. A file present
 on disk is not automatically a wiki page: it must be listed in navigation.

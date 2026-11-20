@@ -21,7 +21,7 @@ import { codePresentationProblem } from "./code-presentation.js";
 import { assertCodePresentationOutputLimit } from "./presentation-output.js";
 import { isInlineParent, isMisplacedContent, isUnsupportedNode } from "./node-grammar.js";
 import {
-  indexDocument,
+  indexCheckedDocument,
   isReference,
   referenceSourceLabel,
   type DocumentIndex,
@@ -505,7 +505,8 @@ export function validateDocumentWithIndex(
   }
   let index: DocumentIndex | undefined;
   if (errors.length === 0) {
-    index = indexDocument(document);
+    // Its data and tree limits were checked on entry, and validation does not change it.
+    index = indexCheckedDocument(document);
     for (const { node } of index.entries) {
       if (isReference(node)) {
         if (!index.resolve(node))

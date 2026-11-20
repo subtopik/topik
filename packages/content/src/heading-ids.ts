@@ -16,7 +16,7 @@ declare module "micromark-util-types" {
   }
 }
 
-const validId = /^[A-Za-z0-9_.:-]+$/;
+export const validId = /^[A-Za-z0-9_.:-]+$/;
 
 /** An independent inline construct, claimed before generic tag tokenization. */
 export function headingIdSyntax(): Extension {

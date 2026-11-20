@@ -110,7 +110,10 @@ export function formatPublicCliError(error: unknown): string {
     return `.topik.yaml ${index}${kind}${safe.location ? ` ${safe.location}` : ""}${details(safe)}: ${message}`;
   }
   if (error instanceof PublicCompileError) {
-    return publicCompileErrorMessage(error.id, error.reason) ?? "Topik command failed.";
+    const message = publicCompileErrorMessage(error.id, error.reason) ?? "Topik command failed.";
+    const safe = resanitize(error);
+    const subject = `${safe.location ?? ""}${details(safe)}`.trim();
+    return subject === "" ? message : `${subject}: ${message}`;
   }
   if (error instanceof AssetCompilationError) return formatAssetFailure(error);
   return "Topik command failed.";

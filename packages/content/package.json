@@ -57,7 +57,8 @@
     "micromark-extension-gfm-strikethrough": "catalog:",
     "micromark-extension-gfm-table": "catalog:",
     "micromark-extension-gfm-task-list-item": "catalog:",
-    "micromark-util-decode-string": "catalog:"
+    "micromark-util-decode-string": "catalog:",
+    "string-width": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",

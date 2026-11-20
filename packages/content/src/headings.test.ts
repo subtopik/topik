@@ -1,7 +1,12 @@
 import { parseTopikContent } from "./content.js";
 import { describe, expect, test } from "vite-plus/test";
 import { assignTopikHeadingIds } from "./headings";
-import { analyzeTopikContent, isContentTag, transformTopikContent } from "./index.js";
+import {
+  analyzeTopikContent,
+  isContentTag,
+  transformTopikContent,
+  validateTopikContent,
+} from "./index.js";
 
 describe("assignTopikHeadingIds", () => {
   test("generates GitHub-compatible IDs from formatted heading text", () => {
@@ -151,5 +156,78 @@ describe("assignTopikHeadingIds", () => {
     ).toMatchObject({
       children: [{ name: "h2", attributes: { id: "hello" }, children: ["Hello Ada"] }, {}],
     });
+  });
+});
+
+describe("accordion IDs", () => {
+  const anchors = (source: string) =>
+    analyzeTopikContent(source).anchors.map(({ id, kind, positional }) =>
+      [kind, positional ? `${id}*` : id].join(":"),
+    );
+
+  test("share one set of IDs with headings, in document order", () => {
+    expect(
+      anchors(
+        [
+          '{% accordion title="FAQ" %}\nA\n{% /accordion %}',
+          "## FAQ",
+          '{% accordion title="Grading" id="grading" %}\nB\n{% /accordion %}',
+          "## Grading",
+        ].join("\n\n"),
+      ),
+    ).toEqual(["accordion:faq*", "heading:faq-1*", "accordion:grading", "heading:grading-1"]);
+  });
+
+  test("generated IDs ignore interpolated variables, like heading IDs", () => {
+    expect(
+      anchors(
+        [
+          '{% accordion title=t"Week {% $week %} notes" %}\nA\n{% /accordion %}',
+          '{% accordion title=t"{% $name %}" %}\nB\n{% /accordion %}',
+        ].join("\n\n"),
+      ),
+    ).toEqual(["accordion:week-notes", "accordion:section"]);
+  });
+
+  test("accordions are link targets but not headings", () => {
+    const result = analyzeTopikContent('{% accordion title="FAQ" %}\nA\n{% /accordion %}');
+    expect(result.headings).toEqual([]);
+    expect(result.anchors).toEqual([
+      expect.objectContaining({ id: "faq", kind: "accordion", lines: [1] }),
+    ]);
+  });
+
+  test("explicit IDs are unique across headings and accordions", () => {
+    const result = analyzeTopikContent(
+      '## Grading {% #grading %}\n\n{% accordion title="Grading" id="grading" %}\nA\n{% /accordion %}',
+    );
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({ id: "heading-id-duplicate", type: "accordion", lines: [3] }),
+    ]);
+  });
+
+  test("explicit IDs use the heading ID characters", () => {
+    const result = validateTopikContent(
+      '{% accordion title="Grading" id="two words" %}\nA\n{% /accordion %}',
+    );
+    expect(result.errors).toEqual([expect.objectContaining({ id: "topik-accordion-id" })]);
+  });
+
+  test("the reader tree carries generated and explicit IDs", () => {
+    const tree = transformTopikContent(
+      parseTopikContent(
+        '{% accordion title="FAQ" %}\nA\n{% /accordion %}\n\n{% accordion title="X" id="pinned" %}\nB\n{% /accordion %}',
+      ),
+    );
+    const ids: unknown[] = [];
+    const walk = (node: unknown): void => {
+      if (Array.isArray(node)) node.forEach(walk);
+      else if (isContentTag(node)) {
+        if (node.name === "TopikAccordion") ids.push(node.attributes.id);
+        node.children.forEach(walk);
+      }
+    };
+    walk(tree);
+    expect(ids).toEqual(["faq", "pinned"]);
   });
 });

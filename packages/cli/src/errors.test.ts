@@ -1,4 +1,4 @@
-import { AssetCompilationError } from "@topik/core";
+import { AssetCompilationError, PublicCompileError } from "@topik/core";
 import { expect, test } from "vite-plus/test";
 import { formatPublicCliError } from "./errors";
 
@@ -47,4 +47,17 @@ test("an asset failure without a safe path or a plain ID stays generic about the
       new AssetCompilationError("internal", [diagnostic("not a plain id", "/abs/secret/pic.png")]),
     ),
   ).not.toMatch(/secret|not a plain id/u);
+});
+
+test("a compile failure names the file and field it is about", () => {
+  expect(
+    formatPublicCliError(
+      new PublicCompileError("author-not-found", "guides/setup.md", { field: "authors" }),
+    ),
+  ).toBe(
+    "guides/setup.md field authors: An author must reference a Person in the declared project.",
+  );
+  expect(formatPublicCliError(new PublicCompileError("author-not-found"))).toBe(
+    "An author must reference a Person in the declared project.",
+  );
 });

@@ -324,6 +324,37 @@ test("warns when a link targets a generated ID that depends on heading position"
   expect(off.diagnostics).toEqual([]);
 });
 
+test("links can target accordions, with the same checks as headings", async () => {
+  const accordion = (title: string, id = "") =>
+    `{% accordion title="${title}"${id ? ` id="${id}"` : ""} %}\nBody\n{% /accordion %}`;
+  const dir = await fixture({
+    "collection.yaml": guideConfig,
+    "intro.md": [
+      "---\nid: introduction\nslug: intro\ntitle: Introduction\n---\n# Introduction",
+      "[Grading](#grading)",
+      "[Retakes](./faq.md#retakes)",
+      "[Second FAQ](./faq.md#faq-1)",
+      "[Missing](./faq.md#missing)",
+      accordion("Grading"),
+    ].join("\n\n"),
+    "faq.md": [
+      "---\nid: faq\nslug: faq\ntitle: FAQ\n---\n# FAQ",
+      accordion("Retakes", "retakes"),
+      accordion("FAQ"),
+    ].join("\n\n"),
+  });
+  const result = await compileGuides({ dir, validation: { links: "warning" } });
+  expect(result.diagnostics.map(({ id, lines }) => [id, lines])).toEqual([
+    ["link-fragment-positional", [7]],
+    ["link-fragment-not-found", [9]],
+  ]);
+  expect(result.references.map(({ status }) => status)).toEqual([
+    "verified",
+    "verified",
+    "invalid",
+  ]);
+});
+
 test("supplied target catalogues validate explicit external references without importing source files", async () => {
   const dir = await fixture({
     "collection.yaml": guideConfig,

@@ -97,7 +97,7 @@ describe.skipIf(!existsSync(builtCli))("built topik binary", () => {
     // that does not exist yet, so the command goes on to read the project and fails there.
     expect(result.stderr).toBe(
       process.platform === "win32"
-        ? `${NATIVE_NOTICE}Project compilation requires .topik.yaml in the selected directory. Add a manifest such as: {"version":1,"namespace":"owner/project","sources":[{"kind":"wiki","config":"wiki.yaml"}]}\n`
+        ? `${NATIVE_NOTICE}.topik.yaml: Project compilation requires .topik.yaml in the selected directory. Add a manifest such as: {"version":1,"namespace":"owner/project","sources":[{"kind":"wiki","config":"wiki.yaml"}]}\n`
         : "Topik command failed.\n",
     );
   });

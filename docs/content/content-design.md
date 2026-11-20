@@ -68,6 +68,31 @@ get `c` and `c-1`. A title that ends in a number counts too when that numbering
 can reach it: with two `Step` headings, `Step 1` gets `step-1` or `step-2`
 depending on order. Give such a heading an explicit ID and link to that instead.
 
+### Accordion anchors
+
+Accordions are link targets too, and share the heading IDs. Write `id` to set
+an accordion's anchor; without it, Topik generates one from the `title`, in
+document order with the headings, so `## FAQ` followed by an accordion titled
+"FAQ" gives `faq` and `faq-1`:
+
+```markdown
+{% accordion title="How are answers graded?" id="grading" %}
+Each correct answer scores one point.
+{% /accordion %}
+
+See [grading](#grading).
+```
+
+Explicit IDs use the same characters as `{% #id %}` (`topik-accordion-id`) and
+are unique across headings and accordions (`heading-id-duplicate`). Like heading
+IDs, they cannot start with `fn:` or `fnref:` (`topik-heading-id-reserved`). A link to a
+generated accordion ID whose title another heading or accordion shares warns
+with `link-fragment-positional`, as for headings; give the accordion an `id`. Variables in
+a template title, such as `title=t"Week {% $week %}"`, do not contribute to the
+generated ID, like variables in a heading. Accordions are not headings: they do
+not appear in a page's outline or provide its title. Opening a link to an
+accordion, or to an element inside one, opens the accordion.
+
 ### Footnotes
 
 ```markdown
@@ -105,8 +130,8 @@ reference and list them at the end of the content, so the label is only a name:
   body being evaluated. A footnote whose body evaluates to nothing is left out
   with its references. References inside a component that does not render are
   not numbered.
-- Footnotes link with the anchors `fn:N` and `fnref:N`, so explicit heading IDs
-  cannot start with `fn:` or `fnref:` (`topik-heading-id-reserved`).
+- Footnotes link with the anchors `fn:N` and `fnref:N`, so explicit heading and
+  accordion IDs cannot start with `fn:` or `fnref:` (`topik-heading-id-reserved`).
 
 Topik refuses a definition inside a quote, list, component or conditional
 branch (`topik-footnote-placement`), a label defined twice
@@ -122,6 +147,10 @@ text; a tree built in code reports `topik-footnote-missing`.
   explicit link syntax.
 - The table header sets the column count. Missing body cells become empty cells;
   extra body cells are refused.
+- Formatting pads table columns by display width: an emoji or CJK character
+  counts as two columns and a combining mark as none, so the pipes line up in
+  an editor. This matches Prettier, except that Prettier counts combining marks
+  outside U+0300–U+036F (such as U+1AB0) as one column.
 - Emphasis and strong each support at most two nesting levels of their own
   kind. Strikethrough cannot contain strikethrough.
 
@@ -130,7 +159,7 @@ text; a tree built in code reports `topik-footnote-missing`.
 | Component                                   | Use                                                                       |
 | ------------------------------------------- | ------------------------------------------------------------------------- |
 | `callout`                                   | A block of prose with an optional `title` and `variant`.                  |
-| `accordion`                                 | Collapsible block content with a required `title`.                        |
+| `accordion`                                 | Collapsible block content with a required `title`; a link target.         |
 | `columns`, `column`                         | Side-by-side cells: cards or columns of any block content.                |
 | `card`                                      | A card with a title and optional link, icon and body.                     |
 | `tabs`, `tab`                               | Tab panels; each `tab` needs a `title`.                                   |
@@ -350,7 +379,7 @@ Common source problems include:
 | `topik-footnote-unreferenced`, `topik-footnote-nested` | A definition nothing references, or a reference inside a footnote |
 | `topik-footnote-content`                               | A heading, link definition or conditional inside a footnote       |
 | `topik-heading-id-placement`                           | A `{% #id %}` that does not end its heading                       |
-| `topik-heading-id-reserved`                            | A `{% #id %}` starting with `fn:` or `fnref:`                     |
+| `topik-heading-id-reserved`                            | A `{% #id %}` or accordion `id` starting with `fn:` or `fnref:`   |
 | `topik-variable-missing`, `topik-variable-type`        | A missing or incompatible variable during compilation             |
 
 `node-undefined` diagnostics set `type` to the Markdown node type, such as
@@ -405,8 +434,7 @@ heading, table cell, and inline component:
 1. Adjacent text with the same marks is merged.
 2. At each position, the mark whose run of consecutive marked content reaches
    farthest opens first and covers that whole run. Ties prefer emphasis, then
-   strong, then strikethrough, so bold italics are written as one `***a***`
-   delimiter run.
+   strong, then strikethrough, so bold italics are written `_**a**_`.
 3. Marks that cover exactly one link are written outside it, as in
    `**[a](u)**`. They move inside, as in `[**a**](u)s`, when a letter or other
    non-punctuation character of unmarked neighboring text would otherwise touch a
@@ -414,6 +442,24 @@ heading, table cell, and inline component:
    break.
 
 Formatting the canonical output again returns it unchanged.
+
+### Delimiters and rules
+
+Formatting spells Markdown the way Prettier and Oxfmt do, so a project can run
+both formatters over the same files without them rewriting each other, except
+for the two rule spellings noted below:
+
+- Emphasis is `_a_`, or `*a*` when a character other than whitespace or
+  punctuation touches either side: a letter or digit, as in `a*b*c`, where
+  underscores would not form emphasis, or a symbol such as `€`. Strong is
+  `**a**`. Adjacent marks that would merge use the other delimiter.
+- A horizontal rule is `---`. Inside a list item it is `***`, or `---` when the
+  list's bullet is `*`.
+- Two rules keep `***` where Prettier writes `---`, because `---` would change
+  the document: a rule that opens the document, where a leading `---` starts
+  frontmatter, and a rule directly under a paragraph in a tight list item,
+  where `---` would turn the paragraph into a heading. In these two cases the
+  formatters rewrite each other's spelling.
 
 ## Work with trees
 

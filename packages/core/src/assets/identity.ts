@@ -3,6 +3,8 @@ import {
   extractTopikAssetOccurrences,
   validateTopikAssetReference,
   validateTopikContent,
+  createTopikContentCache,
+  type TopikContentCache,
 } from "@topik/content";
 import type { Asset } from "@topik/schema/asset/v1";
 import type { Resource } from "../resource";
@@ -120,6 +122,8 @@ export function validateTopikMaterializationRecord(
   record: unknown,
   resources: readonly Resource[],
   semantic: unknown,
+  /** @internal Parsed documents shared with the compilation that produced `resources`. */
+  options: { cache?: TopikContentCache } = {},
 ): TopikAssetResult<TopikMaterializationRecordV1> {
   if (
     !isTopikJsonDataValue(record) ||
@@ -169,7 +173,10 @@ export function validateTopikMaterializationRecord(
       "topik-asset-semantic-unknown",
     );
   }
-  const expectedSemantic = expectedSemanticRecord(resources);
+  const expectedSemantic = expectedSemanticRecord(
+    resources,
+    options.cache ?? createTopikContentCache(),
+  );
   if (
     expectedSemantic === undefined ||
     serializeTopikJson(semantic) !== serializeTopikJson(expectedSemantic)
@@ -213,6 +220,7 @@ function isSemanticRecordV1(
 
 function expectedSemanticRecord(
   resources: readonly Resource[],
+  cache: TopikContentCache,
 ): TopikAssetSemanticRecordV1 | undefined {
   const assets = resources.filter((resource): resource is Asset => resource.type === "Asset");
   const assetNames = new Set<string>(assets.map((asset) => asset.name));
@@ -228,10 +236,10 @@ function expectedSemanticRecord(
       continue;
     }
     const content = resource.spec.content.value;
-    if (!validateTopikContent(content, { allowCompiledAssetReferences: true }).valid) {
+    if (!validateTopikContent(content, { allowCompiledAssetReferences: true, cache }).valid) {
       return undefined;
     }
-    for (const occurrence of extractTopikAssetOccurrences(content)) {
+    for (const occurrence of extractTopikAssetOccurrences(content, { cache })) {
       const parsedValidation = validateTopikAssetReference(occurrence.parsedReference);
       if (
         occurrence.kind === "external-https" ||

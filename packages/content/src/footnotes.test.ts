@@ -105,6 +105,11 @@ describe("footnote source", () => {
       "## A {% #fnref:1 %}",
       "topik-heading-id-reserved",
     ],
+    [
+      "an explicit accordion ID like a footnote anchor",
+      '{% accordion title="A" id="fn:1" %}\nBody.\n{% /accordion %}',
+      "topik-heading-id-reserved",
+    ],
   ])("refuses %s", (_name, source, id) => {
     expect(ids(source)).toContain(id);
   });
@@ -334,7 +339,7 @@ describe("footnotes next to other constructs", () => {
     ["after a hard break", "a\\\n[^1]\\: b\n\n[^1]: note\n"],
     ["in a list item", "- [^1]\\: b\n\n[^1]: note\n"],
     ["after a hard break in strong text", "**a\\\n[^1]\\: x**\n\n[^1]: note\n"],
-    ["after a hard break in emphasis", "*a\\\n[^1]\\: x*\n\n[^1]: note\n"],
+    ["after a hard break in emphasis", "_a\\\n[^1]\\: x_\n\n[^1]: note\n"],
     ["after a hard break in strikethrough", "~~a\\\n[^1]\\: x~~\n\n[^1]: note\n"],
     [
       "after a hard break in an inline tag",

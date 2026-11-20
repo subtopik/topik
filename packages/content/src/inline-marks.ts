@@ -5,8 +5,8 @@ import { blockTypes } from "./node-grammar.js";
  * Inline marks in priority order. A rich-text editor stores these as an
  * unordered set on each text run, so their Markdown nesting order carries no
  * meaning. The order breaks ties when several marks cover the same content:
- * emphasis outside strong writes bold italics as the common single delimiter
- * run `***a***` rather than `**_a_**`.
+ * emphasis outside strong writes bold italics as `_**a**_` rather than
+ * `**_a_**`.
  */
 const MARKS = ["emphasis", "strong", "delete"] as const;
 const BITS: Record<string, number> = { emphasis: 1, strong: 2, delete: 4 };

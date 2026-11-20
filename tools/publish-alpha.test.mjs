@@ -10,7 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
-import { describe, expect, test } from "vite-plus/test";
+import { describe, expect, test, vi } from "vite-plus/test";
 import { publicPackages, publishAlpha } from "./publish-alpha.mjs";
 
 const root = join(import.meta.dirname, "..");
@@ -76,6 +76,8 @@ describe("alpha publication retries", () => {
   });
 
   test("publishes only tarballs selected by the Changesets plan", () => {
+    // Publishing names each package it publishes; the test reads the commands instead.
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
     const temporary = mkdtempSync(join(tmpdir(), "topik-alpha-publish-"));
     const plannedNames = publicPackages.slice(1);
     const plan = createPlan(plannedNames);
@@ -108,7 +110,9 @@ describe("alpha publication retries", () => {
       expect(publishCalls.some((call) => call.join(" ").includes("topik-remark-tags-"))).toBe(
         false,
       );
+      expect(log).toHaveBeenCalledTimes(plannedNames.length);
     } finally {
+      log.mockRestore();
       rmSync(temporary, { recursive: true, force: true });
     }
   });

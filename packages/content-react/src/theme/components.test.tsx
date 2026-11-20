@@ -43,6 +43,9 @@ import {
   getDefaultTopikComponents,
 } from "./components";
 
+// These tests drive React through act(); declare it, or React warns on every call.
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
 const contentReactRoot = existsSync(resolve(process.cwd(), "src/theme/styles.css"))
   ? process.cwd()
   : resolve(process.cwd(), "packages/content-react");

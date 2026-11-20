@@ -146,6 +146,8 @@ describe("compile command", () => {
   let dir: string;
 
   beforeEach(async () => {
+    // Commands print progress; a test that checks it spies on console itself.
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
     dir = await mkdtemp(join(tmpdir(), "topik-cli-compile-"));
     await writeFile(
       join(dir, ".topik.yaml"),

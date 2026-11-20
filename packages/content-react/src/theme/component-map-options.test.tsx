@@ -9,6 +9,9 @@ import type { TopikLinkRenderProps } from "../core/components";
 import { getRichTopikComponents, RichTopikContentProvider } from "../rich";
 import { TopikContent } from "./TopikContent";
 
+// These tests drive React through act(); declare it, or React warns on every call.
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
 const content = [
   '{% figure src="https://example.com/light.png" darkSrc="https://example.com/dark.png" alt="Theme" /%}',
   "[Link](/link)",

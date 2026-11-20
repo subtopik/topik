@@ -176,7 +176,8 @@ to it cannot succeed.
 The theme's `TopikYouTube` shows the video's title, with a play mark, as a link
 to the video on YouTube. Activating the link replaces it with the player from
 `youtube-nocookie.com`, starting at the authored start time, so the reader's
-browser makes no request to YouTube before the reader asks for the video. A
+browser makes no request to YouTube before the reader asks for the video. Focus
+moves to the player, so a keyboard or screen reader user stays at the video. A
 modified click, such as one that opens a new tab, keeps the browser's own
 handling. Without script, in print and in the plain renderer, the link opens the
 video on YouTube.

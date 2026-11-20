@@ -16,7 +16,3 @@ other compile failures carry their file, and Asset failures their stable
 `topik dev` prints the warnings of a successful compilation, and every CLI
 diagnostic with a known column reads `path:line:column severity id: message`.
 A compile failure names the file and field it is about.
-
-A diagnostic in a relative path containing `#` or `?`, such as
-`wiki/chapter#1/intro.md`, is no longer labelled with another file's name; it
-gets the generic `content` label, and the preview publishes no location for it.

@@ -1,7 +1,11 @@
 ---
-"@topik/core": patch
-"@topik/content": patch
 "@topik/remark-tags": patch
+"@topik/content": patch
+"@topik/schema": patch
+"@topik/core": patch
+"@topik/content-react": patch
+"@topik/cli": patch
+"@topik/codemod": patch
 ---
 
-Upgrade chokidar to 6 and raise the supported Node.js floor from 22.12 to 22.22, which chokidar 6 requires.
+Breaking: every public package requires Node.js 22.22 or later (`>=22.22.0`), up from 22.12, because chokidar 6, which the watcher now uses, requires it.

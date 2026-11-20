@@ -179,6 +179,32 @@ escape: write the backslash key as `{% kbd %}\\{% /kbd %}`, since a single
 backslash escapes the closing tag, and in a table cell write the pipe key as
 `\|`, since a bare `|` ends the cell.
 
+A `quiz` holds one or more `question` components. A question holds at least two
+`choice` components and an optional `explanation`, which the reader sees after
+answering. A single-choice question, the default, has exactly one choice with
+`correct=true`; a question with `type="multiple-choice"` has at least one. A
+question has no prompt of its own, so write the prompt as text before the quiz:
+
+```markdown
+Which command checks content without writing compiled output?
+
+{% quiz %}
+{% question %}
+{% choice correct=true %}
+`topik lint`
+{% /choice %}
+
+{% choice %}
+`topik compile`
+{% /choice %}
+
+{% explanation %}
+`topik lint` reports diagnostics and writes nothing.
+{% /explanation %}
+{% /question %}
+{% /quiz %}
+```
+
 Some components accept only specific children. For example, the direct children
 of `tabs` are `tab` components, not arbitrary blocks:
 
@@ -489,6 +515,27 @@ trees must keep to those constraints as well as the component rules.
 
 ## Versions
 
-The current content schema version is `0.2.2` and `FORMAT_VERSION` is `1`. These
+The current content schema version is `0.3.0` and `FORMAT_VERSION` is `2`. These
 versions describe the content contract. They are separate from package versions
 and from the `apiVersion` of [resource envelopes](../resources/index.md).
+
+## Migrate from 0.1.0-alpha.7
+
+Content schema `0.3.0` and `FORMAT_VERSION` `2` change some syntax and the
+canonical form:
+
+1. Replace `cardGrid` with `columns`. Write `{% columns count=N %}` where you
+   wrote `{% cardGrid columns=N %}`, and `{% /columns %}` for its closing tag. A
+   `cardGrid` without `columns` showed three columns and `columns` without
+   `count` shows two, so write `count=3` to keep that layout.
+2. If your configuration registers a component named `kbd`, `video`, `youtube`,
+   `column` or `columns` in `components`, rename it and the tags that use it.
+   These names are built-in components now.
+3. Run `topik format` once and review the result. The canonical form changed for
+   emphasis and horizontal rules, so the first run rewrites them.
+4. Code that passes a format version to `parseDocument` or `writeDocument` must
+   pass `2`, or leave it out. Version `1` is refused.
+5. Code that matched the diagnostic IDs `topik-transform-failed` or
+   `parse-error` must also match the specific IDs most of those failures now
+   report, such as `topik-variable-missing`, `missing-closing` or
+   `tag-unterminated`. The two IDs remain for failures without a specific ID.

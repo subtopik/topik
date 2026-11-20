@@ -9,8 +9,10 @@ path instead of `topik-transform-failed`. Tag syntax errors carry stable IDs
 such as `missing-closing`, `missing-opening`, `duplicate-attribute` and
 `tag-unterminated` instead of collapsing to `parse-error`, and remark-tags
 diagnostics now always include an `id`. Unsupported expressions report a single
-`topik-expression-invalid`; raw HTML, comments and footnotes report
+`topik-expression-invalid`; raw HTML and comments report
 `node-undefined` at the node's line with its type; misplaced heading IDs report
 `topik-heading-id-placement`. Configuration errors name the invalid component,
 attribute or field, wrap causes, and reject unknown `allowedParents` and
 `children.components` names. Custom component rule IDs get fixed per-rule messages.
+
+Breaking: the failures above report the specific IDs instead of `topik-transform-failed` and `parse-error`, which remain only as fallbacks for failures without a specific ID. Code that matched on either for these failures must match the new IDs.

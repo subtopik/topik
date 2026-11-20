@@ -12,7 +12,7 @@ This is an ESM package and requires Node.js 22.22 or later.
 ## Install and use
 
 ```sh
-npm install @topik/remark-tags unified remark-parse remark-stringify
+npm install @topik/remark-tags@alpha unified remark-parse remark-stringify
 ```
 
 Declare each tag name with its placement, then add the plugin to a processor:

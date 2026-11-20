@@ -57,8 +57,8 @@ export function verifyCodePresentationConsumer() {
     assert.ok(import.meta.resolve(name).startsWith(topikBoundary), `${name} escaped the consumer`);
   for (const name of ["shiki", "pele", "katex"])
     assert.throws(() => import.meta.resolve(name), { code: "ERR_MODULE_NOT_FOUND" });
-  assert.equal(TOPIK_CONTENT_SCHEMA_VERSION, "0.2.2");
-  assert.equal(FORMAT_VERSION, 1);
+  assert.equal(TOPIK_CONTENT_SCHEMA_VERSION, "0.3.0");
+  assert.equal(FORMAT_VERSION, 2);
   assert.equal(TOPIK_ASSET_REFERENCE_VERSION, "topik-asset-reference-v1");
   assert.equal(CODE_PRESENTATION_LIMITS.rows, 20_000);
   assert.deepEqual(effectiveCodePresentationOptions({}), {

@@ -18,3 +18,8 @@ title that differs from the resource with `source-intent-mismatch`, and
 same-page `#fragment` links resolve to the same encoded hash as other links.
 `replaySourceByteEdits`, `verifySharedEdits`, `SourcePlanningError` and
 `SourceTreeError` are now exported.
+
+Breaking: the `hash` that `resolveWikiContentHref` and `resolveCourseContentHref`
+return for a same-page `#fragment` link is percent-encoded like every other link,
+so `#héllo` gives `h%C3%A9llo`. Code that finds the target element by `hash` must
+decode it first.

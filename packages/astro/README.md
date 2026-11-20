@@ -12,9 +12,18 @@ content collections:
 ```js
 // topik-loaders.mjs
 import { topikGuidesLoader, topikWikiLoader } from "@topik/astro";
+import { createProjectAssetNameGenerator } from "@topik/core";
 
-export const wikiLoader = topikWikiLoader({ dir: "./handbook", name: "handbook" });
-export const guidesLoader = topikGuidesLoader({ dir: "./tutorials", name: "tutorials" });
+// Local images and downloads need generated names; a page with one fails without this.
+const assets = {
+  generateName: createProjectAssetNameGenerator({
+    projectRoot: ".",
+    projectNamespace: "example/site",
+  }),
+};
+
+export const wikiLoader = topikWikiLoader({ dir: "./handbook", name: "handbook", assets });
+export const guidesLoader = topikGuidesLoader({ dir: "./tutorials", name: "tutorials", assets });
 ```
 
 ```js

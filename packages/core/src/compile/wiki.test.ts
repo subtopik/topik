@@ -879,6 +879,26 @@ navigation:
     });
   });
 
+  test("content diagnostics count lines from the top of the file, frontmatter included", async () => {
+    await writeWikiConfig("id: tw\ntitle: Wiki\nsourceVersion: 1\nnavigation:\n  - intro\n");
+    await writePage(
+      "intro",
+      '---\nid: intro\ntitle: Intro\n---\n# Intro\n\n{% callout variant="bad" %}\nHi\n{% /callout %}\n',
+    );
+
+    await expect(compileWiki({ dir })).rejects.toMatchObject({
+      diagnostics: [expect.objectContaining({ file: "intro.md", lines: [7] })],
+    });
+
+    // A page whose only link problem is a missing same-page section is counted the same way.
+    await writePage("intro", "---\nid: intro\ntitle: Intro\n---\n# Intro\n\n[Gone](#missing)\n");
+    await expect(compileWiki({ dir })).rejects.toMatchObject({
+      diagnostics: [
+        expect.objectContaining({ id: "link-fragment-not-found", file: "intro.md", lines: [7] }),
+      ],
+    });
+  });
+
   test("names the page whose frontmatter id repeats another page's", async () => {
     await writeWikiConfig("id: tw\ntitle: Wiki\nsourceVersion: 1\nnavigation:\n  - a\n  - b\n");
     await writePage("a", "---\nid: same\n---\n# A\n");

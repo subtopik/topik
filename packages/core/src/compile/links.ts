@@ -30,6 +30,7 @@ import { createContentMemo, type ContentMemo } from "./content-memo";
 import { PublicCompileError } from "./public-errors";
 import {
   linkValidationPolicy,
+  withFileLines,
   type CompileValidationOptions,
   type LinkValidationPolicy,
 } from "./shared";
@@ -67,6 +68,8 @@ export interface CompileResourceLinksInput {
   /** @internal Source round-trip comparison may already contain compiled Asset locators. */
   allowCompiledAssetReferences?: boolean;
   validation?: CompileValidationOptions;
+  /** @internal Lines before each document's body, so diagnostics count file lines. */
+  bodyLinesByResource?: Readonly<Record<string, number>>;
 }
 
 type DocumentResource = Extract<SourceResource, { type: "WikiPage" | "Guide" | "CoursePage" }>;
@@ -202,6 +205,15 @@ export async function compileResourceLinksInSession(
     const sourcePath = input.sourcePathsByResource[key];
     const analysis = analyses.get(key);
     if (!analysis || sourcePath === undefined) continue;
+    // Diagnostics for this document count body lines until they are shifted to file lines.
+    // Each call shifts only what was added since the previous one.
+    let firstDiagnostic = diagnostics.length;
+    const toFileLines = () => {
+      diagnostics.push(
+        ...withFileLines(diagnostics.splice(firstDiagnostic), input.bodyLinesByResource?.[key]),
+      );
+      firstDiagnostic = diagnostics.length;
+    };
     const directory = input.sourceDirectoriesByResource?.[key] ?? "";
     const replacements = new Map<
       string,
@@ -379,6 +391,7 @@ export async function compileResourceLinksInSession(
       appendLinkDiagnostic("link-page-not-found", link, policy, diagnostics);
     }
 
+    toFileLines();
     if (replacements.size === 0) continue;
     const hrefs = new Map(
       [...replacements].map(([linkKey, { reference }]) => [
@@ -404,8 +417,10 @@ export async function compileResourceLinksInSession(
     }
     if (!rewritten.ok) {
       diagnostics.push(...rewritten.diagnostics);
+      toFileLines();
       continue;
     }
+    toFileLines();
     compiledByKey.set(key, {
       ...resource,
       spec: { ...resource.spec, content: { ...resource.spec.content, value: rewritten.content } },

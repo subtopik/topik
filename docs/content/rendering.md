@@ -14,7 +14,7 @@ application.
 ## Render with the default theme
 
 ```sh
-npm install @topik/content-react react react-dom
+npm install @topik/content-react@alpha react react-dom
 ```
 
 Import the stylesheet once in the application's stylesheet entry point:
@@ -614,7 +614,8 @@ entries and route callbacks that the application supplies. Astro loaders keep
 the compiled references in each entry's body. Supply the `wikiPages`, `guides`
 and `coursePages` catalogues with their corresponding `resolveWikiPage`,
 `resolveGuide` and `resolveCoursePage` callbacks. Course entries can come from
-any collection the application already has:
+any collection the application already has. `@topik/astro` is a private
+workspace package and is not published to npm:
 
 ```ts
 import { createTopikLinkResolver } from "@topik/astro";
@@ -664,3 +665,18 @@ Expect these differences:
 
 A caller that already owns a validated reader tree can use
 [`renderTrustedTopikTree`](#render-a-validated-reader-tree).
+
+## Migrate from 0.1.0-alpha.7
+
+1. A hand-written complete `TopikComponentMap` must add `TopikColumns`,
+   `TopikColumn`, `TopikKbd`, `TopikVideo`, `TopikYouTube`, `TopikFootnote`,
+   `TopikFootnoteReference` and `TopikFootnotes`, and drop `TopikCardGrid`. A
+   partial override map needs no change unless it names `TopikCardGrid`; remove
+   that key.
+2. Stylesheets that target the theme's card grid must use `.topik-columns` for
+   `.topik-card-grid`, and `--topik-columns-count` for
+   `--topik-card-grid-columns`.
+3. To render Mermaid diagrams, install `pele@1.13.0`; `1.12.0` no longer
+   satisfies the peer dependency.
+4. A page with a Content-Security-Policy that embeds YouTube videos must allow
+   `frame-src https://www.youtube-nocookie.com`.

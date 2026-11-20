@@ -30,6 +30,7 @@ import { PublicCompileError, publicSchemaError } from "./public-errors";
 import {
   extractMarkdownTitle,
   parseMarkdownFrontmatter,
+  withFileLines,
   parseReferenceList,
   throwOnCompileErrors,
   type CompileValidationOptions,
@@ -55,6 +56,8 @@ export interface CompileResourceDiscovery {
   diagnostics: CompileResult["diagnostics"];
   resources: SourceResource[];
   sourcePathsByResource: Record<string, string>;
+  /** Lines before each document's body, by resource key, where there are any. */
+  bodyLinesByResource?: Record<string, number>;
   consumedSourcePaths: string[];
 }
 
@@ -75,6 +78,7 @@ export async function inspectGuides(options: CompileGuidesOptions): Promise<Comp
       rootDir: configurationDirectory(options.dir, options.configFile),
       resources: discovered.resources,
       sourcePathsByResource: discovered.sourcePathsByResource,
+      bodyLinesByResource: discovered.bodyLinesByResource,
       validation: options.validation,
       referenceTargets: options.referenceTargets,
     },
@@ -141,6 +145,7 @@ export async function discoverGuides(
     file,
   }));
   const sourcePathsByResource: Record<string, string> = {};
+  const bodyLinesByResource: Record<string, number> = {};
   const claimedNames = new Map<string, string>();
 
   for (const file of markdownFiles) {
@@ -207,10 +212,10 @@ export async function discoverGuides(
       throw new PublicCompileError("guide-duplicate", file, { relatedLocation: duplicate });
     claimedNames.set(name, file);
     const validation = memo.validate(content, file);
-    diagnostics.push(...validation.errors);
+    diagnostics.push(...withFileLines(validation.errors, parsed.bodyLineOffset));
     if (!validation.valid) continue;
     const analysis = memo.analyze(content, file);
-    diagnostics.push(...analysis.diagnostics);
+    diagnostics.push(...withFileLines(analysis.diagnostics, parsed.bodyLineOffset));
     const title =
       typeof frontmatter.title === "string"
         ? frontmatter.title
@@ -254,12 +259,14 @@ export async function discoverGuides(
     assertValidDocumentResource(guide, file);
     resources.push(guide);
     sourcePathsByResource[`Guide/${guide.name}`] = file;
+    if (parsed.bodyLineOffset) bodyLinesByResource[`Guide/${guide.name}`] = parsed.bodyLineOffset;
   }
 
   return {
     diagnostics,
     resources,
     sourcePathsByResource,
+    bodyLinesByResource,
     consumedSourcePaths: [loadedConfig.path],
     assetDirectory: config.assets.directory,
     sourceVersion: config.sourceVersion,

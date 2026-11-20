@@ -21,7 +21,7 @@ import { underlineDefinition } from "./extensions/underline.js";
 import { videoDefinition } from "./extensions/video.js";
 import { youtubeDefinition } from "./extensions/youtube.js";
 
-export const TOPIK_CONTENT_SCHEMA_VERSION = "0.2.2";
+export const TOPIK_CONTENT_SCHEMA_VERSION = "0.3.0";
 export const CALLOUT_VARIANTS = ["info", "tip", "warning", "danger"] as const;
 export const BADGE_VARIANTS = ["neutral", "info", "success", "warning", "danger"] as const;
 export const QUIZ_QUESTION_TYPES = ["single-choice", "multiple-choice"] as const;

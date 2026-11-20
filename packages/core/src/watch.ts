@@ -5,7 +5,6 @@ import { watch as chokidarWatch } from "chokidar";
 import { compile, type CompileValidationOptions } from "./compile";
 import type { AssetPayload } from "./compile/assets";
 import { validateGitExecutableOption, type FileSafety } from "./assets/files";
-import { digestTopikMaterializationRecord } from "./assets/identity";
 import { createContentMemo } from "./compile/content-memo";
 import type { Resource } from "./resource";
 import { TOPIK_PREVIEW_PROTOCOL, type PreviewState } from "./preview";
@@ -91,6 +90,8 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
   // Fail before watching rather than on every compilation.
   validateGitExecutableOption(options.gitExecutable);
   const emitter = new EventEmitter();
+  // Every connected preview client listens, so the default limit of 10 is not a leak signal.
+  emitter.setMaxListeners(0);
   if (options.onError) emitter.on("error", options.onError);
   const resources = new Map<string, Resource>();
   const payloads = new Map<string, AssetPayload>();
@@ -105,7 +106,8 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
     payloads: [],
     courseNavigation: {},
   });
-  let materializationDigest: string | undefined;
+  // The payload entries each Asset owns, so an Asset updates only when its own bytes or path do.
+  let assetPayloads = new Map<string, string>();
   // Unchanged documents are not parsed and validated again on the next compilation.
   const contentMemo = createContentMemo();
   let requested = 0;
@@ -166,15 +168,22 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
         // An edit arrived while reading: discard this candidate, including its payloads.
         if (closed || watchFailed) return;
         if (revision !== requested) continue;
-        const nextDigest = digestTopikMaterializationRecord(result.materialization);
+        const nextAssetPayloads = new Map<string, string>();
+        for (const payload of result.materialization.payloads)
+          for (const name of payload.assetNames)
+            nextAssetPayloads.set(
+              name,
+              `${nextAssetPayloads.get(name) ?? ""}${payload.path}\0${payload.sha256}\0`,
+            );
         const updates = result.resources.filter((resource) => {
           const existing = resources.get(`${resource.type}/${resource.name}`);
           return (
             JSON.stringify(existing) !== JSON.stringify(resource) ||
-            (resource.type === "Asset" && materializationDigest !== nextDigest)
+            (resource.type === "Asset" &&
+              assetPayloads.get(resource.name) !== nextAssetPayloads.get(resource.name))
           );
         });
-        materializationDigest = nextDigest;
+        assetPayloads = nextAssetPayloads;
         resources.clear();
         payloads.clear();
         for (const resource of result.resources)

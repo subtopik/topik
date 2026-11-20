@@ -12,3 +12,5 @@ Manifest source failures keep the failing file's location and the original error
 `cause`. Wiki page reads are bounded so large Wikis no longer exhaust file
 descriptors, a navigation path through a regular file reports `file-not-regular`,
 and link compilation skips Course pages without a source path instead of crashing.
+
+Breaking: a misspelled top-level configuration key, a Wiki or Guide page that is not valid UTF-8, and a Guide filename that is not a valid guide name compiled before and now fail.

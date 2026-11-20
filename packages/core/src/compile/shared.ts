@@ -66,15 +66,36 @@ export function throwOnCompileErrors(diagnostics: TopikContentDiagnostic[]): voi
 
 const DNS_LABEL_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
+/**
+ * Shift content diagnostic lines, which count from the start of the body, so they count from the
+ * start of the file. `offset` is the number of lines before the body, such as frontmatter.
+ */
+export function withFileLines<T extends { lines: readonly number[] }>(
+  diagnostics: readonly T[],
+  offset: number | undefined,
+): T[] {
+  if (!offset) return [...diagnostics];
+  return diagnostics.map((diagnostic) => ({
+    ...diagnostic,
+    lines: diagnostic.lines.map((line) => line + offset),
+  }));
+}
+
 export function parseMarkdownFrontmatter(
   raw: string,
   filePath: string,
   sourceVersion?: 1,
-): { frontmatter: Record<string, unknown>; content: string } {
+): {
+  frontmatter: Record<string, unknown>;
+  content: string;
+  /** Lines before the body, so a body line plus this is the line in the file. */
+  bodyLineOffset: number;
+} {
   const match = markdownFrontmatter(raw);
   if (!match) {
-    return { frontmatter: {}, content: raw.replace(/^\uFEFF/u, "") };
+    return { frontmatter: {}, content: raw.replace(/^\uFEFF/u, ""), bodyLineOffset: 0 };
   }
+  const bodyLineOffset = raw.slice(0, match.bodyStart).match(/\r\n|\r|\n/g)?.length ?? 0;
 
   try {
     const frontmatter =
@@ -82,7 +103,7 @@ export function parseMarkdownFrontmatter(
         ? parseSafeConfigurationYaml(match.frontmatter)
         : parseYaml(match.frontmatter);
     if (frontmatter == null) {
-      return { frontmatter: {}, content: match.content };
+      return { frontmatter: {}, content: match.content, bodyLineOffset };
     }
     if (typeof frontmatter !== "object" || Array.isArray(frontmatter)) {
       throw new Error("Frontmatter must parse to an object");
@@ -94,7 +115,7 @@ export function parseMarkdownFrontmatter(
     ) {
       throw new PublicCompileError("frontmatter-invalid", filePath, { field: "title" });
     }
-    return { frontmatter, content: match.content };
+    return { frontmatter, content: match.content, bodyLineOffset };
   } catch (error) {
     // YAML parser messages can quote authored text, so only the structural field survives.
     if (error instanceof PublicCompileError) throw error;

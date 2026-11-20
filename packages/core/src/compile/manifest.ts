@@ -230,6 +230,7 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
   const resources: SourceResource[] = [];
   const courseNavigation: CompileResult["courseNavigation"] = {};
   const sourcePathsByResource: Record<string, string> = {};
+  const bodyLinesByResource: Record<string, number> = {};
   const sourceDirectoriesByResource: Record<string, string> = {};
   const protectedSourcePaths = [TOPIK_MANIFEST_FILENAME, ...sources.map((source) => source.config)];
   const authoredKeys = new Set<string>();
@@ -290,6 +291,7 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
     if (discovered.sourceVersion === 1)
       for (const resource of discovered.resources)
         if (resource.type === "Guide") versionedGuideNames.add(resource.name);
+    Object.assign(bodyLinesByResource, discovered.bodyLinesByResource);
     for (const [key, path] of Object.entries(discovered.sourcePathsByResource)) {
       sourcePathsByResource[key] = posix.join(source.directory, path);
       sourceDirectoriesByResource[key] = source.directory;
@@ -311,6 +313,7 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
       resources,
       sourcePathsByResource,
       sourceDirectoriesByResource,
+      bodyLinesByResource,
       validation: options.validation,
       referenceTargets: options.referenceTargets,
     },

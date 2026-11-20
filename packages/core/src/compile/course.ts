@@ -14,6 +14,7 @@ import { decodeUtf8Document, existingDocuments, readRegularFileWithinRoot } from
 import { PublicCompileError, publicSchemaError } from "./public-errors";
 import {
   parseMarkdownFrontmatter,
+  withFileLines,
   throwOnCompileErrors,
   type CompileResult,
   type CompileValidationOptions,
@@ -45,6 +46,7 @@ export async function inspectCourse(options: CompileCourseOptions): Promise<Comp
       rootDir: configurationDirectory(options.dir, options.configFile),
       resources: discovered.resources,
       sourcePathsByResource: discovered.sourcePathsByResource,
+      bodyLinesByResource: discovered.bodyLinesByResource,
       validation: options.validation,
       referenceTargets: options.referenceTargets,
     },
@@ -99,6 +101,7 @@ export async function discoverCourse(
   const resources: SourceResource[] = [course, ...(config.persons ?? [])];
   const diagnostics: CompileResult["diagnostics"] = [];
   const sourcePathsByResource: Record<string, string> = {};
+  const bodyLinesByResource: Record<string, number> = {};
   const pagePathsByRoute = new Map<string, string>();
   const pages: CourseReferenceContext["pages"][number][] = [];
   const modules: import("../preview").CourseNavigationModule[] = [];
@@ -146,7 +149,7 @@ export async function discoverCourse(
           relatedLocation: sameRoute,
         });
       const validation = memo.validate(parsed.content, file.path);
-      diagnostics.push(...validation.errors);
+      diagnostics.push(...withFileLines(validation.errors, parsed.bodyLineOffset));
       if (!validation.valid) continue;
       const page: CoursePage = {
         apiVersion: "v1",
@@ -166,10 +169,11 @@ export async function discoverCourse(
       resources.push(page);
       navigation.pages.push({ name: page.name, declarationIndex: pageIndex });
       sourcePathsByResource[key] = file.path;
+      if (parsed.bodyLineOffset) bodyLinesByResource[key] = parsed.bodyLineOffset;
       pagePathsByRoute.set(route, file.path);
       pages.push({ name: page.name, module: module.id, slug: metadata.slug, sourcePath });
       const analysis = memo.analyze(parsed.content, file.path);
-      diagnostics.push(...analysis.diagnostics);
+      diagnostics.push(...withFileLines(analysis.diagnostics, parsed.bodyLineOffset));
     }
   }
   const context: CourseReferenceContext = {
@@ -186,6 +190,7 @@ export async function discoverCourse(
     resources,
     diagnostics,
     sourcePathsByResource,
+    bodyLinesByResource,
     consumedSourcePaths: [loaded.path],
     courseNavigation: { [course.name]: { modules } },
     assetDirectory: config.assets.directory,

@@ -398,7 +398,8 @@ derive the same path, where the later one gets the hash spelling unless
 ### Diagnostics
 
 Known compiler failures keep their code, safe path, and available line or source
-declaration context. Content diagnostic lines refer to the body after frontmatter.
+declaration context. Content diagnostic lines count from the top of the file,
+frontmatter included.
 Diagnostic output is bounded to 64 entries and 8 lines per entry.
 
 Unexpected exception details stay private. A generic fallback diagnostic keeps the

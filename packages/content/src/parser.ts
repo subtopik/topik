@@ -153,7 +153,7 @@ export function convertTags(
   return errors;
 }
 
-export const FORMAT_VERSION = 1;
+export const FORMAT_VERSION = 2;
 
 export interface DocumentTreeResult {
   source: string;

@@ -91,10 +91,11 @@ navigation:
 ```
 
 Write ordinary [Topik Markdown](../content/content-design.md) in `index.md`.
-Then install and run the CLI:
+Then install and run the CLI. Topik releases are published under the `alpha`
+tag, so install from it:
 
 ```sh
-npm install @topik/cli
+npm install @topik/cli@alpha
 npx topik compile ./handbook --validate
 npx topik validate ./handbook/.topik
 ```
@@ -334,9 +335,18 @@ lists the checks that ran. Every diagnostic has all six fields:
 ## Use the compiler as a library
 
 ```ts
-import { compileWiki, validateResources } from "@topik/core";
+import { compileWiki, createProjectAssetNameGenerator, validateResources } from "@topik/core";
 
-const result = await compileWiki({ dir: "./docs" });
+const result = await compileWiki({
+  dir: "./docs",
+  // Local images and downloads need generated names; a page with one fails without this.
+  assets: {
+    generateName: createProjectAssetNameGenerator({
+      projectRoot: "./docs",
+      projectNamespace: "example/docs",
+    }),
+  },
+});
 const validation = validateResources(result.resources);
 if (!validation.valid) throw new Error(JSON.stringify(validation.errors));
 console.log(result.resources.map((resource) => `${resource.type}/${resource.name}`));
@@ -459,3 +469,26 @@ For an output directory outside the project directory the platforms differ.
 Linux refuses a link anywhere in the path as you give it, so pass the real
 path. macOS and Windows follow links above the output directory, because
 system paths such as `/var` and `/tmp` are links there.
+
+## Migrate from 0.1.0-alpha.7
+
+1. Use Node.js 22.22 or later.
+2. Install every `@topik/*` package from the `alpha` tag, such as
+   `npm install @topik/cli@alpha`, so the packages match.
+3. Run `npx topik migrate` in the project directory to create or update the
+   Topik section of `AGENTS.md`.
+4. Compile the project once and fix what now fails:
+   - A misspelled top-level configuration key or Wiki `theme` key fails with
+     `config-field-unknown`.
+   - A collection leaves out Markdown named in capitals, such as `FAQ.md`. Rename
+     the file in lowercase to keep it as a guide.
+   - Two pages with the same frontmatter `id`, or two Course pages with the same
+     `slug` in one module, fail with `frontmatter-invalid` at the second page.
+   - A Wiki page `source` containing `#`, `%`, `?`, `:` or a backslash, or a link
+     `href` that is not a valid URI, fails with `config-invalid`.
+   - A card on a Course page whose `#fragment` names a missing section fails
+     with `link-fragment-not-found`.
+   - A Wiki or Guide page that is not valid UTF-8 fails with
+     `document-encoding-invalid`.
+5. Tools that read diagnostics must stop adding the frontmatter length to
+   `lines`: content diagnostics count lines from the top of the file.

@@ -327,7 +327,8 @@ spaces. A path with a malformed escape, such as `/%ZZ`, returns `null`.
 
 Astro loaders expose resource names as entry IDs and publishing routes as
 `entry.data.slug`. Build a route resolver from entries without treating slugs as
-resource identities:
+resource identities. `@topik/astro` is a private workspace package and is not
+published to npm:
 
 ```ts
 import { getCollection } from "astro:content";

@@ -96,7 +96,11 @@ interface PreviewDiagnostic {
   A failure Topik cannot classify publishes `compilation-failed` without a
   location.
 
-`topik dev` prints the same diagnostics as `path:line:column severity id: message`.
+`topik dev` prints content diagnostics as `path:line:column severity id: message`,
+leaving out the column, or the line and column, when they are not known.
+A failure that stops compilation, such as an unreadable configuration file or a
+missing asset, prints as one line that names the file and the problem, such as
+`Compile error: .topik.yaml sources[0] (wiki) wiki.yaml: Configuration file could not be parsed.`
 
 ## Atomic generations and ordering
 

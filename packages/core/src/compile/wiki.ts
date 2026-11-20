@@ -32,6 +32,7 @@ import { PublicCompileError, publicSchemaError } from "./public-errors";
 import {
   extractMarkdownTitle,
   parseMarkdownFrontmatter,
+  withFileLines,
   throwOnCompileErrors,
   type CompileValidationOptions,
   type CompileResult,
@@ -66,6 +67,7 @@ export async function inspectWiki(options: CompileWikiOptions): Promise<CompileR
       rootDir: configurationDirectory(options.dir, options.configFile),
       resources: discovered.resources,
       sourcePathsByResource: discovered.sourcePathsByResource,
+      bodyLinesByResource: discovered.bodyLinesByResource,
       validation: options.validation,
       referenceTargets: options.referenceTargets,
     },
@@ -125,6 +127,7 @@ export async function discoverWiki(
   const resources: SourceResource[] = [];
   const diagnostics: CompileResult["diagnostics"] = [];
   const sourcePathsByResource: Record<string, string> = {};
+  const bodyLinesByResource: Record<string, number> = {};
   const pageNamesBySource = new Map<string, string>();
 
   for (let i = 0; i < pagePaths.length; i++) {
@@ -142,7 +145,7 @@ export async function discoverWiki(
       }
     }
     const validation = memo.validate(content, sourcePath);
-    diagnostics.push(...validation.errors);
+    diagnostics.push(...withFileLines(validation.errors, parsed.bodyLineOffset));
     if (!validation.valid) continue;
     const name =
       config.sourceVersion === 1 && typeof frontmatter.id === "string"
@@ -156,7 +159,7 @@ export async function discoverWiki(
       });
     pageNamesBySource.set(pagePath, name);
     const analysis = memo.analyze(content, sourcePath);
-    diagnostics.push(...analysis.diagnostics);
+    diagnostics.push(...withFileLines(analysis.diagnostics, parsed.bodyLineOffset));
     const title =
       typeof frontmatter.title === "string"
         ? frontmatter.title
@@ -186,6 +189,8 @@ export async function discoverWiki(
     assertValidDocumentResource(pageResource, sourcePath);
     resources.push(pageResource);
     sourcePathsByResource[`WikiPage/${pageResource.name}`] = sourcePath;
+    if (parsed.bodyLineOffset)
+      bodyLinesByResource[`WikiPage/${pageResource.name}`] = parsed.bodyLineOffset;
   }
 
   const wikiResource: Wiki = {
@@ -221,6 +226,7 @@ export async function discoverWiki(
     diagnostics,
     resources,
     sourcePathsByResource,
+    bodyLinesByResource,
     consumedSourcePaths: [loadedConfig.path],
     assetDirectory: config.assets.directory,
     sourceVersion: config.sourceVersion,

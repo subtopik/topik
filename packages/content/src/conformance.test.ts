@@ -1,5 +1,12 @@
 import { describe, expect, test } from "vite-plus/test";
-import { components, parseDocument, rewriteAssets, writeDocument, type Registry } from "./index.js";
+import {
+  components,
+  FORMAT_VERSION,
+  parseDocument,
+  rewriteAssets,
+  writeDocument,
+  type Registry,
+} from "./index.js";
 import { withoutPositions, parse as parsed } from "./test-helpers.js";
 
 function canonical(source: string): string {
@@ -355,13 +362,16 @@ describe("explicit refusal with raw source", () => {
 
   test("unknown format version is refused before conversion", () => {
     const source = "Hello";
-    expect(parseDocument(source, components, 2)).toMatchObject({
-      ok: false,
-      source,
-      diagnostics: [{ message: "Unsupported format version 2" }],
-    });
-    expect(() => writeDocument(parsed(source), components, 2)).toThrow(
-      "Unsupported format version 2",
-    );
+    // Both a newer version and the previous one, 1, are refused.
+    for (const version of [FORMAT_VERSION + 1, 1]) {
+      expect(parseDocument(source, components, version)).toMatchObject({
+        ok: false,
+        source,
+        diagnostics: [{ message: `Unsupported format version ${version}` }],
+      });
+      expect(() => writeDocument(parsed(source), components, version)).toThrow(
+        `Unsupported format version ${version}`,
+      );
+    }
   });
 });

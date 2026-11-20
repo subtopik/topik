@@ -165,6 +165,7 @@ text; a tree built in code reports `topik-footnote-missing`.
 | `codeGroup`, `codeTab`                      | Labeled code panels containing fenced code.                               |
 | `figure`                                    | A self-closing image with `src`, `alt`, and optional caption/dark source. |
 | `video`                                     | A self-closing video with `src`, `title`, and optional caption/poster.    |
+| `youtube`                                   | A self-closing YouTube video with `src`, `title`, and optional caption.   |
 | `math`, `mathInline`                        | Self-closing block or inline formulas with a `content` property.          |
 | `badge`, `underline` (alias `u`)            | Inline status text or underlined text.                                    |
 | `kbd`                                       | An inline key, such as `{% kbd %}Ctrl{% /kbd %}+{% kbd %}C{% /kbd %}`.    |
@@ -217,7 +218,6 @@ Install the package, then import the renderer.
 
 ```markdown
 {% video src="media/onboarding.mp4" title="Onboarding walkthrough" caption="Two minutes" poster="media/onboarding.png" /%}
-{% video src="https://www.youtube.com/watch?v=abc123&t=90s" title="Installing the CLI" /%}
 {% video src="media/drag-and-drop.webm" title="Dragging a card" loop=true /%}
 ```
 
@@ -229,16 +229,35 @@ Install the package, then import the renderer.
 | `poster`  | Optional image shown before playback, and in print and fallback output.                             |
 | `loop`    | `true` plays a silent looping clip with a pause button instead of player controls. Default `false`. |
 
-Topik does not know video hosting services. An external URL, including its query
-such as a start time, is kept exactly as written. The default renderer plays a
-URL whose path names a video file (`.mp4`, `.m4v`, `.webm`) in a native player,
-and shows any other URL, such as a YouTube page, as a link. An application that embeds a service, or allows only some,
-checks `video.src` with
-[`extractTopikAssetOccurrences`](https://github.com/subtopik/topik/blob/main/packages/content/README.md)
-and supplies its own [`TopikVideo`](./rendering.md#video) component.
+A `video` plays a video file in the browser's player. An external URL, including
+its query such as a signed CDN token, is kept exactly as written. Nothing loads
+until the reader starts the video. A YouTube URL is refused with
+`topik-video-youtube`: use [`youtube`](#youtube) for it.
 
 A `video` is placed wherever block content is allowed, like `figure`: in tabs,
 steps, accordions, cards, columns and quiz explanations, but never inside prose.
+
+### YouTube
+
+```markdown
+{% youtube src="https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=90s" title="Installing the CLI" caption="Two minutes" /%}
+```
+
+| Property  | Use                                                                              |
+| --------- | -------------------------------------------------------------------------------- |
+| `src`     | Required. The video's YouTube URL, as copied from YouTube.                       |
+| `title`   | Required, not blank. The accessible name of the player and the text of its link. |
+| `caption` | Optional caption below the video.                                                |
+
+`src` accepts the HTTPS forms YouTube shares: `youtube.com/watch?v=…`,
+`youtu.be/…`, and `/shorts/`, `/live/` and `/embed/` paths. A `t` or `start`
+parameter, such as `t=90`, `t=90s` or `t=1m30s`, sets the start time. Anything
+else is refused with `topik-youtube-src`.
+
+The page shows the title as a link to the video. The reader's browser makes no
+request to YouTube until the reader plays it; the player then loads from
+`youtube-nocookie.com`. Without script, and on paper, the link opens the video
+on YouTube. A `youtube` is placed wherever a `video` is.
 
 The exported `components` registry describes each component's complete property
 and child rules:

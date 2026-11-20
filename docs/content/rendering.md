@@ -154,19 +154,15 @@ and an ordered list, so a plain renderer keeps the notes.
 The theme's `TopikVideo` plays `src` in a native `<video>` player named by the
 video's `title`:
 
-- A normal video has player controls and loads only its metadata until the
-  reader starts it.
+- A normal video has player controls and loads nothing until the reader starts
+  it.
 - A `loop` video is a silent clip. Once hydrated, it starts muted and looping
   and shows a Pause button instead of player controls. A reader who prefers
   reduced motion gets it paused, with a Play button. Server-rendered HTML keeps
   the native controls until hydration, so the clip stays playable without script.
-- A compiled source is an MP4 or WebM file and always gets the player. Any other
-  source gets the player only when its path ends in `.mp4`, `.m4v` or `.webm`.
-  Anything else, such as a video page on a hosting service, renders as the poster
-  and title as a link to `src`: it works without script and the reader's browser
-  makes no request to the service until the reader follows it.
-- When the browser cannot play a source it tried, the player is replaced by the
-  same link.
+- Every source gets the player, whatever its address looks like. When the
+  browser cannot play it, the player is replaced by the poster and title as a
+  link to `src`.
 - An unresolved source leaves the title, caption and poster as text.
 
 Each prop is the evaluated attribute: `src`, `title`, `caption`, `poster` and
@@ -175,27 +171,21 @@ producer streams video only to CORS requests; pass it on to the `<video>`
 element. A source that needs CORS is never rendered as a link, since navigating
 to it cannot succeed.
 
-An application that embeds a video service supplies its own component and
-falls back to the theme's for other sources:
+### YouTube
 
-```tsx
-"use client";
+The theme's `TopikYouTube` shows the video's title, with a play mark, as a link
+to the video on YouTube. Activating the link replaces it with the player from
+`youtube-nocookie.com`, starting at the authored start time, so the reader's
+browser makes no request to YouTube before the reader asks for the video. A
+modified click, such as one that opens a new tab, keeps the browser's own
+handling. Without script, in print and in the plain renderer, the link opens the
+video on YouTube.
 
-import { TopikContent, TopikVideo } from "@topik/content-react/theme";
-
-// Your own URL check returns the embed URL, turning a `t=90s` timestamp into `?start=90`.
-declare function youtubeEmbedUrl(url: string): string | undefined;
-
-function Video(props: Parameters<typeof TopikVideo>[0]) {
-  const embed = typeof props.src === "string" ? youtubeEmbedUrl(props.src) : undefined;
-  if (embed === undefined) return <TopikVideo {...props} />;
-  return <iframe src={embed} title={String(props.title)} allow="fullscreen; picture-in-picture" />;
-}
-
-export function Article({ source }: { source: string }) {
-  return <TopikContent content={source} components={{ TopikVideo: Video }} />;
-}
-```
+Each prop is the evaluated attribute: `src`, `title` and `caption`. To read the
+video ID and start time from `src`, use `parseTopikYouTubeUrl` from
+`@topik/content`; `topikYouTubeWatchUrl` and `topikYouTubeEmbedUrl` build the two
+addresses. A page with a Content-Security-Policy must allow
+`frame-src https://www.youtube-nocookie.com` for the player.
 
 ## Variables
 

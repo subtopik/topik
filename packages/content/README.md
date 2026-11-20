@@ -106,6 +106,7 @@ reported as a diagnostic, never silently discarded.
 | `codeGroup`, `codeTab`                      | One or more code tabs; each requires `title` and fenced code                                        |
 | `figure`                                    | Self-closing; required `src` and `alt`, optional `darkSrc` and `caption`                            |
 | `video`                                     | Self-closing; required `src` and `title`, optional `caption`, `poster` and `loop`                   |
+| `youtube`                                   | Self-closing; required YouTube `src` and `title`, optional `caption`                                |
 | `math`, `mathInline`                        | Self-closing block/inline formula with required `content`                                           |
 | `badge`                                     | Inline content; optional `variant`                                                                  |
 | `underline` (alias `u`)                     | Inline content                                                                                      |

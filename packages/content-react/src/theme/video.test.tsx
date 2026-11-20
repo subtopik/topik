@@ -77,7 +77,8 @@ describe("TopikVideo", () => {
     expect(video?.getAttribute("src")).toBe("/intro.mp4");
     expect(video?.getAttribute("aria-label")).toBe("Intro");
     expect(video?.getAttribute("poster")).toBe("/intro.png");
-    expect(video?.getAttribute("preload")).toBe("metadata");
+    // Nothing loads until the reader starts the video.
+    expect(video?.getAttribute("preload")).toBe("none");
     expect(video?.hasAttribute("controls")).toBe(true);
     expect(video?.hasAttribute("loop")).toBe(false);
     expect(video?.hasAttribute("crossorigin")).toBe(false);
@@ -147,25 +148,13 @@ describe("TopikVideo", () => {
     expect(container.querySelector(".topik-video__toggle")).not.toBeNull();
   });
 
-  test("a page on a hosting service renders as a link, even without script", async () => {
-    const page = (
-      <TopikVideo
-        src="https://www.youtube.com/watch?v=abc123&t=90s"
-        title="Intro"
-        caption="A tour"
-      />
-    );
-    const html = renderToStaticMarkup(page);
-    expect(html).not.toContain("<video");
-    expect(html).toContain('href="https://www.youtube.com/watch?v=abc123&amp;t=90s"');
-
-    const { container, root } = mount();
-    await act(async () => root.render(page));
-    expect(container.querySelector("video")).toBeNull();
-    const link = container.querySelector("a")!;
-    expect(link.getAttribute("href")).toBe("https://www.youtube.com/watch?v=abc123&t=90s");
-    expect(link.textContent).toBe("Intro");
-    expect(container.querySelector("figcaption")?.textContent).toBe("A tour");
+  test("any source gets the player, whatever its address looks like", () => {
+    // Signed and generated CDN addresses often name no file extension.
+    for (const src of ["https://cdn.example.com/media?id=42", "/media/intro"]) {
+      const html = renderToStaticMarkup(<TopikVideo src={src} title="Intro" />);
+      const document = new DOMParser().parseFromString(html, "text/html");
+      expect(document.querySelector("video")?.getAttribute("src")).toBe(src);
+    }
   });
 
   test("a file the browser cannot play falls back to a link", async () => {

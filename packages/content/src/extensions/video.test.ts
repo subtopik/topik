@@ -130,19 +130,28 @@ test("video declares a video source slot and an image poster slot", () => {
   ]);
 });
 
-test("external HTTPS sources keep their query, so provider timestamps survive", () => {
-  const source = '{% video src="https://www.youtube.com/watch?v=abc123&t=90s" title="Intro" /%}';
+test("external HTTPS sources keep their query, such as a signed URL", () => {
+  const url = "https://cdn.example.com/media?id=42&sig=abc";
+  const source = `{% video src="${url}" title="Intro" /%}`;
   expect(extractTopikAssetOccurrences(source)).toEqual([
     expect.objectContaining({ slot: "video.src", kind: "external-https" }),
   ]);
   const compiled = compileTopikContent(source);
   expect(compiled.ok).toBe(true);
   if (!compiled.ok) return;
-  expect(videos(compiled.tree)).toEqual([
-    { src: "https://www.youtube.com/watch?v=abc123&t=90s", title: "Intro", loop: false },
-  ]);
+  expect(videos(compiled.tree)).toEqual([{ src: url, title: "Intro", loop: false }]);
   const formatted = formatTopikContent(source);
   expect(formatted).toMatchObject({ ok: true, formatted: `${source}\n` });
+});
+
+test("a YouTube URL belongs in the youtube component", () => {
+  for (const url of [
+    "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=90s",
+    "https://youtu.be/dQw4w9WgXcQ",
+  ])
+    expect(diagnosticIds(`{% video src="${url}" title="Intro" /%}`)).toContain(
+      "topik-video-youtube",
+    );
 });
 
 test("template titles are reported as detached templates", () => {

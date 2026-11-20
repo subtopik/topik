@@ -207,6 +207,11 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "topik-u-children": "Underline requires inline content.",
   "topik-video-children": "A video cannot contain children; use its title and caption attributes.",
   "topik-video-title": "A video requires a title that is not blank.",
+  "topik-video-youtube": "A video plays files; use the youtube component for a YouTube video.",
+  "topik-youtube-children": "A YouTube video cannot contain children; use its title and caption.",
+  "topik-youtube-src":
+    "A youtube source must be a YouTube video URL, such as youtu.be/… or youtube.com/watch?v=….",
+  "topik-youtube-title": "A YouTube video requires a title that is not blank.",
   "variable-undefined": "A referenced variable is not defined.",
 };
 

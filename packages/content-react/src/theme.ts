@@ -38,4 +38,5 @@ export {
   TopikTableRow,
   TopikUnderline,
   TopikVideo,
+  TopikYouTube,
 } from "./theme/components";

@@ -3,10 +3,14 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vite-plus/test";
 import { RichTopikMermaid } from "./components";
+
+// These tests drive React through act(); declare it, or React warns on every call.
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.mock("pele", () => {
   throw new Error("Optional peer not installed");
 });
 it("shows source when the optional renderer cannot load", async () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   const container = document.createElement("div");
   const root = createRoot(container);
   try {
@@ -17,6 +21,7 @@ it("shows source when the optional renderer cannot load", async () => {
       await new Promise((resolve) => setTimeout(resolve, 350));
     });
     expect(container.querySelector("pre")?.textContent).toBe("flowchart LR; A-->B");
+    expect(warn).toHaveBeenCalledWith("Failed to render rich content", expect.any(Error));
   } finally {
     act(() => root.unmount());
   }

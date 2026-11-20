@@ -14,6 +14,9 @@ import {
 } from "./rich";
 import { TopikContent } from "./theme/TopikContent";
 
+// These tests drive React through act(); declare it, or React warns on every call.
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
 const codeToTokensMock = vi.hoisted(() =>
   vi.fn(async (code: string, _options: { lang: string; theme: string; engine: string }) => ({
     tokens: code.split("\n").map((content) => [{ content, color: "#24292e" }]),
@@ -166,6 +169,7 @@ describe("rich content-react entry", () => {
   });
 
   it("shows Mermaid source when rendering fails", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     mermaidRenderMock.mockImplementationOnce(() => {
       throw new Error("Invalid diagram");
     });
@@ -179,6 +183,10 @@ describe("rich content-react entry", () => {
     await waitFor(() => {
       expect(dom.querySelector("pre.topik-mermaid")?.textContent).toContain("graph TD");
     });
+    expect(warn).toHaveBeenCalledWith(
+      "Failed to render rich content",
+      expect.objectContaining({ message: "Invalid diagram" }),
+    );
   });
 
   it.each([

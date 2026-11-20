@@ -1,5 +1,5 @@
 import { renderToString } from "katex";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { PAGE_MATH_MAX_SIZE, pageMathOptions } from "./page-math";
 
 // The MathML annotation echoes the escaped TeX source; assert on rendered markup only.
@@ -17,6 +17,8 @@ describe("page math options", () => {
   });
 
   it("does not trust link, image, or HTML extension commands", () => {
+    // KaTeX reports the refused HTML extension under strict: "warn".
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     for (const tex of [
       String.raw`\href{javascript:alert(1)}{x}`,
       String.raw`\url{https://example.com}`,
@@ -29,6 +31,8 @@ describe("page math options", () => {
       const html = render(tex, false);
       expect(html, tex).not.toMatch(/<a\b|<img\b|javascript:|example\.com|position:fixed|data-x/);
     }
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("HTML extension is disabled"));
+    warn.mockRestore();
   });
 
   it("isolates macro definitions between renders", () => {

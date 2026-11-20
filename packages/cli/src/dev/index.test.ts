@@ -92,6 +92,8 @@ describe("dev command", () => {
   }
 
   beforeEach(async () => {
+    // Commands print progress; a test that checks it spies on console itself.
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
     dir = await mkdtemp(join(tmpdir(), "topik-dev-"));
     await writeFile(
       join(dir, ".topik.yaml"),
@@ -720,6 +722,9 @@ describe("dev command", () => {
 });
 
 test("HTTP and SSE share complete state; reconnect receives existing failure; health binds session", async () => {
+  // The server prints its progress and the manifest error; this test reads the wire state.
+  vi.spyOn(console, "log").mockImplementation(() => undefined);
+  vi.spyOn(console, "error").mockImplementation(() => undefined);
   const dir = await mkdtemp(join(tmpdir(), "preview-wire-"));
   await writeFile(
     join(dir, ".topik.yaml"),
@@ -771,6 +776,7 @@ test("HTTP and SSE share complete state; reconnect receives existing failure; he
     controllers.forEach((controller) => controller.abort());
     await running.close();
     await rm(dir, { recursive: true, force: true });
+    vi.restoreAllMocks();
   }
 });
 

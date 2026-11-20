@@ -5,6 +5,9 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vite-plus/test";
 import { RichTopikMermaid } from "./components";
 
+// These tests drive React through act(); declare it, or React warns on every call.
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
 vi.mock("katex", () => {
   throw new Error("Optional peer not installed");
 });

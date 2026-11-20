@@ -14,7 +14,8 @@ import {
   TopikBadge,
   TopikCallout,
   TopikCard,
-  TopikCardGrid,
+  TopikColumn,
+  TopikColumns,
   TopikCodeBlock,
   TopikCodeGroup,
   TopikCodeTab,
@@ -37,6 +38,7 @@ import {
   TopikTableCell,
   TopikTableHeader,
   TopikTableRow,
+  TopikKbd,
   TopikUnderline,
   getDefaultTopikComponents,
 } from "./components";
@@ -119,9 +121,9 @@ describe("default Topik theme components", () => {
     ).toBe(dark);
   });
 
-  it("renders card grids and cards with link, icon, title, and body slots", () => {
+  it("renders columns and cards with link, icon, title, and body slots", () => {
     const linked = renderToStaticMarkup(
-      <TopikCardGrid columns={2}>
+      <TopikColumns count={3}>
         <TopikCard
           href="/start"
           icon="S"
@@ -130,12 +132,15 @@ describe("default Topik theme components", () => {
         >
           Open the guide.
         </TopikCard>
-      </TopikCardGrid>,
+        <TopikColumn>
+          <p>Any content.</p>
+        </TopikColumn>
+      </TopikColumns>,
     );
     const plain = renderToStaticMarkup(<TopikCard title="Plain">No link.</TopikCard>);
 
-    expect(linked).toContain("topik-card-grid");
-    expect(linked).toContain("--topik-card-grid-columns:2");
+    expect(linked).toContain('<div class="topik-columns" style="--topik-columns-count:3">');
+    expect(linked).toContain('<div class="topik-column"><p>Any content.</p></div>');
     expect(linked).toContain('<a class="topik-card__link" href="/preview/start">');
     expect(linked).toContain("topik-card__icon");
     expect(linked).toContain("Open the guide.");
@@ -728,6 +733,12 @@ describe("default Topik theme components", () => {
     expect(success).toContain('data-variant="success"');
     expect(neutral).toContain('data-variant="neutral"');
     expect(underline).toContain("<u>Important</u>");
+  });
+
+  it("renders keyboard keys as kbd elements", () => {
+    expect(renderToStaticMarkup(<TopikKbd>Ctrl</TopikKbd>)).toBe(
+      '<kbd class="topik-kbd">Ctrl</kbd>',
+    );
   });
 
   it("renders quiz containers", () => {

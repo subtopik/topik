@@ -283,17 +283,22 @@ The adapter requests each blob with CORS, omitted credentials, redirect rejectio
 and no cache. It binds each fetch to the snapshot with
 `?sessionId=<id>&generation=<n>`.
 
-| Request                                               | CLI response      |
-| ----------------------------------------------------- | ----------------- |
-| Bound to the current session and generation           | The payload bytes |
-| Bound to an obsolete session or generation            | 409               |
-| Without `sessionId` and `generation`                  | The payload bytes |
-| For a payload that the current state does not contain | 404               |
+| Request                                               | CLI response                                         |
+| ----------------------------------------------------- | ---------------------------------------------------- |
+| Bound to the current session and generation           | The payload bytes                                    |
+| A `GET` with a single `Range: bytes=…` header         | 206 with that part, or 416 when it lies past the end |
+| Bound to an obsolete session or generation            | 409                                                  |
+| Without `sessionId` and `generation`                  | The payload bytes                                    |
+| For a payload that the current state does not contain | 404                                                  |
+
+Every payload response carries `Accept-Ranges: bytes`. Multiple or malformed
+ranges, a `Range` on `HEAD`, and any `If-Range` (payloads carry no validator) are
+ignored and return the whole payload.
 
 ### Verification
 
 The adapter verifies the response URL, media type, byte size and SHA-256 before it
-creates an object URL.
+creates an object URL. Video is the exception: see [Streamed video](#streamed-video).
 
 - It bounds retained decoded bytes to the advertised size. It cancels as soon as a
   received chunk would exceed that size, or on disposal, and rejects missing or
@@ -306,6 +311,8 @@ creates an object URL.
 
 - Images and light/dark figures use verified image blobs (PNG, JPEG, GIF, WebP,
   AVIF). SVG and other active media are never admitted inline.
+- Video posters use verified image blobs like figures. Video sources stream; see
+  [Streamed video](#streamed-video).
 - Asset links become buttons that fetch verified bytes and initiate a controlled
   download. They expose no navigation `href`.
 - Download object URLs use `application/octet-stream` to prevent active-content
@@ -319,10 +326,32 @@ creates an object URL.
 - Resolution errors are reported through `onAssetDiagnostic`, so the host can
   explain missing media.
 
+### Streamed video
+
+A video can be far larger than an image, so the adapter does not download and
+hash it before playback. Instead:
+
+- A `video.src` slot receives the session- and generation-bound blob URL itself,
+  only for MP4 and WebM payloads. Other video types receive no capability.
+- The renderer passes `crossOrigin="anonymous"`, so the browser requests the
+  video with CORS from the allowed origin, in byte ranges for playback and
+  seeking.
+- The binding refuses bytes from an obsolete session or generation with 409,
+  and the server sends the advertised type with `nosniff`. The bytes are not
+  checked against the SHA-256 before the browser plays them.
+- A load failure shows the same alert as other preview media. The stream URL is
+  never a link, since navigation cannot make a CORS request.
+- A poster that fails to load or decode is left out; the video stays.
+- The browser makes the stream requests, not the adapter. Redirect rejection,
+  cache bypass and abort on disposal apply to verified fetches only. When the
+  generation changes, unmount or replace the old player as well as disposing
+  the adapter; the producer answers its later requests for the old generation
+  with 409.
+
 ### Host responsibilities
 
-The browser's Content-Security-Policy must permit `blob:` images and connections
-to the configured producer. The host owns any browser local-network access
+The browser's Content-Security-Policy must permit `blob:` images, connections
+and media from the configured producer. The host owns any browser local-network access
 permission and its session-switch presentation.
 
 ## Validation and release
@@ -331,7 +360,7 @@ Unit tests cover compiler order, order-only publication, deletion, initial/ongoi
 failure recovery, in-flight invalidation/close, wire agreement and media boundaries.
 
 `vp run verify:public-packages` also runs a clean packed-CLI Chromium consumer with
-allowed-origin image/figure loading, controlled download byte equality, SSE/HTTP
+allowed-origin image/figure loading, streamed video in ranges, controlled download byte equality, SSE/HTTP
 ordering, reconnect, source errors and deletion. Install its browser with
 `vp exec playwright install --with-deps chromium` in `packages/content-react`.
 An existing Chromium can be selected with `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`.

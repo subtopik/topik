@@ -13,7 +13,7 @@ Use {% badge variant="success" %}Topik{% /badge %} content to compose lessons.
 Content authors write Topik Markdown, while apps control rendering.
 {% /callout %}
 
-{% cardGrid columns=3 %}
+{% columns count=3 %}
 {% card title="Concept" href="/concepts" icon="A" %}
 Introduce the idea.
 {% /card %}
@@ -23,7 +23,7 @@ Apply the idea.
 {% card title="Review" href="/review" icon="C" %}
 Check understanding.
 {% /card %}
-{% /cardGrid %}
+{% /columns %}
 
 {% tabs %}
 {% tab title="Read" %}

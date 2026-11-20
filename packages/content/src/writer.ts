@@ -12,6 +12,7 @@ import { sameDocumentMeaning } from "./document-meaning.js";
 import { gfmToMarkdown } from "./gfm.js";
 import { markWriterExtension } from "./markdown-marks.js";
 import { canonicalizeInlineMarks } from "./inline-marks.js";
+import { canonicalizeFootnotes } from "./footnotes.js";
 import { headingIdToMarkdown } from "./heading-ids.js";
 import { resourceWriterExtension } from "./resource-writer.js";
 import { referenceWriterExtension } from "./reference-writer.js";
@@ -305,10 +306,11 @@ export function writeDocument(
 
 export interface SerializeDocumentOptions {
   /**
-   * Keep the authored inline mark nesting instead of the canonical one. Targeted
-   * rewrites use this so tree positions of unchanged content stay stable.
+   * Keep the authored inline mark nesting and footnote definition positions instead of
+   * the canonical ones. Targeted rewrites use this so tree positions of unchanged content
+   * stay stable.
    */
-  preserveMarkNesting?: boolean;
+  preserveTreePositions?: boolean;
 }
 
 /** @internal Source operations reuse their output admission parse for the meaning check. */
@@ -322,9 +324,13 @@ export function serializeDocument(
     throw new Error(`Unsupported format version ${formatVersion}`);
   const errors = validateDocument(document, registry);
   if (errors.length) throw new Error(errors.map((error) => error.message).join("; "));
-  // One spelling per meaning: inline mark nesting is written in canonical order.
-  // Measure the tree that is written, so the estimate covers its delimiters.
-  const tree = options.preserveMarkNesting ? document : canonicalizeInlineMarks(document);
+  // One spelling per meaning: inline marks are written in canonical nesting, and footnote
+  // definitions at the end in order of first reference, unless a targeted rewrite must keep
+  // tree positions stable. Measure the tree that is written, so the estimate covers its
+  // delimiters.
+  const tree = options.preserveTreePositions
+    ? document
+    : canonicalizeFootnotes(canonicalizeInlineMarks(document));
   const expansion = sourceExpansion(tree, registry);
   const baseline = writeMarkdown(asTags(tree, registry, true), registry);
   assertSourceLimit(baseline);

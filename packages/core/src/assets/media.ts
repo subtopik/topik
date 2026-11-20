@@ -55,7 +55,11 @@ export function isTopikActiveMediaType(mediaType: string): boolean {
   ].includes(mediaType);
 }
 
+/** Video slots admit only the formats every current browser plays in a `<video>` element. */
+const BROWSER_VIDEO_TYPES = new Set(["video/mp4", "video/webm"]);
+
 export function isInlineMediaCompatible(mediaType: string, role: string): boolean {
+  if (role === "video") return BROWSER_VIDEO_TYPES.has(mediaType);
   return role.startsWith("image")
     ? mediaType.startsWith("image/")
     : /^(?:image|audio|video)\//u.test(mediaType);

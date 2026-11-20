@@ -1,3 +1,8 @@
+/*!
+ * SPDX-FileCopyrightText: 2025 Unicode, Inc.
+ * SPDX-License-Identifier: Unicode-3.0
+ */
+
 /**
  * Unicode 17 path-forbidden code points, encoded as inclusive hexadecimal ranges.
  *

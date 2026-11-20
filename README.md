@@ -37,6 +37,7 @@ import { compileTopikContent } from "@topik/content";
 const compiled = compileTopikContent(
   '# Welcome\n\n{% callout variant="tip" %}\nKeep a **backup**.\n{% /callout %}',
 );
+
 if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
 // Store the authored source; pass compiled.tree to your renderer.
 ```
@@ -85,4 +86,4 @@ Add a changeset with `vp run changeset` for changes to published packages.
 
 ## License
 
-[MIT](LICENSE) © The Topik Authors
+[MIT](LICENSE) © Lukas Nehrke

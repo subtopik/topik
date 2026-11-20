@@ -1,4 +1,10 @@
-/** Unicode 17.0.0 NFKC_CF data from DerivedNormalizationProps.txt.
+/*!
+ * SPDX-FileCopyrightText: 2025 Unicode, Inc.
+ * SPDX-License-Identifier: Unicode-3.0
+ */
+
+/**
+ * Unicode 17.0.0 NFKC_CF data from DerivedNormalizationProps.txt.
  * Source SHA-256: 71fd6a206a2c0cdd41feb6b7f656aa31091db45e9cedc926985d718397f9e488
  */
 export const NFKC_CASEFOLD_V17_DATA = [

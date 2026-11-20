@@ -75,6 +75,17 @@ function MissingTopikComponent({ children }: TopikComponentProps) {
   return <>{children}</>;
 }
 
+/** Without a theme a question keeps its prompt, as a paragraph before its choices. */
+function PlainTopikQuestion({ children, title }: TopikComponentProps) {
+  const prompt = typeof title === "string" ? title.trim() : "";
+  return (
+    <>
+      {prompt ? <p>{prompt}</p> : null}
+      {children}
+    </>
+  );
+}
+
 /** @internal Shared by the plain and themed footnotes: numbers and anchors come from the tree. */
 export function footnoteNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
@@ -198,7 +209,7 @@ const fallbackTopikComponents = {
   TopikMath: MissingTopikComponent,
   TopikMathInline: MissingTopikComponent,
   TopikMermaid: MissingTopikComponent,
-  TopikQuestion: MissingTopikComponent,
+  TopikQuestion: PlainTopikQuestion,
   TopikQuiz: MissingTopikComponent,
   TopikStep: MissingTopikComponent,
   TopikSteps: MissingTopikComponent,

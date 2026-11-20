@@ -41,6 +41,10 @@ export const questionDefinition: ComponentDefinition = {
   render: "TopikQuestion",
   description: "Quiz question containing at least two choices.",
   attributes: {
+    title: {
+      type: "string",
+      description: "The question the reader answers, shown above its choices.",
+    },
     type: {
       type: "enum",
       values: ["single-choice", "multiple-choice"],

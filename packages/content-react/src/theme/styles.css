@@ -886,6 +886,12 @@
     padding: 0;
   }
 
+  .topik-question__title {
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+    padding: 0;
+  }
+
   .topik-question__legend {
     clip-path: inset(50%);
     height: 1px;

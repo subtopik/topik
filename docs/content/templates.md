@@ -49,11 +49,11 @@ Install the package first.
 
 Only these properties accept templates:
 
-| Component                                                | Template properties |
-| -------------------------------------------------------- | ------------------- |
-| `callout`, `accordion`, `card`, `tab`, `step`, `codeTab` | `title`             |
-| `figure`                                                 | `alt`, `caption`    |
-| `video`                                                  | `title`, `caption`  |
+| Component                                                            | Template properties |
+| -------------------------------------------------------------------- | ------------------- |
+| `callout`, `accordion`, `card`, `tab`, `step`, `codeTab`, `question` | `title`             |
+| `figure`                                                             | `alt`, `caption`    |
+| `video`                                                              | `title`, `caption`  |
 
 A quoted string without `t` is literal, even when it contains text that looks
 like a variable.

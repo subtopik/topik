@@ -177,6 +177,16 @@ describe("content-react core", () => {
     if (formatted.ok) expect(formatted.formatted).toContain("{% else /%}");
   });
 
+  it("renders an authored question title, including a template, in both renderers", () => {
+    const source =
+      '{% quiz %}\n{% question title=t"Where does {% $tool %} run?" %}\n{% choice correct=true %}\nLocally\n{% /choice %}\n{% choice %}\nNowhere\n{% /choice %}\n{% /question %}\n{% /quiz %}';
+    const config = { variables: { tool: "topik" } };
+    expect(compileTopikContent(source, { config })).toMatchObject({ ok: true });
+    const plain = renderToStaticMarkup(<>{renderTopikMarkdown(source, { config })}</>);
+    expect(plain).toContain("<p>Where does topik run?</p>");
+    expect(plain.indexOf("Where does topik run?")).toBeLessThan(plain.indexOf("Locally"));
+  });
+
   it("returns a sanitized tree-free failure for missing or accessor-backed variables", () => {
     const read = vi.fn(() => "secret");
     for (const [variables, id] of [

@@ -5,11 +5,10 @@ import { TopikChoice, TopikExplanation, TopikQuestion, TopikQuiz } from "../them
 const meta = {
   title: "Content React/Quiz",
   component: TopikQuestion,
-  args: { type: "single-choice" },
+  args: { type: "single-choice", title: "Where can you render Topik content?" },
   argTypes: { type: { control: "select", options: ["single-choice", "multiple-choice"] } },
   render: (args) => (
     <TopikQuiz>
-      <p>Where can you render Topik content?</p>
       <TopikQuestion key={String(args.type)} {...args}>
         <TopikChoice correct>In your own application</TopikChoice>
         <TopikChoice correct={args.type === "multiple-choice"}>
@@ -31,6 +30,9 @@ type Story = StoryObj<typeof meta>;
 export const Unanswered: Story = {
   play: async ({ canvas }) => {
     await expect(canvas.getByRole("status")).toBeEmptyDOMElement();
+    await expect(
+      canvas.getByRole("group", { name: "Where can you render Topik content?" }),
+    ).toBeVisible();
   },
 };
 export const IncorrectAnswer: Story = {

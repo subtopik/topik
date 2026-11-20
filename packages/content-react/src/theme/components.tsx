@@ -532,8 +532,10 @@ export function TopikQuiz({ children }: TopikComponentProps) {
   return <div className="topik-quiz">{children}</div>;
 }
 
-export function TopikQuestion({ children, type = "single-choice" }: TopikComponentProps) {
+export function TopikQuestion({ children, title, type = "single-choice" }: TopikComponentProps) {
   const id = useId();
+  const hintId = `${id}-hint`;
+  const titleText = stringAttribute(title)?.trim();
   const childrenArray = Children.toArray(children);
   const choices = childrenArray.filter(isChoiceElement);
   const explanation = childrenArray.filter(isExplanationElement);
@@ -566,6 +568,7 @@ export function TopikQuestion({ children, type = "single-choice" }: TopikCompone
     });
   }
 
+  const hint = multiple ? "Choose all answers that apply" : "Choose one answer";
   // Repeated wrong answers change the text so the live region announces each attempt.
   const feedback = !answered
     ? null
@@ -577,10 +580,19 @@ export function TopikQuestion({ children, type = "single-choice" }: TopikCompone
 
   return (
     <section className="topik-question" data-correct={answered ? isCorrect : undefined}>
-      <fieldset className="topik-question__choices">
-        <legend className="topik-question__legend">
-          {multiple ? "Choose all answers that apply" : "Choose one answer"}
+      {/* The title names the choices; without one, the instruction does. */}
+      <fieldset
+        className="topik-question__choices"
+        aria-describedby={titleText ? hintId : undefined}
+      >
+        <legend className={titleText ? "topik-question__title" : "topik-question__legend"}>
+          {titleText || hint}
         </legend>
+        {titleText ? (
+          <span className="topik-question__legend" id={hintId}>
+            {hint}
+          </span>
+        ) : null}
         {choices.map((choice, index) => (
           <label className="topik-choice" key={index}>
             <input

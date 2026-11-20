@@ -773,6 +773,31 @@ describe("default Topik theme components", () => {
     expect(html).toContain('type="radio"');
   });
 
+  it("names a question's choices by its title and keeps the instruction as a description", () => {
+    const dom = mount(
+      <TopikQuestion title="Which command checks content?">
+        <TopikChoice correct>lint</TopikChoice>
+        <TopikChoice>compile</TopikChoice>
+      </TopikQuestion>,
+    );
+    const fieldset = dom.querySelector("fieldset")!;
+    expect(fieldset.querySelector("legend")?.textContent).toBe("Which command checks content?");
+    expect(fieldset.querySelector("legend")?.className).toBe("topik-question__title");
+    const hintId = fieldset.getAttribute("aria-describedby");
+    const hint = [...dom.querySelectorAll("[id]")].find((element) => element.id === hintId);
+    expect(hint?.textContent).toBe("Choose one answer");
+
+    // Without a title, the instruction itself names the choices, as before.
+    const untitled = mount(
+      <TopikQuestion>
+        <TopikChoice correct>Yes</TopikChoice>
+        <TopikChoice>No</TopikChoice>
+      </TopikQuestion>,
+    );
+    expect(untitled.querySelector("legend")?.textContent).toBe("Choose one answer");
+    expect(untitled.querySelector("fieldset")?.hasAttribute("aria-describedby")).toBe(false);
+  });
+
   it("handles single-choice quiz answers and explanations", () => {
     const dom = mount(
       <TopikQuestion type="single-choice">

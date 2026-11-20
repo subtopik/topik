@@ -183,13 +183,12 @@ A `quiz` holds one or more `question` components. A question holds at least two
 `choice` components and an optional `explanation`, which the reader sees after
 answering. A single-choice question, the default, has exactly one choice with
 `correct=true`; a question with `type="multiple-choice"` has at least one. A
-question has no prompt of its own, so write the prompt as text before the quiz:
+question's optional `title` is the question the reader answers. The theme shows
+it above the choices and gives it to assistive technology as their name:
 
 ```markdown
-Which command checks content without writing compiled output?
-
 {% quiz %}
-{% question %}
+{% question title="Which command checks content without writing compiled output?" %}
 {% choice correct=true %}
 `topik lint`
 {% /choice %}

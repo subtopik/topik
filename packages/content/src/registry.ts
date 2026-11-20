@@ -162,7 +162,7 @@ const authoredComponents = {
   kbd: kbdDefinition,
   math: mathDefinition,
   mathInline: mathInlineDefinition,
-  question: questionDefinition,
+  question: textAttributes(questionDefinition, ["title"]),
   quiz: quizDefinition,
   step: textAttributes(stepDefinition, ["title"]),
   steps: stepsDefinition,

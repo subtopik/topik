@@ -100,7 +100,9 @@ other headings or accordions on that page share compiles, but warns with
 accordion with that title is added or removed. Give a heading an explicit
 `{% #id %}`, or an accordion an explicit `id` attribute, instead; see
 [Heading anchors](../content/content-design.md#heading-anchors) and
-[Accordion anchors](../content/content-design.md#accordion-anchors). A file present
+[Accordion anchors](../content/content-design.md#accordion-anchors). A
+fragment-only destination such as `#setup` names the same page, so it is checked
+for links and cards alike, including cards on course pages. A file present
 on disk is not automatically a wiki page: it must be listed in navigation.
 
 The compiler resolves relative document links against declared source resources,

@@ -333,6 +333,14 @@ describe("footnotes next to other constructs", () => {
     ["at the start of a paragraph", "[^1]\\: b\n\n[^1]: note\n"],
     ["after a hard break", "a\\\n[^1]\\: b\n\n[^1]: note\n"],
     ["in a list item", "- [^1]\\: b\n\n[^1]: note\n"],
+    ["after a hard break in strong text", "**a\\\n[^1]\\: x**\n\n[^1]: note\n"],
+    ["after a hard break in emphasis", "*a\\\n[^1]\\: x*\n\n[^1]: note\n"],
+    ["after a hard break in strikethrough", "~~a\\\n[^1]\\: x~~\n\n[^1]: note\n"],
+    [
+      "after a hard break in an inline tag",
+      "{% badge %}a\\\n[^1]\\: x{% /badge %}\n\n[^1]: note\n",
+    ],
+    ["after a line ending in strong text", "**a\n[^1]\\: x**\n\n[^1]: note\n"],
   ])("a colon after a reference that starts a line stays text %s", (_where, source) => {
     expect(formatted(source)).toBe(source);
     expect(formatted("[^1]&#58; b\n\n[^1]: note\n")).toBe("[^1]\\: b\n\n[^1]: note\n");

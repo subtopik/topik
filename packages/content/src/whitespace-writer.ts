@@ -18,15 +18,20 @@ function position(
 }
 
 /**
- * Whether a footnote reference directly before this text starts a line: the first child of a
- * paragraph, or the first node after a hard break. `[^1]: text` there reads as a definition.
+ * Whether a footnote reference directly before this text starts a line, where `[^1]: text` reads
+ * as a definition: the first child of a paragraph, or the first node after a hard break or a
+ * line ending, in any inline container.
  */
 function followsLineStartFootnote(node: unknown, parent: { type: string } | undefined): boolean {
-  if (parent?.type !== "paragraph") return false;
   const { index, children } = position(node, parent);
   if (index < 1 || (children[index - 1] as { type?: string }).type !== "footnoteReference")
     return false;
-  return index === 1 || (children[index - 2] as { type?: string }).type === "break";
+  if (index === 1) return parent?.type === "paragraph";
+  const before = children[index - 2] as { type?: string; value?: unknown };
+  return (
+    before.type === "break" ||
+    (before.type === "text" && typeof before.value === "string" && /\n[ \t]*$/u.test(before.value))
+  );
 }
 
 export function boundaryWhitespaceWriterExtension() {
@@ -64,21 +69,16 @@ function writeText(
   // Markdown trims whitespace only at the edges of a paragraph, cell or
   // strikethrough. Next to inline siblings such as code, plain spaces and a
   // single line ending survive as written and need no references.
-  const { index, count, children } = position(node, parent);
+  const { index, count } = position(node, parent);
   const literal = (run: string) => /^[ \t]*$/u.test(run) || run === "\n";
   const hasBefore = index > 0;
   const hasAfter = index !== -1 && index < count - 1;
-  // A footnote reference that starts a line followed by `:` reads as a definition, so a
-  // line ending before one keeps its reference.
-  const beforeFootnote =
-    hasAfter && (children[index + 1] as { type?: string }).type === "footnoteReference";
-  const trailing = (run: string) => literal(run) && !(beforeFootnote && run.includes("\n"));
   if (first === characters.length) {
     // Text that is all whitespace touches both sides, so it needs a sibling on each.
-    if (hasBefore && hasAfter && trailing(node.value)) first = 0;
+    if (hasBefore && hasAfter && literal(node.value)) first = 0;
   } else {
     if (hasBefore && literal(characters.slice(0, first).join(""))) first = 0;
-    if (hasAfter && trailing(characters.slice(last).join(""))) last = characters.length;
+    if (hasAfter && literal(characters.slice(last).join(""))) last = characters.length;
   }
   const blankLines = /\n[ \t]*\n/.test(node.value);
   if (first === 0 && last === characters.length && !blankLines)

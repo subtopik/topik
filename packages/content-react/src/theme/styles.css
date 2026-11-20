@@ -375,7 +375,8 @@
     }
 
     .topik-code-block__controls button,
-    .topik-code-block__fold-toggle {
+    .topik-code-block__fold-toggle,
+    .topik-video__toggle {
       background: ButtonFace;
       border-color: ButtonText;
       color: ButtonText;
@@ -611,6 +612,73 @@
     border-radius: 0.2rem;
   }
 
+  .topik-video {
+    margin-inline: 0;
+  }
+
+  .topik-video__frame {
+    position: relative;
+  }
+
+  .topik-video__player {
+    aspect-ratio: 16 / 9;
+    background: #000000;
+    border-radius: var(--topik-radius);
+    display: block;
+    height: auto;
+    width: 100%;
+  }
+
+  .topik-video__toggle {
+    background: var(--topik-color-canvas);
+    border: 1px solid var(--topik-color-border);
+    border-radius: 0.35rem;
+    bottom: 0.75rem;
+    color: var(--topik-color-text);
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.85rem;
+    inset-inline-start: 0.75rem;
+    padding: 0.25rem 0.65rem;
+    position: absolute;
+  }
+
+  .topik-video__toggle:focus-visible {
+    outline: 2px solid var(--topik-color-accent);
+    outline-offset: 2px;
+  }
+
+  .topik-video__link,
+  .topik-video__fallback {
+    display: block;
+  }
+
+  .topik-video__fallback {
+    background: var(--topik-color-panel);
+    border: 1px dashed var(--topik-color-border);
+    border-radius: var(--topik-radius);
+    padding: 1rem;
+  }
+
+  .topik-video__link img,
+  .topik-video__fallback img {
+    border-radius: var(--topik-radius);
+    display: block;
+    margin-bottom: 0.45rem;
+    max-width: 100%;
+  }
+
+  /* Paper cannot play video: print shows the poster and a link instead of the player. */
+  .topik-video__print {
+    display: none;
+  }
+
+  .topik-video figcaption {
+    color: var(--topik-color-muted);
+    font-size: 0.92rem;
+    margin-top: 0.45rem;
+  }
+
   /* A key cap: monospace label with a raised lower edge, sized to sit in running text. */
   .topik-kbd {
     background: var(--topik-color-panel);
@@ -795,6 +863,21 @@
       white-space: pre-wrap;
     }
 
+    .topik-video__frame {
+      display: none;
+    }
+
+    .topik-video__print {
+      display: block;
+    }
+
+    .topik-video .topik-video__link::after {
+      content: attr(href);
+      display: block;
+      font-size: 0.85em;
+      overflow-wrap: anywhere;
+    }
+
     .topik-content :where(h1, h2, h3, h4) {
       break-after: avoid;
     }
@@ -802,6 +885,7 @@
     .topik-callout,
     .topik-card,
     .topik-figure,
+    .topik-video,
     .topik-step,
     .topik-question,
     .topik-table tr {

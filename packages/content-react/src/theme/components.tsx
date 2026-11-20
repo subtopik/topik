@@ -28,6 +28,9 @@ import { useTopikLinkHandler, useTopikLinkRenderer, useTopikLinkResolver } from 
 import { footnoteAnchor, footnoteBackrefs, footnoteNumber } from "../core/components";
 import { CodeBlockView } from "./code-block";
 import { TopikTablist } from "./tablist";
+import { TopikVideo } from "./video";
+
+export { TopikVideo };
 import type { CodePresentationEffectiveOptions } from "@topik/content";
 
 interface TopikRoleProps {
@@ -670,6 +673,7 @@ export const defaultTopikComponents = {
   TopikTableHeader,
   TopikTableRow,
   TopikUnderline,
+  TopikVideo,
 } satisfies TopikComponentMap;
 
 /** @internal Rendering options that themed slots read at render time, not at map creation. */

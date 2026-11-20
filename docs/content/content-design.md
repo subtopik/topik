@@ -134,6 +134,7 @@ text; a tree built in code reports `topik-footnote-missing`.
 | `steps`, `step`                             | An ordered sequence of blocks, with optional step titles.                 |
 | `codeGroup`, `codeTab`                      | Labeled code panels containing fenced code.                               |
 | `figure`                                    | A self-closing image with `src`, `alt`, and optional caption/dark source. |
+| `video`                                     | A self-closing video with `src`, `title`, and optional caption/poster.    |
 | `math`, `mathInline`                        | Self-closing block or inline formulas with a `content` property.          |
 | `badge`, `underline` (alias `u`)            | Inline status text or underlined text.                                    |
 | `kbd`                                       | An inline key, such as `{% kbd %}Ctrl{% /kbd %}+{% kbd %}C{% /kbd %}`.    |
@@ -152,6 +153,33 @@ Start your application.
 {% /tab %}
 {% /tabs %}
 ```
+
+### Video
+
+```markdown
+{% video src="media/onboarding.mp4" title="Onboarding walkthrough" caption="Two minutes" poster="media/onboarding.png" /%}
+{% video src="https://www.youtube.com/watch?v=abc123&t=90s" title="Installing the CLI" /%}
+{% video src="media/drag-and-drop.webm" title="Dragging a card" loop=true /%}
+```
+
+| Property  | Use                                                                                                 |
+| --------- | --------------------------------------------------------------------------------------------------- |
+| `src`     | Required. A local MP4 or WebM file, or a credential-free HTTPS URL.                                 |
+| `title`   | Required, not blank. The accessible name and the text of the fallback link.                         |
+| `caption` | Optional caption below the video.                                                                   |
+| `poster`  | Optional image shown before playback, and in print and fallback output.                             |
+| `loop`    | `true` plays a silent looping clip with a pause button instead of player controls. Default `false`. |
+
+Topik does not know video hosting services. An external URL, including its query
+such as a start time, is kept exactly as written. The default renderer plays a
+URL whose path names a video file (`.mp4`, `.m4v`, `.webm`) in a native player,
+and shows any other URL, such as a YouTube page, as a link. An application that embeds a service, or allows only some,
+checks `video.src` with
+[`extractTopikAssetOccurrences`](https://github.com/subtopik/topik/blob/main/packages/content/README.md)
+and supplies its own [`TopikVideo`](./rendering.md#video) component.
+
+A `video` is placed wherever block content is allowed, like `figure`: in tabs,
+steps, accordions, cards and quiz explanations, but never inside prose.
 
 The exported `components` registry describes each component's complete property
 and child rules:

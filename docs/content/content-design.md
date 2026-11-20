@@ -90,7 +90,8 @@ reference and list them at the end of the content, so the label is only a name:
 - **Labels** are one word and unique in the document, across all conditional
   branches. Formatting keeps their authored spelling.
 - **References** work wherever inline content does, including headings, lists,
-  table cells and inline components, but not inside links or inside a footnote.
+  table cells and inline components, but not inside links, inside a footnote, or
+  inside a quiz explanation, which appears only after the reader answers.
 - **Content** is block content without headings, link definitions or
   conditionals: a note is part of the page it annotates, so headings stay in the
   outline and link labels resolve the same wherever the note is written. To show

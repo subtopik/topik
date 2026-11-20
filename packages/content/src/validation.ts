@@ -519,11 +519,16 @@ export function validateDocumentWithIndex(
         if (!label || label.length > 999 || !/^(?:\\[\s\S]|[^[\]\\])+$/u.test(label))
           add("Reference identifier has no faithful Markdown label", node, "topik-reference-label");
       }
-      // A footnote label is one word: whitespace ends the label in Markdown.
+      // A footnote label is one word: whitespace ends the label in Markdown. It is written with
+      // its source spelling, so it follows the same escape rule as other reference labels.
       if (node.type === "footnoteReference" || node.type === "footnoteDefinition") {
-        const association = node as unknown as Association;
-        const label = association.label ?? association.identifier;
-        if (!label || label.length > 999 || /\s/u.test(label))
+        const label = referenceSourceLabel(node as unknown as Association);
+        if (
+          !label ||
+          label.length > 999 ||
+          /\s/u.test(label) ||
+          !/^(?:\\[\s\S]|[^[\]\\])+$/u.test(label)
+        )
           add("Footnote label has no faithful Markdown label", node, "topik-reference-label");
       }
     }

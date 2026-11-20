@@ -106,6 +106,18 @@ export function footnoteProblems(document: ContentDocument): FootnoteProblem[] {
           id: "topik-footnote-placement",
           message: "Links cannot contain footnote references",
         });
+      // An explanation appears only once the reader answers, so a reference inside it would
+      // be numbered, and linked from its note, before it exists on the page.
+      else if (
+        ancestors.some(
+          (ancestor) => ancestor.type === "topikComponent" && ancestor.name === "explanation",
+        )
+      )
+        problems.push({
+          node,
+          id: "topik-footnote-placement",
+          message: "Quiz explanations cannot contain footnote references",
+        });
     }
     for (const child of node.children ?? []) walk(child, [...ancestors, node]);
   }

@@ -119,7 +119,7 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "topik-extension-failed": "Content extension validation failed.",
   "topik-explanation-children": "An explanation may contain only block content.",
   "topik-footnote-placement":
-    "Write footnote definitions at the top level of the document, and footnote references outside links.",
+    "Write footnote definitions at the top level of the document, and footnote references outside links and quiz explanations.",
   "topik-footnote-duplicate":
     "A footnote label is defined more than once; give each footnote its own label.",
   "topik-footnote-missing": "A footnote reference has no definition with the same label.",

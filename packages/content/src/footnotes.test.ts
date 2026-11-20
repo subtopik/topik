@@ -307,3 +307,45 @@ describe("footnote evaluation and rendering", () => {
     expect(parseDocument(formatted(source))).toMatchObject({ ok: true });
   });
 });
+
+describe("footnotes next to other constructs", () => {
+  test("a quiz explanation cannot hold a footnote reference", () => {
+    // The explanation appears only after an answer, so its reference would be numbered first.
+    const source = [
+      "{% quiz %}",
+      "{% question %}",
+      "{% choice correct=true %}\nA\n{% /choice %}",
+      "{% choice %}\nB\n{% /choice %}",
+      "{% explanation %}\nSee[^1].\n{% /explanation %}",
+      "{% /question %}",
+      "{% /quiz %}",
+      "",
+      "Visible[^2].",
+      "",
+      "[^1]: one",
+      "",
+      "[^2]: two",
+    ].join("\n");
+    expect(ids(source)).toEqual(["topik-footnote-placement"]);
+  });
+
+  test.each([
+    ["at the start of a paragraph", "[^1]\\: b\n\n[^1]: note\n"],
+    ["after a hard break", "a\\\n[^1]\\: b\n\n[^1]: note\n"],
+    ["in a list item", "- [^1]\\: b\n\n[^1]: note\n"],
+  ])("a colon after a reference that starts a line stays text %s", (_where, source) => {
+    expect(formatted(source)).toBe(source);
+    expect(formatted("[^1]&#58; b\n\n[^1]: note\n")).toBe("[^1]\\: b\n\n[^1]: note\n");
+  });
+
+  test("a colon after a reference inside a line is written as is", () => {
+    const source = "See [^1]: details.\n\n[^1]: note\n";
+    expect(formatted(source)).toBe(source);
+  });
+
+  test("an escaped label keeps its authored spelling", () => {
+    const source = "Use[^a\\+b].\n\n[^a\\+b]: Note.\n";
+    expect(ids(source)).toEqual([]);
+    expect(formatted(source)).toBe(source);
+  });
+});

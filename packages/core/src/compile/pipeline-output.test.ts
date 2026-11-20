@@ -128,14 +128,12 @@ modules:
   - id: basics
     title: Basics
     slug: getting-started
-    order: 1
     pages: [pages/welcome, pages/next]
 `,
   "course/pages/welcome.md": `---
 id: welcome
 title: Welcome
 slug: introduction
-order: 1
 ---
 # Welcome
 
@@ -145,7 +143,6 @@ order: 1
 id: next
 title: Next
 slug: destination
-order: 2
 ---
 # Next
 

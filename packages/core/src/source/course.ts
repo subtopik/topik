@@ -16,6 +16,15 @@ import { failSourcePlan as fail } from "./diagnostics";
 import { collectMetadataEdits } from "./metadata";
 import { transportSavedReferences, type SourceDerivedRepair } from "./reference-transport";
 import { patchSourceSequence, type SourceByteEdit } from "./syntax";
+import { alignNavigation } from "./plan-navigation";
+
+/** Items in the order a parent list names them; unlisted items follow in input order. */
+function inListOrder<T extends { name: string }>(items: readonly T[], order: readonly string[]) {
+  const listed = order
+    .map((name) => items.find((item) => item.name === name))
+    .filter((item): item is T => item !== undefined);
+  return [...listed, ...items.filter((item) => !listed.includes(item))];
+}
 
 /** Course references keep stable identities independently of route and file placement. */
 export function sourceCourseContext(
@@ -24,18 +33,25 @@ export function sourceCourseContext(
   paths: ReadonlyMap<string, string>,
   directory: string,
 ): CourseReferenceContext {
-  const modules = resources.filter(
-    (resource): resource is CourseModule =>
-      resource.type === "CourseModule" && resource.spec.course === course.name,
+  const modules = inListOrder(
+    resources.filter(
+      (resource): resource is CourseModule =>
+        resource.type === "CourseModule" && resource.spec.course === course.name,
+    ),
+    course.spec.modules,
   );
-  const members = new Set(modules.map((module) => module.name));
   return {
     course: course.name,
     modules: modules.map((module) => ({ name: module.name, slug: module.spec.slug })),
-    pages: resources
-      .filter(
-        (resource): resource is CoursePage =>
-          resource.type === "CoursePage" && members.has(resource.spec.module),
+    pages: modules
+      .flatMap((module) =>
+        inListOrder(
+          resources.filter(
+            (resource): resource is CoursePage =>
+              resource.type === "CoursePage" && resource.spec.module === module.name,
+          ),
+          module.spec.pages,
+        ),
       )
       .map((page) => {
         const path = paths.get(`CoursePage/${page.name}`);
@@ -176,58 +192,39 @@ export function transportCourseReferences(
   return true;
 }
 
-/** Array position is source syntax; explicit order values remain resource metadata. */
+/** Source module records in the order the Course lists them, each with its pages in order. */
 export function sourceCourseModules(
   resources: readonly Resource[],
   course: Course,
   paths: ReadonlyMap<string, string>,
   directory: string,
-  preferred: readonly { id: string; pages: readonly string[] }[] = [],
-  /** Page identity of each preferred source path, when the paths predate a move. */
-  preferredPages?: ReadonlyMap<string, string>,
 ): Array<Record<string, unknown> & { id: string; pages: string[] }> {
   const context = sourceCourseContext(resources, course, paths, directory);
-  const modules = resources.filter(
-    (resource): resource is CourseModule =>
-      resource.type === "CourseModule" && resource.spec.course === course.name,
+  const modules = inListOrder(
+    resources.filter(
+      (resource): resource is CourseModule =>
+        resource.type === "CourseModule" && resource.spec.course === course.name,
+    ),
+    course.spec.modules,
   );
-  const ordered = [
-    ...preferred
-      .map((item) => modules.find((module) => module.name === item.id))
-      .filter((module): module is CourseModule => !!module),
-    ...modules.filter((module) => !preferred.some((item) => item.id === module.name)),
-  ];
-  return ordered.map((module) => {
-    const pages = context.pages.filter((page) => page.module === module.name);
-    const previous = preferred.find((item) => item.id === module.name)?.pages ?? [];
-    // Declaration position belongs to the page identity, so a moved file keeps its place.
-    const retained = new Set(
-      previous
-        .map((path) =>
-          preferredPages
-            ? pages.find((page) => page.name === preferredPages.get(path))
-            : pages.find((page) => page.sourcePath === path),
-        )
-        .filter((page) => page !== undefined),
-    );
-    const orderedPaths = [...retained, ...pages.filter((page) => !retained.has(page))].map(
-      (page) => page.sourcePath,
-    );
-    return {
-      id: module.name,
-      title: module.spec.title,
-      slug: module.spec.slug,
-      order: module.spec.order,
-      ...(Object.hasOwn(module.spec, "description")
-        ? { description: module.spec.description }
-        : {}),
-      ...(module.labels !== undefined ? { labels: module.labels } : {}),
-      pages: orderedPaths,
-    };
-  });
+  return modules.map((module) => ({
+    id: module.name,
+    title: module.spec.title,
+    slug: module.spec.slug,
+    ...(Object.hasOwn(module.spec, "description") ? { description: module.spec.description } : {}),
+    ...(module.labels !== undefined ? { labels: module.labels } : {}),
+    // The context already holds each module's pages in list order.
+    pages: context.pages
+      .filter((page) => page.module === module.name)
+      .map((page) => page.sourcePath),
+  }));
 }
 
-/** Module facts and memberships edit stable records, preserving unrelated source syntax. */
+/**
+ * Module facts and list order edit stable records, preserving unrelated source syntax. Lists
+ * change as Wiki navigation does: removed entries are deleted in place, added entries are
+ * appended, and an order that needs anything else rewrites that one list.
+ */
 export function planCourseConfiguration(input: {
   before: readonly Resource[];
   desired: readonly Resource[];
@@ -236,7 +233,6 @@ export function planCourseConfiguration(input: {
   paths: ReadonlyMap<string, string>;
   originalPaths: ReadonlyMap<string, string>;
   directory: string;
-  modules: readonly { id: string; pages: readonly string[] }[];
   raw: string;
   json: boolean;
 }): { updates: Record<string, unknown>; edits: SourceByteEdit[]; membershipResources: string[] } {
@@ -253,60 +249,74 @@ export function planCourseConfiguration(input: {
     input.originalCourse,
     input.originalPaths,
     input.directory,
-    input.modules,
   );
-  const after = sourceCourseModules(
-    input.desired,
-    input.course,
-    input.paths,
-    input.directory,
-    input.modules,
-    beforeNames,
-  );
+  const after = sourceCourseModules(input.desired, input.course, input.paths, input.directory);
   const updates: Record<string, unknown> = {};
   const edits: SourceByteEdit[] = [];
   const membershipResources: string[] = [];
-  for (const module of before) {
-    const next = after.find((candidate) => candidate.id === module.id);
-    if (!next) continue;
+  const modules = alignNavigation(
+    before.map((module) => module.id),
+    after.map((module) => module.id),
+  );
+  if (!modules) {
+    // The module order cannot be reached in place, so the list is written as one value.
+    collectMetadataEdits(updates, "modules", before, after);
+    membershipResources.push(...after.map((module) => `CourseModule/${module.id}`));
+    return { updates, edits, membershipResources };
+  }
+  // Matched modules keep their entry: only changed fields and page lists are edited.
+  for (const [index, nextIndex] of [...modules.anchors, ...modules.pairs]) {
+    const module = before[index];
+    const next = after[nextIndex];
     const selector = `modules/${encodeURIComponent(module.id)}`;
-    for (const field of ["title", "slug", "order", "description", "labels"])
-      collectMetadataEdits(updates, `${selector}/${field}`, module[field], next[field]);
-    // A retained page whose file moved keeps its entry; only the path value changes.
-    const nextPaths = new Map(next.pages.map((path) => [afterNames.get(path), path]));
-    const previousNames = new Set(module.pages.map((path) => beforeNames.get(path)));
-    let moved = false;
-    for (const path of module.pages) {
-      const replacement = nextPaths.get(beforeNames.get(path));
-      if (replacement === undefined || replacement === path) continue;
-      updates[`${selector}/pages/${encodeURIComponent(path)}`] = replacement;
-      moved = true;
+    if (module.id !== next.id) {
+      // Another module takes this entry's place, so its record replaces the entry.
+      updates[selector] = next;
+      membershipResources.push(`CourseModule/${module.id}`, `CourseModule/${next.id}`);
+      continue;
     }
-    const removals = module.pages.filter((path) => !nextPaths.has(beforeNames.get(path)));
-    const additions = next.pages.filter((path) => !previousNames.has(afterNames.get(path)));
-    if (moved) membershipResources.push(`CourseModule/${module.id}`);
-    if (removals.length || additions.length) {
-      if (!moved) membershipResources.push(`CourseModule/${module.id}`);
+    for (const field of ["title", "slug", "description", "labels"])
+      collectMetadataEdits(updates, `${selector}/${field}`, module[field], next[field]);
+    const previousPages = module.pages.map((path) => beforeNames.get(path));
+    const nextPages = next.pages.map((path) => afterNames.get(path));
+    const pages = alignNavigation(previousPages, nextPages);
+    if (!pages) {
+      updates[`${selector}/pages`] = next.pages;
+      membershipResources.push(`CourseModule/${module.id}`);
+      continue;
+    }
+    // A kept entry whose file moved, or whose place another page takes, changes only its path.
+    let changed = false;
+    for (const [pageIndex, nextPageIndex] of [...pages.anchors, ...pages.pairs]) {
+      const path = module.pages[pageIndex];
+      const replacement = next.pages[nextPageIndex];
+      if (path === replacement) continue;
+      updates[`${selector}/pages/${encodeURIComponent(path)}`] = replacement;
+      changed = true;
+    }
+    if (pages.removals.length || pages.additions.length) {
+      changed = true;
       edits.push(
         ...patchSourceSequence(
           input.raw,
           `${selector}/pages`,
-          additions,
-          removals.map((path) => `${selector}/pages/${encodeURIComponent(path)}`),
+          pages.additions.map((nextPageIndex) => next.pages[nextPageIndex]),
+          pages.removals.map(
+            (pageIndex) => `${selector}/pages/${encodeURIComponent(module.pages[pageIndex])}`,
+          ),
           input.json,
         ),
       );
     }
+    if (changed) membershipResources.push(`CourseModule/${module.id}`);
   }
-  const removed = before.filter((module) => !after.some((candidate) => candidate.id === module.id));
-  const added = after.filter((module) => !before.some((candidate) => candidate.id === module.id));
-  if (removed.length || added.length)
+  if (modules.removals.length || modules.additions.length)
     edits.push(
       ...patchSourceSequence(
         input.raw,
         "modules",
-        added,
-        removed.map((module) => `modules/${encodeURIComponent(module.id)}`),
+        modules.additions.map((index) => after[index]),
+        modules.removals.map((index) => `modules/${encodeURIComponent(before[index].id)}`),
         input.json,
       ),
     );

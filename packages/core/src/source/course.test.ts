@@ -20,7 +20,7 @@ const file = (path: string, text: string): SourceTreeFile => ({
   mode: "100644",
   bytes: encodeSource(text),
 });
-const rawConfig = `# Course configuration\nsourceVersion: 1\nid: fundamentals\ntitle: Fundamentals # retain\nslug: fundamentals\ndescription: null\nlabels: { audience: beginner }\nauthors: [alice]\npersons:\n  - id: alice\n    labels: { role: author }\n    spec: { name: Alice, email: alice@example.test, bio: "A teacher" }\nmodules:\n  - id: basics\n    title: Basics # retain module comment\n    slug: basics\n    order: 0\n    description: null\n    labels: { level: introductory }\n    pages:\n      - pages/intro # retain membership comment\n      - pages/target\n    customModule: retain\n  - id: advanced\n    title: Advanced\n    slug: advanced\n    order: 7\n    pages: []\n    customModule: exact\ncustom: { exact: unchanged }\n`;
+const rawConfig = `# Course configuration\nsourceVersion: 1\nid: fundamentals\ntitle: Fundamentals # retain\nslug: fundamentals\ndescription: null\nlabels: { audience: beginner }\nauthors: [alice]\npersons:\n  - id: alice\n    labels: { role: author }\n    spec: { name: Alice, email: alice@example.test, bio: "A teacher" }\nmodules:\n  - id: basics\n    title: Basics # retain module comment\n    slug: basics\n    description: null\n    labels: { level: introductory }\n    pages:\n      - pages/intro # retain membership comment\n      - pages/target\n    customModule: retain\n  - id: advanced\n    title: Advanced\n    slug: advanced\n    pages: []\n    customModule: exact\ncustom: { exact: unchanged }\n`;
 
 async function courseProject(): Promise<SourceProject> {
   return readSourceProject({
@@ -32,11 +32,11 @@ async function courseProject(): Promise<SourceProject> {
       file("lessons/course.yaml", rawConfig),
       file(
         "lessons/pages/intro.md",
-        "---\nid: intro\ntitle: Intro\nslug: start\norder: 2\nauthors: [alice]\nlabels: { edition: first }\ncustom: unchanged\n---\n# Intro\n\n[Details](./target.md?view=full#details)\n",
+        "---\nid: intro\ntitle: Intro\nslug: start\nauthors: [alice]\nlabels: { edition: first }\ncustom: unchanged\n---\n# Intro\n\n[Details](./target.md?view=full#details)\n",
       ),
       file(
         "lessons/pages/target.md",
-        "---\nid: target\ntitle: Target\nslug: destination\norder: 5\n---\n# Target\n\n## Details\n",
+        "---\nid: target\ntitle: Target\nslug: destination\n---\n# Target\n\n## Details\n",
       ),
       file("README.txt", "untouched\n"),
     ],
@@ -60,6 +60,19 @@ function resource<T extends Resource["type"]>(
   return resources.find(
     (resource) => resource.type === type && (name === undefined || resource.name === name),
   ) as Extract<Resource, { type: T }>;
+}
+/** Reassign a page as an editor does: its module and both modules' page lists change. */
+function reassign(resources: Resource[], page: string, to: string): SourceResourceOperation[] {
+  const target = resource(resources, "CoursePage", page);
+  const from = resource(resources, "CourseModule", target.spec.module);
+  from.spec.pages = from.spec.pages.filter((name) => name !== page);
+  resource(resources, "CourseModule", to).spec.pages.push(page);
+  target.spec.module = to;
+  return [
+    { kind: "update", resource: `CoursePage/${page}` },
+    { kind: "update", resource: `CourseModule/${from.name}` },
+    { kind: "update", resource: `CourseModule/${to}` },
+  ];
 }
 const rawFile = (project: SourceProject, path: string): string =>
   decodeSource(project.tree.find((file) => file.path === path)!.bytes);
@@ -88,7 +101,7 @@ test("Course inspection retains metadata, memberships, reference context and unc
   });
   expect(resource(project.compilation.resources, "CourseModule", "basics")).toMatchObject({
     labels: { level: "introductory" },
-    spec: { course: "fundamentals", order: 0, description: null },
+    spec: { course: "fundamentals", description: null },
   });
   const page = project.documents.find((document) => document.resource === "CoursePage/intro")!;
   expect(page.sourceContext).toMatchObject({
@@ -119,11 +132,10 @@ test("Course inspection retains metadata, memberships, reference context and unc
   }
 });
 
-test("narrow Course and module metadata edits preserve sibling entries, comments and explicit sequence order", async () => {
+test("narrow Course and module metadata edits preserve sibling entries, comments and list order", async () => {
   const project = await courseProject();
   const desired = structuredClone(project.compilation.resources);
   resource(desired, "Course").spec.title = "Edited fundamentals";
-  resource(desired, "CourseModule", "basics").spec.order = 10;
   resource(desired, "CourseModule", "basics").spec.description = "New module description";
   const config = project.configurations.find((config) => config.path === "lessons/course.yaml")!;
   const scope = authority(project);
@@ -131,7 +143,7 @@ test("narrow Course and module metadata edits preserve sibling entries, comments
     {
       ...config,
       fields: config.fields.filter((field) =>
-        ["title", "modules/basics/order", "modules/basics/description"].includes(field.selector),
+        ["title", "modules/basics/description"].includes(field.selector),
       ),
     },
   ];
@@ -150,12 +162,10 @@ test("narrow Course and module metadata edits preserve sibling entries, comments
   expect(rawFile(result.plan.candidate, "lessons/course.yaml")).toBe(
     rawConfig
       .replace("title: Fundamentals", 'title: "Edited fundamentals"')
-      .replace("order: 0", "order: 10")
       .replace("    description: null", '    description: "New module description"'),
   );
   expect(result.plan.changes[0].sharedEdits?.map((edit) => edit.selector).sort()).toEqual([
     "modules/basics/description",
-    "modules/basics/order",
     "title",
   ]);
   expect(
@@ -181,8 +191,8 @@ test("narrow Course and module metadata edits preserve sibling entries, comments
 test("changing a Course page module preserves link meaning and updates membership without implicitly moving source files", async () => {
   const project = await courseProject();
   const desired = structuredClone(project.compilation.resources);
-  resource(desired, "CoursePage", "target").spec.module = "advanced";
-  const result = await plan(project, desired, [{ kind: "update", resource: "CoursePage/target" }]);
+  const operations = reassign(desired, "target", "advanced");
+  const result = await plan(project, desired, operations);
   expect(result.ok, JSON.stringify(result)).toBe(true);
   if (!result.ok) return;
   expect(
@@ -205,7 +215,7 @@ test("changing a Course page module preserves link meaning and updates membershi
     resources: authority(project).resources.filter((key) => key !== "CourseModule/advanced"),
   };
   expect(
-    await plan(project, desired, [{ kind: "update", resource: "CoursePage/target" }], {
+    await plan(project, desired, operations, {
       authority: denied,
     }),
   ).toMatchObject({
@@ -218,9 +228,8 @@ test("an acknowledged module reassignment retains the original saved Course cont
   const project = await courseProject();
   const saved = project.courseContexts["Course/fundamentals"];
   const desired = structuredClone(project.compilation.resources);
-  resource(desired, "CoursePage", "intro").spec.module = "advanced";
   const courseReferenceContexts = { "CoursePage/intro": saved };
-  const moved = await plan(project, desired, [{ kind: "update", resource: "CoursePage/intro" }], {
+  const moved = await plan(project, desired, reassign(desired, "intro", "advanced"), {
     courseReferenceContexts,
   });
   expect(moved.ok, JSON.stringify(moved)).toBe(true);
@@ -277,7 +286,7 @@ test("an explicit Course page source move retains stable identity, slug, mode an
   ).toBe("100755");
   expect(
     resource(result.plan.candidate.compilation.resources, "CoursePage", "target").spec,
-  ).toMatchObject({ slug: "destination", module: "basics", order: 5 });
+  ).toMatchObject({ slug: "destination", module: "basics" });
   expect(rawFile(result.plan.candidate, "lessons/pages/intro.md")).toContain(
     "/basics/destination?view=full#details",
   );
@@ -297,7 +306,7 @@ test("Course module and page creation and deletion preserve unrelated bytes and 
       course: "fundamentals",
       title: "Practice",
       slug: "practice",
-      order: 4,
+      pages: ["exercise"],
       description: null,
     },
   };
@@ -309,14 +318,16 @@ test("Course module and page creation and deletion preserve unrelated bytes and 
       module: "practice",
       title: "Exercise",
       slug: "exercise",
-      order: 9,
       content: { format: "topik", value: "# Exercise\n" },
     },
   };
+  const withModule = structuredClone(project.compilation.resources);
+  resource(withModule, "Course").spec.modules.push("practice");
   const result = await plan(
     project,
-    [...project.compilation.resources, module, page],
+    [...withModule, module, page],
     [
+      { kind: "update", resource: "Course/fundamentals" },
       { kind: "create", resource: "CourseModule/practice", config: "lessons/course.yaml" },
       {
         kind: "create",
@@ -343,16 +354,22 @@ test("Course module and page creation and deletion preserve unrelated bytes and 
     rawFile(project, "lessons/pages/intro.md"),
   );
   const created = result.plan.candidate;
-  const orphaned = created.compilation.resources.filter(
+  const orphaned = structuredClone(created.compilation.resources).filter(
     (resource) => resource.type !== "CourseModule" || resource.name !== "practice",
   );
+  const course = resource(orphaned, "Course");
+  course.spec.modules = course.spec.modules.filter((name) => name !== "practice");
   expect(
-    await plan(created, orphaned, [{ kind: "delete", resource: "CourseModule/practice" }]),
+    await plan(created, orphaned, [
+      { kind: "update", resource: "Course/fundamentals" },
+      { kind: "delete", resource: "CourseModule/practice" },
+    ]),
   ).toMatchObject({ ok: false, diagnostics: [{ code: "module-not-empty" }] });
   const removed = await plan(
     created,
     orphaned.filter((resource) => resource.type !== "CoursePage" || resource.name !== "exercise"),
     [
+      { kind: "update", resource: "Course/fundamentals" },
       { kind: "delete", resource: "CourseModule/practice" },
       { kind: "delete", resource: "CoursePage/exercise" },
     ],
@@ -378,6 +395,7 @@ test("a page append and module metadata insertion share their base anchor withou
   });
   const desired = structuredClone(project.compilation.resources);
   resource(desired, "CourseModule", "basics").labels = { revised: "yes" };
+  resource(desired, "CourseModule", "basics").spec.pages.push("new-page");
   desired.push({
     apiVersion: "v1",
     type: "CoursePage",
@@ -386,7 +404,6 @@ test("a page append and module metadata insertion share their base anchor withou
       module: "basics",
       title: "New page",
       slug: "new",
-      order: 12,
       content: { format: "topik", value: "# New page\n" },
     },
   });
@@ -431,16 +448,18 @@ test("a last-module metadata insertion precedes a new enclosing module appended 
   });
   const desired = structuredClone(project.compilation.resources);
   resource(desired, "CourseModule", "basics").labels = { new: "yes" };
+  resource(desired, "Course").spec.modules.push("second");
   desired.push({
     apiVersion: "v1",
     type: "CourseModule",
     name: "second",
-    spec: { course: "fundamentals", title: "Second module", slug: "second", order: 7 },
+    spec: { course: "fundamentals", title: "Second module", slug: "second", pages: [] },
   });
   const result = await plan(
     project,
     desired,
     [
+      { kind: "update", resource: "Course/fundamentals" },
       { kind: "update", resource: "CourseModule/basics" },
       { kind: "create", resource: "CourseModule/second", config: "lessons/course.yaml" },
     ],
@@ -601,13 +620,19 @@ function initializedGraph(): Resource[] {
     type: "Course",
     name: "portable",
     labels: { audience: "all" },
-    spec: { title: "Portable course", slug: "portable", description: null, authors: ["teacher"] },
+    spec: {
+      title: "Portable course",
+      slug: "portable",
+      description: null,
+      authors: ["teacher"],
+      modules: ["first"],
+    },
   };
   const module: CourseModule = {
     apiVersion: "v1",
     type: "CourseModule",
     name: "first",
-    spec: { course: "portable", title: "First module", slug: "first", order: 3 },
+    spec: { course: "portable", title: "First module", slug: "first", pages: ["welcome"] },
   };
   const page: CoursePage = {
     apiVersion: "v1",
@@ -618,7 +643,6 @@ function initializedGraph(): Resource[] {
       module: "first",
       title: "Welcome",
       slug: "welcome",
-      order: 8,
       description: "What the course starts with.",
       authors: ["teacher"],
       content: { format: "topik", value: "# Welcome\n" },
@@ -740,7 +764,6 @@ test("Course initialization transports retained source-relative links and exact 
       module: "first",
       title: "Next",
       slug: "destination",
-      order: 9,
       content: { format: "topik", value: "# Next\n\n## Details\n" },
     },
   };
@@ -750,6 +773,7 @@ test("Course initialization transports retained source-relative links and exact 
       "base64",
     ),
   );
+  resource(graph, "CourseModule", "first").spec.pages.push("next");
   graph.push(next, {
     apiVersion: "v1",
     type: "Asset",
@@ -904,4 +928,50 @@ test("a Course page description is read with its origin and added, changed, clea
     delete page.spec.description;
   });
   expect(rawFile(removed, intro)).toBe(rawFile(project, intro));
+});
+
+test("Course lists change in place where they can and are rewritten where they cannot", async () => {
+  const project = await courseProject();
+  const raw = rawFile(project, "lessons/course.yaml");
+  const run = async (edit: (desired: Resource[]) => SourceResourceOperation[]) => {
+    const desired = structuredClone(project.compilation.resources);
+    const result = await plan(project, desired, edit(desired));
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.plan.candidate.compilation.resources).toEqual(expect.arrayContaining(desired));
+    return rawFile(result.plan.candidate, "lessons/course.yaml");
+  };
+  // Swapping two pages is a deletion and an append, as in Wiki navigation: the moved entry is
+  // written again, without its comment, and the other entry keeps its bytes.
+  const swapped = await run((desired) => {
+    resource(desired, "CourseModule", "basics").spec.pages.reverse();
+    return [{ kind: "update", resource: "CourseModule/basics" }];
+  });
+  expect(swapped).toBe(
+    raw.replace(
+      "      - pages/intro # retain membership comment\n      - pages/target\n",
+      '      - pages/target\n      - "pages/intro"\n',
+    ),
+  );
+  // Moving a module is also a deletion and an append: the kept module keeps its bytes, and the
+  // moved one is written again from its resource, as one flow mapping.
+  const modules = await run((desired) => {
+    resource(desired, "Course").spec.modules.reverse();
+    return [{ kind: "update", resource: "Course/fundamentals" }];
+  });
+  const head = raw.slice(0, raw.indexOf("  - id: basics"));
+  const advanced = raw.slice(raw.indexOf("  - id: advanced"), raw.indexOf("custom:"));
+  expect(modules).toBe(
+    `${head}${advanced}  - {"id":"basics","title":"Basics","slug":"basics","description":null,"labels":{"level":"introductory"},"pages":["pages/intro","pages/target"]}\ncustom: { exact: unchanged }\n`,
+  );
+  // A desired page whose module does not list it is refused before any source is planned.
+  const desired = structuredClone(project.compilation.resources);
+  resource(desired, "CoursePage", "target").spec.module = "advanced";
+  expect(
+    await plan(project, desired, [{ kind: "update", resource: "CoursePage/target" }]),
+  ).toMatchObject({
+    ok: false,
+    // The module still lists a page that now names another module.
+    diagnostics: [{ code: "resource-invalid", resource: "CourseModule/basics" }],
+  });
 });

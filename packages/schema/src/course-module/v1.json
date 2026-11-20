@@ -41,16 +41,23 @@
           "maxLength": 256,
           "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
         },
-        "order": {
-          "type": "integer",
-          "minimum": 0
+        "pages": {
+          "description": "The module's pages in reader order, by CoursePage name.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "maxLength": 63
+          },
+          "uniqueItems": true,
+          "maxItems": 10000
         },
         "description": {
           "type": ["string", "null"],
           "maxLength": 1024
         }
       },
-      "required": ["course", "title", "slug", "order"],
+      "required": ["course", "title", "slug", "pages"],
       "additionalProperties": false
     }
   },

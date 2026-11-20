@@ -110,7 +110,7 @@ test.each(["person", "module"] as const)(
             (siblingComment ? "    # keep Café\n" : "") +
             (kind === "person"
               ? "    id: ada\n    spec: {name: Ada}\n  - id: bob\n    spec: {name: Bob}\ncustom: exact\n"
-              : "    id: basics\n    title: Basics\n    slug: basics\n    order: 0\n    pages: []\n  - id: next\n    title: Next\n    slug: next\n    order: 1\n    pages: []\ncustom: exact\n");
+              : "    id: basics\n    title: Basics\n    slug: basics\n    pages: []\n  - id: next\n    title: Next\n    slug: next\n    pages: []\ncustom: exact\n");
           const raw = (head + entry + tail).replaceAll("\n", eol);
           const project = await readSourceProject({
             tree: [

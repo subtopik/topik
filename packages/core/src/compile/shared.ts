@@ -12,7 +12,6 @@ import { parseSafeConfigurationYaml } from "./config";
 import { markdownFrontmatter } from "./frontmatter";
 
 export interface CompileResult {
-  courseNavigation: import("../preview").CourseNavigationIndex;
   /** Present for manifest compilation, in declaration order. */
   provenance?: import("./manifest").ManifestSourceProvenance[];
   diagnostics: TopikContentDiagnostic[];

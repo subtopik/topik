@@ -14,7 +14,7 @@ const file = (path: string, text: string) => ({
   bytes: encodeSource(text),
 });
 const page = (id: string, body: string) =>
-  `---\nid: ${id}\ntitle: ${id}\nslug: ${id}\norder: 0\n---\n${body}`;
+  `---\nid: ${id}\ntitle: ${id}\nslug: ${id}\n---\n${body}`;
 const authority = (project: SourceProject): SourceWriteAuthority => ({
   resources: project.compilation.resources.map((resource) => `${resource.type}/${resource.name}`),
   exclusive: project.documents
@@ -45,7 +45,7 @@ async function projectFor(
         "lessons/config.yaml",
         (kind === "wiki"
           ? `id: lessons\ntitle: Lessons\nsourceVersion: 1\nnavigation: [home, next${includeOther ? ", other" : ""}]\n`
-          : `id: lessons\ntitle: Lessons\nslug: lessons\nsourceVersion: 1\nmodules: [{id: basics, title: Basics, slug: basics, order: 0, pages: [${kind === "guide-course" ? "" : "home, "}next${includeOther ? ", other" : ""}]}]\n`) +
+          : `id: lessons\ntitle: Lessons\nslug: lessons\nsourceVersion: 1\nmodules: [{id: basics, title: Basics, slug: basics, pages: [${kind === "guide-course" ? "" : "home, "}next${includeOther ? ", other" : ""}]}]\n`) +
           (assetDirectory ? `assets: {directory: ${assetDirectory}}\n` : ""),
       ),
       ...(kind === "guide-course"

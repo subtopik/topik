@@ -151,7 +151,6 @@ function coursePage(name: string, content: string): CoursePage {
       module: "module",
       title: name,
       slug: name,
-      order: 0,
       content: { format: "topik", value: content },
     },
   };
@@ -772,13 +771,13 @@ describe("compilation-wide automatic Assets", () => {
       apiVersion: "v1",
       type: "Course",
       name: "course",
-      spec: { title: "Course", slug: "course" },
+      spec: { title: "Course", slug: "course", modules: ["module"] },
     };
     const module: CourseModule = {
       apiVersion: "v1",
       type: "CourseModule",
       name: "module",
-      spec: { course: "course", title: "Module", slug: "module", order: 0 },
+      spec: { course: "course", title: "Module", slug: "module", pages: ["course-page"] },
     };
     const sharedSource = "![Shared](shared.png)\n";
     const page: CoursePage = {
@@ -789,7 +788,6 @@ describe("compilation-wide automatic Assets", () => {
         module: "module",
         title: "Page",
         slug: "page",
-        order: 0,
         content: { format: "topik", value: sharedSource },
       },
     };

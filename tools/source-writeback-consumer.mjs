@@ -206,17 +206,14 @@ export async function verifyCourseSourceConsumer(packageCohort = "c".repeat(64))
       ),
       file(
         "course/course.yaml",
-        "# Keep course configuration\nid: training\ntitle: Training\nslug: training\nsourceVersion: 1\nauthors: [ada]\npersons: [{id: ada, spec: {name: Ada, email: null, bio: Teacher}}]\ncustom: exact\nmodules:\n  - id: foundations\n    title: Foundations\n    slug: foundations\n    order: 0\n    pages: [lessons/intro, lessons/next]\n",
+        "# Keep course configuration\nid: training\ntitle: Training\nslug: training\nsourceVersion: 1\nauthors: [ada]\npersons: [{id: ada, spec: {name: Ada, email: null, bio: Teacher}}]\ncustom: exact\nmodules:\n  - id: foundations\n    title: Foundations\n    slug: foundations\n    pages: [lessons/intro, lessons/next]\n",
       ),
       file(
         "course/lessons/intro.md",
-        "---\r\nid: intro\r\ntitle: Original # keep\r\nslug: introduction\r\norder: 0\r\nauthors: [ada]\r\ncustom: exact\r\n---\r\n# Intro\r\n\r\n[Next](next.md?mode=read#topic)\r\n",
+        "---\r\nid: intro\r\ntitle: Original # keep\r\nslug: introduction\r\nauthors: [ada]\r\ncustom: exact\r\n---\r\n# Intro\r\n\r\n[Next](next.md?mode=read#topic)\r\n",
         "100755",
       ),
-      file(
-        "course/lessons/next.md",
-        "---\nid: next\ntitle: Next\nslug: next\norder: 1\n---\n# Topic\n",
-      ),
+      file("course/lessons/next.md", "---\nid: next\ntitle: Next\nslug: next\n---\n# Topic\n"),
       file("README.md", "Unowned exact bytes\r\n", "100755"),
     ],
   });

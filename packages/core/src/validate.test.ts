@@ -19,13 +19,13 @@ const supportedResources = [
     apiVersion: "v1",
     type: "Course",
     name: "course",
-    spec: { title: "Course", slug: "course" },
+    spec: { title: "Course", slug: "course", modules: ["module"] },
   },
   {
     apiVersion: "v1",
     type: "CourseModule",
     name: "module",
-    spec: { course: "course", title: "Module", slug: "module", order: 0 },
+    spec: { course: "course", title: "Module", slug: "module", pages: ["lesson"] },
   },
   {
     apiVersion: "v1",
@@ -35,7 +35,6 @@ const supportedResources = [
       module: "module",
       title: "Lesson",
       slug: "lesson",
-      order: 0,
       content: { format: "topik", value: "# Lesson" },
     },
   },
@@ -287,13 +286,13 @@ const graphResources = [
     apiVersion: "v1",
     type: "Course",
     name: "course",
-    spec: { title: "Course", slug: "course", authors: ["ada"] },
+    spec: { title: "Course", slug: "course", authors: ["ada"], modules: ["module"] },
   },
   {
     apiVersion: "v1",
     type: "CourseModule",
     name: "module",
-    spec: { course: "course", title: "Module", slug: "module", order: 0 },
+    spec: { course: "course", title: "Module", slug: "module", pages: ["lesson"] },
   },
   {
     apiVersion: "v1",
@@ -303,7 +302,6 @@ const graphResources = [
       module: "module",
       title: "Lesson",
       slug: "lesson",
-      order: 0,
       authors: ["ada"],
       content: { format: "topik", value: "# Lesson" },
     },
@@ -442,6 +440,13 @@ describe("validateResourceGraph", () => {
         path: "/spec/wiki",
         id: "reference-unresolved",
       },
+      // The module lists the lesson, which now names another module.
+      {
+        index: 4,
+        resource: "CourseModule/module",
+        path: "/spec/pages/0",
+        id: "membership-inconsistent",
+      },
       {
         index: 4,
         resource: "CourseModule/module",
@@ -452,6 +457,41 @@ describe("validateResourceGraph", () => {
     expect(result.errors[0]?.message).toBe(
       "must reference a CourseModule in the resource set; CourseModule/missing is missing",
     );
+  });
+
+  test("requires each Course list to name exactly the children that name its parent, once", () => {
+    const course = graphResources.find((resource) => resource.type === "Course")!;
+    const module = graphResources.find((resource) => resource.type === "CourseModule")!;
+    const lesson = graphResources.find((resource) => resource.type === "CoursePage")!;
+    const people = graphResources.filter((resource) => resource.type === "Person");
+    const check = (...resources: unknown[]) =>
+      validateResourceGraph([...resources, ...people]).errors.map(({ resource, path, id }) => ({
+        resource,
+        path,
+        id,
+      }));
+    const other = { ...lesson, name: "other" };
+    expect(check(course, module, lesson)).toEqual([]);
+    // A child its parent does not list.
+    expect(check(course, module, lesson, other)).toEqual([
+      { resource: "CoursePage/other", path: "/spec/module", id: "membership-inconsistent" },
+    ]);
+    // A listed name with no resource, and a name listed twice.
+    expect(
+      check(
+        course,
+        { ...module, spec: { ...module.spec, pages: ["lesson", "gone", "lesson"] } },
+        lesson,
+      ),
+    ).toEqual([
+      { resource: "CourseModule/module", path: "/spec/pages/1", id: "reference-unresolved" },
+      { resource: "CourseModule/module", path: "/spec/pages/2", id: "membership-inconsistent" },
+    ]);
+    // A module listed by a Course it does not name.
+    const second = { ...course, name: "second", spec: { ...course.spec, modules: ["module"] } };
+    expect(check(course, second, module, lesson)).toEqual([
+      { resource: "Course/second", path: "/spec/modules/0", id: "membership-inconsistent" },
+    ]);
   });
 
   test("does not repeat names that are not resource names and skips malformed resources", () => {

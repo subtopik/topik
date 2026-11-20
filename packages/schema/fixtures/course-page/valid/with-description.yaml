@@ -5,7 +5,6 @@ spec:
   module: module-basics
   title: Variables and Types
   slug: variables-and-types
-  order: 0
   description: How variables hold values and what types describe.
   content:
     format: topik

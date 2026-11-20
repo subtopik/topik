@@ -17,9 +17,9 @@ test.each(["wiki", "course"] as const)(
       "id: docs\ntitle: Docs\nsourceVersion: 1\n" +
       (kind === "wiki"
         ? "navigation: [home, manual, other]\n"
-        : "slug: docs\nmodules: [{id: basics, title: Basics, slug: basics, order: 0, pages: [home, manual, other]}]\n");
+        : "slug: docs\nmodules: [{id: basics, title: Basics, slug: basics, pages: [home, manual, other]}]\n");
     const page = (id: string, body: string) =>
-      `---\nid: ${id}\nslug: ${id}\ntitle: ${id}\norder: 0\n---\n${body}`;
+      `---\nid: ${id}\nslug: ${id}\ntitle: ${id}\n---\n${body}`;
     const project = await readSourceProject({
       tree: [
         file(

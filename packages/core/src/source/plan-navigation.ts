@@ -56,10 +56,19 @@ export interface NavigationSequenceEdit {
  * their syntax; removed items are deleted in place and new items are appended.
  * Returns undefined when the change needs a new item before a retained one.
  */
-function alignNavigation(
+export function alignNavigation(
   previous: readonly unknown[],
   desired: readonly unknown[],
-): { pairs: Array<[number, number]>; removals: number[]; additions: number[] } | undefined {
+):
+  | {
+      /** Identical items, by previous and desired position. */
+      anchors: Array<[number, number]>;
+      /** Items in equal-sized gaps, edited in place. */
+      pairs: Array<[number, number]>;
+      removals: number[];
+      additions: number[];
+    }
+  | undefined {
   const before = previous.map((item) => serializeTopikJson(item ?? null));
   const after = desired.map((item) => serializeTopikJson(item ?? null));
   // Longest common subsequence of identical items anchors the retained entries.
@@ -99,7 +108,7 @@ function alignNavigation(
     i = anchorBefore + 1;
     j = anchorAfter + 1;
   }
-  return { pairs, removals, additions };
+  return { anchors, pairs, removals, additions };
 }
 
 export function collectNavigationEdits(

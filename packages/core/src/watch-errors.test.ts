@@ -86,7 +86,6 @@ test.each([false, true])(
         generation: previous.generation,
         resources: previous.resources,
         payloads: previous.payloads,
-        courseNavigation: previous.courseNavigation,
         diagnostics: [{ id: "watch-failed" }],
       });
       expect(JSON.stringify(watcher.state.diagnostics)).not.toContain("/private/source");

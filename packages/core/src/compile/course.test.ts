@@ -32,7 +32,6 @@ modules:
   - id: basics
     title: Basics
     slug: getting-started
-    order: 7
     description: null
     labels: { kind: intro }
     pages: [pages/welcome, separate/next]
@@ -46,7 +45,6 @@ const welcome = `---
 id: welcome
 title: Welcome
 slug: introduction
-order: 12
 labels: { level: beginner }
 authors: [alice]
 opaque: retained
@@ -61,7 +59,6 @@ const next = `---
 id: next
 title: Next
 slug: destination
-order: 4
 authors: []
 ---
 # Next
@@ -84,12 +81,17 @@ test("compiles the complete Course graph with exact identities, ordering, nullab
   expect(result.resources.find((resource) => resource.type === "Course")).toMatchObject({
     name: "learning",
     labels: { audience: "students" },
-    spec: { slug: "public-course", authors: ["alice"], description: null },
+    spec: { slug: "public-course", authors: ["alice"], description: null, modules: ["basics"] },
   });
   expect(result.resources.find((resource) => resource.type === "CourseModule")).toMatchObject({
     name: "basics",
     labels: { kind: "intro" },
-    spec: { course: "learning", order: 7, slug: "getting-started", description: null },
+    spec: {
+      course: "learning",
+      slug: "getting-started",
+      description: null,
+      pages: ["welcome", "next"],
+    },
   });
   expect(
     result.resources.find(
@@ -99,7 +101,6 @@ test("compiles the complete Course graph with exact identities, ordering, nullab
     labels: { level: "beginner" },
     spec: {
       module: "basics",
-      order: 12,
       authors: ["alice"],
       content: { value: expect.stringContaining("ref://course-page/next?mode=full#details") },
     },
@@ -218,9 +219,9 @@ test("same-page card fragments are checked like same-page link fragments", async
   });
   const warned = await compileCourse({ dir, validation: { links: "warning" } });
   expect(warned.diagnostics.map(({ id, lines }) => [id, lines])).toEqual([
-    // Lines count from the top of the file, including the nine frontmatter lines.
-    ["link-fragment-not-found", [18]],
-    ["link-fragment-positional", [20]],
+    // Lines count from the top of the file, including the eight frontmatter lines.
+    ["link-fragment-not-found", [17]],
+    ["link-fragment-positional", [19]],
   ]);
 });
 
@@ -283,22 +284,22 @@ test("Course configurations reject unsafe aliases, repeated memberships, travers
     await expect(compileCourse({ dir })).rejects.toBeDefined();
   }
   await writeFile(join(dir, "course.yaml"), configuration + persons);
-  await writeFile(join(dir, "pages/welcome.md"), welcome.replace("order: 12", "order: -1"));
+  await writeFile(join(dir, "pages/welcome.md"), welcome.replace("slug: introduction", "slug: -"));
   await expect(compileCourse({ dir })).rejects.toMatchObject({
     id: "frontmatter-invalid",
     location: "pages/welcome.md",
   });
 });
 
-test("transports authored module/page indices independently from sorted resources", async () => {
+test("Course lists keep declaration order in every compilation path", async () => {
   const config = {
     sourceVersion: 1,
     id: "learning",
     title: "Learning",
     slug: "learning",
     modules: [
-      { id: "z-module", title: "Z", slug: "z", order: 0, pages: ["z", "a"] },
-      { id: "a-module", title: "A", slug: "a", order: 0, pages: [] },
+      { id: "z-module", title: "Z", slug: "z", pages: ["z", "a"] },
+      { id: "a-module", title: "A", slug: "a", pages: [] },
     ],
   };
   const dir = await fixture({
@@ -308,37 +309,41 @@ test("transports authored module/page indices independently from sorted resource
       namespace: "ordering",
       sources: [{ kind: "course", config: "course.yaml" }],
     }),
-    "z.md": "---\nid: z-page\ntitle: Z\nslug: z\norder: 0\n---\n# Z\n",
-    "a.md": "---\nid: a-page\ntitle: A\nslug: a\norder: 0\n---\n# A\n",
+    "z.md": "---\nid: z-page\ntitle: Z\nslug: z\n---\n# Z\n",
+    "a.md": "---\nid: a-page\ntitle: A\nslug: a\n---\n# A\n",
   });
+  const lists = (resources: readonly { type: string; name: string; spec?: unknown }[]) =>
+    resources
+      .filter((resource) => resource.type === "Course" || resource.type === "CourseModule")
+      .map((resource) => {
+        const spec = resource.spec as { modules?: string[]; pages?: string[] };
+        return [resource.name, spec.modules ?? spec.pages];
+      })
+      .sort(([left], [right]) => String(left).localeCompare(String(right)));
   const before = await compileManifest({ dir });
-  const standalone = await compileCourse({ dir });
   const { discoverCourseResources } = await import("./discovery");
-  expect((await discoverCourseResources({ dir })).courseNavigation).toEqual(
-    before.courseNavigation,
+  expect(lists((await discoverCourseResources({ dir })).resources)).toEqual(
+    lists(before.resources),
   );
-  expect(standalone.courseNavigation).toEqual(before.courseNavigation);
-  expect(before.courseNavigation.learning.modules).toEqual([
-    {
-      name: "z-module",
-      declarationIndex: 0,
-      pages: [
-        { name: "z-page", declarationIndex: 0 },
-        { name: "a-page", declarationIndex: 1 },
-      ],
-    },
-    { name: "a-module", declarationIndex: 1, pages: [] },
-  ]);
+  expect(lists((await compileCourse({ dir })).resources)).toEqual(lists(before.resources));
+  expect(lists(before.resources)).toEqual(
+    expect.arrayContaining([
+      ["learning", ["z-module", "a-module"]],
+      ["z-module", ["z-page", "a-page"]],
+      ["a-module", []],
+    ]),
+  );
+  // Reordering the source lists reorders the resources' lists and nothing else.
   config.modules[0].pages.reverse();
   config.modules.reverse();
   await writeFile(join(dir, "course.yaml"), JSON.stringify(config));
   const after = await compileManifest({ dir });
-  expect(after.resources).toEqual(before.resources);
-  expect(after.courseNavigation).not.toEqual(before.courseNavigation);
-  expect(after.courseNavigation.learning.modules[1].pages[0]).toEqual({
-    name: "a-page",
-    declarationIndex: 0,
-  });
+  expect(lists(after.resources)).toEqual(
+    expect.arrayContaining([
+      ["learning", ["a-module", "z-module"]],
+      ["z-module", ["a-page", "z-page"]],
+    ]),
+  );
 });
 
 test("Course failures name the invalid field and reject invalid UTF-8 pages", async () => {
@@ -352,14 +357,27 @@ test("Course failures name the invalid field and reject invalid UTF-8 pages", as
     field: "modlues",
   });
 
+  // Order comes from the lists; an `order` left from an older source is refused, not ignored.
   dir = await fixture({
     ...sourceFiles(),
-    "pages/welcome.md": welcome.replace("order: 12", "order: -1"),
+    "pages/welcome.md": welcome.replace("slug: introduction\n", "slug: introduction\norder: 12\n"),
   });
   await expect(compileCourse({ dir })).rejects.toMatchObject({
     id: "frontmatter-invalid",
     location: "pages/welcome.md",
     field: "order",
+  });
+  dir = await fixture({
+    ...sourceFiles(),
+    "course.yaml": configuration.replace(
+      "    slug: getting-started\n",
+      "    slug: getting-started\n    order: 7\n",
+    ),
+  });
+  await expect(compileCourse({ dir })).rejects.toMatchObject({
+    id: "config-invalid",
+    location: "course.yaml",
+    field: "modules[0].order",
   });
 
   dir = await fixture({ ...sourceFiles(), "pages/welcome.md": Buffer.from([0x23, 0x20, 0xff]) });
@@ -374,12 +392,17 @@ test("link compilation skips a CoursePage that has no source-path binding", asyn
   const result = await compileResourceLinks({
     rootDir: dir,
     resources: [
-      { apiVersion: "v1", type: "Course", name: "c", spec: { title: "C", slug: "c" } },
+      {
+        apiVersion: "v1",
+        type: "Course",
+        name: "c",
+        spec: { title: "C", slug: "c", modules: ["m"] },
+      },
       {
         apiVersion: "v1",
         type: "CourseModule",
         name: "m",
-        spec: { course: "c", title: "M", slug: "m", order: 0 },
+        spec: { course: "c", title: "M", slug: "m", pages: ["p"] },
       },
       {
         apiVersion: "v1",
@@ -389,7 +412,6 @@ test("link compilation skips a CoursePage that has no source-path binding", asyn
           module: "m",
           title: "P",
           slug: "p",
-          order: 0,
           content: { format: "topik", value: "# P\n" },
         },
       },
@@ -402,15 +424,13 @@ test("link compilation skips a CoursePage that has no source-path binding", asyn
 
 test("a Course page description compiles as written, including an explicit null, and is bounded", async () => {
   const page = (id: string, extra: string) =>
-    `---\nid: ${id}\ntitle: ${id}\nslug: ${id}\norder: 0\n${extra}---\n# ${id}\n`;
+    `---\nid: ${id}\ntitle: ${id}\nslug: ${id}\n${extra}---\n# ${id}\n`;
   const config = JSON.stringify({
     sourceVersion: 1,
     id: "learning",
     title: "Learning",
     slug: "learning",
-    modules: [
-      { id: "m", title: "M", slug: "m", order: 0, pages: ["described", "cleared", "plain"] },
-    ],
+    modules: [{ id: "m", title: "M", slug: "m", pages: ["described", "cleared", "plain"] }],
   });
   const dir = await fixture({
     "course.yaml": config,

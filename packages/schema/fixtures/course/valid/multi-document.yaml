@@ -2,6 +2,7 @@ apiVersion: v1
 type: Course
 name: intro-to-typescript
 spec:
+  modules: [module-basics]
   title: Introduction to TypeScript
   slug: intro-to-typescript
 ---
@@ -9,6 +10,7 @@ apiVersion: v1
 type: Course
 name: advanced-react
 spec:
+  modules: [module-basics]
   title: Advanced React Patterns
   slug: advanced-react
   description: Deep dive into React patterns

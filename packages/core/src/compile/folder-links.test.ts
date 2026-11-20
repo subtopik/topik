@@ -10,7 +10,7 @@ afterEach(async () => {
 });
 type Kind = "wiki" | "course" | "collection";
 const page = (id: string, body: string) =>
-  `---\nid: ${id}\ntitle: ${id}\nslug: ${id}\norder: 0\n---\n${body}`;
+  `---\nid: ${id}\ntitle: ${id}\nslug: ${id}\n---\n${body}`;
 async function fixture(
   kind: Kind,
   landings: string[],
@@ -39,7 +39,7 @@ async function fixture(
       : kind === "course"
         ? {
             slug: "docs",
-            modules: [{ id: "basics", title: "Basics", slug: "basics", order: 0, pages: paths }],
+            modules: [{ id: "basics", title: "Basics", slug: "basics", pages: paths }],
           }
         : {}),
   };

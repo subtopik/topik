@@ -341,14 +341,14 @@ describe("authoritative preview state", () => {
       id: "course",
       title: "Course",
       slug: "course",
-      modules: [{ id: "module", title: "Module", slug: "module", order: 0, pages }],
+      modules: [{ id: "module", title: "Module", slug: "module", pages }],
     });
   async function sources() {
     await writeFile(join(dir, "course.yaml"), configuration());
     for (const name of ["z", "a"])
       await writeFile(
         join(dir, `${name}.md`),
-        `---\nid: ${name}\ntitle: ${name}\nslug: ${name}\norder: 0\n---\n# ${name}\n`,
+        `---\nid: ${name}\ntitle: ${name}\nslug: ${name}\n---\n# ${name}\n`,
       );
   }
   function next(status: "ready" | "error") {
@@ -371,15 +371,20 @@ describe("authoritative preview state", () => {
     let done = next("ready");
     await writeFile(join(dir, "course.yaml"), configuration(["a", "z"]));
     const reordered = await done;
-    expect(reordered.resources).toEqual(initial.resources);
-    expect(reordered.courseNavigation).not.toEqual(initial.courseNavigation);
+    const pages = (state: import("./preview").PreviewState) =>
+      state.resources.find((r) => r.type === "CourseModule")?.spec.pages;
+    // Order lives in the module's page list, so a reorder changes exactly that list.
+    expect(pages(initial)).toEqual(["z", "a"]);
+    expect(pages(reordered)).toEqual(["a", "z"]);
+    expect(reordered.resources.filter((r) => r.type === "CoursePage")).toEqual(
+      initial.resources.filter((r) => r.type === "CoursePage"),
+    );
     expect(reordered.generation).toBe(initial.generation! + 1);
     done = next("error");
     await writeFile(join(dir, "course.yaml"), "title: [PRIVATE_VALUE");
     const failed = await done;
     expect(failed.generation).toBe(reordered.generation);
     expect(failed.resources).toBe(reordered.resources);
-    expect(failed.courseNavigation).toBe(reordered.courseNavigation);
     expect(JSON.stringify(failed)).not.toMatch(/PRIVATE_VALUE|\/tmp\//u);
     done = next("ready");
     await writeFile(join(dir, "course.yaml"), configuration(["a", "z"]));
@@ -390,7 +395,7 @@ describe("authoritative preview state", () => {
     await writeFile(join(dir, "course.yaml"), configuration([]));
     const deleted = await done;
     expect(deleted.resources.filter((r) => r.type === "CoursePage")).toEqual([]);
-    expect(deleted.courseNavigation.course.modules[0].pages).toEqual([]);
+    expect(pages(deleted)).toEqual([]);
     expect([...watcher.resources.values()]).toEqual(deleted.resources);
     expect(states.map((s) => s.status)).toEqual([
       "compiling",
@@ -403,7 +408,6 @@ describe("authoritative preview state", () => {
       "ready",
     ]);
     expect(states.every((s, i) => s.sequence === initial.sequence + i + 1)).toBe(true);
-    expect(initial.courseNavigation.course.modules[0].pages[0].name).toBe("z");
   });
   test("recovers from an initial failure and changes session identity on restart", async () => {
     watcher = await watch({ dir });
@@ -411,7 +415,6 @@ describe("authoritative preview state", () => {
       status: "error",
       generation: null,
       resources: [],
-      courseNavigation: {},
     });
     const session = watcher.state.sessionId;
     const ready = next("ready");

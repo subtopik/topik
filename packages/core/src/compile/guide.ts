@@ -49,7 +49,6 @@ export interface CompileGuidesOptions {
 }
 
 export interface CompileResourceDiscovery {
-  courseNavigation?: import("../preview").CourseNavigationIndex;
   sourceVersion?: 1;
   /** Destination relative to the selected configuration directory, if a config was loaded. */
   assetDirectory?: string;
@@ -99,7 +98,6 @@ export async function inspectGuides(options: CompileGuidesOptions): Promise<Comp
   return {
     diagnostics: [...discovered.diagnostics, ...linked.diagnostics],
     references: linked.references,
-    courseNavigation: {},
     ...compiled,
   };
 }

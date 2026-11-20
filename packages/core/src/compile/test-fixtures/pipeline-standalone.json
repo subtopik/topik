@@ -19,7 +19,6 @@
       }
     ],
     "references": [],
-    "courseNavigation": {},
     "resources": [
       {
         "apiVersion": "v1",
@@ -120,7 +119,6 @@
         "status": "verified"
       }
     ],
-    "courseNavigation": {},
     "resources": [
       {
         "apiVersion": "v1",
@@ -209,26 +207,6 @@
         "status": "verified"
       }
     ],
-    "courseNavigation": {
-      "learning": {
-        "modules": [
-          {
-            "name": "basics",
-            "declarationIndex": 0,
-            "pages": [
-              {
-                "name": "welcome",
-                "declarationIndex": 0
-              },
-              {
-                "name": "next",
-                "declarationIndex": 1
-              }
-            ]
-          }
-        ]
-      }
-    },
     "resources": [
       {
         "apiVersion": "v1",
@@ -236,7 +214,8 @@
         "name": "learning",
         "spec": {
           "title": "Learning",
-          "slug": "public-course"
+          "slug": "public-course",
+          "modules": ["basics"]
         }
       },
       {
@@ -247,7 +226,7 @@
           "course": "learning",
           "title": "Basics",
           "slug": "getting-started",
-          "order": 1
+          "pages": ["welcome", "next"]
         }
       },
       {
@@ -258,7 +237,6 @@
           "module": "basics",
           "title": "Next",
           "slug": "destination",
-          "order": 2,
           "content": {
             "format": "topik",
             "value": "# Next\n\n## Details\n"
@@ -273,7 +251,6 @@
           "module": "basics",
           "title": "Welcome",
           "slug": "introduction",
-          "order": 1,
           "content": {
             "format": "topik",
             "value": "# Welcome\n\n[Next](ref://course-page/next#details) and [route](ref://course-page/next).\n"
@@ -294,26 +271,26 @@
         {
           "resource": "Course/learning",
           "path": "resources/Course/learning.json",
-          "size": 137,
-          "sha256": "8ce156f7dd629cb36e556ea770c5371f3cd32fb7c3898e2802af4ee62cf43d41"
+          "size": 176,
+          "sha256": "3f6a1159428462da2debdfc3f0953e77f3b8664baa82233783ddca746675e1fc"
         },
         {
           "resource": "CourseModule/basics",
           "path": "resources/CourseModule/basics.json",
-          "size": 183,
-          "sha256": "fd5d51393d634a5bdf9cf25cd346536b2a31c612a23cdfb4b3165bd3c5a7e42b"
+          "size": 219,
+          "sha256": "878c605a2098ff7680e74183b6640cf4481b89634d32561a8695cd3ceb1765c1"
         },
         {
           "resource": "CoursePage/next",
           "path": "resources/CoursePage/next.json",
-          "size": 260,
-          "sha256": "e0d3ca3bf2c3872e48939f74419bf3f98f786202ed4b807c7a8cd1401da9331f"
+          "size": 244,
+          "sha256": "e33e32a0af0598954d595d28c59aff35b116ac0989732f1671c79594e2a5a848"
         },
         {
           "resource": "CoursePage/welcome",
           "path": "resources/CoursePage/welcome.json",
-          "size": 335,
-          "sha256": "9ce44d54f59a7ea77aa0f09347672fa9b1165ccdc4f0105677ddedb41bde0e3d"
+          "size": 319,
+          "sha256": "4b07ebf77d6463898c7bbecf8e8cc7ea92bce88eb36f117d65653825ba11b91e"
         }
       ],
       "payloads": []

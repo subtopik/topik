@@ -6,4 +6,4 @@ spec:
   course: Intro-To-TypeScript
   title: TypeScript Basics
   slug: basics
-  order: 0
+  pages: [lesson-intro]

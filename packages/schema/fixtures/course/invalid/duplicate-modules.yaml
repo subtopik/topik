@@ -1,0 +1,8 @@
+# expect: /spec/modules uniqueItems
+apiVersion: v1
+type: Course
+name: intro-to-typescript
+spec:
+  title: Introduction to TypeScript
+  slug: intro-to-typescript
+  modules: [module-basics, module-basics]

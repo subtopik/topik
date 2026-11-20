@@ -219,13 +219,13 @@ test("adding sources resolves authored cross-kind links and retains saved local 
       apiVersion: "v1",
       type: "Course",
       name: "lessons",
-      spec: { title: "Lessons", slug: "lessons" },
+      spec: { title: "Lessons", slug: "lessons", modules: ["basics"] },
     },
     {
       apiVersion: "v1",
       type: "CourseModule",
       name: "basics",
-      spec: { course: "lessons", title: "Basics", slug: "basics", order: 0 },
+      spec: { course: "lessons", title: "Basics", slug: "basics", pages: ["intro"] },
     },
     {
       apiVersion: "v1",
@@ -235,7 +235,6 @@ test("adding sources resolves authored cross-kind links and retains saved local 
         module: "basics",
         title: "Intro",
         slug: "intro",
-        order: 0,
         content: {
           format: "topik",
           value:

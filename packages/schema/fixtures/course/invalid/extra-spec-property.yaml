@@ -3,6 +3,7 @@ apiVersion: v1
 type: Course
 name: test-course
 spec:
+  modules: [module-basics]
   title: Test Course
   slug: test-course
   theme: dark

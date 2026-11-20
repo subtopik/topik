@@ -37,6 +37,7 @@ export interface ValidationError {
     | "resource-unsupported-version"
     | "resource-duplicate"
     | "reference-unresolved"
+    | "membership-inconsistent"
     | "content-invalid"
     | TopikAssetDiagnosticId;
   resource: string;
@@ -182,7 +183,7 @@ function ownRecord(
 
 /** A graph diagnostic, with the position of the resource it belongs to in the input. */
 export interface ResourceGraphError extends ValidationError {
-  id: "resource-duplicate" | "reference-unresolved";
+  id: "resource-duplicate" | "reference-unresolved" | "membership-inconsistent";
   /** Index of the resource this error belongs to in the validated list. */
   index: number;
 }
@@ -196,7 +197,10 @@ export interface ResourceGraphResult {
  * Check a complete set of resources against each other: each `type/name` is unique and each
  * by-name reference names a resource in the set. The references checked are a Wiki navigation
  * page entry to its WikiPage, a WikiPage to its Wiki, a CourseModule to its Course, a CoursePage
- * to its CourseModule, and each `spec.authors` entry of a Course, CoursePage or Guide to a Person.
+ * to its CourseModule, each `spec.modules` entry of a Course to a CourseModule, each `spec.pages`
+ * entry of a CourseModule to a CoursePage, and each `spec.authors` entry of a Course, CoursePage
+ * or Guide to a Person. A Course lists exactly the CourseModules that name it, once each, and a
+ * CourseModule lists exactly the CoursePages that name it, once each.
  *
  * Run it only on a complete set, such as a whole compilation output: a partial set reports each
  * reference to a resource it leaves out. It does not check schemas. Resources that are not
@@ -237,11 +241,28 @@ export function validateResourceGraph(resources: readonly unknown[]): ResourceGr
   const target = (type: string, name: string) =>
     isResourceName(name) ? `${type}/${name}` : `the ${type}`;
 
+  // Course order lives in parent lists, as Wiki navigation does: each child is listed exactly
+  // once, by the parent it names.
+  const listedBy = new Map<string, Set<string>>();
+  const membership = {
+    Course: { list: "modules", child: "CourseModule", back: "course" },
+    CourseModule: { list: "pages", child: "CoursePage", back: "module" },
+  } as const;
+  for (const { resource, type, name } of entries) {
+    if (type !== "Course" && type !== "CourseModule") continue;
+    const items = ownValue(ownRecord(resource, "spec") ?? {}, membership[type].list);
+    if (!Array.isArray(items)) continue;
+    for (const item of items)
+      if (typeof item === "string") {
+        const key = `${membership[type].child}/${item}`;
+        listedBy.set(key, (listedBy.get(key) ?? new Set()).add(name));
+      }
+  }
+
   for (const { index, resource, type, name } of entries) {
     const label = `${type}/${name}`;
     const spec = ownRecord(resource, "spec");
     if (!spec) continue;
-
     const reference = (path: string, targetType: string, targetName: unknown) => {
       if (typeof targetName !== "string" || byKey.has(`${targetType}/${targetName}`)) return;
       errors.push({
@@ -252,6 +273,41 @@ export function validateResourceGraph(resources: readonly unknown[]): ResourceGr
         message: `must reference a ${targetType} in the resource set; ${target(targetType, targetName)} is missing`,
       });
     };
+
+    const inconsistent = (path: string, message: string) =>
+      errors.push({ id: "membership-inconsistent", index, resource: label, path, message });
+
+    if (type === "Course" || type === "CourseModule") {
+      const { list, child, back } = membership[type];
+      const items = ownValue(spec, list);
+      if (Array.isArray(items)) {
+        const seen = new Set<string>();
+        items.forEach((item, position) => {
+          if (typeof item !== "string") return;
+          const path = `/spec/${list}/${position}`;
+          const target = byKey.get(`${child}/${item}`);
+          if (!target) return reference(path, child, item);
+          if (seen.has(item)) return inconsistent(path, `must list each ${child} once`);
+          seen.add(item);
+          if (ownValue(ownRecord(target, "spec") ?? {}, back) !== name)
+            inconsistent(path, `must list only a ${child} whose spec.${back} names this ${type}`);
+        });
+      }
+    }
+    if (type === "CourseModule" || type === "CoursePage") {
+      const parentType = type === "CourseModule" ? "Course" : "CourseModule";
+      const back = type === "CourseModule" ? "course" : "module";
+      const parent = ownValue(spec, back);
+      if (
+        typeof parent === "string" &&
+        byKey.has(`${parentType}/${parent}`) &&
+        !listedBy.get(label)?.has(parent)
+      )
+        inconsistent(
+          `/spec/${back}`,
+          `must be listed in the spec.${membership[parentType].list} of its ${parentType}`,
+        );
+    }
 
     switch (type) {
       case "CourseModule":

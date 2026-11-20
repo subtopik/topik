@@ -5,13 +5,7 @@ import type { AssetPayload } from "./compile/assets";
 export type { Resource } from "./resource";
 
 /** Browser-safe capability and wire types. No filesystem imports at runtime. */
-export const TOPIK_PREVIEW_PROTOCOL = "topik-preview/1" as const;
-export interface CourseNavigationModule {
-  name: string;
-  declarationIndex: number;
-  pages: { name: string; declarationIndex: number }[];
-}
-export type CourseNavigationIndex = Record<string, { modules: CourseNavigationModule[] }>;
+export const TOPIK_PREVIEW_PROTOCOL = "topik-preview/2" as const;
 export type PreviewPayloadDescriptor = Omit<AssetPayload, "bytes">;
 /** Most diagnostics one state carries; the rest are counted in `omittedDiagnostics`. */
 export const PREVIEW_DIAGNOSTIC_LIMIT = 100;
@@ -56,5 +50,4 @@ export interface PreviewState<R = Resource> {
   omittedDiagnostics?: number;
   resources: R[];
   payloads: PreviewPayloadDescriptor[];
-  courseNavigation: CourseNavigationIndex;
 }

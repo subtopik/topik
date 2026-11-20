@@ -14,7 +14,12 @@ export interface CourseModule {
     course: string;
     title: string;
     slug: string;
-    order: number;
+    /**
+     * The module's pages in reader order, by CoursePage name.
+     *
+     * @maxItems 10000
+     */
+    pages: string[];
     description?: string | null;
   };
 }

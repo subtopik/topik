@@ -105,7 +105,6 @@ function noAssetMaterialization(
               module: "module",
               title: "Course page",
               slug: "course-page",
-              order: 0,
               content: compiledContent,
             },
           };

@@ -226,8 +226,8 @@ describe("compile command", () => {
     expect(formatPublicCliError(failure)).toBe("Compilation found errors.");
     expect(output).toEqual(
       expect.arrayContaining([
-        expect.stringMatching(/^intro\.md(:\d+)? error /u),
-        expect.stringMatching(/^unsafe\.md(:\d+)? error /u),
+        expect.stringMatching(/^intro\.md(:\d+){0,2} error /u),
+        expect.stringMatching(/^unsafe\.md(:\d+){0,2} error /u),
       ]),
     );
     const surfaces = `${output.join("\n")}\n${String(failure)}\n${JSON.stringify(failure)}`;

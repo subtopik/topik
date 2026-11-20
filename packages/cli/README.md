@@ -127,7 +127,7 @@ A diagnostic names the component and attribute it is about and what the
 component accepts there, never the value that was written:
 
 ```text
-index.md:3 error attribute-value-invalid: An attribute has an invalid value. (tag: callout; attribute: variant; expected: info, tip, warning, danger)
+index.md:3:1 error attribute-value-invalid: An attribute has an invalid value. (tag: callout; attribute: variant; expected: info, tip, warning, danger)
 ```
 
 `lint --json` prints one JSON document on stdout in place of the text diagnostics.

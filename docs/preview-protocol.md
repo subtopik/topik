@@ -46,22 +46,54 @@ import { TOPIK_PREVIEW_PROTOCOL, type PreviewState } from "@topik/core/preview";
 The `@topik/core/preview` subpath is browser-safe; the main `@topik/core` entry
 includes Node APIs.
 
-| Field              | Meaning                                                                                             |
-| ------------------ | --------------------------------------------------------------------------------------------------- |
-| `protocol`         | Exact string `topik-preview/1`                                                                      |
-| `sessionId`        | Random ID for this watcher/server lifetime; changes on restart                                      |
-| `sequence`         | Increasing positive safe integer for every published state in this session                          |
-| `generation`       | Increasing positive integer on success; `null` before any success                                   |
-| `status`           | `compiling`, `ready`, or `error`                                                                    |
-| `diagnostics`      | Safe `{id, message}` errors, without exception text or source paths                                 |
-| `resources`        | Array of every resource from the last successful generation                                         |
-| `payloads`         | Array of every payload descriptor: `path`, `integrity`, `mediaType`, `size`, `assetNames`; no bytes |
-| `courseNavigation` | Explicit authored declaration positions from the same generation                                    |
+| Field                | Meaning                                                                                                |
+| -------------------- | ------------------------------------------------------------------------------------------------------ |
+| `protocol`           | Exact string `topik-preview/1`                                                                         |
+| `sessionId`          | Random ID for this watcher/server lifetime; changes on restart                                         |
+| `sequence`           | Increasing positive safe integer for every published state in this session                             |
+| `generation`         | Increasing positive integer on success; `null` before any success                                      |
+| `status`             | `compiling`, `ready`, or `error`                                                                       |
+| `diagnostics`        | Errors and warnings with ID, message, severity, location and resource; see [Diagnostics](#diagnostics) |
+| `omittedDiagnostics` | How many diagnostics did not fit in `diagnostics`; absent when all fit                                 |
+| `resources`          | Array of every resource from the last successful generation                                            |
+| `payloads`           | Array of every payload descriptor: `path`, `integrity`, `mediaType`, `size`, `assetNames`; no bytes    |
+| `courseNavigation`   | Explicit authored declaration positions from the same generation                                       |
 
 The subpath also exports `Resource`, the union of the schema-generated resource
 types that `resources` holds by default. A client that validates each resource
 itself can name its own type, as in `PreviewState<ValidatedResource>`; every other
 field keeps its type.
+
+## Diagnostics
+
+Each state carries the diagnostics of the compilation it reports: the errors of a
+failed one in an `error` state, and the warnings of a successful one in a `ready`
+state, so a link that `--links warning` lets through still shows up. A `compiling`
+state carries none.
+
+```ts
+interface PreviewDiagnostic {
+  id: string; // stable, for example "link-page-not-found" or "TOPIK_ASSET_FILE_MISSING"
+  message: string; // display text only; match on `id`
+  severity?: "error" | "warning";
+  location?: { path: string; line?: number; column?: number };
+  resource?: { type: string; name: string };
+}
+```
+
+- `location.path` is relative to the project root, as the CLI prints it, never an
+  absolute path. `line` and `column` start at 1 and are present when known; a
+  `column` only with a `line`.
+- `resource` names the resource whose source file the diagnostic is in, as of the
+  last successful generation. A file that has never compiled, and every
+  diagnostic before the first success, has no `resource`.
+- Errors come first, each group in compiler order. A state carries at most 100
+  (`PREVIEW_DIAGNOSTIC_LIMIT`) and counts the rest in `omittedDiagnostics`.
+- Messages are fixed wording per ID, without exception text or authored values.
+  A failure Topik cannot classify publishes `compilation-failed` without a
+  location.
+
+`topik dev` prints the same diagnostics as `path:line:column severity id: message`.
 
 ## Atomic generations and ordering
 

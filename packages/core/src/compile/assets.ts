@@ -265,6 +265,7 @@ async function compileAssetResourcesWithReader(
     replacements.set(key, resourceReplacements);
     const occurrences = extractTopikAssetOccurrences(resource.spec.content.value, {
       includeGenericLinkCandidates: true,
+      cache: memo.cache,
     });
     for (const occurrence of occurrences) {
       if (occurrence.kind === "asset" || occurrence.kind === "reserved-asset") {
@@ -439,7 +440,7 @@ async function compileAssetResourcesWithReader(
     const rewrittenContent = rewriteTopikAssetOccurrences(
       resource.spec.content.value,
       (occurrence) => byPosition.get(occurrence.position),
-      { includeGenericLinkCandidates: true, file: sourcePath },
+      { includeGenericLinkCandidates: true, file: sourcePath, cache: memo.cache },
     );
     if (!rewrittenContent.ok) {
       throw new AssetCompilationError(
@@ -485,7 +486,9 @@ async function compileAssetResourcesWithReader(
       assetNames: payload.assetNames,
     })),
   );
-  const inventory = validateTopikMaterializationRecord(materialization, resources, semantic);
+  const inventory = validateTopikMaterializationRecord(materialization, resources, semantic, {
+    cache: memo.cache,
+  });
   if (!inventory.ok)
     throw new AssetCompilationError("Compiled inventory is incomplete", inventory.diagnostics);
   const assetSourcePaths = Object.fromEntries(

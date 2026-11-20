@@ -1,11 +1,12 @@
+import type { TopikContentCache } from "./parse-cache.js";
 import type { Heading } from "mdast";
 import type { ContentDocument, TreeNode } from "./model.js";
 import type { TopikContentConfig } from "./config.js";
-import { walkContent } from "./traversal.js";
+import { plainText, walkContent } from "./traversal.js";
 import { indexDocument, isReference, type DocumentIndex } from "./document-index.js";
 type ValidationError = { id: string; level: "error"; message: string };
 import { isTopikGeneratedAssetName } from "./asset-reference-policy.js";
-import { assignHeadingIds, type TopikHeading } from "./headings";
+import { anchorIds, isAnchorNode, type TopikAnchor, type TopikHeading } from "./headings";
 import { parseTopikContent } from "./content";
 import { parseTopikResourceReference } from "./resource-references.js";
 import {
@@ -35,22 +36,35 @@ export interface TopikAnalyzedHeading extends TopikHeading {
   lines: number[];
 }
 
+export interface TopikAnalyzedAnchor extends TopikAnchor {
+  file?: string;
+  lines: number[];
+}
+
 export interface AnalyzeTopikContentResult {
   diagnostics: TopikContentDiagnostic[];
   headings: TopikAnalyzedHeading[];
+  /** Every link target: headings and accordions, in document order. */
+  anchors: TopikAnalyzedAnchor[];
   links: TopikContentLink[];
 }
 
 export interface AnalyzeTopikContentOptions {
   file?: string;
   config?: TopikContentConfig;
+  /** @internal Parse results shared with other calls given the same cache. */
+  cache?: TopikContentCache;
 }
 
 export function analyzeTopikContent(
   source: string,
   options: AnalyzeTopikContentOptions = {},
 ): AnalyzeTopikContentResult {
-  const ast = parseTopikContent(source, { file: options.file, config: options.config });
+  const ast = parseTopikContent(source, {
+    file: options.file,
+    config: options.config,
+    cache: options.cache,
+  });
   return analyzeDocument(ast, options.file);
 }
 
@@ -60,33 +74,46 @@ export function analyzeDocument(
   file?: string,
   index: DocumentIndex = indexDocument(ast),
 ): AnalyzeTopikContentResult {
-  const headingNodes = index.entries
-    .filter(({ node }) => node.type === "heading")
-    .map(({ node }) => node as Heading);
+  const anchorNodes = index.entries
+    .filter(({ node }) => isAnchorNode(node))
+    .map(({ node }) => node);
   const explicitIdNodes = new Map<string, TreeNode[]>();
 
-  for (const node of headingNodes) {
-    const id = (node as Heading).data?.topikId;
-    if (!id) continue;
+  for (const node of anchorNodes) {
+    const id = node.type === "heading" ? (node as Heading).data?.topikId : node.props?.id;
+    if (typeof id !== "string" || !id) continue;
     const nodes = explicitIdNodes.get(id) ?? [];
     nodes.push(node);
     explicitIdNodes.set(id, nodes);
   }
 
-  const assignedHeadings = assignHeadingIds(headingNodes);
-  const headings = assignedHeadings.map((heading, index) => ({
-    ...heading,
-    ...locationFields(headingNodes[index], file),
+  const assigned = anchorIds(anchorNodes);
+  const anchors = assigned.map((anchor, index) => ({
+    ...anchor,
+    ...locationFields(anchorNodes[index], file),
   }));
+  const headings = anchorNodes.flatMap((node, index) =>
+    node.type === "heading"
+      ? [
+          {
+            id: assigned[index].id,
+            level: (node as Heading).depth,
+            title: plainText(node).trim().replace(/\s+/g, " "),
+            ...(assigned[index].positional ? { positional: true as const } : {}),
+            ...locationFields(node, file),
+          },
+        ]
+      : [],
+  );
   const diagnostics: TopikContentDiagnostic[] = [];
 
   for (const [id, nodes] of explicitIdNodes) {
     for (const node of nodes.slice(1)) {
       diagnostics.push({
         id: "heading-id-duplicate",
-        type: "heading",
+        type: node.type === "heading" ? "heading" : "accordion",
         level: "error",
-        message: `Explicit heading ID '${id}' is used more than once in this document.`,
+        message: `Explicit ID '${id}' is used more than once in this document.`,
         ...sourceLocation(node, file),
       });
     }
@@ -109,6 +136,7 @@ export function analyzeDocument(
   return {
     diagnostics: diagnostics.map(sanitizeTopikContentDiagnostic),
     headings,
+    anchors,
     links,
   };
 }

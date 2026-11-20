@@ -82,7 +82,7 @@ test("writing and formatting merge adjacent nested emphasis; rewriting keeps it"
   const document = parse(source);
   expect(withoutPositions(document.children)).toEqual(authored);
   const outputs = [writeDocument(document)];
-  expect(outputs[0]).toBe("***aa***\n");
+  expect(outputs[0]).toBe("_**aa**_\n");
   for (const result of [formatTopikContent(source), formatDocument(source)]) {
     expect(result.ok).toBe(true);
     if (!result.ok || typeof result.formatted !== "string")

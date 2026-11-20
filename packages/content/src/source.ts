@@ -3,7 +3,7 @@ import {
   type TopikContentConfig,
   type ResolvedTopikContentConfig,
 } from "./config.js";
-import { parseDocumentTree } from "./parser.js";
+import { parseCachedDocumentTree, type TopikContentCache } from "./parse-cache.js";
 import {
   locateDocumentAssetOccurrences,
   requiresAssetValidation,
@@ -12,7 +12,7 @@ import {
 import { analyzeDocument, validateTopikHref, validateTopikNavigationHref } from "./links.js";
 import { sanitizeTopikContentDiagnostic, type TopikContentDiagnostic } from "./diagnostics.js";
 import { validateCustomAssetReferences } from "./custom-assets.js";
-import type { ContentDocument } from "./model.js";
+import type { ContentDocument, TreeNode } from "./model.js";
 import { indexDocument, type DocumentIndex } from "./document-index.js";
 
 export interface ValidateTopikContentOptions {
@@ -20,6 +20,8 @@ export interface ValidateTopikContentOptions {
   config?: TopikContentConfig;
   /** Accept compiler-produced references at a compiled-output boundary. */
   allowCompiledAssetReferences?: boolean;
+  /** @internal Parse results shared with other calls given the same cache. */
+  cache?: TopikContentCache;
 }
 
 export type PreparedSource =
@@ -32,6 +34,46 @@ export type PreparedSource =
       index: DocumentIndex;
       diagnostics: TopikContentDiagnostic[];
     };
+
+/**
+ * A prepared document the caller may change: a tree shared through a cache is copied, with a
+ * fresh index, so the change cannot reach another call's result.
+ */
+export function mutablePreparedDocument(prepared: Extract<PreparedSource, { ok: true }>): {
+  document: ContentDocument;
+  index: DocumentIndex;
+} {
+  if (!Object.isFrozen(prepared.document))
+    return { document: prepared.document, index: prepared.index };
+  const document = structuredClone(prepared.document);
+  return { document, index: indexDocument(document) };
+}
+
+/**
+ * A document the caller may change in place of the prepared one, and the node in it at the
+ * position of each prepared node. A tree shared through a cache is copied; others are reused.
+ */
+export function mutablePreparedCopy(prepared: Extract<PreparedSource, { ok: true }>): {
+  document: ContentDocument;
+  nodeAt: (node: TreeNode) => TreeNode;
+} {
+  if (!Object.isFrozen(prepared.document))
+    return { document: prepared.document, nodeAt: (node) => node };
+  const document = structuredClone(prepared.document);
+  const paths = new Map<TreeNode, readonly number[]>();
+  for (const { node, path } of prepared.index.entries) paths.set(node, path);
+  return {
+    document,
+    nodeAt: (node) => {
+      const path = paths.get(node);
+      if (path === undefined) throw new Error("Node is not part of the prepared document");
+      return path.reduce<TreeNode>(
+        (parent, index) => parent.children![index]!,
+        document as TreeNode,
+      );
+    },
+  };
+}
 
 /** `at` is the source start of the authored node that could not be written, when known. */
 export function writeFailure(
@@ -122,7 +164,7 @@ export function prepareSource(
   }
 
   try {
-    const parsed = parseDocumentTree(source, config.components);
+    const parsed = parseCachedDocumentTree(source, config.components, options.cache);
     for (const diagnostic of parsed.diagnostics)
       add(
         diagnostic.id ?? "parse-error",

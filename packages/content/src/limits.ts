@@ -102,6 +102,17 @@ export function assertTreeLimits(root: TreeNode): number {
   return count;
 }
 
+/** Frozen plain data whose whole subtree already passed {@link assertDataLimits}. */
+const verifiedData = new WeakSet<object>();
+
+/**
+ * @internal Records that a frozen value, with everything it reaches, passed the plain-data
+ * limits. Its subtrees are within them too, so later checks of any of them can be skipped.
+ */
+export function markVerifiedData(value: object): void {
+  if (Object.isFrozen(value)) verifiedData.add(value);
+}
+
 /** Include metadata and expressions so cloning cannot bypass the authoring-tree limits. */
 export function assertDataLimits(
   root: unknown,
@@ -111,6 +122,14 @@ export function assertDataLimits(
     stringLengths?: WeakMap<object, ReadonlyMap<string, number>>;
   } = {},
 ): void {
+  // Deferred string lengths can make a verified value count longer; check those afresh.
+  if (
+    options.stringLengths === undefined &&
+    typeof root === "object" &&
+    root !== null &&
+    verifiedData.has(root)
+  )
+    return;
   const active = new Set<object>();
   const stack: Array<{ value: unknown; depth: number; exit: boolean; stringLength?: number }> = [
     { value: root, depth: 0, exit: false },

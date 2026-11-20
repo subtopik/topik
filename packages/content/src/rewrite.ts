@@ -1,6 +1,6 @@
 import type { ExtractTopikAssetOccurrencesOptions, TopikAssetOccurrence } from "./asset-references";
 import { rewriteDocumentAssetOccurrences } from "./asset-references.js";
-import { prepareSource, writeFailure } from "./source.js";
+import { mutablePreparedDocument, prepareSource, writeFailure } from "./source.js";
 import { serializeDocument } from "./writer.js";
 import { FORMAT_VERSION } from "./parser.js";
 import { locateMeaningDifference, sameDocumentMeaning } from "./document-meaning.js";
@@ -37,12 +37,13 @@ export function rewriteTopikAssetOccurrences(
 ): RewriteTopikAssetOccurrencesResult {
   const prepared = prepareSource(source, options);
   if (!prepared.ok) return prepared;
+  const { document, index } = mutablePreparedDocument(prepared);
   // Application callbacks run only after admission. Their exceptions remain caller errors.
-  rewriteDocumentAssetOccurrences(prepared.document, source, replace, options, prepared.index);
+  rewriteDocumentAssetOccurrences(document, source, replace, options, index);
   let content: string;
   try {
     // Unchanged content keeps its authored spelling and therefore its tree positions.
-    content = serializeDocument(prepared.document, prepared.config.components, FORMAT_VERSION, {
+    content = serializeDocument(document, prepared.config.components, FORMAT_VERSION, {
       preserveTreePositions: true,
     });
   } catch {
@@ -52,13 +53,10 @@ export function rewriteTopikAssetOccurrences(
     file: options.file,
     config: prepared.config,
     allowCompiledAssetReferences: true,
+    cache: options.cache,
   });
   if (!output.ok) return { ok: false, source, diagnostics: output.diagnostics };
-  if (!sameDocumentMeaning(prepared.document, output.document))
-    return writeFailure(
-      source,
-      options.file,
-      locateMeaningDifference(prepared.document, output.document),
-    );
+  if (!sameDocumentMeaning(document, output.document))
+    return writeFailure(source, options.file, locateMeaningDifference(document, output.document));
   return { ok: true, source, diagnostics: [], content };
 }

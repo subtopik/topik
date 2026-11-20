@@ -157,7 +157,7 @@ describe("whitespace next to inline siblings", () => {
     ["a space before inline code in a table cell", "| A     |\n| ----- |\n| x `y` |\n"],
     ["spaces around inline code in a strikethrough", "~~a `b` c~~\n"],
     ["a line ending after inline code", "`code` ends\nthe line\n"],
-    ["a line ending between marks", "*a*\n**b**\n"],
+    ["a line ending between marks", "_a_\n**b**\n"],
     ["a lone space between inline code in a table cell", "| A       |\n| ------- |\n| `x` `y` |\n"],
   ])("writes %s literally", (_name, source) => {
     expect(formatted(source)).toBe(source);

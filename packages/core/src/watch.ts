@@ -6,6 +6,7 @@ import { compile, type CompileValidationOptions } from "./compile";
 import type { AssetPayload } from "./compile/assets";
 import { validateGitExecutableOption, type FileSafety } from "./assets/files";
 import { digestTopikMaterializationRecord } from "./assets/identity";
+import { createContentMemo } from "./compile/content-memo";
 import type { Resource } from "./resource";
 import { TOPIK_PREVIEW_PROTOCOL, type PreviewState } from "./preview";
 import {
@@ -105,6 +106,8 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
     courseNavigation: {},
   });
   let materializationDigest: string | undefined;
+  // Unchanged documents are not parsed and validated again on the next compilation.
+  const contentMemo = createContentMemo();
   let requested = 0;
   let closed = false;
   let watchFailed = false;
@@ -147,12 +150,19 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
       const revision = requested;
       publish({ status: "compiling", diagnostics: [] });
       try {
-        const result = await compile({
-          dir,
-          validation: options.validation,
-          fileSafety: options.fileSafety,
-          gitExecutable: options.gitExecutable,
-        });
+        let result;
+        try {
+          result = await compile({
+            dir,
+            validation: options.validation,
+            fileSafety: options.fileSafety,
+            gitExecutable: options.gitExecutable,
+            contentMemo,
+          });
+        } finally {
+          // Keep what this compilation read for the next; drop what it no longer needs.
+          contentMemo.prune();
+        }
         // An edit arrived while reading: discard this candidate, including its payloads.
         if (closed || watchFailed) return;
         if (revision !== requested) continue;

@@ -41,6 +41,7 @@ catalog:
   playwright: ^1.65.0
   remark-parse: ^11.0.0
   remark-stringify: ^11.0.0
+  string-width: ^8.3.0
   typescript: ^7.0.2
   unified: ^11.0.5
   vite: npm:@voidzero-dev/vite-plus-core@1.6.0

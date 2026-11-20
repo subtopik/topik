@@ -260,6 +260,9 @@ export function transformDocument(
         if (definition.render === false) return null;
         if (definition.render === true) return children();
         const props = getEffectiveProps(node, config.components);
+        // Accordions share the heading IDs, explicit or generated, assigned before evaluation.
+        const anchor = (node as { data?: { topikAnchorId?: unknown } }).data?.topikAnchorId;
+        if (node.name === "accordion" && typeof anchor === "string") props.id = anchor;
         for (const [name, attribute] of Object.entries(definition.attributes)) {
           const navigation = node.name === "card" && name === "href";
           const value = props[name];

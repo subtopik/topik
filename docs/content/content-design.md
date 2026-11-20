@@ -88,7 +88,9 @@ reference and list them at the end of the content, so the label is only a name:
   editors write every definition at the end, in order of first reference; the
   position is spelling, not meaning.
 - **Labels** are one word and unique in the document, across all conditional
-  branches. Formatting keeps their authored spelling.
+  branches. Formatting keeps their authored spelling. A reference in a table
+  cell writes a `|` in its label as `\|`, like any pipe in a cell; a tree built
+  in code that puts a bare `|` there reports `topik-reference-label`.
 - **References** work wherever inline content does, including headings, lists,
   table cells and inline components, but not inside links, inside a footnote, or
   inside a quiz explanation, which appears only after the reader answers.

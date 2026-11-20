@@ -343,6 +343,23 @@ describe("footnotes next to other constructs", () => {
     expect(formatted(source)).toBe(source);
   });
 
+  test("a reference in a table cell cannot carry an unescaped pipe", () => {
+    const escaped = "| A |\n| - |\n| x[^a\\|b] |\n\n[^a\\|b]: Note.\n";
+    expect(ids(escaped)).toEqual([]);
+    expect(formatted(escaped)).toBe(
+      "| A        |\n| -------- |\n| x[^a\\|b] |\n\n[^a\\|b]: Note.\n",
+    );
+    expect(ids("Use[^a|b].\n\n[^a|b]: Note.\n")).toEqual([]);
+
+    // A tree built in code can place a reference with a bare pipe in a cell.
+    type Node = { type: string; children?: Node[]; [key: string]: unknown };
+    const document: ContentDocument = parse("| A |\n| - |\n| x |\n\nUse[^a|b].\n\n[^a|b]: Note.\n");
+    const table = (document as Node).children!.find((child) => child.type === "table")!;
+    const cell = table.children![1].children![0];
+    cell.children!.push({ type: "footnoteReference", identifier: "a|b", label: "a|b" });
+    expect(validateDocument(document).map((error) => error.id)).toEqual(["topik-reference-label"]);
+  });
+
   test("an escaped label keeps its authored spelling", () => {
     const source = "Use[^a\\+b].\n\n[^a\\+b]: Note.\n";
     expect(ids(source)).toEqual([]);

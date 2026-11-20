@@ -1,5 +1,6 @@
 import type { ContentDocument, TreeNode } from "./model.js";
-import { referenceIdentifier } from "./document-index.js";
+import type { Association } from "mdast";
+import { referenceIdentifier, referenceSourceLabel } from "./document-index.js";
 
 /**
  * Footnote labels are document-wide and case-insensitive, like reference labels. A definition is
@@ -93,6 +94,19 @@ export function footnoteProblems(document: ContentDocument): FootnoteProblem[] {
       });
     if (node.type === "footnoteReference") {
       references.add(footnoteKey(node));
+      // A table row splits at every unescaped `|` before inline parsing, and escaping the pipe
+      // gives a different label, so a reference in a cell has no faithful spelling for it.
+      if (
+        ancestors.some((ancestor) => ancestor.type === "tableCell") &&
+        referenceSourceLabel(node as unknown as Association)
+          .replace(/\\[\s\S]/gu, "")
+          .includes("|")
+      )
+        problems.push({
+          node,
+          id: "topik-reference-label",
+          message: "Footnote references in table cells cannot have a label with an unescaped |",
+        });
       const container = insideDefinitionOrLink(ancestors);
       if (container === "definition")
         problems.push({

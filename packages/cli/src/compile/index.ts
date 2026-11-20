@@ -27,6 +27,8 @@ import { formatValidationFailure } from "../validation-output";
 const COMPILATION_GENERATION_PREFIX = ".topik-compilation-generation-";
 const COMPILATION_PRIOR_PREFIX = ".topik-compilation-prior-";
 const COMPILATION_DIRECTORIES = ["blobs", "resources"] as const;
+const COURSE_NAVIGATION_PATH = "course-navigation.json";
+const COURSE_NAVIGATION_DESCRIPTOR = "topik-course-navigation-v1";
 const PUBLISHED_FILE_MODE = 0o644;
 const ownedDescriptorDecoder = new TextDecoder("utf-8", { fatal: true });
 const ownedDescriptorEncoder = new TextEncoder();
@@ -78,9 +80,9 @@ export const compile = command({
     const navigationFile =
       Object.keys(courseNavigation).length > 0
         ? {
-            path: "course-navigation.json",
+            path: COURSE_NAVIGATION_PATH,
             bytes: serializeTopikJson({
-              descriptor: "topik-course-navigation-v1",
+              descriptor: COURSE_NAVIGATION_DESCRIPTOR,
               courses: courseNavigation,
             }),
           }
@@ -215,8 +217,44 @@ function isOwnedCompilationTree(
   }
   const closure = validateTopikMaterializationRecord(materialization, resources, semantic);
   if (!closure.ok) throw new TypeError("Compilation identity records do not close");
-  assertBoundTreeMatchesInventory(entries, closure.value);
+  const hasCourseNavigation = entries.some(
+    (entry) => entry.kind === "file" && entry.path === COURSE_NAVIGATION_PATH,
+  );
+  if (hasCourseNavigation) {
+    assertCourseNavigationMatchesInventory(
+      parseBoundCanonicalJson(readFile, COURSE_NAVIGATION_PATH),
+      closure.value,
+    );
+  }
+  assertBoundTreeMatchesInventory(entries, closure.value, hasCourseNavigation);
   return true;
+}
+
+/** Course navigation is recognized only as the record of exactly the Courses in the inventory. */
+function assertCourseNavigationMatchesInventory(
+  navigation: unknown,
+  materialization: TopikMaterializationRecordV1,
+): void {
+  if (
+    !isRecord(navigation) ||
+    navigation.descriptor !== COURSE_NAVIGATION_DESCRIPTOR ||
+    !isRecord(navigation.courses)
+  ) {
+    throw new TypeError("Course navigation is malformed");
+  }
+  const courses = materialization.resources
+    .map((entry) => entry.resource)
+    .filter((resource) => resource.startsWith("Course/"))
+    .map((resource) => resource.slice("Course/".length))
+    .sort();
+  const recorded = Object.keys(navigation.courses).sort();
+  if (
+    courses.length === 0 ||
+    courses.length !== recorded.length ||
+    courses.some((name, index) => name !== recorded[index])
+  ) {
+    throw new TypeError("Course navigation does not match the inventory");
+  }
 }
 
 function parseBoundCanonicalJson(readFile: (path: string) => Uint8Array, path: string): unknown {
@@ -233,12 +271,14 @@ function parseBoundCanonicalJson(readFile: (path: string) => Uint8Array, path: s
 function assertBoundTreeMatchesInventory(
   entries: readonly OwnedOutputEntry[],
   materialization: TopikMaterializationRecordV1,
+  hasCourseNavigation: boolean,
 ): void {
   const expectedDirectories = new Set<string>(["", ...COMPILATION_DIRECTORIES]);
   const expectedFiles = new Map<string, { sha256?: string; size?: number }>([
     ["materialization.json", {}],
     ["semantic.json", {}],
   ]);
+  if (hasCourseNavigation) expectedFiles.set(COURSE_NAVIGATION_PATH, {});
   for (const entry of [...materialization.resources, ...materialization.payloads]) {
     assertSafeInventoryPath(entry.path);
     if (expectedFiles.has(entry.path)) throw new TypeError("Compilation inventory repeats a path");

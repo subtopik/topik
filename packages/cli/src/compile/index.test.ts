@@ -249,6 +249,62 @@ describe("compile command", () => {
     });
   });
 
+  test("recognizes its own Course navigation when compiling again", async () => {
+    await writeFile(
+      join(dir, ".topik.yaml"),
+      JSON.stringify({
+        version: 1,
+        namespace: "cli-test-source",
+        sources: [{ kind: "course", config: "course.yaml" }],
+      }),
+    );
+    await writeFile(
+      join(dir, "course.yaml"),
+      "sourceVersion: 1\nid: learning\ntitle: Learning\nslug: learning\nmodules:\n  - { id: basics, title: Basics, slug: basics, order: 1, pages: [a] }\n",
+    );
+    await writeFile(join(dir, "a.md"), "---\nid: a\ntitle: A\nslug: a\norder: 1\n---\n# A\n");
+    const options = {
+      dir,
+      format: "json",
+      dryRun: false,
+      validate: false,
+      links: "error",
+    } as const;
+    await (compile as CompileCommand).handler?.(options);
+    await writeFile(join(dir, "a.md"), "---\nid: a\ntitle: A\nslug: a\norder: 1\n---\n# Again\n");
+    await (compile as CompileCommand).handler?.(options);
+    await expect(
+      readFile(join(dir, ".topik", "course-navigation.json"), "utf8"),
+    ).resolves.toContain('"basics"');
+
+    // A navigation record that names a Course missing from the inventory is not ours.
+    await writeFile(
+      join(dir, ".topik", "course-navigation.json"),
+      '{"courses":{"other":{"modules":[]}},"descriptor":"topik-course-navigation-v1"}',
+    );
+    await expect((compile as CompileCommand).handler?.(options)).rejects.toMatchObject({
+      id: "compilation-output-not-owned",
+    });
+  });
+
+  test("refuses a Course navigation record beside output without Courses", async () => {
+    const options = {
+      dir,
+      format: "json",
+      dryRun: false,
+      validate: false,
+      links: "error",
+    } as const;
+    await (compile as CompileCommand).handler?.(options);
+    await writeFile(
+      join(dir, ".topik", "course-navigation.json"),
+      '{"courses":{},"descriptor":"topik-course-navigation-v1"}',
+    );
+    await expect((compile as CompileCommand).handler?.(options)).rejects.toMatchObject({
+      id: "compilation-output-not-owned",
+    });
+  });
+
   test("writes no Course navigation for a project without Courses", async () => {
     await (compile as CompileCommand).handler?.({
       dir,

@@ -264,20 +264,25 @@ function joinNavigationPath(prefix: string, path?: string): string {
 
 const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/, "Must be a hex color (e.g. #ff73a8)");
 
-const themeSchema = z.object({
-  colors: z
-    .object({
-      primary: hexColor,
-      light: hexColor.optional(),
-      dark: hexColor.optional(),
-    })
-    .optional(),
-  appearance: z
-    .object({
-      default: z.enum(["light", "dark", "system"]).optional(),
-    })
-    .optional(),
-});
+// Strict like the Wiki/v1 theme, so a misspelled key fails instead of being dropped.
+const themeSchema = z
+  .object({
+    colors: z
+      .object({
+        primary: hexColor,
+        light: hexColor.optional(),
+        dark: hexColor.optional(),
+      })
+      .strict()
+      .optional(),
+    appearance: z
+      .object({
+        default: z.enum(["light", "dark", "system"]).optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
 
 const nameRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const WIKI_PAGE_NAME_HASH_LENGTH = 16;

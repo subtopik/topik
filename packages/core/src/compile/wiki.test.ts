@@ -860,6 +860,25 @@ navigation:
     expect(result.resources.filter((resource) => resource.type === "WikiPage")).toHaveLength(1);
   });
 
+  test.each([
+    ["theme key", "theme:\n  apperance:\n    default: dark\n", "theme.apperance"],
+    [
+      "theme color",
+      "theme:\n  colors:\n    primary: '#ff0000'\n    lite: '#00ff00'\n",
+      "theme.colors.lite",
+    ],
+    ["appearance key", "theme:\n  appearance:\n    defualt: dark\n", "theme.appearance.defualt"],
+  ])("names a misspelled %s instead of dropping it", async (_case, theme, field) => {
+    await writeWikiConfig(`id: tw\ntitle: Wiki\nnavigation:\n  - intro\n${theme}`);
+    await writePage("intro", "# Intro\n");
+
+    await expect(compileWiki({ dir })).rejects.toMatchObject({
+      id: "config-field-unknown",
+      location: "wiki.yaml",
+      field,
+    });
+  });
+
   test("names the page whose frontmatter id repeats another page's", async () => {
     await writeWikiConfig("id: tw\ntitle: Wiki\nsourceVersion: 1\nnavigation:\n  - a\n  - b\n");
     await writePage("a", "---\nid: same\n---\n# A\n");

@@ -241,9 +241,12 @@ message naming the Linux requirement.
 
 - Markdown inputs must be valid UTF-8. Invalid bytes fail with
   `document-encoding-invalid` at that file; the compiler does not replace them.
-- Unknown configuration keys are retained for source tools. A top-level key that
-  looks like a misspelling of a known key, such as `navigaton` or `Title`, fails
-  with `config-field-unknown`.
+- Unknown top-level configuration keys are retained for source tools. A
+  top-level key that looks like a misspelling of a known key, such as
+  `navigaton` or `Title`, fails with `config-field-unknown`.
+- A Wiki `theme` accepts only `colors` (`primary`, `light`, `dark`) and
+  `appearance` (`default`). Any other key in it, such as `apperance`, fails with
+  `config-field-unknown` naming the key, such as `theme.apperance`.
 - Configuration and frontmatter failures report the offending field, such as
   `navigation[2].title`, when one can be identified.
 

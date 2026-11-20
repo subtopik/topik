@@ -1295,7 +1295,7 @@ test("reserved legacy fields block reviewed opt-in and stale trees never yield a
   ).toMatchObject({ ok: false, diagnostics: [{ code: "source-base-changed" }] });
 });
 
-test("editing one Wiki theme field preserves unknown theme entries and unchanged field comments", async () => {
+test("editing one Wiki theme field preserves unknown entries and unchanged field comments", async () => {
   const project = await readSourceProject({
     tree: [
       file(
@@ -1304,7 +1304,7 @@ test("editing one Wiki theme field preserves unknown theme entries and unchanged
       ),
       file(
         "wiki.yaml",
-        "id: docs\ntitle: Docs\nsourceVersion: 1\ntheme:\n  colors:\n    primary: '#ff0000'\n    dark: '#000000' # keep\n  custom: untouched\n",
+        "id: docs\ntitle: Docs\nsourceVersion: 1\ntheme:\n  colors:\n    primary: '#ff0000'\n    dark: '#000000' # keep\ncustom: untouched\n",
       ),
     ],
   });
@@ -1322,7 +1322,7 @@ test("editing one Wiki theme field preserves unknown theme entries and unchanged
   expect(result.ok).toBe(true);
   if (!result.ok) return;
   expect(decodeSource(result.plan.changes[0].candidate!.bytes)).toBe(
-    "id: docs\ntitle: Docs\nsourceVersion: 1\ntheme:\n  colors:\n    primary: \"#00ff00\"\n    dark: '#000000' # keep\n  custom: untouched\n",
+    "id: docs\ntitle: Docs\nsourceVersion: 1\ntheme:\n  colors:\n    primary: \"#00ff00\"\n    dark: '#000000' # keep\ncustom: untouched\n",
   );
 });
 

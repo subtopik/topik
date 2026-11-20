@@ -101,8 +101,10 @@ npx topik validate ./handbook/.topik
 
 Two commands help with the source files:
 
-- `npx topik init ./handbook` writes exactly these three files and refuses to
-  overwrite any existing file. Pass `--namespace` for another project namespace.
+- `npx topik init ./handbook` writes these three files and refuses to overwrite
+  any of them. It also writes an `AGENTS.md` with instructions for coding
+  agents, or updates the Topik section of an existing one. Pass `--namespace`
+  for another project namespace.
 - `npx topik format ./handbook` rewrites the project's Markdown in the canonical
   form. With `--check` it only lists the files that would change. In a project
   directory it formats the files the sources read, so a repository readme or

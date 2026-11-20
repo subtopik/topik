@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { CompileError } from "./compile";
 import { pagePathToName } from "./compile/wiki";
 import { DEFAULT_WATCH_DEBOUNCE_MS, watch } from "./watch";
@@ -101,6 +101,35 @@ describe("watch", () => {
     expect([...result.payloadBytes]).toEqual([...changedBytes]);
     expect(result.integrity).not.toBe(before?.integrity);
   }, 10_000);
+
+  test("editing a page updates only that page, not its unchanged Assets", async () => {
+    await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](hero.png)\n");
+    await writeFile(join(dir, "hero.png"), PNG_BYTES);
+    watcher = await watch({ dir });
+
+    const keys: string[] = [];
+    const settled = new Promise<void>((resolve) => {
+      watcher.on("update", (key) => {
+        keys.push(key);
+        if (key.startsWith("Guide/")) setTimeout(resolve, 50);
+      });
+    });
+    await delay(500);
+    await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](hero.png)\n\nMore.\n");
+
+    await settled;
+    expect(keys).toEqual(["Guide/guides-intro"]);
+  }, 10_000);
+
+  test("allows more preview clients than the default listener limit", async () => {
+    await writeFile(join(dir, "intro.md"), "# Intro\n");
+    watcher = await watch({ dir });
+    const warning = vi.spyOn(process, "emitWarning");
+    const listeners = Array.from({ length: 20 }, () => () => undefined);
+    for (const listener of listeners) watcher.on("update", listener);
+    expect(warning).not.toHaveBeenCalled();
+    for (const listener of listeners) watcher.off("update", listener);
+  });
 
   test("watches valid assets inside dot-prefixed directories", async () => {
     await mkdir(join(dir, ".images"));

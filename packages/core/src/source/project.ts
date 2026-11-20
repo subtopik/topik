@@ -17,15 +17,21 @@ import {
   parseTopikResourceReference,
   rewriteTopikNavigationReferences,
   type TopikNavigationReference,
+  type TopikResourceReference,
 } from "@topik/content";
 import type { Wiki } from "@topik/schema/wiki/v1";
 import type { Course } from "@topik/schema/course/v1";
 import type { Resource } from "../resource";
-import { resolveWikiContentHref, resolveWikiNavigation } from "../wiki-navigation";
+import {
+  resolveWikiContentHref,
+  resolveWikiNavigation,
+  type ResolvedWikiNavigation,
+} from "../wiki-navigation";
 import {
   resolveCourseContentHref,
   resolveCourseNavigation,
   type CourseReferenceContext,
+  type ResolvedCourseNavigation,
 } from "../course-navigation";
 import { sourceCourseContext } from "./course";
 import { SourceTreeError } from "./diagnostics";
@@ -318,30 +324,31 @@ export async function readSourceProject(input: {
       source.directory,
     );
   }
+  // Every page of a Wiki or Course shares one resolved navigation, so resolve each once.
+  const wikiNavigation = new Map<Wiki, ResolvedWikiNavigation>();
+  const courseNavigation = new Map<CourseReferenceContext, ResolvedCourseNavigation>();
+  const compiledReferences = new Map<string, Map<string, TopikResourceReference>>();
+  for (const reference of compilation.references) {
+    let positions = compiledReferences.get(reference.resource);
+    if (!positions) compiledReferences.set(reference.resource, (positions = new Map()));
+    positions.set(reference.position, reference.reference);
+  }
   for (const source of compilation.provenance) {
     for (const [resource, path] of Object.entries(source.sourcePathsByResource)) {
       const file = byPath.get(path)!;
       if (!file) throw new TypeError("Compiler provenance is outside the source inventory");
       const portable = resources.get(resource)!;
       if (!portable) throw new TypeError("Compiler provenance has no resource");
-      const wiki =
-        portable.type === "WikiPage"
-          ? compilation.resources.find(
-              (candidate): candidate is Wiki =>
-                candidate.type === "Wiki" && candidate.name === portable.spec.wiki,
-            )
-          : undefined;
+      const wikiResource =
+        portable.type === "WikiPage" ? resources.get(`Wiki/${portable.spec.wiki}`) : undefined;
+      const wiki = wikiResource?.type === "Wiki" ? wikiResource : undefined;
       const module =
         portable.type === "CoursePage"
           ? resources.get(`CourseModule/${portable.spec.module}`)
           : undefined;
-      const course =
-        module?.type === "CourseModule"
-          ? compilation.resources.find(
-              (candidate): candidate is Course =>
-                candidate.type === "Course" && module.spec.course === candidate.name,
-            )
-          : undefined;
+      const courseResource =
+        module?.type === "CourseModule" ? resources.get(`Course/${module.spec.course}`) : undefined;
+      const course = courseResource?.type === "Course" ? courseResource : undefined;
       const assets =
         portable.type === "Guide" || portable.type === "WikiPage" || portable.type === "CoursePage"
           ? extractTopikAssetOccurrences(portable.spec.content.value, {
@@ -381,6 +388,19 @@ export async function readSourceProject(input: {
           references: [],
         });
         continue;
+      }
+      const courseContext = course ? courseContexts[`Course/${course.name}`] : undefined;
+      let resolvedWiki = wiki ? wikiNavigation.get(wiki) : undefined;
+      if (wiki && !resolvedWiki) {
+        resolvedWiki = resolveWikiNavigation(wiki.spec.navigation ?? [], {
+          sourceVersion: wiki.spec.sourceVersion,
+        });
+        wikiNavigation.set(wiki, resolvedWiki);
+      }
+      let resolvedCourse = courseContext ? courseNavigation.get(courseContext) : undefined;
+      if (courseContext && !resolvedCourse) {
+        resolvedCourse = resolveCourseNavigation(courseContext);
+        courseNavigation.set(courseContext, resolvedCourse);
       }
       const markdown = sourceMarkdownSections(file.bytes);
       let fields: SourceFieldEvidence[] = [];
@@ -441,16 +461,15 @@ export async function readSourceProject(input: {
         references: sourceReferences(
           markdown.body,
           portable.name,
-          resource,
-          compilation,
+          compiledReferences.get(resource) ?? new Map(),
           new Set(
             assets
               .filter((occurrence) => occurrence.slot === "link.href")
               .map((occurrence) => occurrence.treePath.join("/")),
           ),
           { path, directory: source.directory, paths: pathInventory },
-          wiki,
-          course ? courseContexts[`Course/${course.name}`] : undefined,
+          resolvedWiki,
+          resolvedCourse,
         ),
       });
     }
@@ -615,22 +634,12 @@ function markdownOrigins(
 function sourceReferences(
   source: string,
   name: string,
-  resource: string,
-  compilation: ManifestCompileResult,
+  compiled: ReadonlyMap<string, TopikResourceReference>,
   assetPositions: ReadonlySet<string>,
   sourceContext: { path: string; directory: string; paths: ReadonlySet<string> },
-  wiki?: Wiki,
-  course?: CourseReferenceContext,
+  resolved?: ResolvedWikiNavigation,
+  courseNavigation?: ResolvedCourseNavigation,
 ): SourceDocumentProvenance["references"] {
-  const resolved = wiki
-    ? resolveWikiNavigation(wiki.spec.navigation ?? [], { sourceVersion: wiki.spec.sourceVersion })
-    : undefined;
-  const courseNavigation = course ? resolveCourseNavigation(course) : undefined;
-  const compiled = new Map(
-    compilation.references
-      .filter((reference) => reference.resource === resource)
-      .map((reference) => [reference.position, reference.reference]),
-  );
   const references: Array<
     TopikNavigationReference & { target?: string; search?: string; hash?: string }
   > = [];

@@ -131,21 +131,6 @@ export function correlateTopikAssetResult<T>(
   };
 }
 
-/** Internal composition helper that preserves sanitization when adding location context. */
-export function relocateTopikAssetDiagnostic(
-  diagnostic: TopikAssetDiagnostic,
-  location: TopikAssetDiagnosticLocation,
-): TopikAssetDiagnostic {
-  return topikAssetDiagnostic(diagnostic.id, diagnostic.message, {
-    correlationId: diagnostic.correlationId,
-    consequence: diagnostic.consequence,
-    descriptorVersion: diagnostic.descriptorVersion,
-    location,
-    recovery: diagnostic.recovery,
-    ...(diagnostic.reason === undefined ? {} : { reason: diagnostic.reason }),
-  });
-}
-
 const SAFE_ASCII_FIELD = /^[\x20-\x7e]{1,1024}$/u;
 
 function sanitizeMessage(value: string): string {

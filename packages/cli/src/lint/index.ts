@@ -1,9 +1,14 @@
 import { resolve } from "node:path";
 import { boolean, command, positional, string } from "@drizzle-team/brocli";
 import { sanitizeTopikContentDiagnostic, type TopikContentDiagnostic } from "@topik/content";
-import { isErrorDiagnostic, lint as lintContent, type LinkValidationPolicy } from "@topik/core";
+import {
+  isErrorDiagnostic,
+  lint as lintContent,
+  PublicCompileError,
+  type LinkValidationPolicy,
+} from "@topik/core";
 import { printDiagnostics } from "../diagnostics";
-import { PublicCliError, withProjectPlatformRequirement } from "../errors";
+import { formatPublicCliError, PublicCliError, withProjectPlatformRequirement } from "../errors";
 import { fileSafetyOption, notePortableReads } from "../file-safety";
 
 /** One diagnostic in `topik lint --json` output. Optional fields are omitted when unknown. */
@@ -82,8 +87,28 @@ export const lint = command({
       dir: resolve(options.dir),
       validation: { links },
       fileSafety: options.fileSafety,
-    }).catch((error: unknown) => {
-      throw withProjectPlatformRequirement(error);
+    }).catch((cause: unknown) => {
+      const error = withProjectPlatformRequirement(cause);
+      // A project that cannot be loaded is still reported as the one JSON document on stdout.
+      if (options.json)
+        console.log(
+          JSON.stringify({
+            diagnostics: [
+              {
+                lines: [],
+                id:
+                  error instanceof PublicCliError || error instanceof PublicCompileError
+                    ? error.id
+                    : "lint-failed",
+                severity: "error",
+                message: formatPublicCliError(error),
+              },
+            ],
+            errors: 1,
+            warnings: 0,
+          } satisfies LintJsonReport),
+        );
+      throw error;
     });
     if (options.json) {
       const report = lintJsonReport(diagnostics);

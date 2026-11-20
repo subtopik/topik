@@ -68,3 +68,12 @@ describe.each(["\r\n", "\r"])("source line endings %j", (ending) => {
 test("does not normalize carriage returns decoded from character references", () => {
   expect(validateTopikContent("Text&#13;more").valid).toBe(false);
 });
+
+test("a leading byte order mark keeps source references exact", () => {
+  const bom = "﻿";
+  expect(validateTopikContent(`${bom}<https://example.com/a>\n`)).toMatchObject({ valid: true });
+  expect(validateTopikContent(`${bom}# T\r\n\r\n<https://example.com/a>\r\n`)).toMatchObject({
+    valid: true,
+  });
+  expect(formatTopikContent(`${bom}<https://example.com/a> [a](b)\n`)).toMatchObject({ ok: true });
+});

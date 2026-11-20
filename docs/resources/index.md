@@ -101,8 +101,10 @@ npx topik validate ./handbook/.topik
 
 Two commands help with the source files:
 
-- `npx topik init ./handbook` writes exactly these three files and refuses to
-  overwrite any existing file. Pass `--namespace` for another project namespace.
+- `npx topik init ./handbook` writes these three files and refuses to overwrite
+  any of them. It also writes an `AGENTS.md` with instructions for coding
+  agents. If one already exists, init updates its Topik section and otherwise
+  leaves the file as it is. Pass `--namespace` for another project namespace.
 - `npx topik format ./handbook` rewrites the project's Markdown in the canonical
   form. With `--check` it only lists the files that would change. In a project
   directory it formats the files the sources read, so a repository readme or
@@ -239,9 +241,12 @@ message naming the Linux requirement.
 
 - Markdown inputs must be valid UTF-8. Invalid bytes fail with
   `document-encoding-invalid` at that file; the compiler does not replace them.
-- Unknown configuration keys are retained for source tools. A top-level key that
-  looks like a misspelling of a known key, such as `navigaton` or `Title`, fails
-  with `config-field-unknown`.
+- Unknown top-level configuration keys are retained for source tools. A
+  top-level key that looks like a misspelling of a known key, such as
+  `navigaton` or `Title`, fails with `config-field-unknown`.
+- A Wiki `theme` accepts only `colors` (`primary`, `light`, `dark`) and
+  `appearance` (`default`). Any other key in it, such as `apperance`, fails with
+  `config-field-unknown` naming the key, such as `theme.apperance`.
 - Configuration and frontmatter failures report the offending field, such as
   `navigation[2].title`, when one can be identified.
 

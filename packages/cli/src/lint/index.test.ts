@@ -96,6 +96,30 @@ describe("lint command", () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
+  test("--json still prints one report when the project cannot be loaded", async () => {
+    // intro.md is missing, so the Wiki cannot be compiled at all.
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect(
+      (lint as LintCommand).handler?.({ dir, links: "error", json: true }),
+    ).rejects.toMatchObject({ id: "wiki-page-not-found" });
+
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(log.mock.calls[0]?.[0]))).toEqual({
+      diagnostics: [
+        {
+          lines: [],
+          id: "wiki-page-not-found",
+          severity: "error",
+          message: expect.stringContaining("A configured Wiki page file was not found."),
+        },
+      ],
+      errors: 1,
+      warnings: 0,
+    });
+  });
+
   test("--json reports warnings and passes", async () => {
     await writeFile(join(dir, "intro.md"), "# Intro\n\n[Missing](/missing)\n");
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);

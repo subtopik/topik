@@ -738,6 +738,20 @@ describe("default Topik theme components", () => {
     expect(underline).toContain("<u>Important</u>");
   });
 
+  it("gives every semantic badge variant its own colour", () => {
+    for (const variant of ["info", "success", "warning", "danger"]) {
+      expect(themeStyles).toMatch(
+        new RegExp(`\\.topik-badge\\[data-variant="${variant}"\\]\\s*\\{\\s*--topik-badge-color:`),
+      );
+    }
+  });
+
+  it("points the YouTube play mark right in every writing direction", () => {
+    const rule = themeStyles.match(/\.topik-youtube__play\s*\{([^}]*)\}/u)![1];
+    expect(rule).toContain("border-left:");
+    expect(rule).not.toContain("border-inline-start");
+  });
+
   it("renders keyboard keys as kbd elements", () => {
     expect(renderToStaticMarkup(<TopikKbd>Ctrl</TopikKbd>)).toBe(
       '<kbd class="topik-kbd">Ctrl</kbd>',

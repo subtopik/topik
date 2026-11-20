@@ -148,8 +148,12 @@ export async function discoverWiki(
       config.sourceVersion === 1 && typeof frontmatter.id === "string"
         ? frontmatter.id
         : pagePathToName(config.id, pagePath);
-    if (pageNamesBySource.has(pagePath) || Object.hasOwn(sourcePathsByResource, `WikiPage/${name}`))
-      throw new PublicCompileError("config-invalid", loadedConfig.path);
+    // Page paths are already unique, so a repeated name comes from two frontmatter IDs.
+    if (Object.hasOwn(sourcePathsByResource, `WikiPage/${name}`))
+      throw new PublicCompileError("frontmatter-invalid", sourcePath, {
+        field: "id",
+        relatedLocation: sourcePathsByResource[`WikiPage/${name}`],
+      });
     pageNamesBySource.set(pagePath, name);
     const analysis = memo.analyze(content, sourcePath);
     diagnostics.push(...analysis.diagnostics);

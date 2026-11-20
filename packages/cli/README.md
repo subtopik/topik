@@ -105,7 +105,9 @@ a directory; the default is the current directory.
   there are any.
 - A file that does not compile cleanly is left untouched and its diagnostics are
   printed. The command then exits 1.
-- A hard-linked file is left untouched and reported. The command then exits 1.
+- A file `format` cannot replace safely is left untouched and reported: a
+  hard link, a file with executable permission bits, or a file Git applies a
+  content filter or working-tree encoding to. The command then exits 1.
 - A rewritten file keeps its permission bits.
 
 `format` replaces a file by renaming a complete new copy over it, so the file

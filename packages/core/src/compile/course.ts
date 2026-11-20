@@ -99,6 +99,7 @@ export async function discoverCourse(
   const resources: SourceResource[] = [course, ...(config.persons ?? [])];
   const diagnostics: CompileResult["diagnostics"] = [];
   const sourcePathsByResource: Record<string, string> = {};
+  const pagePathsByRoute = new Map<string, string>();
   const pages: CourseReferenceContext["pages"][number][] = [];
   const modules: import("../preview").CourseNavigationModule[] = [];
   for (const [declarationIndex, module] of config.modules.entries()) {
@@ -133,7 +134,17 @@ export async function discoverCourse(
       }
       const key = `CoursePage/${metadata.id}`;
       if (Object.hasOwn(sourcePathsByResource, key))
-        throw new PublicCompileError("config-invalid", loaded.path);
+        throw new PublicCompileError("frontmatter-invalid", file.path, {
+          field: "id",
+          relatedLocation: sourcePathsByResource[key],
+        });
+      const route = `${module.id}/${metadata.slug}`;
+      const sameRoute = pagePathsByRoute.get(route);
+      if (sameRoute !== undefined)
+        throw new PublicCompileError("frontmatter-invalid", file.path, {
+          field: "slug",
+          relatedLocation: sameRoute,
+        });
       const validation = memo.validate(parsed.content, file.path);
       diagnostics.push(...validation.errors);
       if (!validation.valid) continue;
@@ -155,6 +166,7 @@ export async function discoverCourse(
       resources.push(page);
       navigation.pages.push({ name: page.name, declarationIndex: pageIndex });
       sourcePathsByResource[key] = file.path;
+      pagePathsByRoute.set(route, file.path);
       pages.push({ name: page.name, module: module.id, slug: metadata.slug, sourcePath });
       const analysis = memo.analyze(parsed.content, file.path);
       diagnostics.push(...analysis.diagnostics);

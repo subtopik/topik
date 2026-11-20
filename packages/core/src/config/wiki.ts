@@ -1,3 +1,4 @@
+import { fullFormats } from "ajv-formats/dist/formats.js";
 import { z } from "zod";
 import { DEFAULT_ASSET_DIRECTORY, sourceAssetsConfigSchema } from "./assets";
 import { rejectMisspelledKeys } from "./misspelled-keys";
@@ -8,6 +9,9 @@ const wikiNavIconPattern = new RegExp(wikiV1Schema.$defs.groupNode.properties.ic
 const wikiExternalHrefPattern = new RegExp(
   wikiV1Schema.$defs.externalTabNode.properties.href.pattern,
 );
+const wikiSourcePathPattern = new RegExp(wikiV1Schema.$defs.pageNode.properties.sourcePath.pattern);
+// The Wiki/v1 schema checks hrefs with the `uri` format too, so the config applies the same check.
+const uriFormat = fullFormats.uri as (value: string) => boolean;
 
 type WikiPageNavNode = {
   type: "page";
@@ -87,7 +91,7 @@ const href = z
   .max(2048)
   .refine(
     (value) => {
-      if (!wikiExternalHrefPattern.test(value)) return false;
+      if (!wikiExternalHrefPattern.test(value) || !uriFormat(value)) return false;
       try {
         const url = new URL(value);
         return url.protocol === "https:" || url.protocol === "http:";
@@ -105,7 +109,12 @@ const navNodeSchema: z.ZodType<WikiNavNode> = z.lazy(() =>
       .object({
         type: z.literal("page"),
         slug: wikiPagePath,
-        source: pageSourcePathSchema.optional(),
+        source: pageSourcePathSchema
+          .refine(
+            (value) => wikiSourcePathPattern.test(value),
+            "Wiki page sources cannot contain backslashes, '?', '#', '%' or ':'",
+          )
+          .optional(),
         icon,
         hidden: z.boolean().optional(),
       })
@@ -255,20 +264,25 @@ function joinNavigationPath(prefix: string, path?: string): string {
 
 const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/, "Must be a hex color (e.g. #ff73a8)");
 
-const themeSchema = z.object({
-  colors: z
-    .object({
-      primary: hexColor,
-      light: hexColor.optional(),
-      dark: hexColor.optional(),
-    })
-    .optional(),
-  appearance: z
-    .object({
-      default: z.enum(["light", "dark", "system"]).optional(),
-    })
-    .optional(),
-});
+// Strict like the Wiki/v1 theme, so a misspelled key fails instead of being dropped.
+const themeSchema = z
+  .object({
+    colors: z
+      .object({
+        primary: hexColor,
+        light: hexColor.optional(),
+        dark: hexColor.optional(),
+      })
+      .strict()
+      .optional(),
+    appearance: z
+      .object({
+        default: z.enum(["light", "dark", "system"]).optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
 
 const nameRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const WIKI_PAGE_NAME_HASH_LENGTH = 16;

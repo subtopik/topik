@@ -215,7 +215,7 @@ export function findWikiPageAncestors(
  * a page with exactly that route wins, and the folder rule applies only when no route matches.
  *
  * Href paths are percent-decoded once before matching, so `next%20page.md` and `next page.md`
- * name the same source; source paths may themselves contain `%`, `#`, `?` or spaces.
+ * name the same source; source paths may themselves contain spaces.
  */
 export function resolveWikiContentHref(
   href: string,

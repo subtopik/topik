@@ -231,12 +231,16 @@ export function parseDocumentTree(
     const tagErrors = convertTags(tree as TreeNode, registry, rawHeaders);
     normalizeTables(tree as TreeNode, CONTENT_LIMITS.treeNodes - nodeCount);
     const validated = validateDocumentWithIndex(tree, registry);
-    // A condition that failed to parse remains invalid for validation too;
-    // report each authored problem once, with the more specific parse message.
+    // Tag conversion and validation both check attributes, and a condition that failed to parse
+    // remains invalid for validation too; report each authored problem once, keeping the more
+    // specific parse message.
     const reported = new Set(tagErrors.map(diagnosticKey));
+    const repeated = new Set(tagErrors.map(exactDiagnosticKey));
     const errors = tagErrors.concat(
-      validated.diagnostics.filter(
-        (item) => item.id !== "topik-expression-invalid" || !reported.has(diagnosticKey(item)),
+      validated.diagnostics.filter((item) =>
+        item.id === "topik-expression-invalid"
+          ? !reported.has(diagnosticKey(item))
+          : !repeated.has(exactDiagnosticKey(item)),
       ),
     );
     return { document: tree, index: validated.index, diagnostics: errors, source };
@@ -302,6 +306,19 @@ function listSpacing(root: TreeNode): void {
 
 function diagnosticKey(item: Diagnostic): string {
   return `${item.id}\0${item.line}\0${item.column}`;
+}
+
+function exactDiagnosticKey(item: Diagnostic): string {
+  return JSON.stringify([
+    item.id,
+    item.line,
+    item.column,
+    item.tag,
+    item.attribute,
+    item.expected,
+    item.option,
+    item.message,
+  ]);
 }
 
 /** GFM missing cells mean empty cells; overflow is retained for an explicit diagnostic. */

@@ -2,7 +2,7 @@
 
 `topik dev` compiles a project, watches its source, and serves the compiled state
 to a browser application on the same machine. This page specifies that protocol,
-`topik-preview/1`: the endpoints, the state envelope, the ordering guarantees, the
+`topik-preview/2`: the endpoints, the state envelope, the ordering guarantees, the
 rules a consumer must follow, and the adapter that loads local media. Read it when
 you build a preview client or use the library's `watch()` API.
 
@@ -12,8 +12,11 @@ or publishing.
 ## Capability negotiation
 
 A consumer must negotiate the capability before it uses the protocol: request
-`GET /health` and require `topik-preview/1` in `capabilities`. A package version or
+`GET /health` and require `topik-preview/2` in `capabilities`. A package version or
 the presence of Course resources is not sufficient evidence.
+
+`topik-preview/2` replaces `topik-preview/1`. It drops the `courseNavigation`
+field: a client orders Courses by their [lists](#course-order) instead.
 
 ## Transport
 
@@ -24,7 +27,7 @@ is `https://write.subtopik.com`.
 
 | Endpoint              | Returns                                                                                       |
 | --------------------- | --------------------------------------------------------------------------------------------- |
-| `GET /health`         | `status`, the running CLI `version`, `sessionId`, and `capabilities: ["topik-preview/1"]`     |
+| `GET /health`         | `status`, the running CLI `version`, `sessionId`, and `capabilities: ["topik-preview/2"]`     |
 | `GET /resources`      | The current `PreviewState` envelope. The response is not cached.                              |
 | `GET /events`         | A server-sent event stream of `preview-state` events, each carrying a complete `PreviewState` |
 | `GET /blobs/<digest>` | The bytes of one payload; see [Explicit local media adapter](#explicit-local-media-adapter)   |
@@ -48,7 +51,7 @@ includes Node APIs.
 
 | Field                | Meaning                                                                                                |
 | -------------------- | ------------------------------------------------------------------------------------------------------ |
-| `protocol`           | Exact string `topik-preview/1`                                                                         |
+| `protocol`           | Exact string `topik-preview/2`                                                                         |
 | `sessionId`          | Random ID for this watcher/server lifetime; changes on restart                                         |
 | `sequence`           | Increasing positive safe integer for every published state in this session                             |
 | `generation`         | Increasing positive integer on success; `null` before any success                                      |
@@ -57,7 +60,6 @@ includes Node APIs.
 | `omittedDiagnostics` | How many diagnostics did not fit in `diagnostics`; absent when all fit                                 |
 | `resources`          | Array of every resource from the last successful generation                                            |
 | `payloads`           | Array of every payload descriptor: `path`, `integrity`, `mediaType`, `size`, `assetNames`; no bytes    |
-| `courseNavigation`   | Explicit authored declaration positions from the same generation                                       |
 
 The subpath also exports `Resource`, the union of the schema-generated resource
 types that `resources` holds by default. A client that validates each resource
@@ -106,11 +108,11 @@ missing asset, prints as one line that names the file and the problem, such as
 
 Each compilation publishes a sequence of complete states:
 
-| Moment               | Published state                                                                              |
-| -------------------- | -------------------------------------------------------------------------------------------- |
-| A compilation starts | `compiling`                                                                                  |
-| It succeeds          | `ready`, after all resources, payloads and navigation are committed together                 |
-| It fails             | `error`, with the previous generation's resources, payloads and navigation retained together |
+| Moment               | Published state                                                                  |
+| -------------------- | -------------------------------------------------------------------------------- |
+| A compilation starts | `compiling`                                                                      |
+| It succeeds          | `ready`, after all resources and payloads are committed together                 |
+| It fails             | `error`, with the previous generation's resources and payloads retained together |
 
 - Every successful compilation advances `generation`, including one that recovers
   to identical output and one that changes only order.
@@ -171,39 +173,13 @@ you must still call `close()`.
   error is passed to `error` listeners. Exceptions thrown by `error` listeners
   are dropped.
 
-## Course navigation order
+## Course order
 
-`courseNavigation` records where each module and page was declared, so a consumer
-can order them without relying on array order. `PreviewState.courseNavigation`,
-`CompileResult.courseNavigation` and discovery's `courseNavigation` carry:
-
-```json
-{
-  "course-name": {
-    "modules": [
-      {
-        "name": "module-name",
-        "declarationIndex": 0,
-        "pages": [{ "name": "page-name", "declarationIndex": 0 }]
-      }
-    ]
-  }
-}
-```
-
-The indices are the positions in the authored `modules[]` and each `pages[]`,
-taken before resources are sorted. Standalone and manifest compilation both
-preserve them.
-
-- Every Course is present, including empty Courses.
-- Every module has a `pages` array, including empty modules.
-- Each module and page appears exactly once, under its actual parent.
-- Indices are contiguous zero-based positions within each parent.
-
-Sort modules by `(spec.order, declarationIndex)` and pages similarly. Never infer
-ties from array serialization, Map insertion, names, titles or slugs. The resource
-schemas do not include these indices. A consumer must validate both the resource
-graph and the index completely before committing.
+A Course is ordered by its lists, as a Wiki is by its navigation.
+`Course.spec.modules` names the Course's modules in reader order, and
+`CourseModule.spec.pages` names each module's pages in reader order. Use those
+lists; never infer order from array serialization, Map insertion, names, titles
+or slugs. Each module and page is listed exactly once, by the parent it names.
 
 ## Consumer concurrency rules
 
@@ -230,7 +206,7 @@ Validate the whole envelope before replacing storage:
 - resource schemas;
 - unique type/name keys;
 - complete parent references;
-- Course order coverage;
+- Course lists that name exactly the modules and pages that name their parent;
 - matching payload descriptors.
 
 Reject an invalid or incomplete snapshot without partially applying it.
@@ -399,4 +375,4 @@ absence from `resources`.
 Select one protocol per connection. A client that uses `preview-state` must ignore
 legacy events, so that an individual update cannot overwrite a complete accepted
 generation. A consumer of the legacy events can keep its resource previews while
-explaining that Course previews need the `topik-preview/1` capability.
+explaining that Course previews need the `topik-preview/2` capability.

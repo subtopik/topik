@@ -276,7 +276,10 @@ Two opt-in flags add more checks, and both can be combined:
 
 - `--graph` checks the loaded resources as one complete set. Each `type/name`
   must be unique, and each by-name reference in the table below must name a
-  resource in the set. Use it on a whole compilation output; a directory that
+  resource in the set. A Course must list exactly the CourseModules whose
+  `spec.course` names it, once each, and a CourseModule exactly the CoursePages
+  whose `spec.module` names it; otherwise the check reports
+  `membership-inconsistent`. Use it on a whole compilation output; a directory that
   holds only part of a project reports every reference to a resource it leaves
   out.
 - `--content` checks the `spec.content.value` of each `CoursePage`, `Guide` and
@@ -289,6 +292,8 @@ Two opt-in flags add more checks, and both can be combined:
 | A `WikiPage` `spec.wiki`                                      | Its `Wiki`         |
 | A `CourseModule` `spec.course`                                | Its `Course`       |
 | A `CoursePage` `spec.module`                                  | Its `CourseModule` |
+| A `Course` `spec.modules` entry                               | A `CourseModule`   |
+| A `CourseModule` `spec.pages` entry                           | A `CoursePage`     |
 | A `spec.authors` entry of a `Course`, `CoursePage` or `Guide` | A `Person`         |
 
 These problems are reported like schema errors, with the file, resource and
@@ -327,7 +332,8 @@ lists the checks that ran. Every diagnostic has all six fields:
   that could not be read or parsed. For `read`, `resource` and `pointer` are
   `null`, and `file` is `null` when the target itself failed.
 - `id` is a stable identifier such as `resource-invalid`, `resource-duplicate`,
-  `reference-unresolved`, `content-invalid` or `resource-json-invalid`, or
+  `reference-unresolved`, `membership-inconsistent`, `content-invalid` or
+  `resource-json-invalid`, or
   `null` when there is none.
 - `file`, `resource`, `pointer` and `message` are reduced to the same safe
   labels as the human-readable report.
@@ -492,3 +498,18 @@ system paths such as `/var` and `/tmp` are links there.
      `document-encoding-invalid`.
 5. Tools that read diagnostics must stop adding the frontmatter length to
    `lines`: content diagnostics count lines from the top of the file.
+6. Courses are ordered by their lists, as Wikis are by their navigation:
+   - In each Course configuration, sort `modules` by their old `order`, then
+     delete `order` from every module.
+   - In each module, sort `pages` by the old `order` in the page frontmatter,
+     then delete `order` from every page. Pages with equal `order` keep their
+     listed order.
+   - A source that still has `order` fails with `config-invalid` or
+     `frontmatter-invalid` naming the field, so nothing is reordered silently.
+   - Compiled `Course` resources carry `spec.modules` and `CourseModule`
+     resources carry `spec.pages`, in reader order. `spec.order` is gone from
+     `CourseModule` and `CoursePage`.
+   - `courseNavigation` is gone from compile results, discovery and preview
+     state. Preview clients require `topik-preview/2` and read the lists.
+   - Source-writing callers list a new page in its module, or a new module in
+     its Course, and include an update of that parent.

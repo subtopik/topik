@@ -45,12 +45,19 @@ function parseYaml(content: string): unknown[] {
   try {
     return (
       parseAllDocuments(content)
-        // A separator with nothing after it yields an empty plain scalar, not null. An explicit
-        // `null` or `~` keeps its source, so it is still validated, and so is a broken document.
+        // A separator with nothing after it yields an untagged empty plain scalar, not null. Quoted
+        // or tagged empty values, an explicit `null` or `~`, and broken documents are all validated.
         .filter(
           ({ contents, errors }) =>
             errors.length > 0 ||
-            (contents !== null && !(isScalar(contents) && contents.source === "")),
+            (contents !== null &&
+              !(
+                isScalar(contents) &&
+                contents.type === "PLAIN" &&
+                contents.source === "" &&
+                contents.tag === undefined &&
+                contents.anchor === undefined
+              )),
         )
         .map((document) => {
           if (document.errors.length > 0) {

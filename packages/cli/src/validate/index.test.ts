@@ -230,15 +230,18 @@ describe("validate command", () => {
     expect(log).toHaveBeenCalledWith("Validated 1 resources");
   });
 
-  test("still validates an explicit null YAML document", async () => {
-    const filePath = join(dir, "wiki.yaml");
-    await writeFile(filePath, "null\n");
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
+  test.each(["null", "~", '""', "''", "!!str"])(
+    "still validates an explicit %s YAML document",
+    async (document) => {
+      const filePath = join(dir, "wiki.yaml");
+      await writeFile(filePath, `${document}\n---\n`);
+      vi.spyOn(console, "error").mockImplementation(() => undefined);
 
-    await expect((validate as ValidateCommand).handler?.({ path: filePath })).rejects.toMatchObject(
-      { id: "resource-validation-failed" },
-    );
-  });
+      await expect(
+        (validate as ValidateCommand).handler?.({ path: filePath }),
+      ).rejects.toMatchObject({ id: "resource-validation-failed" });
+    },
+  );
 
   test("accepts JSONL resources produced by compile", async () => {
     const filePath = join(dir, "wiki.jsonl");

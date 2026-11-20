@@ -45,7 +45,10 @@ const BLOCK_TAGS = new Map([
   ["Steps", "steps"],
   ["Step", "step"],
   ["Card", "card"],
-  ["CardGroup", "cardGrid"],
+  // Both Mintlify grids become Topik columns: cards and columns are its cells.
+  ["CardGroup", "columns"],
+  ["Columns", "columns"],
+  ["Column", "column"],
   ["Accordion", "accordion"],
   ["CodeGroup", "codeGroup"],
   ["CodeTab", "codeTab"],
@@ -67,7 +70,8 @@ const BLOCK_COMPONENT_NAMES = new Set([...CALLOUT_VARIANTS.keys(), ...BLOCK_TAGS
 
 // Mintlify attribute names that Topik spells differently, per source component.
 const ATTRIBUTE_ALIASES = new Map<string, Record<string, string>>([
-  ["CardGroup", { cols: "columns" }],
+  ["CardGroup", { cols: "count" }],
+  ["Columns", { cols: "count" }],
   ["Accordion", { defaultOpen: "open" }],
 ]);
 

@@ -64,7 +64,7 @@ describe("diagnostic columns", () => {
       "{% nope /%}",
       "{% /callout %}",
       "{% callout %}\nx",
-      "x[^1]\n\n[^1]: n",
+      "x[^1]\n\n[^2]: n",
       "```js lines=0\nx\n```",
       "{% badge %}{% /badge %}",
       "[a][b]\n\n[b]: http://x.test",

@@ -40,8 +40,13 @@ export function validateTopikAssetReference(reference: string): TopikAssetRefere
       : { valid: false, kind: "unsafe", failureKind: "local" };
   }
   if (/^https:\/\//iu.test(reference)) {
+    // The URL parser strips trailing whitespace and keeps undecodable fragments; rendering
+    // refuses both, so an admitted reference must not rely on either.
+    if (reference.trimEnd() !== reference)
+      return { valid: false, kind: "unsafe", failureKind: "external" };
     try {
       const url = new URL(reference);
+      if (url.hash) decodeURIComponent(url.hash.slice(1));
       return url.protocol === "https:" && url.username === "" && url.password === ""
         ? { valid: true, kind: "external-https" }
         : { valid: false, kind: "unsafe", failureKind: "external" };

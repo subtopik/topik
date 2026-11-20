@@ -198,6 +198,31 @@ test("unresolved page and fragment links retain strict, warning and disabled val
   expect((await compileCourse({ dir, validation: { links: "off" } })).diagnostics).toEqual([]);
 });
 
+test("same-page card fragments are checked like same-page link fragments", async () => {
+  const cards = [
+    '{% card title="Self" href="#welcome" /%}',
+    '{% card title="Missing" href="#absent" /%}',
+    '{% card title="Second step" href="#step-1" /%}',
+    "## Step",
+    "## Step",
+  ].join("\n\n");
+  const dir = await fixture({ ...sourceFiles(), "pages/welcome.md": `${welcome}\n${cards}\n` });
+  await expect(compileCourse({ dir })).rejects.toMatchObject({
+    diagnostics: [
+      expect.objectContaining({
+        id: "link-fragment-not-found",
+        type: "card",
+        file: "pages/welcome.md",
+      }),
+    ],
+  });
+  const warned = await compileCourse({ dir, validation: { links: "warning" } });
+  expect(warned.diagnostics.map(({ id, lines }) => [id, lines])).toEqual([
+    ["link-fragment-not-found", [9]],
+    ["link-fragment-positional", [11]],
+  ]);
+});
+
 test("author references reject missing Persons for Course and CoursePage metadata", async () => {
   const dir = await fixture({ ...sourceFiles(), "course.yaml": configuration });
   await expect(compileCourse({ dir })).rejects.toMatchObject({ id: "author-not-found" });

@@ -184,3 +184,16 @@ test("whitespace after a hard break keeps its reference spelling", () => {
     expect(formatTopikContent(source)).toMatchObject({ ok: true, formatted: source });
   }
 });
+
+test("a line ending before a footnote reference stays literal", () => {
+  // `[^1]: b` at a line start would read as a footnote definition, so the colon is escaped
+  // instead; without a colon the line needs nothing.
+  for (const [source, expected] of [
+    ["a&#xa;[^1]: b\n\n[^1]: note\n", "a\n[^1]\\: b\n\n[^1]: note\n"],
+    ["`a`&#xa;[^1]: b\n\n[^1]: note\n", "`a`\n[^1]\\: b\n\n[^1]: note\n"],
+    ["a\n[^1] and more.\n\n[^1]: note\n", "a\n[^1] and more.\n\n[^1]: note\n"],
+  ]) {
+    expect(formatTopikContent(source)).toMatchObject({ ok: true, formatted: expected });
+    expect(formatTopikContent(expected)).toMatchObject({ ok: true, formatted: expected });
+  }
+});

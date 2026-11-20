@@ -39,6 +39,8 @@ The root `@topik/content-react` entry point exports `renderTopikMarkdown` and
 `renderTopikContent` for applications that own their component mapping. These
 functions render a built-in tag with the component you pass for it. A tag
 without a supplied component renders its children without the themed wrapper.
+A video, which has no children, renders as a plain link with its poster, title
+and caption.
 
 In a client component, pass the complete themed map:
 
@@ -121,10 +123,79 @@ The theme stylesheet includes print styles:
   example a package manager) carries over to paper.
 - Closed accordions print open in browsers that support `::details-content`;
   elsewhere they print as they are.
-- Headings stay with the content after them. Callouts, cards, figures, steps,
-  questions and table rows avoid page breaks inside them.
+- Headings stay with the content after them. Callouts, cards, figures, videos,
+  steps, questions and table rows avoid page breaks inside them.
+- Videos print their poster and title with the source address instead of the
+  player.
 - With `rich/styles.css`, syntax-highlighted code prints as dark text and dark
   diagrams print with light diagram colors.
+- Footnotes print at the end of the content without their back-links.
+
+### Footnotes
+
+A reference renders as `TopikFootnoteReference`, a superscript number linking to
+its note. After the content, `TopikFootnotes` lists every shown note as a
+`TopikFootnote`, in order of first reference, each with back-links to its
+references.
+
+| Component                | Props                                                         |
+| ------------------------ | ------------------------------------------------------------- |
+| `TopikFootnoteReference` | `number`, `id` (`fnref:1`, `fnref:1:2` …), `target` (`fn:1`)  |
+| `TopikFootnotes`         | the notes as children                                         |
+| `TopikFootnote`          | `number`, `id` (`fn:1`), `backrefs`, and the note as children |
+
+The anchors are the same on every page, so two footnoted contents on one page
+share them; give each its own component map with prefixed anchors if they must
+coexist. Without themed components, footnotes still render as superscript links
+and an ordered list, so a plain renderer keeps the notes.
+
+### Video
+
+The theme's `TopikVideo` plays `src` in a native `<video>` player named by the
+video's `title`:
+
+- A normal video has player controls and loads only its metadata until the
+  reader starts it.
+- A `loop` video is a silent clip. Once hydrated, it starts muted and looping
+  and shows a Pause button instead of player controls. A reader who prefers
+  reduced motion gets it paused, with a Play button. Server-rendered HTML keeps
+  the native controls until hydration, so the clip stays playable without script.
+- A compiled source is an MP4 or WebM file and always gets the player. Any other
+  source gets the player only when its path ends in `.mp4`, `.m4v` or `.webm`.
+  Anything else, such as a video page on a hosting service, renders as the poster
+  and title as a link to `src`: it works without script and the reader's browser
+  makes no request to the service until the reader follows it.
+- When the browser cannot play a source it tried, the player is replaced by the
+  same link.
+- An unresolved source leaves the title, caption and poster as text.
+
+Each prop is the evaluated attribute: `src`, `title`, `caption`, `poster` and
+`loop`. A preview also passes `crossOrigin="anonymous"`, because the local
+producer streams video only to CORS requests; pass it on to the `<video>`
+element. A source that needs CORS is never rendered as a link, since navigating
+to it cannot succeed.
+
+An application that embeds a video service supplies its own component and
+falls back to the theme's for other sources:
+
+```tsx
+"use client";
+
+import { TopikContent, TopikVideo } from "@topik/content-react/theme";
+
+// Your own URL check returns the embed URL, turning a `t=90s` timestamp into `?start=90`.
+declare function youtubeEmbedUrl(url: string): string | undefined;
+
+function Video(props: Parameters<typeof TopikVideo>[0]) {
+  const embed = typeof props.src === "string" ? youtubeEmbedUrl(props.src) : undefined;
+  if (embed === undefined) return <TopikVideo {...props} />;
+  return <iframe src={embed} title={String(props.title)} allow="fullscreen; picture-in-picture" />;
+}
+
+export function Article({ source }: { source: string }) {
+  return <TopikContent content={source} components={{ TopikVideo: Video }} />;
+}
+```
 
 ## Variables
 

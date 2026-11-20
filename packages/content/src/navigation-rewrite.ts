@@ -70,7 +70,7 @@ export function rewriteTopikNavigationReferences(
   try {
     // Unchanged content keeps its authored spelling and therefore its tree positions.
     content = serializeDocument(prepared.document, prepared.config.components, FORMAT_VERSION, {
-      preserveMarkNesting: true,
+      preserveTreePositions: true,
     });
   } catch {
     return writeFailure(source, options.file);

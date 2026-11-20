@@ -29,6 +29,12 @@ export {
 } from "./code-presentation.js";
 export type { Expression } from "./expressions.js";
 export { validateDocument } from "./validation.js";
+export {
+  parseTopikYouTubeUrl,
+  topikYouTubeEmbedUrl,
+  topikYouTubeWatchUrl,
+  type TopikYouTubeVideo,
+} from "./youtube.js";
 export { sameDocumentMeaning } from "./document-meaning.js";
 export { FORMAT_VERSION, formatDocument, parseDocument, writeDocument } from "./markdown.js";
 export { rewriteAssets } from "./assets.js";

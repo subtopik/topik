@@ -154,16 +154,19 @@ window.stream.addEventListener("preview-state", event => window.accept(JSON.pars
       document.querySelectorAll("img").length === 2 &&
       [...document.querySelectorAll("img")].every((img) => img.naturalWidth === 1),
   );
-  // Video streams from the producer in ranges, with CORS from the allowed origin.
-  await page.waitForFunction(() => document.querySelector("video")?.readyState >= 1);
-  assert.ok(Math.abs((await page.locator("video").evaluate((video) => video.duration)) - 2) < 0.5);
+  // Video streams from the producer in ranges, with CORS from the allowed origin, and loads
+  // nothing until it is played.
+  await page.waitForSelector("video");
   assert.equal(await page.locator("video").getAttribute("crossorigin"), "anonymous");
-  // The stream plays and seeks, not just reports metadata.
+  assert.equal(await page.locator("video").getAttribute("preload"), "none");
+  assert.equal(requests.filter((request) => request.resourceType() === "media").length, 0);
+  // The stream plays and seeks.
   await page.locator("video").evaluate((video) => {
     video.muted = true;
     return video.play();
   });
   await page.waitForFunction(() => document.querySelector("video").currentTime > 0);
+  assert.ok(Math.abs((await page.locator("video").evaluate((video) => video.duration)) - 2) < 0.5);
   await page.locator("video").evaluate(
     (video) =>
       new Promise((resolve) => {

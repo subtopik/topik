@@ -1,5 +1,6 @@
 import type { ComponentPropsWithoutRef, ComponentType, MouseEvent, ReactNode } from "react";
 import type { CodePresentationEffectiveOptions, TopikGeneratedAssetName } from "@topik/content";
+import { parseTopikYouTubeUrl, topikYouTubeWatchUrl } from "@topik/content";
 
 export const topikComponentNames = [
   "TopikAccordion",
@@ -36,6 +37,7 @@ export const topikComponentNames = [
   "TopikTableRow",
   "TopikUnderline",
   "TopikVideo",
+  "TopikYouTube",
 ] as const;
 
 export type TopikComponentName = (typeof topikComponentNames)[number];
@@ -154,6 +156,20 @@ function PlainTopikVideo({ caption, crossOrigin, poster, src, title }: TopikComp
   );
 }
 
+/** Without a themed component, a YouTube video is a link to it on YouTube. */
+function PlainTopikYouTube({ caption, src, title }: TopikComponentProps) {
+  const video = typeof src === "string" ? parseTopikYouTubeUrl(src) : undefined;
+  if (!video) return null;
+  const watch = topikYouTubeWatchUrl(video);
+  const captionText = typeof caption === "string" && caption ? caption : undefined;
+  return (
+    <figure>
+      <a href={watch}>{(typeof title === "string" && title.trim()) || watch}</a>
+      {captionText ? <figcaption>{captionText}</figcaption> : null}
+    </figure>
+  );
+}
+
 /** A key keeps its meaning without a theme: `<kbd>` is semantic HTML that browsers style. */
 function PlainTopikKbd({ children }: TopikComponentProps) {
   return <kbd>{children}</kbd>;
@@ -194,6 +210,7 @@ const fallbackTopikComponents = {
   TopikTableRow: MissingTopikComponent,
   TopikUnderline: MissingTopikComponent,
   TopikVideo: PlainTopikVideo,
+  TopikYouTube: PlainTopikYouTube,
 } satisfies TopikComponentMap;
 
 /** @internal Merge override maps in order; an explicit `undefined` keeps the earlier component. */
@@ -247,5 +264,6 @@ export function getTopikComponents(overrides: TopikComponentOverrides = {}): Top
     TopikTableRow: overrides.TopikTableRow ?? fallbackTopikComponents.TopikTableRow,
     TopikUnderline: overrides.TopikUnderline ?? fallbackTopikComponents.TopikUnderline,
     TopikVideo: overrides.TopikVideo ?? fallbackTopikComponents.TopikVideo,
+    TopikYouTube: overrides.TopikYouTube ?? fallbackTopikComponents.TopikYouTube,
   };
 }

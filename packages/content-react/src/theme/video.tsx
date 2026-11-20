@@ -104,7 +104,8 @@ function VideoPlayer({
         loop={loop}
         playsInline
         poster={poster}
-        preload="metadata"
+        // Nothing loads until the reader starts the video, or a clip starts itself.
+        preload={clip ? "metadata" : "none"}
         src={source}
         onError={() => failure.current()}
         onPause={() => setPlaying(false)}
@@ -131,15 +132,6 @@ function VideoPlayer({
   );
 }
 
-/** Whether a URL names a video file a browser can play, judged by its path. */
-function isVideoFileUrl(source: string): boolean {
-  try {
-    return /\.(?:mp4|m4v|webm)$/iu.test(new URL(source, "https://topik.invalid/").pathname);
-  } catch {
-    return false;
-  }
-}
-
 /**
  * A native video player. A source the browser cannot play, such as a video page on a hosting
  * service, falls back to a link; applications that embed such services supply their own component.
@@ -149,15 +141,7 @@ export function TopikVideo(props: TopikComponentProps) {
   return <VideoFigure key={stringAttribute(props.src) ?? ""} {...props} />;
 }
 
-function VideoFigure({
-  __topikVideoFile,
-  caption,
-  crossOrigin,
-  loop,
-  poster,
-  src,
-  title,
-}: TopikComponentProps) {
+function VideoFigure({ caption, crossOrigin, loop, poster, src, title }: TopikComponentProps) {
   const source = stringAttribute(src);
   const titleText = stringAttribute(title)?.trim() ?? "";
   const captionText = stringAttribute(caption);
@@ -169,12 +153,7 @@ function VideoFigure({
   );
   const figcaption = captionText ? <figcaption>{captionText}</figcaption> : null;
 
-  // A compiled source is a verified file. Any other source plays only when its path names a
-  // video file; a page on a hosting service renders as a link, which works without script and
-  // makes no request to the service until the reader follows it.
-  const playable =
-    source !== undefined && (__topikVideoFile === true || corsOnly || isVideoFileUrl(source));
-  if (source === undefined || failed || !playable) {
+  if (source === undefined || failed) {
     if (!titleText && !captionText && !posterSource && (corsOnly || source === undefined))
       return null;
     return (
@@ -197,6 +176,14 @@ function VideoFigure({
         title={titleText}
       />
       <div className="topik-video__print">{link}</div>
+      {/* Without script a source the browser cannot play never falls back, so keep its link. */}
+      {corsOnly ? null : (
+        <noscript>
+          <a className="topik-video__link" href={source}>
+            {titleText || source}
+          </a>
+        </noscript>
+      )}
       {figcaption}
     </figure>
   );

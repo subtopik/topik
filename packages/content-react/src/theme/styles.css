@@ -686,6 +686,69 @@
     display: none;
   }
 
+  .topik-youtube {
+    margin-inline: 0;
+  }
+
+  .topik-youtube__frame {
+    aspect-ratio: 16 / 9;
+  }
+
+  .topik-youtube__player,
+  .topik-youtube__start {
+    border: 0;
+    border-radius: var(--topik-radius);
+    display: block;
+    height: 100%;
+    width: 100%;
+  }
+
+  /* Before playback: a dark panel with a play mark, the title and where the video plays from. */
+  .topik-youtube__start {
+    align-content: center;
+    background: #111111;
+    color: #ffffff;
+    display: grid;
+    gap: 0.4rem;
+    justify-items: center;
+    padding: 1rem;
+    text-align: center;
+    text-decoration: none;
+  }
+
+  .topik-youtube__start:focus-visible {
+    outline: 2px solid var(--topik-color-accent);
+    outline-offset: 2px;
+  }
+
+  .topik-youtube__play {
+    border-block: 0.9rem solid transparent;
+    border-inline-start: 1.5rem solid currentColor;
+    height: 0;
+    width: 0;
+  }
+
+  .topik-youtube__title {
+    font-weight: 600;
+  }
+
+  .topik-youtube__note {
+    font-size: 0.85rem;
+    opacity: 0.8;
+  }
+
+  .topik-youtube__print {
+    display: none;
+  }
+
+  /* After the base rule, so it wins: forced colors drop the dark panel, so the start link keeps an edge. */
+  @media (forced-colors: active) {
+    .topik-youtube__start {
+      border: 1px solid LinkText;
+    }
+  }
+
+  .topik-youtube figcaption,
   .topik-video figcaption {
     color: var(--topik-color-muted);
     font-size: 0.92rem;
@@ -883,12 +946,21 @@
       white-space: pre-wrap;
     }
 
-    .topik-video__frame {
+    .topik-video__frame,
+    .topik-youtube__frame {
       display: none;
     }
 
-    .topik-video__print {
+    .topik-video__print,
+    .topik-youtube__print {
       display: block;
+    }
+
+    .topik-youtube__print::after {
+      content: attr(href);
+      display: block;
+      font-size: 0.85em;
+      overflow-wrap: anywhere;
     }
 
     .topik-video .topik-video__link::after {

@@ -19,6 +19,7 @@ import { stepDefinition, stepsDefinition } from "./extensions/steps.js";
 import { tabDefinition, tabsDefinition } from "./extensions/tabs.js";
 import { underlineDefinition } from "./extensions/underline.js";
 import { videoDefinition } from "./extensions/video.js";
+import { youtubeDefinition } from "./extensions/youtube.js";
 
 export const TOPIK_CONTENT_SCHEMA_VERSION = "0.2.2";
 export const CALLOUT_VARIANTS = ["info", "tip", "warning", "danger"] as const;
@@ -172,6 +173,7 @@ const authoredComponents = {
   tabs: tabsDefinition,
   underline: underlineDefinition,
   video: textAttributes(videoDefinition, ["title", "caption"]),
+  youtube: textAttributes(youtubeDefinition, ["title", "caption"]),
 } satisfies Registry;
 
 /** Canonical schemas are immutable; callers add custom names in a separate registry. */

@@ -185,6 +185,17 @@ test("whitespace after a hard break keeps its reference spelling", () => {
   }
 });
 
+test("a heading that starts with a footnote reference keeps its colon text", () => {
+  // A line ending forces the setext form, whose first line starts with the reference.
+  for (const [source, expected] of [
+    ["# [^1]\\: x z&#xa;w\n\n[^1]: note\n", "[^1]\\: x z\nw\n=\n\n[^1]: note\n"],
+    ["# [^1]\\: x\n\n[^1]: note\n", "# [^1]\\: x\n\n[^1]: note\n"],
+  ]) {
+    expect(formatTopikContent(source)).toMatchObject({ ok: true, formatted: expected });
+    expect(formatTopikContent(expected)).toMatchObject({ ok: true, formatted: expected });
+  }
+});
+
 test("a line ending before a footnote reference stays literal", () => {
   // `[^1]: b` at a line start would read as a footnote definition, so the colon is escaped
   // instead; without a colon the line needs nothing.

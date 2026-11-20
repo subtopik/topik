@@ -19,14 +19,15 @@ function position(
 
 /**
  * Whether a footnote reference directly before this text starts a line, where `[^1]: text` reads
- * as a definition: the first child of a paragraph, or the first node after a hard break or a
- * line ending, in any inline container.
+ * as a definition: the first child of a paragraph or heading, or the first node after a hard
+ * break or a line ending, in any inline container.
  */
 function followsLineStartFootnote(node: unknown, parent: { type: string } | undefined): boolean {
   const { index, children } = position(node, parent);
   if (index < 1 || (children[index - 1] as { type?: string }).type !== "footnoteReference")
     return false;
-  if (index === 1) return parent?.type === "paragraph";
+  // A heading with a line ending is written in setext form, where its first line starts with it.
+  if (index === 1) return parent?.type === "paragraph" || parent?.type === "heading";
   const before = children[index - 2] as { type?: string; value?: unknown };
   return (
     before.type === "break" ||

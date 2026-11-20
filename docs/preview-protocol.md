@@ -175,7 +175,9 @@ you must still call `close()`.
 
 `courseNavigation` records where each module and page was declared, so a consumer
 can order them without relying on array order. `PreviewState.courseNavigation`,
-`CompileResult.courseNavigation` and discovery's `courseNavigation` carry:
+`CompileResult.courseNavigation`, discovery's `courseNavigation`, and the
+`courses` field of the `course-navigation.json` file that `topik compile` writes
+carry:
 
 ```json
 {

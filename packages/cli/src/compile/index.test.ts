@@ -188,6 +188,80 @@ describe("compile command", () => {
     );
   });
 
+  test("writes Course declaration order, which breaks equal order values", async () => {
+    await writeFile(
+      join(dir, ".topik.yaml"),
+      JSON.stringify({
+        version: 1,
+        namespace: "cli-test-source",
+        sources: [{ kind: "course", config: "course.yaml" }],
+      }),
+    );
+    // Both modules and both pages share order 1, so only declaration order separates them.
+    await writeFile(
+      join(dir, "course.yaml"),
+      [
+        "sourceVersion: 1",
+        "id: learning",
+        "title: Learning",
+        "slug: learning",
+        "modules:",
+        "  - { id: later, title: Later, slug: later, order: 1, pages: [b, a] }",
+        "  - { id: earlier, title: Earlier, slug: earlier, order: 1, pages: [] }",
+        "",
+      ].join("\n"),
+    );
+    for (const [name, slug] of [
+      ["a", "alpha"],
+      ["b", "beta"],
+    ])
+      await writeFile(
+        join(dir, `${name}.md`),
+        `---\nid: ${name}\ntitle: ${name}\nslug: ${slug}\norder: 1\n---\n# ${name}\n`,
+      );
+
+    await (compile as CompileCommand).handler?.({
+      dir,
+      format: "json",
+      dryRun: false,
+      validate: false,
+      links: "error",
+    });
+    expect(
+      JSON.parse(await readFile(join(dir, ".topik", "course-navigation.json"), "utf8")),
+    ).toEqual({
+      descriptor: "topik-course-navigation-v1",
+      courses: {
+        learning: {
+          modules: [
+            {
+              name: "later",
+              declarationIndex: 0,
+              pages: [
+                { name: "b", declarationIndex: 0 },
+                { name: "a", declarationIndex: 1 },
+              ],
+            },
+            { name: "earlier", declarationIndex: 1, pages: [] },
+          ],
+        },
+      },
+    });
+  });
+
+  test("writes no Course navigation for a project without Courses", async () => {
+    await (compile as CompileCommand).handler?.({
+      dir,
+      format: "json",
+      dryRun: false,
+      validate: false,
+      links: "error",
+    });
+    await expect(readFile(join(dir, ".topik", "course-navigation.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
   test("never exposes absolute Guide or WikiPage paths in CLI compile failures", async () => {
     await writeFile(join(dir, "intro.md"), "<http://example.com/guide.pdf>\n");
     await writeFile(join(dir, "wiki.yaml"), "id: wiki\ntitle: Wiki\nnavigation:\n  - unsafe\n");

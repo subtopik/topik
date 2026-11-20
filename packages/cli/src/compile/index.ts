@@ -71,7 +71,20 @@ export const compile = command({
         throw new PublicCliError("compilation-failed", { cause: error });
       },
     );
-    const { diagnostics, materialization, payloads, resources, semantic } = result;
+    const { courseNavigation, diagnostics, materialization, payloads, resources, semantic } =
+      result;
+    // Courses can give modules and pages equal `order`; declaration order breaks those ties, and
+    // the resources do not carry it, so it is written beside them.
+    const navigationFile =
+      Object.keys(courseNavigation).length > 0
+        ? {
+            path: "course-navigation.json",
+            bytes: serializeTopikJson({
+              descriptor: "topik-course-navigation-v1",
+              courses: courseNavigation,
+            }),
+          }
+        : undefined;
     printDiagnostics(diagnostics);
 
     if (options.validate) {
@@ -88,6 +101,7 @@ export const compile = command({
       const paths = [
         ...resources.map((resource) => `resources/${resource.type}/${resource.name}.json`),
         ...payloads.map((payload) => payload.path),
+        ...(navigationFile ? [navigationFile.path] : []),
         "materialization.json",
         "semantic.json",
       ].sort((left, right) => Buffer.compare(Buffer.from(left), Buffer.from(right)));
@@ -110,6 +124,7 @@ export const compile = command({
       ...payloads.map((payload) => ({ path: payload.path, bytes: payload.bytes })),
       { path: "materialization.json", bytes: serializeTopikJson(materialization) },
       { path: "semantic.json", bytes: serializeTopikJson(semantic) },
+      ...(navigationFile ? [navigationFile] : []),
     );
     await replaceCompilationTree(outDir, files, fileSafety, dir);
 

@@ -13,9 +13,9 @@ export * from "./asset-reference-policy.js";
 
 export interface TopikAssetReferenceSlot {
   node: "image" | "tag" | "link";
-  tag?: "figure";
-  attribute: "src" | "darkSrc" | "href";
-  slot: "image.src" | "figure.src" | "figure.darkSrc" | "link.href";
+  tag?: "figure" | "video";
+  attribute: "src" | "darkSrc" | "poster" | "href";
+  slot: "image.src" | "figure.src" | "figure.darkSrc" | "video.src" | "video.poster" | "link.href";
   role: TopikAssetReferenceRole;
   conditional?: "proven-download";
 }
@@ -40,6 +40,8 @@ export const topikAssetReferenceSlots = Object.freeze([
     slot: "figure.darkSrc",
     role: "image-dark",
   },
+  { node: "tag", tag: "video", attribute: "src", slot: "video.src", role: "video" },
+  { node: "tag", tag: "video", attribute: "poster", slot: "video.poster", role: "image" },
   {
     node: "link",
     attribute: "href",
@@ -63,6 +65,8 @@ export interface TopikAssetOccurrenceSemantics {
   altTemplate?: TextTemplate;
   decorative?: boolean;
   title?: string;
+  /** Authored video title, detached from source nodes and never resolved by asset operations. */
+  titleTemplate?: TextTemplate;
   caption?: string;
   captionTemplate?: TextTemplate;
   lightDarkRole?: "light" | "dark";
@@ -152,16 +156,21 @@ export function locateDocumentAssetOccurrences(
     const definition = isReference(node) ? index.resolve(node) : undefined;
     const image = node.type === "image" || node.type === "imageReference";
     const link = node.type === "link" || node.type === "linkReference";
-    const figure = node.type === "topikComponent" && node.name === "figure";
-    if (!image && !link && !figure) continue;
+    // Component slots read authored attributes; Markdown images and links read destinations.
+    const tag =
+      node.type === "topikComponent" && (node.name === "figure" || node.name === "video")
+        ? node.name
+        : undefined;
+    if (!image && !link && !tag) continue;
 
     for (const slot of topikAssetReferenceSlots) {
-      if (slot.node === "image" ? !image : slot.node === "link" ? !link : !figure) continue;
+      if (slot.node === "image" ? !image : slot.node === "link" ? !link : slot.tag !== tag)
+        continue;
       const resource = definition ?? node;
-      const parsedReference = figure ? node.props?.[slot.attribute] : resource.url;
+      const parsedReference = tag ? node.props?.[slot.attribute] : resource.url;
       if (typeof parsedReference !== "string") continue;
       const reference =
-        figure || referenceFromSource === undefined
+        tag || referenceFromSource === undefined
           ? parsedReference
           : referenceFromSource(resource as Node & { url: string });
       const kind = classify(reference, parsedReference);
@@ -175,9 +184,9 @@ export function locateDocumentAssetOccurrences(
         if (!validation.valid || validation.kind !== "local" || !proven.has(validation.decodedPath))
           continue;
       }
-      const alt = figure ? node.props?.alt : node.alt;
-      const title = resource.title;
-      const caption = figure ? node.props?.caption : undefined;
+      const alt = tag === "figure" ? node.props?.alt : tag ? undefined : node.alt;
+      const title = tag === "video" ? node.props?.title : tag ? undefined : resource.title;
+      const caption = tag ? node.props?.caption : undefined;
       const occurrence: TopikAssetOccurrence = {
         position: `${path.map((index) => `/children/${index}`).join("")}/attributes/${slot.attribute}`,
         treePath: path,
@@ -190,6 +199,7 @@ export function locateDocumentAssetOccurrences(
           ...(typeof alt === "string" ? { alt, decorative: alt.length === 0 } : {}),
           ...(alt && typeof alt === "object" ? { altTemplate: structuredClone(alt) } : {}),
           ...(typeof title === "string" ? { title } : {}),
+          ...(title && typeof title === "object" ? { titleTemplate: structuredClone(title) } : {}),
           ...(typeof caption === "string" ? { caption } : {}),
           ...(caption && typeof caption === "object"
             ? { captionTemplate: structuredClone(caption) }
@@ -203,7 +213,7 @@ export function locateDocumentAssetOccurrences(
         occurrence,
         node,
         replace(value) {
-          if (figure) {
+          if (tag) {
             node.props![slot.attribute] = value;
             return;
           }
@@ -258,6 +268,38 @@ export function rewriteDocumentAssetOccurrences(
   }
 }
 
+/**
+ * A removed component's text attributes as inline content, one per line. Templates become text
+ * and variable nodes, so evaluation still fills them in; the removed destination is not kept.
+ */
+function describedText(values: readonly unknown[], position: Node["position"]): TreeNode[] {
+  const lines = values.map((value): TreeNode[] => {
+    if (typeof value === "string") return value ? [{ type: "text", value, position }] : [];
+    if (!value || typeof value !== "object" || (value as TextTemplate).type !== "topikTextTemplate")
+      return [];
+    return (value as TextTemplate).segments.flatMap((segment): TreeNode[] =>
+      segment.type === "variable"
+        ? [{ type: "topikVariable", path: [...segment.path], position } as TreeNode]
+        : segment.value
+          ? [{ type: "text", value: segment.value, position }]
+          : [],
+    );
+  });
+  return lines
+    .filter((line) => line.length > 0)
+    .flatMap((line, index) =>
+      index === 0 ? line : [{ type: "text", value: "\n", position }, ...line],
+    )
+    .reduce<TreeNode[]>((merged, node) => {
+      // Adjacent text joins into one node, as the parser would produce.
+      const previous = merged.at(-1);
+      if (previous?.type === "text" && node.type === "text")
+        merged[merged.length - 1] = { ...previous, value: `${previous.value}${node.value}` };
+      else merged.push(node);
+      return merged;
+    }, []);
+}
+
 /** Remove unsafe destinations from a preview tree, retaining readable descriptions. */
 export function removeInvalidTopikAssetReferences(
   document: ContentDocument,
@@ -275,7 +317,9 @@ export function removeInvalidTopikAssetReferences(
       (requiresAssetValidation(occurrence) &&
         (occurrence.kind === "unsafe" || occurrence.kind === "reserved-asset"));
     if (!invalid) continue;
+    // Optional alternates drop alone; the component stays with its primary source.
     if (occurrence.slot === "figure.darkSrc") delete node.props!.darkSrc;
+    else if (occurrence.slot === "video.poster") delete node.props!.poster;
     else removed.add(node);
   }
   if (removed.size === 0) return;
@@ -291,15 +335,15 @@ export function removeInvalidTopikAssetReferences(
     }
     if (removed.has(node)) {
       if (node.type === "link" || node.type === "linkReference") return node.children ?? [];
-      const figure = node.type === "topikComponent";
-      const value = figure
-        ? [node.props?.alt, node.props?.caption]
-            .filter((part): part is string => typeof part === "string" && part.length > 0)
-            .join("\n")
-        : ((node as ResourceNode).alt ?? "");
-      if (!value) return [];
-      const text: TreeNode = { type: "text", value, position: node.position };
-      return figure ? [{ type: "paragraph", children: [text], position: node.position }] : [text];
+      if (node.type === "topikComponent") {
+        const children = describedText(
+          [node.name === "video" ? node.props?.title : node.props?.alt, node.props?.caption],
+          node.position,
+        );
+        return children.length ? [{ type: "paragraph", children, position: node.position }] : [];
+      }
+      const value = (node as ResourceNode).alt ?? "";
+      return value ? [{ type: "text", value, position: node.position }] : [];
     }
     // Removing decorative images can empty a paragraph, mark, or paired inline
     // component. Keep block containers and self-closing inline components intact.

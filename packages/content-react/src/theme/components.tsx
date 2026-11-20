@@ -27,6 +27,9 @@ import type {
 import { useTopikLinkHandler, useTopikLinkRenderer, useTopikLinkResolver } from "../core/context";
 import { CodeBlockView } from "./code-block";
 import { TopikTablist } from "./tablist";
+import { TopikVideo } from "./video";
+
+export { TopikVideo };
 import type { CodePresentationEffectiveOptions } from "@topik/content";
 
 interface TopikRoleProps {
@@ -247,6 +250,10 @@ export function TopikCodeBlock({
 
 export function TopikInlineCode({ children, content }: TopikComponentProps) {
   return <code>{stringAttribute(content) ?? children}</code>;
+}
+
+export function TopikKbd({ children }: TopikComponentProps) {
+  return <kbd className="topik-kbd">{children}</kbd>;
 }
 
 export function TopikUnderline({ children }: TopikComponentProps) {
@@ -606,6 +613,7 @@ export const defaultTopikComponents = {
   TopikFigure,
   TopikImage,
   TopikInlineCode,
+  TopikKbd,
   TopikLink,
   TopikMath,
   TopikMathInline,
@@ -621,6 +629,7 @@ export const defaultTopikComponents = {
   TopikTableHeader,
   TopikTableRow,
   TopikUnderline,
+  TopikVideo,
 } satisfies TopikComponentMap;
 
 /** @internal Rendering options that themed slots read at render time, not at map creation. */

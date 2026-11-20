@@ -218,8 +218,9 @@ test("same-page card fragments are checked like same-page link fragments", async
   });
   const warned = await compileCourse({ dir, validation: { links: "warning" } });
   expect(warned.diagnostics.map(({ id, lines }) => [id, lines])).toEqual([
-    ["link-fragment-not-found", [9]],
-    ["link-fragment-positional", [11]],
+    // Lines count from the top of the file, including the nine frontmatter lines.
+    ["link-fragment-not-found", [18]],
+    ["link-fragment-positional", [20]],
   ]);
 });
 

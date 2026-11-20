@@ -310,13 +310,13 @@ test("warns when a link targets a generated ID that depends on heading position"
       id: "link-fragment-positional",
       level: "warning",
       file: "intro.md",
-      lines: [3],
+      lines: [8],
     }),
     expect.objectContaining({
       id: "link-fragment-positional",
       level: "warning",
       file: "intro.md",
-      lines: [7],
+      lines: [12],
     }),
   ]);
   expect(result.references.map(({ status }) => status)).toEqual(["verified", "verified"]);
@@ -345,8 +345,8 @@ test("links can target accordions, with the same checks as headings", async () =
   });
   const result = await compileGuides({ dir, validation: { links: "warning" } });
   expect(result.diagnostics.map(({ id, lines }) => [id, lines])).toEqual([
-    ["link-fragment-positional", [7]],
-    ["link-fragment-not-found", [9]],
+    ["link-fragment-positional", [12]],
+    ["link-fragment-not-found", [14]],
   ]);
   expect(result.references.map(({ status }) => status)).toEqual([
     "verified",

@@ -251,6 +251,7 @@ test.each([undefined, 1] as const)(
         expect(parsed).toEqual({
           frontmatter: metadata.startsWith("title:") ? { title: "Original" } : {},
           content: `Body${eol}`,
+          bodyLineOffset: metadata ? 3 : 2,
         });
         const sections = sourceMarkdownSections(encodeSource(raw));
         expect(sections.body).toBe(parsed.content);

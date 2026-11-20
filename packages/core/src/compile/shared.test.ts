@@ -62,6 +62,7 @@ describe("parseMarkdownFrontmatter", () => {
     expect(parseMarkdownFrontmatter("---\ntitle: Hello\n---\n\n# Heading", "guide.md")).toEqual({
       frontmatter: { title: "Hello" },
       content: "\n# Heading",
+      bodyLineOffset: 3,
     });
   });
 

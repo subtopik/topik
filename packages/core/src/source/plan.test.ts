@@ -670,7 +670,8 @@ test("a removed heading reports the unchanged referring page and link diagnostic
     }),
   ).toMatchObject({
     ok: false,
-    diagnostics: [{ code: "link-fragment-not-found", path: "a.md", lines: [3] }],
+    // Lines count from the top of the file, after a.md's three frontmatter lines.
+    diagnostics: [{ code: "link-fragment-not-found", path: "a.md", lines: [6] }],
   });
 });
 

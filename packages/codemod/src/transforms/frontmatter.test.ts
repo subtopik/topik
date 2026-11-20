@@ -4,11 +4,8 @@ import { frontmatterEnd } from "./frontmatter";
 
 function expectCanonicalEnd(source: string, expected: number): void {
   const first = parseTopikContent(source).children[0];
-  // Micromark strips one leading BOM before assigning source offsets.
-  const canonicalEnd =
-    first?.type === "yaml"
-      ? first.position!.end.offset! + (source.startsWith("\uFEFF") ? 1 : 0)
-      : 0;
+  // Offsets count a leading BOM, so they index the source as written.
+  const canonicalEnd = first?.type === "yaml" ? first.position!.end.offset! : 0;
   expect(canonicalEnd).toBe(expected);
   expect(frontmatterEnd(source)).toBe(canonicalEnd);
 }

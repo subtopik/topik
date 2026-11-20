@@ -2,8 +2,8 @@ import type { TreeNode } from "./model.js";
 
 /**
  * Normalize source syntax, leaving entity-decoded characters and original locations distinct. The
- * parser skips one leading byte order mark when it counts offsets, so the mark is removed here and
- * restored offsets count it, like every CRLF.
+ * parser skips one leading byte order mark when it counts offsets, so restored offsets count it,
+ * like every CRLF. The mark stays in the source: the parser skips only one.
  */
 export function normalizeLineEndings(source: string): {
   source: string;
@@ -11,12 +11,13 @@ export function normalizeLineEndings(source: string): {
 } {
   const crlfOffsets: number[] = [];
   const bom = source.charCodeAt(0) === 0xfeff ? 1 : 0;
-  const normalized = source.slice(bom).replace(/\r\n?/g, (ending, offset: number) => {
+  const normalized = source.replace(/\r\n?/g, (ending, offset: number) => {
     if (ending.length === 2) crlfOffsets.push(offset - crlfOffsets.length);
     return "\n";
   });
 
-  function originalOffset(offset: number): number {
+  function originalOffset(parsed: number): number {
+    const offset = parsed + bom;
     let low = 0;
     let high = crlfOffsets.length;
     while (low < high) {
@@ -24,7 +25,7 @@ export function normalizeLineEndings(source: string): {
       if (crlfOffsets[middle] < offset) low = middle + 1;
       else high = middle;
     }
-    return offset + low + bom;
+    return offset + low;
   }
 
   function restorePositions(node: TreeNode): void {

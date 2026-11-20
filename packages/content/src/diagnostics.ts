@@ -105,9 +105,12 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "topik-choice-children": "A choice may contain only block content.",
   "topik-code-group-children": "A code group contains an unsupported child.",
   "topik-code-group-requires-code-tab": "A code group requires at least one code tab.",
-  "topik-code-group-parent-required": "A code tab must be nested inside a code group.",
-  "topik-tabs-parent-required": "A tab must be nested inside tabs.",
-  "topik-steps-parent-required": "A step must be nested inside steps.",
+  "topik-code-group-parent-required":
+    "A component must be nested inside its required parent, such as a code tab inside a code group.",
+  "topik-tabs-parent-required":
+    "A component must be nested inside its required parent, such as a tab inside tabs.",
+  "topik-steps-parent-required":
+    "A component must be nested inside its required parent, such as a step inside steps.",
   "topik-code-tab-children": "A code tab may contain only fenced code blocks.",
   "topik-code-tab-requires-fence": "A code tab requires a fenced code block.",
   // Custom components can declare a numeric `count` too, so the wording names no component.
@@ -141,7 +144,8 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "topik-question-children": "A question contains an unsupported child.",
   "topik-question-correct-choice-required":
     "A multiple-choice question requires at least one correct choice.",
-  "topik-question-parent-required": "Choices and explanations must be nested inside a question.",
+  "topik-question-parent-required":
+    "A component must be nested inside its required parent, such as a choice inside a question.",
   "topik-question-single-correct-choice":
     "A single-choice question requires exactly one correct choice.",
   "topik-partial-cycle": "Partial references must not be cyclic.",
@@ -199,7 +203,8 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "topik-columns-requires-card": "Columns require at least one card or column.",
   "topik-columns-parent-required":
     "A component must be nested inside its required parent, such as a column inside columns.",
-  "topik-quiz-parent-required": "A question must be nested inside a quiz.",
+  "topik-quiz-parent-required":
+    "A component must be nested inside its required parent, such as a question inside a quiz.",
   "topik-kbd-children": "A keyboard key requires inline content, such as the key name.",
   "topik-underline-children": "Underline requires inline content.",
   "topik-u-children": "Underline requires inline content.",

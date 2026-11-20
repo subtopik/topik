@@ -255,6 +255,28 @@ describe("custom component diagnostics", () => {
     }
   });
 
+  test("a component that requires a built-in parent gets a message that fits any child", () => {
+    for (const parent of ["tabs", "steps", "codeGroup", "quiz", "question", "columns"]) {
+      const result = validateTopikContent("{% note /%}", {
+        config: {
+          components: {
+            note: {
+              kind: "block",
+              render: "Note",
+              attributes: {},
+              children: "none",
+              allowedParents: [parent],
+            },
+          },
+        },
+      });
+      const id = `topik-${parent.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}-parent-required`;
+      expect(result.errors.find((item) => item.id === id)?.message).toMatch(
+        /^A component must be nested inside its required parent, such as /,
+      );
+    }
+  });
+
   test("unknown IDs still use the generic fixed message", () => {
     expect(
       sanitizeTopikContentDiagnostic({

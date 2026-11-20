@@ -83,7 +83,8 @@ describe("catalog validation", () => {
         },
         {
           id: "topik-question-parent-required",
-          message: "Choices and explanations must be nested inside a question.",
+          message:
+            "A component must be nested inside its required parent, such as a choice inside a question.",
           lines: [7],
           file: "lesson.md",
         },

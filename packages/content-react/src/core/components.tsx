@@ -14,6 +14,9 @@ export const topikComponentNames = [
   "TopikChoice",
   "TopikExplanation",
   "TopikFigure",
+  "TopikFootnote",
+  "TopikFootnoteReference",
+  "TopikFootnotes",
   "TopikImage",
   "TopikInlineCode",
   "TopikKbd",
@@ -70,6 +73,64 @@ function MissingTopikComponent({ children }: TopikComponentProps) {
   return <>{children}</>;
 }
 
+/** @internal Shared by the plain and themed footnotes: numbers and anchors come from the tree. */
+export function footnoteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
+}
+
+/** @internal Only generated `fn:` and `fnref:` anchors become same-page links. */
+export function footnoteAnchor(value: unknown): string | undefined {
+  return typeof value === "string" && /^fn(?:ref)?:\d+(?::\d+)?$/u.test(value) ? value : undefined;
+}
+
+/** @internal Back-links from a footnote to each of its references. */
+export function footnoteBackrefs(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.map(footnoteAnchor).filter((anchor): anchor is string => anchor !== undefined)
+    : [];
+}
+
+/** Footnotes stay readable without a theme: a superscript link and an ordered list. */
+function PlainTopikFootnoteReference({ id, number, target }: TopikComponentProps) {
+  const value = footnoteNumber(number);
+  const anchor = footnoteAnchor(target);
+  if (value === undefined) return null;
+  return (
+    <sup>
+      <a aria-label={`Footnote ${value}`} href={anchor && `#${anchor}`} id={footnoteAnchor(id)}>
+        {value}
+      </a>
+    </sup>
+  );
+}
+
+function PlainTopikFootnotes({ children }: TopikComponentProps) {
+  return (
+    <section aria-label="Footnotes">
+      <ol>{children}</ol>
+    </section>
+  );
+}
+
+function PlainTopikFootnote({ backrefs, children, id, number }: TopikComponentProps) {
+  const value = footnoteNumber(number);
+  const links = footnoteBackrefs(backrefs);
+  return (
+    <li id={footnoteAnchor(id)}>
+      {children}
+      {links.map((anchor, index) => (
+        <a
+          key={anchor}
+          aria-label={`Back to reference ${value ?? ""}${links.length > 1 ? `, ${index + 1}` : ""}`}
+          href={`#${anchor}`}
+        >
+          ↩
+        </a>
+      ))}
+    </li>
+  );
+}
+
 /** Without a themed component, a video stays readable: its poster and title link to the source. */
 function PlainTopikVideo({ caption, crossOrigin, poster, src, title }: TopikComponentProps) {
   // A CORS-only source, such as a local preview stream, cannot open by navigation.
@@ -111,6 +172,9 @@ const fallbackTopikComponents = {
   TopikChoice: MissingTopikComponent,
   TopikExplanation: MissingTopikComponent,
   TopikFigure: MissingTopikComponent,
+  TopikFootnote: PlainTopikFootnote,
+  TopikFootnoteReference: PlainTopikFootnoteReference,
+  TopikFootnotes: PlainTopikFootnotes,
   TopikImage: MissingTopikComponent,
   TopikInlineCode: MissingTopikComponent,
   TopikKbd: PlainTopikKbd,
@@ -160,6 +224,10 @@ export function getTopikComponents(overrides: TopikComponentOverrides = {}): Top
     TopikChoice: overrides.TopikChoice ?? fallbackTopikComponents.TopikChoice,
     TopikExplanation: overrides.TopikExplanation ?? fallbackTopikComponents.TopikExplanation,
     TopikFigure: overrides.TopikFigure ?? fallbackTopikComponents.TopikFigure,
+    TopikFootnote: overrides.TopikFootnote ?? fallbackTopikComponents.TopikFootnote,
+    TopikFootnoteReference:
+      overrides.TopikFootnoteReference ?? fallbackTopikComponents.TopikFootnoteReference,
+    TopikFootnotes: overrides.TopikFootnotes ?? fallbackTopikComponents.TopikFootnotes,
     TopikImage: overrides.TopikImage ?? fallbackTopikComponents.TopikImage,
     TopikInlineCode: overrides.TopikInlineCode ?? fallbackTopikComponents.TopikInlineCode,
     TopikKbd: overrides.TopikKbd ?? fallbackTopikComponents.TopikKbd,

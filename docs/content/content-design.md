@@ -37,10 +37,11 @@ A component is written as a tag between `{%` and `%}`:
 
 Topik supports headings, paragraphs, emphasis, strong and strikethrough marks,
 inline and fenced code, lists and task lists, blockquotes, hard breaks, links,
-images, reference definitions, and tables with alignment. Leading YAML
-frontmatter is preserved when formatting and omitted from rendered content.
+images, reference definitions, [footnotes](#footnotes), and tables with
+alignment. Leading YAML frontmatter is preserved when formatting and omitted from
+rendered content.
 
-Raw HTML, footnotes, and executable MDX are unsupported. Topik uses Markdoc-style
+Raw HTML and executable MDX are unsupported. Topik uses Markdoc-style
 tag delimiters but does not implement the full Markdoc language. Topik refuses
 unsupported content with a diagnostic; it never flattens it silently.
 
@@ -64,6 +65,54 @@ about links to a generated ID whose title other headings share, including the
 first one, `details` (`link-fragment-positional`). Titles that differ only in
 punctuation can count as shared too: `C++` and `C#` both slug to `c`, so they
 get `c` and `c-1`. Give such a heading an explicit ID and link to that instead.
+
+### Footnotes
+
+```markdown
+Topik validates content[^validation] before it compiles it.[^1]
+
+[^1]: Compilation also resolves assets.
+
+[^validation]: Validation checks every conditional branch.
+
+    A footnote can hold several paragraphs, lists and code.
+```
+
+A reference `[^label]` links to the definition `[^label]: …` with the same
+label, ignoring letter case. Renderers number footnotes in order of first
+reference and list them at the end of the content, so the label is only a name:
+`[^validation]` above is shown as 1 and `[^1]` as 2.
+
+- **Definitions** belong at the top level of the document. They can be written
+  anywhere there, such as after the paragraph that cites them. Formatting and
+  editors write every definition at the end, in order of first reference; the
+  position is spelling, not meaning.
+- **Labels** are one word and unique in the document, across all conditional
+  branches. Formatting keeps their authored spelling. A reference in a table
+  cell writes a `|` in its label as `\|`, like any pipe in a cell; a tree built
+  in code that puts a bare `|` there reports `topik-reference-label`.
+- **References** work wherever inline content does, including headings, lists,
+  table cells and inline components, but not inside links, inside a footnote, or
+  inside a quiz explanation, which appears only after the reader answers.
+- **Content** is block content without headings, link definitions or
+  conditionals: a note is part of the page it annotates, so headings stay in the
+  outline and link labels resolve the same wherever the note is written. To show
+  a note only to some readers, make its reference conditional.
+- A reference in a hidden conditional branch is not shown, and a footnote whose
+  references are all hidden is left out of the evaluated content without its
+  body being evaluated. A footnote whose body evaluates to nothing is left out
+  with its references. References inside a component that does not render are
+  not numbered.
+- Footnotes link with the anchors `fn:N` and `fnref:N`, so explicit heading IDs
+  cannot start with `fn:` or `fnref:` (`topik-heading-id-reserved`).
+
+Topik refuses a definition inside a quote, list, component or conditional
+branch (`topik-footnote-placement`), a label defined twice
+(`topik-footnote-duplicate`), a definition that nothing references
+(`topik-footnote-unreferenced`), a reference inside a footnote
+(`topik-footnote-nested`) and a heading, link definition or conditional inside a
+footnote (`topik-footnote-content`). Without a definition, Markdown keeps `[^label]` as
+text; a tree built in code reports `topik-footnote-missing`.
 
 ### Links, tables and inline marks
 
@@ -280,21 +329,25 @@ one-based `lines` and `column` when the source location is known. The column is
 where the reported node starts on its line. Messages never repeat authored text.
 Common source problems include:
 
-| ID                                                | Problem                                                       |
-| ------------------------------------------------- | ------------------------------------------------------------- |
-| `missing-closing`, `missing-opening`              | A tag has no matching closing tag, or a closing tag no opener |
-| `tag-unterminated`, `tag-name-invalid`            | A tag lacks `%}`, or has no valid lowercase name              |
-| `attribute-syntax-invalid`, `duplicate-attribute` | Malformed attribute syntax, or an attribute set twice         |
-| `tag-closing-invalid`, `tag-placement-invalid`    | Attributes on a closing tag; block or inline tag misplaced    |
-| `tag-undefined`                                   | An unknown component                                          |
-| `topik-else-placement`, `topik-else-syntax`       | An `else` outside `if`, repeated, or not `{% else /%}`        |
-| `topik-expression-invalid`                        | An unsupported condition expression                           |
-| `node-undefined`                                  | Unsupported Markdown such as raw HTML, comments, or footnotes |
-| `topik-heading-id-placement`                      | A `{% #id %}` that does not end its heading                   |
-| `topik-variable-missing`, `topik-variable-type`   | A missing or incompatible variable during compilation         |
+| ID                                                     | Problem                                                           |
+| ------------------------------------------------------ | ----------------------------------------------------------------- |
+| `missing-closing`, `missing-opening`                   | A tag has no matching closing tag, or a closing tag no opener     |
+| `tag-unterminated`, `tag-name-invalid`                 | A tag lacks `%}`, or has no valid lowercase name                  |
+| `attribute-syntax-invalid`, `duplicate-attribute`      | Malformed attribute syntax, or an attribute set twice             |
+| `tag-closing-invalid`, `tag-placement-invalid`         | Attributes on a closing tag; block or inline tag misplaced        |
+| `tag-undefined`                                        | An unknown component                                              |
+| `topik-else-placement`, `topik-else-syntax`            | An `else` outside `if`, repeated, or not `{% else /%}`            |
+| `topik-expression-invalid`                             | An unsupported condition expression                               |
+| `node-undefined`                                       | Unsupported Markdown such as raw HTML or comments                 |
+| `topik-footnote-placement`, `topik-footnote-duplicate` | A misplaced footnote definition or reference, or a repeated label |
+| `topik-footnote-unreferenced`, `topik-footnote-nested` | A definition nothing references, or a reference inside a footnote |
+| `topik-footnote-content`                               | A heading, link definition or conditional inside a footnote       |
+| `topik-heading-id-placement`                           | A `{% #id %}` that does not end its heading                       |
+| `topik-heading-id-reserved`                            | A `{% #id %}` starting with `fn:` or `fnref:`                     |
+| `topik-variable-missing`, `topik-variable-type`        | A missing or incompatible variable during compilation             |
 
 `node-undefined` diagnostics set `type` to the Markdown node type, such as
-`html` or `footnoteDefinition`. Variable diagnostics set `variable` to the
+`html`. Variable diagnostics set `variable` to the
 bounded authored path. Component and attribute diagnostics set `tag` to the
 component name and `attribute` to the attribute name; `attribute-undefined`,
 `attribute-type-invalid` and `attribute-value-invalid` also set `expected` to
@@ -306,8 +359,8 @@ Diagnostics never include an authored attribute value.
 Formatting changes how a document is spelled, never what it means.
 
 It can change wrapping, indentation, list markers,
-[inline mark nesting](#inline-mark-nesting), and other equivalent Markdown
-spelling. LF, CRLF, and CR inputs are accepted; the output uses LF.
+[inline mark nesting](#inline-mark-nesting), the position of
+[footnote definitions](#footnotes), and other equivalent Markdown spelling. LF, CRLF, and CR inputs are accepted; the output uses LF.
 
 It preserves text, marks, structure, properties, code and formula payloads,
 destinations, reference bindings, and every conditional branch.

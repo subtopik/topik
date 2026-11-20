@@ -56,6 +56,16 @@ npm install @topik/content-react
   },
 };
 
+export const Footnotes: Story = {
+  args: {
+    content: `Topik validates content[^v] before it compiles it.[^c] It checks every branch, again[^v].
+
+[^v]: Validation runs before rendering.
+
+[^c]: Compilation also resolves **assets**.`,
+  },
+};
+
 export const Accordion: Story = {
   args: {
     content: `{% accordion title="Details" open=true %}

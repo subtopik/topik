@@ -78,7 +78,7 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "heading-id-duplicate": "Explicit heading IDs must be unique within a document.",
   "missing-closing": "A tag has no matching closing tag.",
   "missing-opening": "A closing tag has no matching opening tag.",
-  "node-undefined": "This Markdown construct is not supported, such as raw HTML or footnotes.",
+  "node-undefined": "This Markdown construct is not supported, such as raw HTML.",
   "no-inline-annotations": "Inline annotations are not supported in this location.",
   "parameter-missing-required": "A required function parameter is missing.",
   "parameter-type-invalid": "A function parameter has an invalid type.",
@@ -118,6 +118,18 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "topik-write-failed": "Content could not be written without changing its meaning.",
   "topik-extension-failed": "Content extension validation failed.",
   "topik-explanation-children": "An explanation may contain only block content.",
+  "topik-footnote-placement":
+    "Write footnote definitions at the top level of the document, and footnote references outside links and quiz explanations.",
+  "topik-footnote-duplicate":
+    "A footnote label is defined more than once; give each footnote its own label.",
+  "topik-footnote-missing": "A footnote reference has no definition with the same label.",
+  "topik-footnote-unreferenced":
+    "A footnote definition is never referenced; reference it or remove it.",
+  "topik-footnote-nested": "A footnote definition cannot contain footnote references.",
+  "topik-footnote-content":
+    "A footnote definition cannot contain headings, link definitions or conditionals; make the reference conditional instead.",
+  "topik-heading-id-reserved":
+    "Explicit heading IDs cannot start with fn: or fnref:, which footnote anchors use.",
   "topik-figure-children": "A figure cannot contain children; use its alt and caption attributes.",
   "topik-math-children": "Block math cannot contain children; use its content attribute.",
   "topik-math-inline-children": "Inline math cannot contain children; use its content attribute.",

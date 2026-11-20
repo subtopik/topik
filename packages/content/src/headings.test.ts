@@ -41,6 +41,19 @@ describe("assignTopikHeadingIds", () => {
     ).toEqual(["setup*", "own", "c*", "c-1*", "setup-1*", "unique"]);
   });
 
+  test.each([
+    ["## Step 1\n\n## Step\n\n## Step", ["step-1*", "step*", "step-2*"]],
+    ["## Setup\n\n## Setup\n\n## Setup 1", ["setup*", "setup-1*", "setup-1-1*"]],
+    ["## A\n\n## A\n\n## A 1\n\n## A 1 1", ["a*", "a-1*", "a-1-1*", "a-1-1-1*"]],
+    ["## Step\n\n## Step 1", ["step", "step-1"]],
+  ])("marks a numbered title that a repeated title's numbering can reach: %j", (source, ids) => {
+    expect(
+      assignTopikHeadingIds(parseTopikContent(source)).map(({ id, positional }) =>
+        positional ? `${id}*` : id,
+      ),
+    ).toEqual(ids);
+  });
+
   test("an explicit ID does not make the generated ID that skips it positional", () => {
     const ast = parseTopikContent("## Setup {% #setup %}\n\n## Setup");
 

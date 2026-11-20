@@ -64,7 +64,9 @@ and links to it still resolve, now to the wrong section. The compiler warns
 about links to a generated ID whose title other headings share, including the
 first one, `details` (`link-fragment-positional`). Titles that differ only in
 punctuation can count as shared too: `C++` and `C#` both slug to `c`, so they
-get `c` and `c-1`. Give such a heading an explicit ID and link to that instead.
+get `c` and `c-1`. A title that ends in a number counts too when that numbering
+can reach it: with two `Step` headings, `Step 1` gets `step-1` or `step-2`
+depending on order. Give such a heading an explicit ID and link to that instead.
 
 ### Accordion anchors
 
@@ -169,6 +171,11 @@ text; a tree built in code reports `topik-footnote-missing`.
 | `badge`, `underline` (alias `u`)            | Inline status text or underlined text.                                    |
 | `kbd`                                       | An inline key, such as `{% kbd %}Ctrl{% /kbd %}+{% kbd %}C{% /kbd %}`.    |
 | `quiz`, `question`, `choice`, `explanation` | Questions, answer choices, and explanations.                              |
+
+A `kbd` holds one key; write a combination as several keys. Two keys need an
+escape: write the backslash key as `{% kbd %}\\{% /kbd %}`, since a single
+backslash escapes the closing tag, and in a table cell write the pipe key as
+`\|`, since a bare `|` ends the cell.
 
 Some components accept only specific children. For example, the direct children
 of `tabs` are `tab` components, not arbitrary blocks:

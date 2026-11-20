@@ -19,14 +19,15 @@ function position(
 
 /**
  * Whether a footnote reference directly before this text starts a line, where `[^1]: text` reads
- * as a definition: the first child of a paragraph, or the first node after a hard break or a
- * line ending, in any inline container.
+ * as a definition: the first child of a paragraph or heading, or the first node after a hard
+ * break or a line ending, in any inline container.
  */
 function followsLineStartFootnote(node: unknown, parent: { type: string } | undefined): boolean {
   const { index, children } = position(node, parent);
   if (index < 1 || (children[index - 1] as { type?: string }).type !== "footnoteReference")
     return false;
-  if (index === 1) return parent?.type === "paragraph";
+  // A heading with a line ending is written in setext form, where its first line starts with it.
+  if (index === 1) return parent?.type === "paragraph" || parent?.type === "heading";
   const before = children[index - 2] as { type?: string; value?: unknown };
   return (
     before.type === "break" ||
@@ -69,9 +70,10 @@ function writeText(
   // Markdown trims whitespace only at the edges of a paragraph, cell or
   // strikethrough. Next to inline siblings such as code, plain spaces and a
   // single line ending survive as written and need no references.
-  const { index, count } = position(node, parent);
+  const { index, count, children } = position(node, parent);
   const literal = (run: string) => /^[ \t]*$/u.test(run) || run === "\n";
-  const hasBefore = index > 0;
+  // A hard break ends its line, so whitespace after it keeps its reference, as before.
+  const hasBefore = index > 0 && (children[index - 1] as { type?: string }).type !== "break";
   const hasAfter = index !== -1 && index < count - 1;
   if (first === characters.length) {
     // Text that is all whitespace touches both sides, so it needs a sibling on each.

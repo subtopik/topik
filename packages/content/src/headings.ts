@@ -41,7 +41,7 @@ function titleText(value: AuthoredAttributeValue | undefined): string {
   return "";
 }
 
-/** The authored ID of a heading or accordion. */
+/** @internal The authored ID of a heading or accordion. */
 export function explicitId(node: TreeNode): unknown {
   return node.type === "heading"
     ? (node as unknown as Heading).data?.topikId

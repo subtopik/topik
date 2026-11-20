@@ -723,7 +723,8 @@
 
   .topik-youtube__play {
     border-block: 0.9rem solid transparent;
-    border-inline-start: 1.5rem solid currentColor;
+    /* A play mark points right in every writing direction. */
+    border-left: 1.5rem solid currentColor;
     height: 0;
     width: 0;
   }
@@ -786,6 +787,51 @@
     line-height: 1;
     padding: 0.25em 0.55em;
     vertical-align: baseline;
+  }
+
+  /* A semantic variant tints the badge from one colour, mixed with the canvas and the text so
+     the label keeps at least 4.5:1 contrast in both schemes. Neutral keeps the accent. */
+  .topik-badge[data-variant="info"] {
+    --topik-badge-color: #0288d1;
+  }
+
+  .topik-badge[data-variant="success"] {
+    --topik-badge-color: #2e7d32;
+  }
+
+  .topik-badge[data-variant="warning"] {
+    --topik-badge-color: #b45309;
+  }
+
+  .topik-badge[data-variant="danger"] {
+    --topik-badge-color: #c62828;
+  }
+
+  .topik-badge:is(
+    [data-variant="info"],
+    [data-variant="success"],
+    [data-variant="warning"],
+    [data-variant="danger"]
+  ) {
+    --topik-badge-ink: 65%;
+    --topik-badge-tint: 14%;
+
+    background: color-mix(
+      in srgb,
+      var(--topik-badge-color) var(--topik-badge-tint),
+      var(--topik-color-canvas)
+    );
+    color: color-mix(
+      in srgb,
+      var(--topik-badge-color) var(--topik-badge-ink),
+      var(--topik-color-text)
+    );
+  }
+
+  .topik-content[data-theme="dark"] .topik-badge,
+  .dark .topik-content:not([data-theme="light"]) .topik-badge {
+    --topik-badge-ink: 45%;
+    --topik-badge-tint: 20%;
   }
 
   .topik-math,
@@ -891,6 +937,13 @@
 
     .topik-content .topik-callout {
       --topik-callout-heading: var(--topik-color-text);
+    }
+
+    .topik-content .topik-badge,
+    .topik-content[data-theme="dark"] .topik-badge,
+    .dark .topik-content:not([data-theme="light"]) .topik-badge {
+      --topik-badge-ink: 65%;
+      --topik-badge-tint: 14%;
     }
 
     .topik-code-block__controls,

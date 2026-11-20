@@ -20,7 +20,7 @@ test("compiler diagnostic transport bounds output and keeps sanitized messages a
   expect(diagnostics).toHaveLength(64);
   expect(diagnostics[0]).toEqual({
     code: "link-fragment-not-found",
-    message: "Link target heading was not found.",
+    message: "Link target heading or accordion was not found.",
     path: "page.md",
     lines: [1, 2, 3, 4, 5, 6, 7, 8],
   });

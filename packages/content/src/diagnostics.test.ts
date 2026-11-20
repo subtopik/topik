@@ -123,6 +123,13 @@ describe("diagnostic file sanitization", () => {
     expect(label).not.toMatch(privateLabelPattern);
   });
 
+  test.each(["wiki/chapter#1/intro.md", "guides/a?b.md", "x#y.md"])(
+    "never names another file for a relative path with URL characters: %s",
+    (file) => {
+      expect(sanitizeTopikDiagnosticFile(file)).toBe("content");
+    },
+  );
+
   test.each(["lesson.md", "guides/lesson.md", String.raw`guides\lesson.md`])(
     "preserves safe relative file label %s",
     (file) => {

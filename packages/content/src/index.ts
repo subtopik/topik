@@ -77,7 +77,7 @@ export {
   type RewriteTopikAssetOccurrencesResult,
   type RewriteTopikAssetOccurrencesSuccess,
 } from "./rewrite";
-export { assignTopikHeadingIds, type TopikHeading } from "./headings";
+export { assignTopikHeadingIds, type TopikAnchor, type TopikHeading } from "./headings";
 export {
   TOPIK_RESOURCE_REFERENCE_VERSION,
   parseTopikResourceReference,
@@ -97,6 +97,7 @@ export {
   validateTopikBrowserHref,
   type AnalyzeTopikContentOptions,
   type AnalyzeTopikContentResult,
+  type TopikAnalyzedAnchor,
   type TopikAnalyzedHeading,
   type TopikContentLink,
   type TopikContentLinkKind,

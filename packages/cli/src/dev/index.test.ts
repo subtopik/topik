@@ -627,7 +627,7 @@ describe("dev command", () => {
     expect(health.status).toBe(200);
   });
 
-  test("prints located compile diagnostics locally but keeps them out of the preview", async () => {
+  test("prints located compile diagnostics and publishes them with root-relative paths", async () => {
     await writeFile(join(dir, "intro.md"), "# Intro\n\n[Missing](#missing)\n");
     const errors: string[] = [];
     vi.spyOn(console, "log").mockImplementation(() => undefined);
@@ -643,18 +643,27 @@ describe("dev command", () => {
       expect.stringMatching(/^intro\.md:3 error [a-z-]+: /u),
     ]);
     const state = await (await fetch(`http://127.0.0.1:${port}/resources`)).json();
-    expect(state).toMatchObject({ status: "error", resources: [] });
-    expect(JSON.stringify(state)).not.toContain("intro.md");
+    expect(state).toMatchObject({
+      status: "error",
+      resources: [],
+      diagnostics: [{ severity: "error", location: { path: "intro.md", line: 3 } }],
+    });
+    expect(JSON.stringify(state)).not.toContain(dir);
   });
 
-  test("applies the --links policy to preview compilations", async () => {
+  test("applies the --links policy to preview compilations and prints their warnings", async () => {
     await writeFile(join(dir, "intro.md"), "# Intro\n\n[Missing](#missing)\n");
     vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const warnings: string[] = [];
+    vi.spyOn(console, "warn").mockImplementation((...values) => {
+      warnings.push(values.map(String).join(" "));
+    });
 
     runningServer = await startDevServer({ dir, port: 0, links: "warning" });
 
     expect(runningServer.watcher.state.status).toBe("ready");
     expect(runningServer.watcher.resources.size).toBe(1);
+    expect(warnings).toContainEqual(expect.stringMatching(/^intro\.md:3 warning [a-z-]+: /u));
   });
 
   test("fails fast when the source directory does not exist", async () => {

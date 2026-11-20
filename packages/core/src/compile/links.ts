@@ -2,7 +2,7 @@ import type {
   AnalyzeTopikContentResult,
   TopikContentDiagnostic,
   TopikContentLink,
-  TopikHeading,
+  TopikAnchor,
   TopikResourceReference,
 } from "@topik/content";
 import {
@@ -43,7 +43,7 @@ import {
 export interface CompileResourceReferenceTarget {
   type: TopikResourceReference["type"];
   name: string;
-  /** Published heading IDs, when known. Without them a fragment remains deferred. */
+  /** Published heading and accordion IDs, when known. Without them a fragment remains deferred. */
   headings?: readonly string[];
 }
 
@@ -218,7 +218,7 @@ export async function compileResourceLinksInSession(
         if (target) {
           status = validateFragment(
             explicit.hash,
-            analyses.get(targetKey)?.headings ?? [],
+            analyses.get(targetKey)?.anchors ?? [],
             link,
             policy,
             diagnostics,
@@ -246,7 +246,7 @@ export async function compileResourceLinksInSession(
       if (link.href.startsWith("#")) {
         // A fragment-only destination names this document, whatever kind of link holds it.
         if (link.href !== "#")
-          validateFragment(link.href.slice(1), analysis.headings, link, policy, diagnostics);
+          validateFragment(link.href.slice(1), analysis.anchors, link, policy, diagnostics);
         continue;
       }
       const path = resolveSourceReferencePath(link.href, sourcePath, directory);
@@ -355,7 +355,7 @@ export async function compileResourceLinksInSession(
         };
         const status = validateFragment(
           reference.hash,
-          analyses.get(resourceKey(target))?.headings ?? [],
+          analyses.get(resourceKey(target))?.anchors ?? [],
           link,
           policy,
           diagnostics,
@@ -422,20 +422,20 @@ export async function compileResourceLinksInSession(
 
 function validateFragment(
   hash: string,
-  headings: readonly Pick<TopikHeading, "id" | "positional">[],
+  anchors: readonly Pick<TopikAnchor, "id" | "positional">[],
   link: TopikContentLink,
   policy: LinkValidationPolicy,
   diagnostics: TopikContentDiagnostic[],
 ): CompiledResourceReference["status"] {
   if (!hash) return "verified";
   const id = decodeFragment(hash);
-  const heading = headings.find((candidate) => candidate.id === id);
-  if (!heading) {
+  const anchor = anchors.find((candidate) => candidate.id === id);
+  if (!anchor) {
     appendLinkDiagnostic("link-fragment-not-found", link, policy, diagnostics);
     return "invalid";
   }
-  // The link works today, but an earlier heading with the same title would take its ID.
-  if (heading.positional && policy !== "off")
+  // The link works today, but an earlier target with the same title would take its ID.
+  if (anchor.positional && policy !== "off")
     diagnostics.push(linkDiagnostic("link-fragment-positional", "warning", link));
   return "verified";
 }

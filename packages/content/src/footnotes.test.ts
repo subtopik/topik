@@ -105,6 +105,11 @@ describe("footnote source", () => {
       "## A {% #fnref:1 %}",
       "topik-heading-id-reserved",
     ],
+    [
+      "an explicit accordion ID like a footnote anchor",
+      '{% accordion title="A" id="fn:1" %}\nBody.\n{% /accordion %}',
+      "topik-heading-id-reserved",
+    ],
   ])("refuses %s", (_name, source, id) => {
     expect(ids(source)).toContain(id);
   });

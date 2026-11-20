@@ -605,7 +605,7 @@ describe("compileGuides", () => {
     expect(warning.diagnostics).toEqual([
       expect.objectContaining({
         id: "link-fragment-not-found",
-        message: "Link target heading was not found.",
+        message: "Link target heading or accordion was not found.",
       }),
     ]);
     expect(JSON.stringify(warning.diagnostics)).not.toContain(sentinel);
@@ -630,7 +630,7 @@ describe("compileGuides", () => {
         expect.objectContaining({
           file: "post.md",
           id: "heading-id-duplicate",
-          message: "Explicit heading IDs must be unique within a document.",
+          message: "Explicit heading and accordion IDs must be unique within a document.",
         }),
       ],
     });

@@ -4,7 +4,7 @@ import {
   allAmbiguousDiagnosticFiles as ambiguousDiagnosticFiles,
   unsafeDiagnosticFiles,
 } from "../../content/src/test-fixtures/diagnostic-files";
-import { formatDiagnostic } from "./diagnostics";
+import { formatDiagnostic, formatPreviewDiagnostic } from "./diagnostics";
 
 describe("CLI diagnostic serialization", () => {
   test("does not print malformed external reference text", () => {
@@ -27,7 +27,7 @@ describe("CLI diagnostic serialization", () => {
     const output = result.errors.map(formatDiagnostic).join("\n");
 
     expect(output).toBe(
-      "intro.md:1 error attribute-value-invalid: An attribute has an invalid value. (tag: callout; attribute: variant; expected: info, tip, warning, danger)",
+      "intro.md:1:1 error attribute-value-invalid: An attribute has an invalid value. (tag: callout; attribute: variant; expected: info, tip, warning, danger)",
     );
     expect(output).not.toContain(sentinel);
   });
@@ -48,6 +48,34 @@ describe("CLI diagnostic serialization", () => {
     );
     expect(output).not.toContain(sentinel);
     expect(output).not.toContain("private-value");
+  });
+
+  test("prints path:line:column when the column is known", () => {
+    expect(
+      formatDiagnostic({
+        id: "link-page-not-found",
+        type: "link",
+        level: "error",
+        message: "",
+        lines: [2],
+        column: 7,
+        file: "intro.md",
+      }),
+    ).toBe("intro.md:2:7 error link-page-not-found: Internal link target page was not found.");
+  });
+
+  test("prints a preview diagnostic like a compile diagnostic", () => {
+    expect(
+      formatPreviewDiagnostic({
+        id: "link-page-not-found",
+        message: "Internal link target page was not found.",
+        severity: "warning",
+        location: { path: "intro.md", line: 2, column: 7 },
+      }),
+    ).toBe("intro.md:2:7 warning link-page-not-found: Internal link target page was not found.");
+    expect(formatPreviewDiagnostic({ id: "compilation-failed", message: "Failed." })).toBe(
+      "content error compilation-failed: Failed.",
+    );
   });
 
   test.each(unsafeDiagnosticFiles)("sanitizes absolute path %s", (file) => {

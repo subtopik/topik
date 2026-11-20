@@ -12,14 +12,14 @@ import type { PhrasingContent } from "mdast";
 import { parse, withoutPositions } from "./test-helpers.js";
 
 test.each([
-  ["*first*_second_", "*firstsecond*\n"],
+  ["*first*_second_", "_firstsecond_\n"],
   ["**first**__second__", "**firstsecond**\n"],
-  ["**_first_**_second_", "***first**second*\n"],
-  ["***_first_** **_second_***", "***first** **second***\n"],
+  ["**_first_**_second_", "_**first**second_\n"],
+  ["***_first_** **_second_***", "_**first** **second**_\n"],
   ["__*first*__middle__*last*__", "***first*middle*last***\n"],
-  ["~~*first*_second_~~", "*~~firstsecond~~*\n"],
-  ["{% badge %}*first*_second_{% /badge %}", "{% badge %}*firstsecond*{% /badge %}\n"],
-  ["| *first*_second_ |\n| --- |", "| *firstsecond* |\n| ------------- |\n"],
+  ["~~*first*_second_~~", "_~~firstsecond~~_\n"],
+  ["{% badge %}*first*_second_{% /badge %}", "{% badge %}_firstsecond_{% /badge %}\n"],
+  ["| *first*_second_ |\n| --- |", "| _firstsecond_ |\n| ------------- |\n"],
 ])("writes adjacent marks as one canonical span: %s", (source, expected) => {
   const document = parse(source);
   const written = writeDocument(document);

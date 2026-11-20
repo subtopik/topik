@@ -20,11 +20,14 @@ const allComponentsContent = `
 Use the helper.
 {% /callout %}
 
-{% cardGrid columns=2 %}
+{% columns count=2 %}
 {% card title="One" href="/one" icon="1" %}
 First card.
 {% /card %}
-{% /cardGrid %}
+{% column %}
+Beside the card.
+{% /column %}
+{% /columns %}
 
 {% accordion title="Details" open=true %}
 Hidden text.
@@ -64,6 +67,8 @@ pnpm install
 Inline math: {% mathInline content="x^2" /%}
 
 Use {% underline %}important text{% /underline %}.
+
+Press {% kbd %}Ctrl{% /kbd %}+{% kbd %}C{% /kbd %}.
 
 \`\`\`mermaid
 graph TD;
@@ -773,7 +778,8 @@ describe("content-react core", () => {
       TopikBadge: ({ children }) => <mark>{children}</mark>,
       TopikCallout: ({ children, title }) => <aside data-callout={String(title)}>{children}</aside>,
       TopikCard: ({ children, title }) => <article data-card={String(title)}>{children}</article>,
-      TopikCardGrid: ({ children }) => <div data-card-grid>{children}</div>,
+      TopikColumn: ({ children }) => <div data-column>{children}</div>,
+      TopikColumns: ({ children, count }) => <div data-columns={String(count)}>{children}</div>,
       TopikCodeBlock: ({ content, language }) => (
         <pre data-code-block={String(language)}>{String(content)}</pre>
       ),
@@ -804,6 +810,7 @@ describe("content-react core", () => {
       TopikTableCell: ({ children }) => <td data-table-cell>{children}</td>,
       TopikTableHeader: ({ children }) => <th data-table-header>{children}</th>,
       TopikTableRow: ({ children }) => <tr data-table-row>{children}</tr>,
+      TopikKbd: ({ children }) => <kbd data-kbd>{children}</kbd>,
       TopikUnderline: ({ children }) => <u data-underline>{children}</u>,
     });
     const html = renderToStaticMarkup(
@@ -811,7 +818,8 @@ describe("content-react core", () => {
     );
 
     expect(html).toContain('data-callout="Remember"');
-    expect(html).toContain("data-card-grid");
+    expect(html).toContain('data-columns="2"');
+    expect(html).toContain('<div data-column="true"><p>Beside the card.</p></div>');
     expect(html).toContain('data-card="One"');
     expect(html).toContain('data-accordion="Details"');
     expect(html).toContain("data-tabs");
@@ -828,6 +836,7 @@ describe("content-react core", () => {
     expect(html).toContain("data-math-inline");
     expect(html).toContain("data-mermaid");
     expect(html).toContain("data-underline");
+    expect(html).toContain('<kbd data-kbd="true">Ctrl</kbd>+<kbd data-kbd="true">C</kbd>');
     expect(html).toContain("data-table");
     expect(html).toContain("data-table-row");
     expect(html).toContain("data-table-cell");
@@ -1307,4 +1316,11 @@ describe("content-react core", () => {
     expect(html).toContain('src="assets/light.png"');
     expect(html).toContain('data-dark-src="assets/dark.png"');
   });
+});
+
+it("a keyboard key keeps its kbd element without a themed component", () => {
+  const html = renderToStaticMarkup(
+    <>{renderTopikMarkdown("Press {% kbd %}Ctrl{% /kbd %}+{% kbd %}C{% /kbd %}.")}</>,
+  );
+  expect(html).toBe("<article><p>Press <kbd>Ctrl</kbd>+<kbd>C</kbd>.</p></article>");
 });

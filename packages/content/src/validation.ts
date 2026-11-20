@@ -1,3 +1,4 @@
+import { footnoteProblems } from "./footnotes.js";
 import type {
   Branch,
   AuthoredAttributeValue,
@@ -241,10 +242,12 @@ function validateChildren(component: Component, registry: Registry): ValidationI
         : constraint.nodes[0] === "code"
           ? "fence"
           : constraint.nodes[0];
+    // The ID names the first kind for stability; the message names every kind that satisfies it.
+    const satisfying = "components" in constraint ? constraint.components.join(" or ") : required;
     errors.push(
       issue(
         `topik-${kebab(name)}-requires-${kebab(required)}`,
-        `${name} requires at least one ${required} child`,
+        `${name} requires at least one ${satisfying} child`,
       ),
     );
   }
@@ -401,6 +404,8 @@ export function validateDocumentWithIndex(
           parent.type === "blockquote" ||
           parent.type === "listItem" ||
           parent.type === "topikBranch" ||
+          // Reported once as topik-footnote-content.
+          parent.type === "footnoteDefinition" ||
           (parent.type === "topikComponent" &&
             registry[(parent as Component).name]?.children === "blocks")
         )
@@ -516,7 +521,21 @@ export function validateDocumentWithIndex(
         if (!label || label.length > 999 || !/^(?:\\[\s\S]|[^[\]\\])+$/u.test(label))
           add("Reference identifier has no faithful Markdown label", node, "topik-reference-label");
       }
+      // A footnote label is one word: whitespace ends the label in Markdown. It is written with
+      // its source spelling, so it follows the same escape rule as other reference labels.
+      if (node.type === "footnoteReference" || node.type === "footnoteDefinition") {
+        const label = referenceSourceLabel(node as unknown as Association);
+        if (
+          !label ||
+          label.length > 999 ||
+          /\s/u.test(label) ||
+          !/^(?:\\[\s\S]|[^[\]\\])+$/u.test(label)
+        )
+          add("Footnote label has no faithful Markdown label", node, "topik-reference-label");
+      }
     }
+    for (const problem of footnoteProblems(document))
+      add(problem.message, problem.node, problem.id);
   }
   return { diagnostics: errors, index };
 }

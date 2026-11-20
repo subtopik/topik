@@ -68,7 +68,7 @@ describe("text template authoring", () => {
   test("admits every supported attribute without changing ordinary strings", () => {
     for (const source of [
       '{% accordion title=t"{% $package.name %}" %}\nBody.\n{% /accordion %}',
-      '{% cardGrid %}\n{% card title=t"{% $package.name %}" %}\nBody.\n{% /card %}\n{% /cardGrid %}',
+      '{% columns %}\n{% card title=t"{% $package.name %}" %}\nBody.\n{% /card %}\n{% /columns %}',
       '{% tabs %}\n{% tab title=t"{% $package.name %}" %}\nBody.\n{% /tab %}\n{% /tabs %}',
       '{% steps %}\n{% step title=t"{% $package.name %}" %}\nBody.\n{% /step %}\n{% /steps %}',
       '{% codeGroup %}\n{% codeTab title=t"{% $package.name %}" %}\n```sh\nx\n```\n{% /codeTab %}\n{% /codeGroup %}',
@@ -82,7 +82,7 @@ describe("text template authoring", () => {
 
   test("rejects template values in literal-only and custom attributes", () => {
     const result = parseDocument(
-      '{% cardGrid %}\n{% card title="Card" href=t"{% $package.name %}" %}\nBody.\n{% /card %}\n{% /cardGrid %}',
+      '{% columns %}\n{% card title="Card" href=t"{% $package.name %}" %}\nBody.\n{% /card %}\n{% /columns %}',
     );
     expect(result.ok).toBe(false);
     if (!result.ok)

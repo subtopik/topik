@@ -144,3 +144,50 @@ describe("block and inline writer boundaries", () => {
       expect(firstList(quoted)).toEqual(firstList(plain));
   });
 });
+
+describe("whitespace next to inline siblings", () => {
+  function formatted(source: string): string {
+    const result = formatTopikContent(source);
+    if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+    return result.formatted;
+  }
+
+  test.each([
+    ["a line ending before inline code", "line one ends\n`code` starts\n"],
+    ["a space before inline code in a table cell", "| A     |\n| ----- |\n| x `y` |\n"],
+    ["spaces around inline code in a strikethrough", "~~a `b` c~~\n"],
+    ["a line ending after inline code", "`code` ends\nthe line\n"],
+    ["a line ending between marks", "*a*\n**b**\n"],
+    ["a lone space between inline code in a table cell", "| A       |\n| ------- |\n| `x` `y` |\n"],
+  ])("writes %s literally", (_name, source) => {
+    expect(formatted(source)).toBe(source);
+    roundtrip(source);
+  });
+
+  test("whitespace at the edge of a cell or strikethrough still needs a reference", () => {
+    // Markdown trims these, so only a character reference keeps them.
+    for (const source of [
+      "| A |\n| - |\n| &#x20;x |\n",
+      "~~&#x20;a~~\n",
+      // A text of only whitespace after inline code ends the cell.
+      "| A |\n| - |\n| `x`&#x20; |\n",
+      "| A |\n| - |\n| &#x20;`x` |\n",
+    ]) {
+      expect(formatted(source)).toContain("&#x20;");
+      roundtrip(source);
+    }
+  });
+});
+
+test("a line ending before a footnote reference stays literal", () => {
+  // `[^1]: b` at a line start would read as a footnote definition, so the colon is escaped
+  // instead; without a colon the line needs nothing.
+  for (const [source, expected] of [
+    ["a&#xa;[^1]: b\n\n[^1]: note\n", "a\n[^1]\\: b\n\n[^1]: note\n"],
+    ["`a`&#xa;[^1]: b\n\n[^1]: note\n", "`a`\n[^1]\\: b\n\n[^1]: note\n"],
+    ["a\n[^1] and more.\n\n[^1]: note\n", "a\n[^1] and more.\n\n[^1]: note\n"],
+  ]) {
+    expect(formatTopikContent(source)).toMatchObject({ ok: true, formatted: expected });
+    expect(formatTopikContent(expected)).toMatchObject({ ok: true, formatted: expected });
+  }
+});

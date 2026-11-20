@@ -12,6 +12,7 @@ export const blockTypes = new Set([
   "table",
   "thematicBreak",
   "definition",
+  "footnoteDefinition",
   "topikConditional",
 ]);
 export const inlineTypes = new Set([
@@ -25,6 +26,7 @@ export const inlineTypes = new Set([
   "image",
   "linkReference",
   "imageReference",
+  "footnoteReference",
   "topikVariable",
 ]);
 export const inlineParentTypes = new Set([
@@ -43,6 +45,7 @@ export const parentTypes = new Set([
   "blockquote",
   "list",
   "listItem",
+  "footnoteDefinition",
   "table",
   "tableRow",
   "topikComponent",

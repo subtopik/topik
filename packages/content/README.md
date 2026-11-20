@@ -70,10 +70,11 @@ Supported Markdown:
 - headings, emphasis, strong and strikethrough marks, and code
 - lists and task lists, blockquotes, and hard breaks
 - links, images, and reference definitions
+- footnotes, whose definitions are written at the end of the document
 - tables
 - leading YAML frontmatter, which is kept in the source but not rendered
 
-Raw HTML and footnotes are refused. Bare URLs and email addresses are text; to
+Raw HTML is refused. Bare URLs and email addresses are text; to
 make a link, write an explicit Markdown link or an angle-bracket autolink.
 
 ### Links between resources
@@ -98,14 +99,17 @@ reported as a diagnostic, never silently discarded.
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | `callout`                                   | Block content; optional `variant` and `title`                                                       |
 | `accordion`                                 | Block content; required `title`, optional `open`                                                    |
-| `cardGrid`, `card`                          | Cards; grid `columns` from 1 to 4; card requires `title` and accepts `href`, `icon`                 |
+| `columns`, `column`                         | Cards or columns of block content side by side; `count` from 1 to 4, default 2                      |
+| `card`                                      | Requires `title`; accepts `href`, `icon` and block content                                          |
 | `tabs`, `tab`                               | One or more tabs, each with a required `title`                                                      |
 | `steps`, `step`                             | One or more steps; optional step `title`                                                            |
 | `codeGroup`, `codeTab`                      | One or more code tabs; each requires `title` and fenced code                                        |
 | `figure`                                    | Self-closing; required `src` and `alt`, optional `darkSrc` and `caption`                            |
+| `video`                                     | Self-closing; required `src` and `title`, optional `caption`, `poster` and `loop`                   |
 | `math`, `mathInline`                        | Self-closing block/inline formula with required `content`                                           |
 | `badge`                                     | Inline content; optional `variant`                                                                  |
 | `underline` (alias `u`)                     | Inline content                                                                                      |
+| `kbd`                                       | Inline content naming one key; write combinations as several keys, such as `Ctrl`+`C`               |
 | `quiz`, `question`, `choice`, `explanation` | Questions with at least two choices; `type` selects single/multiple choice, `correct` marks answers |
 
 The exported `components` registry contains the complete property, placement,
@@ -186,7 +190,8 @@ quoted properties and code blocks are always literal; only explicit templates
 are interpolated.
 
 - **Text templates.** Write `t"..."` for `title` on `callout`, `accordion`,
-  `card`, `tab`, `step`, and `codeTab`, or for `alt` and `caption` on `figure`.
+  `card`, `tab`, `step`, and `codeTab`, for `alt` and `caption` on `figure`, or
+  for `title` and `caption` on `video`.
 - **Code templates.** Wrap exactly one fenced code block between
   `{% template code %}` and `{% /template code %}`, each on its own block line.
 
@@ -354,8 +359,12 @@ Rewriting rules:
 
 Accepted references:
 
-- Images and figure sources accept canonical relative paths or credential-free
-  HTTPS URLs.
+- Images, figure sources, and video sources and posters accept canonical
+  relative paths or credential-free HTTPS URLs. An HTTPS URL with trailing
+  whitespace or an undecodable fragment, such as `#%E9`, is refused, because
+  rendering would drop it. A `video.src` occurrence has the `video` role and its
+  title in `semantics.title` or `semantics.titleTemplate`; an application that
+  allows only some video services checks it here.
 - Compiler-generated `asset:` references are accepted in rewritten output.
   Source admission accepts them only with `allowCompiledAssetReferences: true`.
 - Generic links count as download assets only when their decoded file path is
@@ -387,7 +396,8 @@ Source diagnostics have stable IDs with fixed messages.
 | Tag syntax                       | `missing-closing`, `missing-opening`, `tag-unterminated`, `tag-name-invalid`, `attribute-syntax-invalid`, `duplicate-attribute`, `tag-closing-invalid`, `tag-placement-invalid`, `tag-undefined` |
 | `else` placement and syntax      | `topik-else-placement`, `topik-else-syntax`                                                                                                                                                      |
 | Unsupported condition expression | `topik-expression-invalid` (reported once)                                                                                                                                                       |
-| Unsupported Markdown             | `node-undefined`, at the node's line, with its Markdown node `type`; covers raw HTML, comments, and footnotes                                                                                    |
+| Unsupported Markdown             | `node-undefined`, at the node's line, with its Markdown node `type`; covers raw HTML and comments                                                                                                |
+| Footnotes                        | `topik-footnote-placement`, `topik-footnote-duplicate`, `topik-footnote-unreferenced`, `topik-footnote-nested`, `topik-footnote-content`, `topik-footnote-missing`, `topik-heading-id-reserved`  |
 | Misplaced heading ID             | `topik-heading-id-placement`, for a heading ID that does not end its heading                                                                                                                     |
 | Custom schema rules              | `topik-<name>-children`, `topik-<name>-requires-<child>`, `topik-<parent>-parent-required`, `topik-<attribute>-range`, each with a fixed message per rule family                                 |
 | Content limits                   | `topik-content-limit`                                                                                                                                                                            |

@@ -75,10 +75,36 @@ function handleEvents(watcher: Watcher, res: ServerResponse, corsHeaders: Record
   });
 }
 
+type ByteRange = { start: number; end: number } | "unsatisfiable" | undefined;
+
+/**
+ * Parse a single `bytes` range (RFC 9110). Browsers request media in ranges to start playback
+ * early and to seek. Absent, malformed and multiple ranges are ignored: the whole payload follows.
+ */
+function parseByteRange(header: string | undefined, size: number): ByteRange {
+  const match = header === undefined ? null : /^bytes=(\d*)-(\d*)$/iu.exec(header.trim());
+  if (match === null) return undefined;
+  const [, first, last] = match;
+  if (first === "" && last === "") return undefined;
+  if (first === "") {
+    // A suffix range: the final bytes of the payload.
+    const length = Number(last);
+    if (!Number.isSafeInteger(length)) return undefined;
+    return length === 0 || size === 0
+      ? "unsatisfiable"
+      : { start: Math.max(0, size - length), end: size - 1 };
+  }
+  const start = Number(first);
+  const end = last === "" ? Number.MAX_SAFE_INTEGER : Number(last);
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || end < start) return undefined;
+  return start >= size ? "unsatisfiable" : { start, end: Math.min(end, size - 1) };
+}
+
 function handleAssetPayload(
   watcher: Watcher,
   rawPathname: string,
   method: "GET" | "HEAD",
+  rangeHeader: string | undefined,
   res: ServerResponse,
   corsHeaders: Record<string, string>,
 ): boolean {
@@ -101,14 +127,30 @@ function handleAssetPayload(
   }
 
   const contentType = payload.mediaType;
-  res.writeHead(200, {
+  const headers = {
     "Content-Type": contentType,
-    "Content-Length": String(payload.size),
     ...corsHeaders,
+    "Accept-Ranges": "bytes",
     "Cache-Control": "no-cache",
     "X-Content-Type-Options": "nosniff",
     ...(isDownloadMediaType(contentType) ? { "Content-Disposition": "attachment" } : {}),
-  });
+  };
+  const range = parseByteRange(rangeHeader, payload.size);
+  if (range === "unsatisfiable") {
+    res.writeHead(416, { ...headers, "Content-Range": `bytes */${payload.size}` });
+    res.end();
+    return true;
+  }
+  if (range !== undefined) {
+    res.writeHead(206, {
+      ...headers,
+      "Content-Length": String(range.end - range.start + 1),
+      "Content-Range": `bytes ${range.start}-${range.end}/${payload.size}`,
+    });
+    res.end(payload.bytes.subarray(range.start, range.end + 1));
+    return true;
+  }
+  res.writeHead(200, { ...headers, "Content-Length": String(payload.size) });
   res.end(method === "HEAD" ? undefined : payload.bytes);
 
   return true;
@@ -209,7 +251,7 @@ function createRequestHandler(watcher: Watcher, getPort: () => number, allowedOr
       res.writeHead(204, {
         ...corsHeaders,
         "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Headers": "Content-Type, Range",
       });
       res.end();
       return;
@@ -275,7 +317,18 @@ function createRequestHandler(watcher: Watcher, getPort: () => number, allowedOr
     const rawPathname = queryOffset === -1 ? requestTarget : requestTarget.slice(0, queryOffset);
     if (
       (req.method === "GET" || req.method === "HEAD") &&
-      handleAssetPayload(watcher, rawPathname, req.method, res, corsHeaders)
+      handleAssetPayload(
+        watcher,
+        rawPathname,
+        req.method,
+        // Ranges apply to GET only. Payload responses carry no validator, so a conditional
+        // If-Range cannot match and the whole payload follows (RFC 9110).
+        req.method === "GET" && req.headers["if-range"] === undefined
+          ? req.headers.range
+          : undefined,
+        res,
+        corsHeaders,
+      )
     ) {
       return;
     }

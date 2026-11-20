@@ -115,15 +115,32 @@
     margin-block: 0 0.35rem;
   }
 
-  .topik-card-grid {
+  .topik-columns {
+    /* Declared on every grid, so a nested grid never inherits an outer count. */
+    --topik-columns-count: 2;
+
     display: grid;
     gap: 0.85rem;
-    grid-template-columns: repeat(var(--topik-card-grid-columns, 3), minmax(0, 1fr));
+    grid-template-columns: repeat(var(--topik-columns-count), minmax(0, 1fr));
     margin-block: 1rem;
   }
 
+  /* A cell may shrink below its content's width; wide content scrolls or wraps inside it. */
+  .topik-column {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .topik-column > :first-child {
+    margin-top: 0;
+  }
+
+  .topik-column > :last-child {
+    margin-bottom: 0;
+  }
+
   @media (max-width: 700px) {
-    .topik-card-grid {
+    .topik-columns {
       grid-template-columns: 1fr;
     }
   }
@@ -355,6 +372,10 @@
   }
 
   @media (forced-colors: active) {
+    .topik-kbd {
+      border-color: CanvasText;
+    }
+
     .topik-code-block {
       background: Canvas;
       border-color: CanvasText;
@@ -371,7 +392,8 @@
     }
 
     .topik-code-block__controls button,
-    .topik-code-block__fold-toggle {
+    .topik-code-block__fold-toggle,
+    .topik-video__toggle {
       background: ButtonFace;
       border-color: ButtonText;
       color: ButtonText;
@@ -551,6 +573,143 @@
     margin-top: 0.45rem;
   }
 
+  .topik-footnote-ref {
+    font-size: 0.75em;
+    line-height: 0;
+  }
+
+  .topik-footnote-ref a {
+    color: var(--topik-color-accent);
+    padding-inline: 0.1em;
+    text-decoration: none;
+  }
+
+  .topik-footnote-ref a:hover,
+  .topik-footnote-ref a:focus-visible {
+    text-decoration: underline;
+  }
+
+  .topik-footnotes {
+    border-top: 1px solid var(--topik-color-border);
+    color: var(--topik-color-muted);
+    font-size: 0.9rem;
+    margin-top: 2.5rem;
+    padding-top: 1rem;
+  }
+
+  .topik-footnotes ol {
+    margin: 0;
+    padding-inline-start: 1.5rem;
+  }
+
+  .topik-footnote {
+    margin-block: 0.4rem;
+  }
+
+  .topik-footnote > p:first-child {
+    margin-top: 0;
+  }
+
+  /* A note's back-links follow its last paragraph on the same line. */
+  .topik-footnote > p:last-of-type:nth-last-child(2) {
+    display: inline;
+  }
+
+  /* Underlined: in muted note text, color alone does not mark the links. */
+  .topik-footnote__backrefs a {
+    color: var(--topik-color-accent);
+    margin-inline-start: 0.35em;
+    text-decoration: underline;
+  }
+
+  /* The target of a footnote link stands out briefly after the jump. */
+  .topik-footnote:target,
+  .topik-footnote-ref a:target {
+    background: var(--topik-color-accent-soft);
+    border-radius: 0.2rem;
+  }
+
+  .topik-video {
+    margin-inline: 0;
+  }
+
+  .topik-video__frame {
+    position: relative;
+  }
+
+  .topik-video__player {
+    aspect-ratio: 16 / 9;
+    background: #000000;
+    border-radius: var(--topik-radius);
+    display: block;
+    height: auto;
+    width: 100%;
+  }
+
+  .topik-video__toggle {
+    background: var(--topik-color-canvas);
+    border: 1px solid var(--topik-color-border);
+    border-radius: 0.35rem;
+    bottom: 0.75rem;
+    color: var(--topik-color-text);
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.85rem;
+    inset-inline-start: 0.75rem;
+    padding: 0.25rem 0.65rem;
+    position: absolute;
+  }
+
+  .topik-video__toggle:focus-visible {
+    outline: 2px solid var(--topik-color-accent);
+    outline-offset: 2px;
+  }
+
+  .topik-video__link,
+  .topik-video__fallback {
+    display: block;
+  }
+
+  .topik-video__fallback {
+    background: var(--topik-color-panel);
+    border: 1px dashed var(--topik-color-border);
+    border-radius: var(--topik-radius);
+    padding: 1rem;
+  }
+
+  .topik-video__link img,
+  .topik-video__fallback img {
+    border-radius: var(--topik-radius);
+    display: block;
+    margin-bottom: 0.45rem;
+    max-width: 100%;
+  }
+
+  /* Paper cannot play video: print shows the poster and a link instead of the player. */
+  .topik-video__print {
+    display: none;
+  }
+
+  .topik-video figcaption {
+    color: var(--topik-color-muted);
+    font-size: 0.92rem;
+    margin-top: 0.45rem;
+  }
+
+  /* A key cap: monospace label with a raised lower edge, sized to sit in running text. */
+  .topik-kbd {
+    background: var(--topik-color-panel);
+    border: 1px solid var(--topik-color-border);
+    border-bottom-width: 2px;
+    border-radius: 0.3rem;
+    color: var(--topik-color-text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.82em;
+    line-height: 1;
+    padding: 0.15em 0.4em;
+    white-space: nowrap;
+  }
+
   .topik-badge {
     background: var(--topik-color-accent-soft);
     border-radius: 999px;
@@ -669,7 +828,8 @@
     }
 
     .topik-code-block__controls,
-    .topik-code-block__fold {
+    .topik-code-block__fold,
+    .topik-footnote__backrefs {
       display: none;
     }
 
@@ -720,13 +880,30 @@
       white-space: pre-wrap;
     }
 
+    .topik-video__frame {
+      display: none;
+    }
+
+    .topik-video__print {
+      display: block;
+    }
+
+    .topik-video .topik-video__link::after {
+      content: attr(href);
+      display: block;
+      font-size: 0.85em;
+      overflow-wrap: anywhere;
+    }
+
     .topik-content :where(h1, h2, h3, h4) {
       break-after: avoid;
     }
 
     .topik-callout,
     .topik-card,
+    .topik-column,
     .topik-figure,
+    .topik-video,
     .topik-step,
     .topik-question,
     .topik-table tr {

@@ -5,6 +5,7 @@ import { command, positional, string } from "@drizzle-team/brocli";
 import {
   CompileError,
   DEFAULT_FILE_SAFETY,
+  isTopikActiveMediaType,
   watch,
   type FileSafety,
   TOPIK_PREVIEW_PROTOCOL,
@@ -157,16 +158,7 @@ function handleAssetPayload(
 }
 
 function isDownloadMediaType(mediaType: string): boolean {
-  return [
-    "application/octet-stream",
-    "text/html",
-    "image/svg+xml",
-    "application/javascript",
-    "text/javascript",
-    "application/x-executable",
-    "application/wasm",
-    "application/x-topik-active-content",
-  ].includes(mediaType);
+  return mediaType === "application/octet-stream" || isTopikActiveMediaType(mediaType);
 }
 
 function normalizeAllowedOrigin(value: string): string {

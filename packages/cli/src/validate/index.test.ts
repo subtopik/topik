@@ -218,6 +218,28 @@ describe("validate command", () => {
     ).resolves.toBeUndefined();
   });
 
+  test("skips the empty documents around YAML separators", async () => {
+    const filePath = join(dir, "wiki.yaml");
+    const resource = ["apiVersion: v1", "type: Wiki", "name: docs", "spec:", "  title: Docs"];
+    await writeFile(filePath, ["---", ...resource, "---", "---", ""].join("\n"));
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await expect(
+      (validate as ValidateCommand).handler?.({ path: filePath }),
+    ).resolves.toBeUndefined();
+    expect(log).toHaveBeenCalledWith("Validated 1 resources");
+  });
+
+  test("still validates an explicit null YAML document", async () => {
+    const filePath = join(dir, "wiki.yaml");
+    await writeFile(filePath, "null\n");
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect((validate as ValidateCommand).handler?.({ path: filePath })).rejects.toMatchObject(
+      { id: "resource-validation-failed" },
+    );
+  });
+
   test("accepts JSONL resources produced by compile", async () => {
     const filePath = join(dir, "wiki.jsonl");
     await writeFile(

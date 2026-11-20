@@ -3,7 +3,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, extname, join, resolve } from "node:path";
 import { boolean, command, positional } from "@drizzle-team/brocli";
 import { validateResourceContent, validateResourceGraph, validateResources } from "@topik/core";
-import { parseAllDocuments } from "yaml";
+import { isScalar, parseAllDocuments } from "yaml";
 import { PublicCliError } from "../errors";
 import {
   formatUnreadableResourceFile,
@@ -43,14 +43,22 @@ function stripByteOrderMark(content: string): string {
 
 function parseYaml(content: string): unknown[] {
   try {
-    return parseAllDocuments(content)
-      .filter((document) => document.contents !== null)
-      .map((document) => {
-        if (document.errors.length > 0) {
-          throw document.errors[0];
-        }
-        return document.toJS();
-      });
+    return (
+      parseAllDocuments(content)
+        // A separator with nothing after it yields an empty plain scalar, not null. An explicit
+        // `null` or `~` keeps its source, so it is still validated, and so is a broken document.
+        .filter(
+          ({ contents, errors }) =>
+            errors.length > 0 ||
+            (contents !== null && !(isScalar(contents) && contents.source === "")),
+        )
+        .map((document) => {
+          if (document.errors.length > 0) {
+            throw document.errors[0];
+          }
+          return document.toJS();
+        })
+    );
   } catch {
     throw new PublicCliError("resource-yaml-invalid");
   }

@@ -82,7 +82,8 @@ See [grading](#grading).
 ```
 
 Explicit IDs use the same characters as `{% #id %}` (`topik-accordion-id`) and
-are unique across headings and accordions (`heading-id-duplicate`). A link to a
+are unique across headings and accordions (`heading-id-duplicate`). Like heading
+IDs, they cannot start with `fn:` or `fnref:` (`topik-heading-id-reserved`). A link to a
 generated accordion ID whose title another heading or accordion shares warns
 with `link-fragment-positional`, as for headings; give the accordion an `id`. Variables in
 a template title, such as `title=t"Week {% $week %}"`, do not contribute to the
@@ -127,8 +128,8 @@ reference and list them at the end of the content, so the label is only a name:
   body being evaluated. A footnote whose body evaluates to nothing is left out
   with its references. References inside a component that does not render are
   not numbered.
-- Footnotes link with the anchors `fn:N` and `fnref:N`, so explicit heading IDs
-  cannot start with `fn:` or `fnref:` (`topik-heading-id-reserved`).
+- Footnotes link with the anchors `fn:N` and `fnref:N`, so explicit heading and
+  accordion IDs cannot start with `fn:` or `fnref:` (`topik-heading-id-reserved`).
 
 Topik refuses a definition inside a quote, list, component or conditional
 branch (`topik-footnote-placement`), a label defined twice
@@ -367,7 +368,7 @@ Common source problems include:
 | `topik-footnote-unreferenced`, `topik-footnote-nested` | A definition nothing references, or a reference inside a footnote |
 | `topik-footnote-content`                               | A heading, link definition or conditional inside a footnote       |
 | `topik-heading-id-placement`                           | A `{% #id %}` that does not end its heading                       |
-| `topik-heading-id-reserved`                            | A `{% #id %}` starting with `fn:` or `fnref:`                     |
+| `topik-heading-id-reserved`                            | A `{% #id %}` or accordion `id` starting with `fn:` or `fnref:`   |
 | `topik-variable-missing`, `topik-variable-type`        | A missing or incompatible variable during compilation             |
 
 `node-undefined` diagnostics set `type` to the Markdown node type, such as

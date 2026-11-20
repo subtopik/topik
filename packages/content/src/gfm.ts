@@ -8,6 +8,7 @@ import {
   gfmStrikethroughToMarkdown,
 } from "mdast-util-gfm-strikethrough";
 import { gfmTableFromMarkdown, gfmTableToMarkdown } from "mdast-util-gfm-table";
+import stringWidth from "string-width";
 import {
   gfmTaskListItemFromMarkdown,
   gfmTaskListItemToMarkdown,
@@ -78,7 +79,9 @@ export function gfmToMarkdown() {
     extensions: [
       footnoteToMarkdown(),
       gfmStrikethroughToMarkdown(),
-      gfmTableToMarkdown(),
+      // Pad table columns by display width, so cells with emoji or CJK text line
+      // up in editors and agree with Prettier.
+      gfmTableToMarkdown({ stringLength: stringWidth }),
       gfmTaskListItemToMarkdown(),
     ],
   };

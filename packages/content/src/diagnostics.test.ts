@@ -140,6 +140,8 @@ describe("diagnostic file sanitization", () => {
     ["a tab", "guides/a\tb.md"],
     ["a no-break space", "guides/a\u00a0b.md"],
     ["a zero-width space", "guides/a\u200bb.md"],
+    ["an invisible combining mark", "guides/a\u034fb.md"],
+    ["an HTML character reference", "guides/a&#47;b.md"],
     ["a bidi override", "guides/\u202edm.exe"],
     ["a line separator", "guides/a\u2028b.md"],
     ["a percent-escape", "guides/a%2Fb.md"],
@@ -150,6 +152,12 @@ describe("diagnostic file sanitization", () => {
     ["a colon", "guides/a:b.md"],
   ])("refuses a relative path with %s", (_, file) => {
     expect(sanitizeTopikDiagnosticFile(file)).toBe("content");
+  });
+
+  test("a URL's escaped basename is not shown as a label", () => {
+    // The URL path arrives percent-encoded, `lesson%20one.md`, which the label rule refuses.
+    expect(sanitizeTopikDiagnosticFile("https://example.test/lesson one.md")).toBe("content");
+    expect(sanitizeTopikDiagnosticFile("https://example.test/lesson.md?x=1")).toBe("lesson.md");
   });
 
   test("keeps only the basename of an absolute path with spaces", () => {

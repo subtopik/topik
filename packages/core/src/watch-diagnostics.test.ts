@@ -56,6 +56,16 @@ describe("previewErrorDiagnostics", () => {
     expect(previewErrorDiagnostics(error, resources).diagnostics[0]).not.toHaveProperty("resource");
   });
 
+  test("publishes a backslash path with slashes and finds its resource", () => {
+    const error = new CompileError([
+      diagnostic({ id: "link-page-not-found", level: "error", file: "wiki\\intro.md", lines: [2] }),
+    ]);
+    expect(previewErrorDiagnostics(error, resources).diagnostics[0]).toMatchObject({
+      location: { path: "wiki/intro.md", line: 2 },
+      resource: { type: "Wiki", name: "handbook" },
+    });
+  });
+
   test("publishes no location for a path the label policy cannot show", () => {
     const error = new CompileError([
       diagnostic({

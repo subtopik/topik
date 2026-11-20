@@ -111,7 +111,8 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "topik-code-tab-parent-required": "A code tab must be nested inside a code group.",
   "topik-code-tab-children": "A code tab may contain only fenced code blocks.",
   "topik-code-tab-requires-fence": "A code tab requires a fenced code block.",
-  "topik-count-range": "A count is outside its supported range; columns take 1 to 4.",
+  // Custom components can declare a numeric `count` too, so the wording names no component.
+  "topik-count-range": "A count is outside the range its component supports.",
   "topik-config-invalid": "Content configuration is invalid.",
   "topik-content-limit": "Content exceeds the supported complexity limits.",
   "topik-node-invalid": "A Markdown node cannot be represented without changing its meaning.",
@@ -391,17 +392,19 @@ export function sanitizeTopikDiagnosticFile(file: string | undefined): string | 
 
 /**
  * Characters that can hide or disguise what a label says: control, format (bidi, zero-width),
- * private-use and unassigned code points, whitespace other than a plain space, and
- * percent-escapes, which can carry an encoded URL.
+ * private-use and unassigned code points, other characters that display as nothing (such as
+ * U+034F), whitespace other than a plain space, and percent-escapes, which can carry an
+ * encoded URL.
  */
 function hasAmbiguousDiagnosticCharacter(value: string): boolean {
   return (
-    /\p{C}/u.test(value) ||
+    /[\p{C}\p{Default_Ignorable_Code_Point}]/u.test(value) ||
     /[\p{Separator}\p{White_Space}]/u.test(value.replaceAll(" ", "")) ||
     /%[0-9a-f]{2}/iu.test(value)
   );
 }
 
+/** HTML character references such as `&#47;`; core refuses them in compile locations too. */
 function hasHtmlCharacterReference(value: string): boolean {
   return /&(?:#(?:x[0-9a-f]*|[0-9]*)|[a-z][a-z0-9]*);?/iu.test(value);
 }
@@ -409,7 +412,13 @@ function hasHtmlCharacterReference(value: string): boolean {
 function safeDiagnosticBasename(file: string): string {
   const basename = file.replaceAll("\\", "/").split("/").at(-1);
   const label = basename?.split(/[?#]/u, 1)[0];
-  return label !== undefined && isSafeRelativeDiagnosticLabel(label) ? label : "content";
+  // A URL's path is percent-encoded, so `lesson one.md` arrives as `lesson%20one.md`; the label
+  // follows the same character rule as the input it came from.
+  return label !== undefined &&
+    !hasAmbiguousDiagnosticCharacter(label) &&
+    isSafeRelativeDiagnosticLabel(label)
+    ? label
+    : "content";
 }
 
 /**

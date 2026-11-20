@@ -145,6 +145,8 @@ describe("public schema error fields", () => {
     "wiki/a%2Fb.md",
     "guides/a\tb.md",
     "guides/\u202edm.exe",
+    "guides/a\u034fb.md",
+    "guides/a&#47;b.md",
     "guides/ a.md",
     "a:b.md",
     "../outside.md",

@@ -21,9 +21,18 @@ Compile a directory that contains `wiki.yaml` and its pages, then validate the
 generated resources:
 
 ```ts
-import { compileWiki, validateResources } from "@topik/core";
+import { compileWiki, createProjectAssetNameGenerator, validateResources } from "@topik/core";
 
-const result = await compileWiki({ dir: "./handbook" });
+const result = await compileWiki({
+  dir: "./handbook",
+  // Local images and downloads need generated names; a page with one fails without this.
+  assets: {
+    generateName: createProjectAssetNameGenerator({
+      projectRoot: "./handbook",
+      projectNamespace: "example/handbook",
+    }),
+  },
+});
 const validation = validateResources(result.resources);
 if (!validation.valid) throw new Error(JSON.stringify(validation.errors));
 console.log(result.resources.map((resource) => `${resource.type}/${resource.name}`));

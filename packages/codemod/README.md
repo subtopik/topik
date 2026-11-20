@@ -149,6 +149,8 @@ the file contains any of these:
 - MDX imports, exports and expressions
 - mismatched closing tags
 - components inside tables, headings, lists, blockquotes or paragraph text
+- root-absolute image or file paths, such as `/images/a.png`: Topik assets are
+  relative to the page, so rewrite them, for example to `../images/a.png`
 
 ## Documentation
 

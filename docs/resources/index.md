@@ -334,9 +334,18 @@ lists the checks that ran. Every diagnostic has all six fields:
 ## Use the compiler as a library
 
 ```ts
-import { compileWiki, validateResources } from "@topik/core";
+import { compileWiki, createProjectAssetNameGenerator, validateResources } from "@topik/core";
 
-const result = await compileWiki({ dir: "./docs" });
+const result = await compileWiki({
+  dir: "./docs",
+  // Local images and downloads need generated names; a page with one fails without this.
+  assets: {
+    generateName: createProjectAssetNameGenerator({
+      projectRoot: "./docs",
+      projectNamespace: "example/docs",
+    }),
+  },
+});
 const validation = validateResources(result.resources);
 if (!validation.valid) throw new Error(JSON.stringify(validation.errors));
 console.log(result.resources.map((resource) => `${resource.type}/${resource.name}`));

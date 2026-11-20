@@ -160,7 +160,9 @@ The exit status is the same as without the flag.
 - `errors` counts the `error` and `critical` diagnostics.
 
 A failure that stops lint before it produces diagnostics, such as a missing
-`.topik.yaml`, prints its message on stderr and nothing on stdout.
+`.topik.yaml`, prints its message on stderr. With `--json`, stdout still holds
+one report, with a single error diagnostic that carries the failure's `id`
+(such as `manifest-required`) and message and no `file`.
 
 ## Validate resources
 

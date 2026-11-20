@@ -179,6 +179,32 @@ escape: write the backslash key as `{% kbd %}\\{% /kbd %}`, since a single
 backslash escapes the closing tag, and in a table cell write the pipe key as
 `\|`, since a bare `|` ends the cell.
 
+A `quiz` holds one or more `question` components. A question holds at least two
+`choice` components and an optional `explanation`, which the reader sees after
+answering. A single-choice question, the default, has exactly one choice with
+`correct=true`; a question with `type="multiple-choice"` has at least one. A
+question has no prompt of its own, so write the prompt as text before the quiz:
+
+```markdown
+Which command checks content without writing compiled output?
+
+{% quiz %}
+{% question %}
+{% choice correct=true %}
+`topik lint`
+{% /choice %}
+
+{% choice %}
+`topik compile`
+{% /choice %}
+
+{% explanation %}
+`topik lint` reports diagnostics and writes nothing.
+{% /explanation %}
+{% /question %}
+{% /quiz %}
+```
+
 Some components accept only specific children. For example, the direct children
 of `tabs` are `tab` components, not arbitrary blocks:
 

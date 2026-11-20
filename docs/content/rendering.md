@@ -614,7 +614,8 @@ entries and route callbacks that the application supplies. Astro loaders keep
 the compiled references in each entry's body. Supply the `wikiPages`, `guides`
 and `coursePages` catalogues with their corresponding `resolveWikiPage`,
 `resolveGuide` and `resolveCoursePage` callbacks. Course entries can come from
-any collection the application already has:
+any collection the application already has. `@topik/astro` is a private
+workspace package and is not published to npm:
 
 ```ts
 import { createTopikLinkResolver } from "@topik/astro";

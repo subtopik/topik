@@ -132,10 +132,10 @@ test("the low-level transform drops URLs that fail the source URL policy", () =>
     "",
     '{% figure src="javascript:alert(4)" darkSrc="data:image/png;base64,AA" alt="a" /%}',
     "",
-    "{% cardGrid %}",
+    "{% columns %}",
     '{% card title="a" href="javascript:alert(5)" /%}',
     `{% card title="b" href="asset:auto-v1-${"a".repeat(52)}" /%}`,
-    "{% /cardGrid %}",
+    "{% /columns %}",
   ].join("\n");
   expect(validateTopikContent(source).valid).toBe(false);
   const tree = transformUnadmitted(source);
@@ -178,9 +178,9 @@ test("the low-level transform preserves URLs that admitted content may contain",
     "",
     '{% figure src="images/a.png" darkSrc="https://example.com/d.png" alt="a" /%}',
     "",
-    "{% cardGrid %}",
+    "{% columns %}",
     '{% card title="a" href="ref://wiki-page/install" /%}',
-    "{% /cardGrid %}",
+    "{% /columns %}",
   ].join("\n");
   const tree = transformUnadmitted(source);
   expect(attributesOf(tree, "TopikLink").map((attributes) => attributes.href)).toEqual([

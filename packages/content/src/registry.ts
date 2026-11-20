@@ -2,8 +2,9 @@ import type { AuthoredAttributeValue, Component, Scalar } from "./model.js";
 import { accordionDefinition } from "./extensions/accordion.js";
 import { badgeDefinition } from "./extensions/badge.js";
 import { calloutDefinition } from "./extensions/callout.js";
-import { cardDefinition, cardGridDefinition } from "./extensions/cards.js";
+import { cardDefinition } from "./extensions/cards.js";
 import { codeGroupDefinition, codeTabDefinition } from "./extensions/code.js";
+import { columnDefinition, columnsDefinition } from "./extensions/columns.js";
 import { figureDefinition } from "./extensions/figure.js";
 import { kbdDefinition } from "./extensions/kbd.js";
 import { mathDefinition, mathInlineDefinition } from "./extensions/math.js";
@@ -150,13 +151,14 @@ const authoredComponents = {
   badge: badgeDefinition,
   callout: textAttributes(calloutDefinition, ["title"]),
   card: textAttributes(cardDefinition, ["title"]),
-  cardGrid: cardGridDefinition,
   codeGroup: codeGroupDefinition,
   codeTab: {
     ...textAttributes(codeTabDefinition, ["title"]),
     children: { nodes: ["code", "topikCodeTemplate", "topikCodePresentation"], min: 1 },
   },
   choice: choiceDefinition,
+  column: columnDefinition,
+  columns: columnsDefinition,
   explanation: explanationDefinition,
   figure: textAttributes(figureDefinition, ["alt", "caption"]),
   kbd: kbdDefinition,
@@ -183,10 +185,13 @@ function metadata(name: string, definition: ComponentDefinition): TopikComponent
         ? constraint.components
         : constraint.nodes.map((node) => (node === "code" ? "fence" : node))
       : undefined;
+  // A minimum over alternatives, such as a card or a column, requires no one kind.
   const requiredChildren =
     name === "question"
       ? ["choice"]
-      : typeof constraint === "object" && constraint.min
+      : typeof constraint === "object" &&
+          constraint.min &&
+          ("nodes" in constraint || constraint.components.length === 1)
         ? allowedChildren?.slice(0, 1)
         : undefined;
   return {

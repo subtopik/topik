@@ -98,7 +98,8 @@ reported as a diagnostic, never silently discarded.
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | `callout`                                   | Block content; optional `variant` and `title`                                                       |
 | `accordion`                                 | Block content; required `title`, optional `open`                                                    |
-| `cardGrid`, `card`                          | Cards; grid `columns` from 1 to 4; card requires `title` and accepts `href`, `icon`                 |
+| `columns`, `column`                         | Cards or columns of block content side by side; `count` from 1 to 4, default 2                      |
+| `card`                                      | Requires `title`; accepts `href`, `icon` and block content                                          |
 | `tabs`, `tab`                               | One or more tabs, each with a required `title`                                                      |
 | `steps`, `step`                             | One or more steps; optional step `title`                                                            |
 | `codeGroup`, `codeTab`                      | One or more code tabs; each requires `title` and fenced code                                        |

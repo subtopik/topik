@@ -30,7 +30,7 @@ describe("Mintlify to Topik content", () => {
 
   test("converts nested canonical components with camelCase names and own-line tags", () => {
     const source = [
-      '<CardGroup columns="2">',
+      '<CardGroup cols="2">',
       '<Card title="First" href="/first" />',
       "</CardGroup>",
       '<Tabs><Tab title="CLI">Use it.</Tab></Tabs>',
@@ -39,7 +39,7 @@ describe("Mintlify to Topik content", () => {
     ].join("\n");
     const output = converted(source);
     expect(output).toContain(
-      '{% cardGrid columns=2 %}\n{% card title="First" href="/first" /%}\n{% /cardGrid %}',
+      '{% columns count=2 %}\n{% card title="First" href="/first" /%}\n{% /columns %}',
     );
     expect(output).toContain('{% tabs %}\n{% tab title="CLI" %}\nUse it.\n{% /tab %}\n{% /tabs %}');
     expect(output).toContain(
@@ -859,6 +859,46 @@ describe("Mintlify code groups", () => {
   });
 });
 
+describe("Mintlify grids", () => {
+  test("converts Columns with cards and arbitrary Column content", () => {
+    const output = converted(
+      [
+        "<Columns cols={3}>",
+        '<Card title="A" href="/a" />',
+        "<Column>",
+        "Text beside the card.",
+        "</Column>",
+        "</Columns>",
+        "",
+      ].join("\n"),
+    );
+    expect(output).toBe(
+      [
+        "{% columns count=3 %}",
+        '{% card title="A" href="/a" /%}',
+        "{% column %}",
+        "Text beside the card.",
+        "{% /column %}",
+        "{% /columns %}",
+        "",
+      ].join("\n"),
+    );
+    expect(parseTopikContent(output).children).toMatchObject([
+      {
+        name: "columns",
+        props: { count: 3 },
+        children: [{ name: "card" }, { name: "column" }],
+      },
+    ]);
+  });
+
+  test("a CardGroup without cols keeps Mintlify's two columns", () => {
+    expect(converted('<CardGroup>\n<Card title="A" />\n</CardGroup>\n')).toBe(
+      '{% columns %}\n{% card title="A" /%}\n{% /columns %}\n',
+    );
+  });
+});
+
 describe("Mintlify attribute forms", () => {
   test("maps literal JSX expressions and renamed attributes", () => {
     const output = converted(
@@ -874,9 +914,9 @@ describe("Mintlify attribute forms", () => {
     );
     expect(output).toBe(
       [
-        "{% cardGrid columns=2 %}",
+        "{% columns count=2 %}",
         '{% card title="A" icon="star" /%}',
-        "{% /cardGrid %}",
+        "{% /columns %}",
         '{% accordion title="Bare" open=true %}',
         "Body.",
         "{% /accordion %}",
@@ -890,7 +930,7 @@ describe("Mintlify attribute forms", () => {
       ].join("\n"),
     );
     expect(parseTopikContent(output).children).toMatchObject([
-      { name: "cardGrid", props: { columns: 2 } },
+      { name: "columns", props: { count: 2 } },
       { name: "accordion", props: { open: true } },
       { name: "accordion", props: { open: false } },
       { name: "accordion", props: { open: true } },

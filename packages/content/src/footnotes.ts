@@ -1,6 +1,7 @@
 import type { ContentDocument, TreeNode } from "./model.js";
 import type { Association } from "mdast";
 import { referenceIdentifier, referenceSourceLabel } from "./document-index.js";
+import { explicitId, isAnchorNode } from "./headings.js";
 
 /**
  * Footnote labels are document-wide and case-insensitive, like reference labels. A definition is
@@ -75,13 +76,8 @@ export function footnoteProblems(document: ContentDocument): FootnoteProblem[] {
       else definitions.set(key, node);
     }
     // Headings and accordions share one set of IDs with each other, and the page with footnotes.
-    const explicitId =
-      node.type === "heading"
-        ? (node as TreeNode & { data?: { topikId?: unknown } }).data?.topikId
-        : node.type === "topikComponent" && node.name === "accordion"
-          ? node.props?.id
-          : undefined;
-    if (typeof explicitId === "string" && reservedAnchor.test(explicitId))
+    const id = isAnchorNode(node) ? explicitId(node) : undefined;
+    if (typeof id === "string" && reservedAnchor.test(id))
       problems.push({
         node,
         id: "topik-heading-id-reserved",

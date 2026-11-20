@@ -233,6 +233,28 @@ describe("custom component diagnostics", () => {
     expect(diagnostic!.message).not.toBe("Content validation failed.");
   });
 
+  test("a component that requires a built-in tab, step or code tab gets the generic parent message", () => {
+    for (const parent of ["tab", "step", "codeTab"]) {
+      const result = validateTopikContent("{% note /%}", {
+        config: {
+          components: {
+            note: {
+              kind: "block",
+              render: "Note",
+              attributes: {},
+              children: "none",
+              allowedParents: [parent],
+            },
+          },
+        },
+      });
+      const id = `topik-${parent.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}-parent-required`;
+      expect(result.errors.find((item) => item.id === id)?.message).toBe(
+        "A component must be nested inside its required parent component.",
+      );
+    }
+  });
+
   test("unknown IDs still use the generic fixed message", () => {
     expect(
       sanitizeTopikContentDiagnostic({

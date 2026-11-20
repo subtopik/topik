@@ -111,7 +111,6 @@ async function loadCompiledWiki(
   assets: AssetCompilationOptions | undefined,
 ): Promise<{
   navigation: WikiNavNode[];
-  pageResources: WikiPage[];
   resources: Awaited<ReturnType<typeof compileWiki>>["resources"];
   payloads: Awaited<ReturnType<typeof compileWiki>>["payloads"];
   assetSourcePaths: Awaited<ReturnType<typeof compileWiki>>["assetSourcePaths"];
@@ -130,8 +129,5 @@ async function loadCompiledWiki(
     resources,
     semantic,
     materialization,
-    pageResources: resources.filter(
-      (resource): resource is WikiPage => resource.type === "WikiPage",
-    ),
   };
 }

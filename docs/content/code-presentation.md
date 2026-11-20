@@ -123,6 +123,8 @@ The plain and rich renderers display the same rows and options.
 - Rich rendering passes `payload` to Shiki and checks that the highlighted
   tokens reproduce every row exactly. If highlighting is unavailable, the
   language is unknown, or a check fails, the block shows readable plain code.
+- A block with a `title` is a group named by that title, so assistive
+  technology announces it.
 - The wrap, copy and fold controls are native buttons with keyboard activation,
   accessible wrap and expanded state, and visible focus.
 - A fold control stays available while its rows are hidden, and expands or

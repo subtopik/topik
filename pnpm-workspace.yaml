@@ -52,7 +52,6 @@ catalog:
 catalogMode: prefer
 
 minimumReleaseAgeExclude:
-  - astro@6.4.4 || 7.4.5
   - mdast-util-directive@3.2.0
 
 overrides:

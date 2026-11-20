@@ -169,7 +169,11 @@ describe.each([
     expect(dom.querySelector('[data-line="2"] .topik-code-block__sr-only')?.textContent).toBe(
       "Removed line: ",
     );
-    expect(dom.querySelector(".topik-code-block__title")?.textContent).toBe("Update client");
+    const title = dom.querySelector(".topik-code-block__title")!;
+    expect(title.textContent).toBe("Update client");
+    const block = dom.querySelector(".topik-code-block")!;
+    expect(block.getAttribute("role")).toBe("group");
+    expect(block.getAttribute("aria-labelledby")).toBe(title.id);
     expect(dom.querySelector(".topik-code-block__filename")?.textContent).toBe("client.ts");
     expect(dom.querySelector(".topik-code-block__language")?.textContent).toBe("ts");
 
@@ -289,6 +293,9 @@ describe.each([
       <Code payload={"one\ntwo"} content={"one\ntwo\n"} presentation={presentation} />,
     );
     expect(dom.querySelector("pre code")?.textContent).toBe("one\ntwo\n");
+    // An untitled block has no name, so it stays a plain container.
+    expect(dom.querySelector(".topik-code-block")?.hasAttribute("role")).toBe(false);
+    expect(dom.querySelector(".topik-code-block")?.hasAttribute("aria-labelledby")).toBe(false);
   });
 
   it("folds a one-row entire block while keeping its control available", async () => {

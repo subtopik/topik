@@ -3,6 +3,7 @@ import type { TreeNode } from "./model.js";
 import type { ValidationIssue } from "./registry.js";
 import { CONTENT_LIMITS, ContentLimitError } from "./limits.js";
 import { codeTemplateProblem } from "./node-validation.js";
+import { hasControlCharacters } from "./text-controls.js";
 
 /** Bounds are independent of ordinary, unpresented code admission. */
 export const CODE_PRESENTATION_LIMITS = Object.freeze({
@@ -140,14 +141,6 @@ function positive(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
 
-function containsControls(value: string, allowTab = false): boolean {
-  for (let index = 0; index < value.length; index++) {
-    const unit = value.charCodeAt(index);
-    if ((unit < 32 && !(allowTab && unit === 9)) || unit === 127) return true;
-  }
-  return false;
-}
-
 function mergeIntervals(intervals: CodeLineSelection): CodeLineSelection {
   intervals.sort((left, right) => left[0] - right[0] || left[1] - right[1]);
   const result: CodeLineSelection = [];
@@ -230,7 +223,7 @@ export function normalizeCodePresentationOptions(
         typeof input !== "string" ||
         !input.trim() ||
         input.length > 256 ||
-        containsControls(input)
+        hasControlCharacters(input)
       )
         fail(
           "option",
@@ -388,7 +381,7 @@ export function assertCodePresentationSuffix(value: unknown): asserts value is s
   if (
     typeof value !== "string" ||
     (value.length > 0 && value[0] !== " " && value[0] !== "\t") ||
-    containsControls(value, true)
+    hasControlCharacters(value, true)
   )
     fail("metadata", "Opaque metadata suffix must be single-line and retain separating whitespace");
 }
@@ -594,7 +587,7 @@ export function codePresentationProblem(
       child.lang != null &&
       (typeof child.lang !== "string" ||
         !child.lang ||
-        containsControls(child.lang) ||
+        hasControlCharacters(child.lang) ||
         child.lang.includes(" "))
     )
       fail("language", "Presented code language must fit one literal fence header word");

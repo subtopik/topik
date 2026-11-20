@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   parseTopikYouTubeUrl,
   topikYouTubeEmbedUrl,
@@ -31,6 +31,11 @@ function YouTubeFigure({
   video,
 }: TopikComponentProps & { video: TopikYouTubeVideo }) {
   const [playing, setPlaying] = useState(false);
+  const player = useRef<HTMLIFrameElement>(null);
+  // The start link the reader activated is gone once the player replaces it; move focus there.
+  useEffect(() => {
+    if (playing) player.current?.focus();
+  }, [playing]);
   const titleText = stringAttribute(title)?.trim() ?? "";
   const captionText = stringAttribute(caption);
   const watch = topikYouTubeWatchUrl(video);
@@ -39,6 +44,7 @@ function YouTubeFigure({
       <div className="topik-youtube__frame">
         {playing ? (
           <iframe
+            ref={player}
             className="topik-youtube__player"
             src={topikYouTubeEmbedUrl(video)}
             title={titleText || "YouTube video"}

@@ -202,8 +202,9 @@ async function compileAssetResourcesWithReader(
       throw new AssetCompilationError("Content-bearing resource lacks a source-path binding");
     }
   }
+  const contentKeys = new Set(contentResources.map(resourceKey));
   for (const key of sourcePaths.keys()) {
-    if (!contentResources.some((resource) => resourceKey(resource) === key)) {
+    if (!contentKeys.has(key)) {
       throw new AssetCompilationError("Source-path binding names a non-content resource");
     }
   }

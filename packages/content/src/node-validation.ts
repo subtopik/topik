@@ -2,12 +2,14 @@ import type { TreeNode } from "./model.js";
 import type { Registry, ValidationIssue } from "./registry.js";
 import { validPath } from "./expressions.js";
 import { CONTENT_LIMITS } from "./limits.js";
+import { validId } from "./heading-ids.js";
 
 import {
   parentTypes as parents,
   inlineParentTypes as inlineParents,
   isMisplacedContent,
 } from "./node-grammar.js";
+import { hasControlCharacters } from "./text-controls.js";
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -24,14 +26,6 @@ function optionalString(value: unknown): boolean {
 function dense(array: unknown[]): boolean {
   const keys = Object.keys(array);
   return keys.length === array.length && keys.every((key, index) => key === String(index));
-}
-
-function controls(value: string, allowTab = false, includeSpace = false): boolean {
-  for (let index = 0; index < value.length; index++) {
-    const unit = value.charCodeAt(index);
-    if ((unit < (includeSpace ? 33 : 32) && !(allowTab && unit === 9)) || unit === 127) return true;
-  }
-  return false;
 }
 
 /** Admission runs after descriptor-based plain-data checks, before cloning or callbacks. */
@@ -65,7 +59,7 @@ export function textTemplateProblem(
         typeof segment.value !== "string"
       )
         return invalid("Literal template segments require a string value");
-      if (code ? /[\0\r]/.test(segment.value) : controls(segment.value))
+      if (code ? /[\0\r]/.test(segment.value) : hasControlCharacters(segment.value))
         return {
           id: "topik-template-control",
           message: code
@@ -104,8 +98,8 @@ export function codeTemplateProblem(
     node.lang === "" ||
     node.meta === "" ||
     (node.meta != null && !node.lang) ||
-    (typeof node.lang === "string" && controls(node.lang, false, true)) ||
-    (typeof node.meta === "string" && controls(node.meta, true))
+    (typeof node.lang === "string" && hasControlCharacters(node.lang, false, true)) ||
+    (typeof node.meta === "string" && hasControlCharacters(node.meta, true))
   )
     return {
       id: "topik-code-template-structure",
@@ -210,7 +204,7 @@ export function nodeShapeProblem(value: unknown, registry: Registry): string | u
       if (
         record(node.data) &&
         node.data.topikId !== undefined &&
-        (typeof node.data.topikId !== "string" || !/^[A-Za-z0-9_.:-]+$/.test(node.data.topikId))
+        (typeof node.data.topikId !== "string" || !validId.test(node.data.topikId))
       )
         return "Explicit heading IDs must contain supported characters";
       break;

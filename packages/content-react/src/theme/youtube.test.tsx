@@ -61,6 +61,8 @@ describe("TopikYouTube", () => {
     );
     expect(iframe.getAttribute("title")).toBe("Installing the CLI");
     expect(container.querySelector("a.topik-youtube__start")).toBeNull();
+    // Focus follows the reader from the removed link to the player.
+    expect(document.activeElement).toBe(iframe);
   });
 
   test("a modified click keeps the browser's handling, such as opening a new tab", async () => {
@@ -87,8 +89,12 @@ describe("TopikYouTube", () => {
       );
     await act(async () => root.render(<TopikYouTube src={SOURCE} title="Intro" />));
     await play();
+    const playerElement = container.querySelector("iframe")!;
+    playerElement.blur();
     await act(async () => root.render(<TopikYouTube src={SOURCE} title="Renamed" />));
     expect(container.querySelector("iframe")?.getAttribute("title")).toBe("Renamed");
+    // A new title is not a new activation, so it does not take focus back.
+    expect(document.activeElement).not.toBe(playerElement);
     await act(async () =>
       root.render(<TopikYouTube src="https://youtu.be/aaaaaaaaaaa" title="Next" />),
     );

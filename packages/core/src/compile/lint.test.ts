@@ -163,3 +163,20 @@ test("Course links to a page whose content is invalid are not reported as missin
     failures: [],
   });
 });
+
+test("an undeclared author is reported, and links are still checked", async () => {
+  const dir = await fixture({
+    ".topik.yaml":
+      "version: 1\nnamespace: example/lint\nsources:\n  - kind: collection\n    config: collection.yaml\n",
+    "collection.yaml": "sourceVersion: 1\nid: guides\ntitle: Guides\n",
+    "intro.md":
+      "---\nid: guides-intro\nslug: intro\nauthors: [nobody]\n---\n# Intro\n\n[Gone](./nope.md)\n",
+  });
+
+  const result = await lint({ dir });
+  expect(summary(result)).toEqual({
+    diagnostics: [["link-page-not-found", "intro.md", [8], "error"]],
+    failures: [["PublicCompileError", []]],
+  });
+  expect(result.failures[0].error).toMatchObject({ id: "author-not-found", location: "intro.md" });
+});

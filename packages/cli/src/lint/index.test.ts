@@ -107,13 +107,15 @@ describe("lint command", () => {
 
     expect(log).toHaveBeenCalledTimes(1);
     expect(JSON.parse(String(log.mock.calls[0]?.[0]))).toEqual({
+      // The location is the navigation entry, not a file, so it stays in the message.
       diagnostics: [
-        expect.objectContaining({
+        {
           lines: [],
           id: "wiki-page-not-found",
           severity: "error",
-          message: expect.stringContaining("A configured Wiki page file was not found."),
-        }),
+          message:
+            ".topik.yaml sources[0] (wiki) intro: A configured Wiki page file was not found.",
+        },
       ],
       errors: 1,
       warnings: 0,

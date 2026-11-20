@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { posix, resolve } from "node:path";
 import { boolean, command, positional, string } from "@drizzle-team/brocli";
 import {
   sanitizeTopikContentDiagnostic,
@@ -75,9 +75,12 @@ function failureDiagnostics(failure: LintFailure): LintJsonDiagnostic[] {
     .map((document) => sanitizeTopikDiagnosticFile(document))
     .filter((document): document is string => document !== undefined);
   if (documents.length > 0) return documents.map((file) => ({ file, ...entry, message }));
+  // Only a location that names a file: a missing page's navigation entry, such as `docs/intro`,
+  // stays in the message.
   const location =
     error instanceof PublicCompileError ? sanitizeTopikDiagnosticFile(error.location) : undefined;
-  return [{ ...(location === undefined ? {} : { file: location }), ...entry, message }];
+  const file = location !== undefined && posix.extname(location) !== "" ? location : undefined;
+  return [{ ...(file === undefined ? {} : { file }), ...entry, message }];
 }
 
 /** Build the `--json` report from the same sanitized fields the text output prints. */

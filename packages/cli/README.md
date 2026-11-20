@@ -177,8 +177,10 @@ The exit status is the same as without the flag.
 - `errors` counts the `error` and `critical` diagnostics.
 - A source that cannot be read, or an image or download that cannot be
   compiled, is an `error` with empty `lines`. Its `id` is the failure's ID, such
-  as `wiki-page-not-found` or `TOPIK_ASSET_FILE_MISSING`, and an image or download
-  has one entry for each page that uses it, with that page as `file`.
+  as `wiki-page-not-found` or `TOPIK_ASSET_FILE_MISSING`. An image or download
+  has one entry for each page that uses it, with that page as `file`. Another
+  failure has a `file` only when it names one, such as the configuration file;
+  the message always says where it is.
 
 A project whose `.topik.yaml` cannot be read cannot be linted at all. Lint prints
 the failure on stderr, and with `--json` stdout still holds one report, with a

@@ -212,8 +212,8 @@ Rules for applications and editors:
 ## Compatibility
 
 Templates require content schema `0.2.1` or later; the current content schema
-version is `0.2.2`. The content schema version is separate from npm package
-versions, the resource `apiVersion`, and `FORMAT_VERSION` (`1`).
+version is `0.3.0`. The content schema version is separate from npm package
+versions, the resource `apiVersion`, and `FORMAT_VERSION` (`2`).
 
 Keep readers, compilers, and editors on a compatible package cohort before
 authoring templates. Do not downgrade documents to evaluated source for an older

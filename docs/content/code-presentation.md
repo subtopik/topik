@@ -205,7 +205,7 @@ output. The ordinary source, tree and data limits also apply.
 
 ## Compatibility
 
-Code presentation is part of content schema `0.2.2`; `FORMAT_VERSION` is `1`.
+Code presentation is part of content schema `0.3.0`; `FORMAT_VERSION` is `2`.
 Topik is in development and may make breaking changes. Keep the compiler,
 renderer and source-writing packages on matching versions when you adopt syntax
 changes.

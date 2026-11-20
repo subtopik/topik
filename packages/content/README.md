@@ -505,8 +505,8 @@ an explicit ID, such as `## Hello {% $name %} {% #hello %}`.
 
 ## Versions and upgrading
 
-This package is alpha software. The content schema version is `0.2.2`
-(`TOPIK_CONTENT_SCHEMA_VERSION`), and `FORMAT_VERSION` is `1`. When you upgrade,
+This package is alpha software. The content schema version is `0.3.0`
+(`TOPIK_CONTENT_SCHEMA_VERSION`), and `FORMAT_VERSION` is `2`. When you upgrade,
 review the canonical output and keep compiler and renderer versions aligned.
 
 The package verifier type-checks and executes every TypeScript example in this

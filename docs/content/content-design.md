@@ -515,6 +515,6 @@ trees must keep to those constraints as well as the component rules.
 
 ## Versions
 
-The current content schema version is `0.2.2` and `FORMAT_VERSION` is `1`. These
+The current content schema version is `0.3.0` and `FORMAT_VERSION` is `2`. These
 versions describe the content contract. They are separate from package versions
 and from the `apiVersion` of [resource envelopes](../resources/index.md).

@@ -425,7 +425,7 @@ assert.equal(codeRunResult.diagnostics[0].id, "topik-content-limit");
 assert.ok(performance.now() - codeRunStarted < 5000, "Packed unmatched code runs exceeded the parser-work budget");
 assert.equal(typeof remarkTags, "function");
 assert.equal(remarkTags, namedRemarkTags);
-assert.equal(TOPIK_CONTENT_SCHEMA_VERSION, "0.2.2");
+assert.equal(TOPIK_CONTENT_SCHEMA_VERSION, "0.3.0");
 // Establish template support in the installed cohort, beyond source-level tests.
 const templateFence = String.fromCharCode(96).repeat(3);
 const templateSource = [

@@ -37,6 +37,7 @@ import {
   TopikTableCell,
   TopikTableHeader,
   TopikTableRow,
+  TopikKbd,
   TopikUnderline,
   getDefaultTopikComponents,
 } from "./components";
@@ -728,6 +729,12 @@ describe("default Topik theme components", () => {
     expect(success).toContain('data-variant="success"');
     expect(neutral).toContain('data-variant="neutral"');
     expect(underline).toContain("<u>Important</u>");
+  });
+
+  it("renders keyboard keys as kbd elements", () => {
+    expect(renderToStaticMarkup(<TopikKbd>Ctrl</TopikKbd>)).toBe(
+      '<kbd class="topik-kbd">Ctrl</kbd>',
+    );
   });
 
   it("renders quiz containers", () => {

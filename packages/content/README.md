@@ -103,9 +103,11 @@ reported as a diagnostic, never silently discarded.
 | `steps`, `step`                             | One or more steps; optional step `title`                                                            |
 | `codeGroup`, `codeTab`                      | One or more code tabs; each requires `title` and fenced code                                        |
 | `figure`                                    | Self-closing; required `src` and `alt`, optional `darkSrc` and `caption`                            |
+| `video`                                     | Self-closing; required `src` and `title`, optional `caption`, `poster` and `loop`                   |
 | `math`, `mathInline`                        | Self-closing block/inline formula with required `content`                                           |
 | `badge`                                     | Inline content; optional `variant`                                                                  |
 | `underline` (alias `u`)                     | Inline content                                                                                      |
+| `kbd`                                       | Inline content naming one key; write combinations as several keys, such as `Ctrl`+`C`               |
 | `quiz`, `question`, `choice`, `explanation` | Questions with at least two choices; `type` selects single/multiple choice, `correct` marks answers |
 
 The exported `components` registry contains the complete property, placement,
@@ -186,7 +188,8 @@ quoted properties and code blocks are always literal; only explicit templates
 are interpolated.
 
 - **Text templates.** Write `t"..."` for `title` on `callout`, `accordion`,
-  `card`, `tab`, `step`, and `codeTab`, or for `alt` and `caption` on `figure`.
+  `card`, `tab`, `step`, and `codeTab`, for `alt` and `caption` on `figure`, or
+  for `title` and `caption` on `video`.
 - **Code templates.** Wrap exactly one fenced code block between
   `{% template code %}` and `{% /template code %}`, each on its own block line.
 
@@ -354,9 +357,12 @@ Rewriting rules:
 
 Accepted references:
 
-- Images and figure sources accept canonical relative paths or credential-free
-  HTTPS URLs. An HTTPS URL with trailing whitespace or an undecodable fragment,
-  such as `#%E9`, is refused, because rendering would drop it.
+- Images, figure sources, and video sources and posters accept canonical
+  relative paths or credential-free HTTPS URLs. An HTTPS URL with trailing
+  whitespace or an undecodable fragment, such as `#%E9`, is refused, because
+  rendering would drop it. A `video.src` occurrence has the `video` role and its
+  title in `semantics.title` or `semantics.titleTemplate`; an application that
+  allows only some video services checks it here.
 - Compiler-generated `asset:` references are accepted in rewritten output.
   Source admission accepts them only with `allowCompiledAssetReferences: true`.
 - Generic links count as download assets only when their decoded file path is

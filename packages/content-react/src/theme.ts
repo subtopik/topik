@@ -17,6 +17,7 @@ export {
   TopikFigure,
   TopikImage,
   TopikInlineCode,
+  TopikKbd,
   TopikLink,
   TopikMath,
   TopikMathInline,
@@ -32,4 +33,5 @@ export {
   TopikTableHeader,
   TopikTableRow,
   TopikUnderline,
+  TopikVideo,
 } from "./theme/components";

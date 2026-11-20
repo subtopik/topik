@@ -5,6 +5,7 @@ import { calloutDefinition } from "./extensions/callout.js";
 import { cardDefinition, cardGridDefinition } from "./extensions/cards.js";
 import { codeGroupDefinition, codeTabDefinition } from "./extensions/code.js";
 import { figureDefinition } from "./extensions/figure.js";
+import { kbdDefinition } from "./extensions/kbd.js";
 import { mathDefinition, mathInlineDefinition } from "./extensions/math.js";
 import { nativeComponents } from "./extensions/native.js";
 import {
@@ -16,13 +17,20 @@ import {
 import { stepDefinition, stepsDefinition } from "./extensions/steps.js";
 import { tabDefinition, tabsDefinition } from "./extensions/tabs.js";
 import { underlineDefinition } from "./extensions/underline.js";
+import { videoDefinition } from "./extensions/video.js";
 
 export const TOPIK_CONTENT_SCHEMA_VERSION = "0.2.2";
 export const CALLOUT_VARIANTS = ["info", "tip", "warning", "danger"] as const;
 export const BADGE_VARIANTS = ["neutral", "info", "success", "warning", "danger"] as const;
 export const QUIZ_QUESTION_TYPES = ["single-choice", "multiple-choice"] as const;
 
-export type TopikAssetReferenceRole = "image" | "image-light" | "image-dark" | "media" | "download";
+export type TopikAssetReferenceRole =
+  | "image"
+  | "image-light"
+  | "image-dark"
+  | "video"
+  | "media"
+  | "download";
 export interface TopikAssetReferenceDefinition {
   slot: string;
   role: TopikAssetReferenceRole;
@@ -151,6 +159,7 @@ const authoredComponents = {
   choice: choiceDefinition,
   explanation: explanationDefinition,
   figure: textAttributes(figureDefinition, ["alt", "caption"]),
+  kbd: kbdDefinition,
   math: mathDefinition,
   mathInline: mathInlineDefinition,
   question: questionDefinition,
@@ -160,6 +169,7 @@ const authoredComponents = {
   tab: textAttributes(tabDefinition, ["title"]),
   tabs: tabsDefinition,
   underline: underlineDefinition,
+  video: textAttributes(videoDefinition, ["title", "caption"]),
 } satisfies Registry;
 
 /** Canonical schemas are immutable; callers add custom names in a separate registry. */

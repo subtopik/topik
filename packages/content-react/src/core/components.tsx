@@ -15,6 +15,7 @@ export const topikComponentNames = [
   "TopikFigure",
   "TopikImage",
   "TopikInlineCode",
+  "TopikKbd",
   "TopikLink",
   "TopikMath",
   "TopikMathInline",
@@ -30,6 +31,7 @@ export const topikComponentNames = [
   "TopikTableHeader",
   "TopikTableRow",
   "TopikUnderline",
+  "TopikVideo",
 ] as const;
 
 export type TopikComponentName = (typeof topikComponentNames)[number];
@@ -67,6 +69,34 @@ function MissingTopikComponent({ children }: TopikComponentProps) {
   return <>{children}</>;
 }
 
+/** Without a themed component, a video stays readable: its poster and title link to the source. */
+function PlainTopikVideo({ caption, crossOrigin, poster, src, title }: TopikComponentProps) {
+  // A CORS-only source, such as a local preview stream, cannot open by navigation.
+  const source = typeof src === "string" && crossOrigin !== "anonymous" ? src : undefined;
+  // A link needs a name: without a title, the address names it.
+  const titleText = (typeof title === "string" && title.trim()) || source;
+  const captionText = typeof caption === "string" && caption ? caption : undefined;
+  const posterSource = typeof poster === "string" ? poster : undefined;
+  if (!titleText && !captionText && !posterSource) return null;
+  const content = (
+    <>
+      {posterSource ? <img alt="" src={posterSource} /> : null}
+      {titleText}
+    </>
+  );
+  return (
+    <figure>
+      {source ? <a href={source}>{content}</a> : content}
+      {captionText ? <figcaption>{captionText}</figcaption> : null}
+    </figure>
+  );
+}
+
+/** A key keeps its meaning without a theme: `<kbd>` is semantic HTML that browsers style. */
+function PlainTopikKbd({ children }: TopikComponentProps) {
+  return <kbd>{children}</kbd>;
+}
+
 const fallbackTopikComponents = {
   TopikAccordion: MissingTopikComponent,
   TopikBadge: MissingTopikComponent,
@@ -81,6 +111,7 @@ const fallbackTopikComponents = {
   TopikFigure: MissingTopikComponent,
   TopikImage: MissingTopikComponent,
   TopikInlineCode: MissingTopikComponent,
+  TopikKbd: PlainTopikKbd,
   TopikLink: MissingTopikComponent,
   TopikMath: MissingTopikComponent,
   TopikMathInline: MissingTopikComponent,
@@ -96,6 +127,7 @@ const fallbackTopikComponents = {
   TopikTableHeader: MissingTopikComponent,
   TopikTableRow: MissingTopikComponent,
   TopikUnderline: MissingTopikComponent,
+  TopikVideo: PlainTopikVideo,
 } satisfies TopikComponentMap;
 
 /** @internal Merge override maps in order; an explicit `undefined` keeps the earlier component. */
@@ -127,6 +159,7 @@ export function getTopikComponents(overrides: TopikComponentOverrides = {}): Top
     TopikFigure: overrides.TopikFigure ?? fallbackTopikComponents.TopikFigure,
     TopikImage: overrides.TopikImage ?? fallbackTopikComponents.TopikImage,
     TopikInlineCode: overrides.TopikInlineCode ?? fallbackTopikComponents.TopikInlineCode,
+    TopikKbd: overrides.TopikKbd ?? fallbackTopikComponents.TopikKbd,
     TopikLink: overrides.TopikLink ?? fallbackTopikComponents.TopikLink,
     TopikMath: overrides.TopikMath ?? fallbackTopikComponents.TopikMath,
     TopikMathInline: overrides.TopikMathInline ?? fallbackTopikComponents.TopikMathInline,
@@ -142,5 +175,6 @@ export function getTopikComponents(overrides: TopikComponentOverrides = {}): Top
     TopikTableHeader: overrides.TopikTableHeader ?? fallbackTopikComponents.TopikTableHeader,
     TopikTableRow: overrides.TopikTableRow ?? fallbackTopikComponents.TopikTableRow,
     TopikUnderline: overrides.TopikUnderline ?? fallbackTopikComponents.TopikUnderline,
+    TopikVideo: overrides.TopikVideo ?? fallbackTopikComponents.TopikVideo,
   };
 }

@@ -287,6 +287,43 @@ test("validates authored local resource fragments and keeps warning status expli
   expect(warning.diagnostics[0]).toMatchObject({ id: "link-fragment-not-found", level: "warning" });
 });
 
+test("warns when a link targets a generated ID that depends on heading position", async () => {
+  const dir = await fixture({
+    "collection.yaml": guideConfig,
+    "intro.md": [
+      "---\nid: introduction\nslug: intro\ntitle: Introduction\n---\n# Introduction",
+      "[Second setup](#setup-1)",
+      "[Pinned](#pinned)",
+      "[Other page](./install.md#setup)",
+      "[Unique](./install.md#usage)",
+      "## Setup",
+      "## Setup",
+      "## Setup {% #pinned %}",
+    ].join("\n\n"),
+    "install.md":
+      "---\nid: installation\nslug: install\ntitle: Install\n---\n# Install\n\n## Setup\n\n## Usage\n\n## Setup\n",
+  });
+  // A positional link still resolves, so it warns even where broken links are errors.
+  const result = await compileGuides({ dir });
+  expect(result.diagnostics).toEqual([
+    expect.objectContaining({
+      id: "link-fragment-positional",
+      level: "warning",
+      file: "intro.md",
+      lines: [3],
+    }),
+    expect.objectContaining({
+      id: "link-fragment-positional",
+      level: "warning",
+      file: "intro.md",
+      lines: [7],
+    }),
+  ]);
+  expect(result.references.map(({ status }) => status)).toEqual(["verified", "verified"]);
+  const off = await compileGuides({ dir, validation: { links: "off" } });
+  expect(off.diagnostics).toEqual([]);
+});
+
 test("supplied target catalogues validate explicit external references without importing source files", async () => {
   const dir = await fixture({
     "collection.yaml": guideConfig,

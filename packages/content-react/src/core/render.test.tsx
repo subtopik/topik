@@ -65,6 +65,8 @@ Inline math: {% mathInline content="x^2" /%}
 
 Use {% underline %}important text{% /underline %}.
 
+Press {% kbd %}Ctrl{% /kbd %}+{% kbd %}C{% /kbd %}.
+
 \`\`\`mermaid
 graph TD;
   A-->B;
@@ -804,6 +806,7 @@ describe("content-react core", () => {
       TopikTableCell: ({ children }) => <td data-table-cell>{children}</td>,
       TopikTableHeader: ({ children }) => <th data-table-header>{children}</th>,
       TopikTableRow: ({ children }) => <tr data-table-row>{children}</tr>,
+      TopikKbd: ({ children }) => <kbd data-kbd>{children}</kbd>,
       TopikUnderline: ({ children }) => <u data-underline>{children}</u>,
     });
     const html = renderToStaticMarkup(
@@ -828,6 +831,7 @@ describe("content-react core", () => {
     expect(html).toContain("data-math-inline");
     expect(html).toContain("data-mermaid");
     expect(html).toContain("data-underline");
+    expect(html).toContain('<kbd data-kbd="true">Ctrl</kbd>+<kbd data-kbd="true">C</kbd>');
     expect(html).toContain("data-table");
     expect(html).toContain("data-table-row");
     expect(html).toContain("data-table-cell");
@@ -1307,4 +1311,11 @@ describe("content-react core", () => {
     expect(html).toContain('src="assets/light.png"');
     expect(html).toContain('data-dark-src="assets/dark.png"');
   });
+});
+
+it("a keyboard key keeps its kbd element without a themed component", () => {
+  const html = renderToStaticMarkup(
+    <>{renderTopikMarkdown("Press {% kbd %}Ctrl{% /kbd %}+{% kbd %}C{% /kbd %}.")}</>,
+  );
+  expect(html).toBe("<article><p>Press <kbd>Ctrl</kbd>+<kbd>C</kbd>.</p></article>");
 });

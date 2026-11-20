@@ -61,7 +61,7 @@ describe("previewErrorDiagnostics", () => {
       diagnostic({
         id: "link-page-not-found",
         level: "error",
-        file: "wiki/chapter#1/intro.md",
+        file: "wiki/a\u202eb.md",
         lines: [2],
       }),
     ]);

@@ -45,7 +45,7 @@ describe("formatValidationFailure", () => {
 
     expect(output).toBe(
       [
-        "resource file: Wiki/unknown: /spec is invalid",
+        "wiki.json: Wiki/unknown: /spec is invalid",
         "resources/Other.json: unknown/docs: /type Unsupported resource type",
         "resources/Wiki/docs.json: Wiki/docs: /apiVersion Unsupported resource apiVersion",
         "",
@@ -57,7 +57,11 @@ describe("formatValidationFailure", () => {
 
   test("names an unreadable resource file with its safe label only", () => {
     const sentinel = "PRIVATE VALUE";
-    expect(formatUnreadableResourceFile(`/home/user/${sentinel}.json`, new Error(sentinel))).toBe(
+    // An absolute path keeps only its file name; the directories never appear.
+    expect(
+      formatUnreadableResourceFile(`/home/user/${sentinel}/wiki.json`, new Error(sentinel)),
+    ).toBe("wiki.json: Topik command failed.");
+    expect(formatUnreadableResourceFile("bad\u202e.json", new Error(sentinel))).toBe(
       "resource file: Topik command failed.",
     );
   });

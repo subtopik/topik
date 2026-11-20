@@ -389,8 +389,17 @@ export function sanitizeTopikDiagnosticFile(file: string | undefined): string | 
   return isSafeRelativeDiagnosticLabel(file) ? file : "content";
 }
 
+/**
+ * Characters that can hide or disguise what a label says: control, format (bidi, zero-width),
+ * private-use and unassigned code points, whitespace other than a plain space, and
+ * percent-escapes, which can carry an encoded URL.
+ */
 function hasAmbiguousDiagnosticCharacter(value: string): boolean {
-  return /[%\p{Cc}\p{Cf}\p{Separator}\p{White_Space}]/u.test(value);
+  return (
+    /\p{C}/u.test(value) ||
+    /[\p{Separator}\p{White_Space}]/u.test(value.replaceAll(" ", "")) ||
+    /%[0-9a-f]{2}/iu.test(value)
+  );
 }
 
 function hasHtmlCharacterReference(value: string): boolean {
@@ -403,6 +412,17 @@ function safeDiagnosticBasename(file: string): string {
   return label !== undefined && isSafeRelativeDiagnosticLabel(label) ? label : "content";
 }
 
+/**
+ * A relative path shown as written: any printable name, so authors see the file they wrote,
+ * including spaces and non-ASCII letters. Not a URL or drive (no `:`), no empty, `.` or `..`
+ * segment, and no segment that starts or ends with a space.
+ */
 function isSafeRelativeDiagnosticLabel(value: string): boolean {
-  return /^(?!\.\.?$)[a-z0-9._-]+(?:[\\/][a-z0-9._-]+)*$/iu.test(value);
+  if (value.length === 0 || value.length > 1024 || value.includes(":")) return false;
+  return value
+    .split(/[\\/]/u)
+    .every(
+      (segment) =>
+        segment.length > 0 && segment !== "." && segment !== ".." && segment.trim() === segment,
+    );
 }

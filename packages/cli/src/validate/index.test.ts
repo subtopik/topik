@@ -276,7 +276,7 @@ describe("validate command", () => {
       JSON.stringify({ apiVersion: "v1", type: "Wiki", name: "docs", spec: { title: 1 } }),
     );
     await writeFile(
-      join(dir, `${sentinel}.json`),
+      join(dir, "Bad wiki.json"),
       JSON.stringify({
         apiVersion: sentinel,
         type: "Wiki",
@@ -293,7 +293,7 @@ describe("validate command", () => {
     const output = error.mock.calls.map((call) => call.join(" ")).join("\n");
     expect(output).toBe(
       [
-        "resource file: Wiki/unknown: /apiVersion Unsupported resource apiVersion",
+        "Bad wiki.json: Wiki/unknown: /apiVersion Unsupported resource apiVersion",
         "Wiki/docs.json: Wiki/docs: /spec/title must be string",
         "",
         "2 validation error(s) in 2 resources while validating resources",

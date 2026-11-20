@@ -27,6 +27,7 @@ import type {
   TopikLinkResolver,
 } from "../core/components";
 import { useTopikLinkHandler, useTopikLinkRenderer, useTopikLinkResolver } from "../core/context";
+import { footnoteAnchor, footnoteBackrefs, footnoteNumber } from "../core/components";
 import { CodeBlockView } from "./code-block";
 import { TopikTablist } from "./tablist";
 import { TopikVideo } from "./video";
@@ -373,6 +374,52 @@ function colorSchemeAttribute(value: unknown): TopikColorScheme | undefined {
   return value === "light" || value === "dark" ? value : undefined;
 }
 
+export function TopikFootnoteReference({ id, number, target }: TopikComponentProps) {
+  const value = footnoteNumber(number);
+  const anchor = footnoteAnchor(target);
+  if (value === undefined) return null;
+  return (
+    <sup className="topik-footnote-ref">
+      <a aria-label={`Footnote ${value}`} href={anchor && `#${anchor}`} id={footnoteAnchor(id)}>
+        {value}
+      </a>
+    </sup>
+  );
+}
+
+/** The notes of the page, after its content, in order of first reference. */
+export function TopikFootnotes({ children }: TopikComponentProps) {
+  return (
+    <section aria-label="Footnotes" className="topik-footnotes">
+      <ol>{children}</ol>
+    </section>
+  );
+}
+
+export function TopikFootnote({ backrefs, children, id, number }: TopikComponentProps) {
+  const value = footnoteNumber(number);
+  const links = footnoteBackrefs(backrefs);
+  return (
+    <li className="topik-footnote" id={footnoteAnchor(id)}>
+      {children}
+      {links.length ? (
+        <span className="topik-footnote__backrefs">
+          {links.map((anchor, index) => (
+            <a
+              key={anchor}
+              // The visible sub-number ends the name, so speech and sight agree.
+              aria-label={`Back to reference ${value ?? ""}${links.length > 1 ? `, ${index + 1}` : ""}`}
+              href={`#${anchor}`}
+            >
+              ↩{links.length > 1 ? <sup>{index + 1}</sup> : null}
+            </a>
+          ))}
+        </span>
+      ) : null}
+    </li>
+  );
+}
+
 export function TopikFigure({ alt, caption, colorScheme, darkSrc, src }: TopikComponentProps) {
   const lightSource = stringAttribute(src);
   const darkSource = stringAttribute(darkSrc);
@@ -652,6 +699,9 @@ export const defaultTopikComponents = {
   TopikChoice,
   TopikExplanation,
   TopikFigure,
+  TopikFootnote,
+  TopikFootnoteReference,
+  TopikFootnotes,
   TopikImage,
   TopikInlineCode,
   TopikKbd,

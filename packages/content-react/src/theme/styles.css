@@ -573,6 +573,62 @@
     margin-top: 0.45rem;
   }
 
+  .topik-footnote-ref {
+    font-size: 0.75em;
+    line-height: 0;
+  }
+
+  .topik-footnote-ref a {
+    color: var(--topik-color-accent);
+    padding-inline: 0.1em;
+    text-decoration: none;
+  }
+
+  .topik-footnote-ref a:hover,
+  .topik-footnote-ref a:focus-visible {
+    text-decoration: underline;
+  }
+
+  .topik-footnotes {
+    border-top: 1px solid var(--topik-color-border);
+    color: var(--topik-color-muted);
+    font-size: 0.9rem;
+    margin-top: 2.5rem;
+    padding-top: 1rem;
+  }
+
+  .topik-footnotes ol {
+    margin: 0;
+    padding-inline-start: 1.5rem;
+  }
+
+  .topik-footnote {
+    margin-block: 0.4rem;
+  }
+
+  .topik-footnote > p:first-child {
+    margin-top: 0;
+  }
+
+  /* A note's back-links follow its last paragraph on the same line. */
+  .topik-footnote > p:last-of-type:nth-last-child(2) {
+    display: inline;
+  }
+
+  /* Underlined: in muted note text, color alone does not mark the links. */
+  .topik-footnote__backrefs a {
+    color: var(--topik-color-accent);
+    margin-inline-start: 0.35em;
+    text-decoration: underline;
+  }
+
+  /* The target of a footnote link stands out briefly after the jump. */
+  .topik-footnote:target,
+  .topik-footnote-ref a:target {
+    background: var(--topik-color-accent-soft);
+    border-radius: 0.2rem;
+  }
+
   .topik-video {
     margin-inline: 0;
   }
@@ -772,7 +828,8 @@
     }
 
     .topik-code-block__controls,
-    .topik-code-block__fold {
+    .topik-code-block__fold,
+    .topik-footnote__backrefs {
       display: none;
     }
 

@@ -5,6 +5,7 @@ import { components, type Registry } from "./registry.js";
 import { validateDocument } from "./validation.js";
 import { assertDataLimits, ContentLimitError, CONTENT_LIMITS } from "./limits.js";
 import { indexDocument, materializeReferences } from "./document-index.js";
+import { footnoteKey } from "./footnotes.js";
 import { assignAnchorIds, isAnchorNode } from "./headings.js";
 import { inlineParentTypes } from "./node-grammar.js";
 import { writeDocument } from "./writer.js";
@@ -271,6 +272,7 @@ function resolveDocument(
     return { parts, length };
   }
 
+  let emptyFootnote: (node: TreeNode) => boolean = () => false;
   function resolveChildren(children: TreeNode[]): TreeNode[] {
     const result: TreeNode[] = [];
     function append(node: TreeNode): void {
@@ -291,6 +293,10 @@ function resolveDocument(
       } else result.push(node);
     }
     for (const original of children) {
+      if (original.type === "footnoteDefinition" || emptyFootnote(original)) {
+        if (original.type === "footnoteDefinition") result.push(original);
+        continue;
+      }
       if (original.type === "topikConditional") {
         const [first, alternate] = original.children!;
         const selected = truthy(evaluate(first.condition as Expression, context, original))
@@ -369,8 +375,35 @@ function resolveDocument(
     return result;
   }
 
+  // A footnote referenced only in hidden branches is not part of the evaluated content, so its
+  // definition is dropped before its body is evaluated: data it needs may be absent. A footnote
+  // whose body evaluates to nothing is dropped with its references, like an emptied paragraph.
+  // Definitions are top level and cannot contain references or conditionals.
+  function shownReferences(nodes: readonly TreeNode[], keys = new Set<string>()): Set<string> {
+    for (const node of nodes) {
+      if (node.type === "footnoteDefinition") continue;
+      if (node.type === "footnoteReference") keys.add(footnoteKey(node));
+      else if (node.type === "topikConditional") {
+        const [first, alternate] = node.children!;
+        const selected = truthy(evaluate(first.condition as Expression, context, node))
+          ? first
+          : alternate;
+        shownReferences(selected?.children ?? [], keys);
+      } else shownReferences(node.children ?? [], keys);
+    }
+    return keys;
+  }
+  const shown = shownReferences(resolved.children as TreeNode[]);
+  for (const child of resolved.children as TreeNode[]) {
+    if (child.type !== "footnoteDefinition" || !shown.has(footnoteKey(child))) continue;
+    child.children = resolveChildren(child.children ?? []);
+    if (!child.children.length) shown.delete(footnoteKey(child));
+  }
+  emptyFootnote = (node) => node.type === "footnoteReference" && !shown.has(footnoteKey(node));
   resolved.children = resolveChildren(
-    resolved.children as TreeNode[],
+    (resolved.children as TreeNode[]).filter(
+      (child) => child.type !== "footnoteDefinition" || shown.has(footnoteKey(child)),
+    ),
   ) as ContentDocument["children"];
   try {
     assertDataLimits(resolved, { plain: true, stringLengths });

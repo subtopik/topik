@@ -6,7 +6,13 @@ import { plainText, walkContent } from "./traversal.js";
 import { indexDocument, isReference, type DocumentIndex } from "./document-index.js";
 type ValidationError = { id: string; level: "error"; message: string };
 import { isTopikGeneratedAssetName } from "./asset-reference-policy.js";
-import { anchorIds, isAnchorNode, type TopikAnchor, type TopikHeading } from "./headings";
+import {
+  anchorIds,
+  explicitId,
+  isAnchorNode,
+  type TopikAnchor,
+  type TopikHeading,
+} from "./headings";
 import { parseTopikContent } from "./content";
 import { parseTopikResourceReference } from "./resource-references.js";
 import {
@@ -14,6 +20,7 @@ import {
   topikLinkDiagnosticMessage,
   type TopikContentDiagnostic,
 } from "./diagnostics";
+import { hasControlCharacters } from "./text-controls.js";
 
 const ALLOWED_SCHEMES = new Set(["asset", "http", "https", "mailto", "tel"]);
 const UNSAFE_SCHEMES = new Set(["data", "javascript", "vbscript"]);
@@ -80,7 +87,7 @@ export function analyzeDocument(
   const explicitIdNodes = new Map<string, TreeNode[]>();
 
   for (const node of anchorNodes) {
-    const id = node.type === "heading" ? (node as Heading).data?.topikId : node.props?.id;
+    const id = explicitId(node);
     if (typeof id !== "string" || !id) continue;
     const nodes = explicitIdNodes.get(id) ?? [];
     nodes.push(node);
@@ -149,7 +156,7 @@ export function validateTopikHref(value: unknown): ValidationError[] {
   if (value !== value.trim()) {
     return [linkError("link-url-invalid")];
   }
-  if (hasAsciiControl(value)) {
+  if (hasControlCharacters(value)) {
     return [linkError("link-url-invalid")];
   }
   if (isNetworkPathReference(value)) {
@@ -245,14 +252,6 @@ function linkError(id: string): ValidationError {
   const message = topikLinkDiagnosticMessage(id);
   if (message === undefined) throw new TypeError("Unknown link diagnostic identifier");
   return { id, level: "error", message };
-}
-
-function hasAsciiControl(value: string): boolean {
-  for (let index = 0; index < value.length; index++) {
-    const code = value.charCodeAt(index);
-    if (code <= 0x1f || code === 0x7f) return true;
-  }
-  return false;
 }
 
 function isNetworkPathReference(value: string): boolean {

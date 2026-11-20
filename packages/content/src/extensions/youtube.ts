@@ -2,7 +2,7 @@ import type { AuthoredAttributeValue } from "../model.js";
 import type { ComponentDefinition, ValidationIssue } from "../registry.js";
 import { parseTopikYouTubeUrl } from "../youtube.js";
 
-function blankText(value: AuthoredAttributeValue | undefined): boolean {
+export function blankText(value: AuthoredAttributeValue | undefined): boolean {
   return typeof value === "string"
     ? value.trim() === ""
     : typeof value === "object" &&

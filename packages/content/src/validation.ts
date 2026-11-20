@@ -34,6 +34,7 @@ import {
   type Registry,
   type ValidationIssue,
 } from "./registry.js";
+import { hasControlCharacters } from "./text-controls.js";
 
 export interface Tag {
   name: string;
@@ -52,14 +53,6 @@ function issue(
 
 function kebab(name: string): string {
   return name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
-}
-
-function hasControl(value: string): boolean {
-  for (let index = 0; index < value.length; index++) {
-    const code = value.charCodeAt(index);
-    if (code < 32 || code === 127) return true;
-  }
-  return false;
 }
 
 const attributeNameLists = new WeakMap<object, readonly string[]>();
@@ -146,7 +139,7 @@ export function validateTag(
       );
     if (
       typeof value === "string" &&
-      hasControl(
+      hasControlCharacters(
         attr.type === "string" && attr.escapedWhitespace ? value.replace(/[\t\n\r]/g, "") : value,
       )
     )

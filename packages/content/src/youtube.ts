@@ -21,7 +21,7 @@ function parseStart(value: string | null): number | undefined {
 /**
  * The video a YouTube URL names, or `undefined` for anything else. Accepts the share forms
  * authors copy: `youtube.com/watch?v=…`, `youtu.be/…`, and `/embed/`, `/shorts/` and `/live/`
- * paths, including on `youtube-nocookie.com`. Only credential-free HTTPS URLs qualify. The start
+ * paths, including on `www.youtube-nocookie.com`. Only credential-free HTTPS URLs qualify. The start
  * time comes from the `t` or `start` parameter.
  */
 export function parseTopikYouTubeUrl(source: string): TopikYouTubeVideo | undefined {

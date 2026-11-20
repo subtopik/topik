@@ -9,6 +9,7 @@ import { footnoteKey } from "./footnotes.js";
 import { assignAnchorIds, isAnchorNode } from "./headings.js";
 import { inlineParentTypes } from "./node-grammar.js";
 import { writeDocument } from "./writer.js";
+import { hasControlCharacters } from "./text-controls.js";
 
 export class ContentEvaluationError extends Error {
   constructor(message: string) {
@@ -79,14 +80,6 @@ function lookup(
 // Markdoc treats only false and null as false, including for the literal 0 and "".
 function truthy(value: unknown): boolean {
   return value !== false && value !== null;
-}
-
-function hasControl(value: string): boolean {
-  for (let index = 0; index < value.length; index++) {
-    const code = value.charCodeAt(index);
-    if (code < 32 || code === 127) return true;
-  }
-  return false;
 }
 
 /** Bound public source context before joining a potentially long path. */
@@ -243,7 +236,7 @@ function resolveDocument(
             variable,
           );
         text = value === null ? "" : String(value);
-        if (hasControl(text))
+        if (hasControlCharacters(text))
           throw new TemplateEvaluationError(
             "topik-template-control",
             node,
@@ -328,7 +321,7 @@ function resolveDocument(
               );
             throw new ContentEvaluationError("Interpolated content exceeds the data string limit");
           }
-          if (typeof value === "string" && hasControl(value))
+          if (typeof value === "string" && hasControlCharacters(value))
             throw new TemplateEvaluationError(
               "topik-variable-control",
               original,

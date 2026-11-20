@@ -153,10 +153,7 @@ const authoredComponents = {
   callout: textAttributes(calloutDefinition, ["title"]),
   card: textAttributes(cardDefinition, ["title"]),
   codeGroup: codeGroupDefinition,
-  codeTab: {
-    ...textAttributes(codeTabDefinition, ["title"]),
-    children: { nodes: ["code", "topikCodeTemplate", "topikCodePresentation"], min: 1 },
-  },
+  codeTab: textAttributes(codeTabDefinition, ["title"]),
   choice: choiceDefinition,
   column: columnDefinition,
   columns: columnsDefinition,

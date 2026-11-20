@@ -1,6 +1,7 @@
 import type { AuthoredAttributeValue } from "../model.js";
 import type { ComponentDefinition, ValidationIssue } from "../registry.js";
 import { parseTopikYouTubeUrl } from "../youtube.js";
+import { blankText } from "./youtube.js";
 
 /**
  * The title names the player for assistive technology, so it cannot be blank. A YouTube page is
@@ -18,14 +19,7 @@ function validateVideo(
       message: "video plays video files; use youtube for a YouTube video",
       attribute: "src",
     });
-  const blank =
-    typeof title === "string"
-      ? title.trim() === ""
-      : typeof title === "object" &&
-        title.segments.every(
-          (segment) => segment.type === "literal" && segment.value.trim() === "",
-        );
-  if (blank)
+  if (blankText(title))
     issues.push({
       id: "topik-video-title",
       message: "video requires a non-blank title",

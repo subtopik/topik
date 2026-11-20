@@ -860,6 +860,42 @@ navigation:
     expect(result.resources.filter((resource) => resource.type === "WikiPage")).toHaveLength(1);
   });
 
+  test("names the page whose frontmatter id repeats another page's", async () => {
+    await writeWikiConfig("id: tw\ntitle: Wiki\nsourceVersion: 1\nnavigation:\n  - a\n  - b\n");
+    await writePage("a", "---\nid: same\n---\n# A\n");
+    await writePage("b", "---\nid: same\n---\n# B\n");
+
+    await expect(compileWiki({ dir })).rejects.toMatchObject({
+      id: "frontmatter-invalid",
+      location: "b.md",
+      field: "id",
+      relatedLocation: "a.md",
+    });
+  });
+
+  test.each([
+    [
+      "a page source the Wiki schema refuses",
+      "  - type: page\n    slug: csharp\n    source: c#-basics\n",
+      "navigation[0].source",
+    ],
+    [
+      "a link the Wiki schema refuses",
+      "  - intro\n  - type: link\n    title: Cafe\n    href: https://example.com/café\n",
+      "navigation[1].href",
+    ],
+  ])("reports %s as configuration", async (_case, navigation, field) => {
+    await writeWikiConfig(`id: tw\ntitle: Wiki\nsourceVersion: 1\nnavigation:\n${navigation}`);
+    await writePage("intro", "# Intro\n");
+    await writePage("c#-basics", "# C#\n");
+
+    await expect(compileWiki({ dir })).rejects.toMatchObject({
+      id: "config-invalid",
+      location: "wiki.yaml",
+      field,
+    });
+  });
+
   test("names the invalid configuration and frontmatter field", async () => {
     await writeWikiConfig(
       "id: tw\ntitle: Wiki\nnavigation:\n  - intro\n  - type: link\n    title: 7\n    href: https://example.com\n",

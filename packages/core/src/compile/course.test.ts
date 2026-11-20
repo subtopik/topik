@@ -241,12 +241,23 @@ test("rejects duplicate Course page identities and routes independently of their
     ...sourceFiles(),
     "separate/next.md": next.replace("id: next", "id: welcome"),
   });
-  await expect(compileCourse({ dir })).rejects.toMatchObject({ id: "config-invalid" });
+  // The second page is named, with the field and the page it collides with.
+  await expect(compileCourse({ dir })).rejects.toMatchObject({
+    id: "frontmatter-invalid",
+    location: "separate/next.md",
+    field: "id",
+    relatedLocation: "pages/welcome.md",
+  });
   await writeFile(
     join(dir, "separate/next.md"),
     next.replace("slug: destination", "slug: introduction"),
   );
-  await expect(compileCourse({ dir })).rejects.toMatchObject({ id: "config-invalid" });
+  await expect(compileCourse({ dir })).rejects.toMatchObject({
+    id: "frontmatter-invalid",
+    location: "separate/next.md",
+    field: "slug",
+    relatedLocation: "pages/welcome.md",
+  });
 });
 
 test("explicit Course page sources refuse ambiguous extensions and symlink traversal", async () => {

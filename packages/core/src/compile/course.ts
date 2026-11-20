@@ -102,6 +102,7 @@ export async function discoverCourse(
   const diagnostics: CompileResult["diagnostics"] = [];
   const sourcePathsByResource: Record<string, string> = {};
   const bodyLinesByResource: Record<string, number> = {};
+  const unvalidatedDocuments: NonNullable<CompileResourceDiscovery["unvalidatedDocuments"]> = [];
   const pagePathsByRoute = new Map<string, string>();
   const pages: CourseReferenceContext["pages"][number][] = [];
   const modules: import("../preview").CourseNavigationModule[] = [];
@@ -150,7 +151,6 @@ export async function discoverCourse(
         });
       const validation = memo.validate(parsed.content, file.path);
       diagnostics.push(...withFileLines(validation.errors, parsed.bodyLineOffset));
-      if (!validation.valid) continue;
       const page: CoursePage = {
         apiVersion: "v1",
         type: "CoursePage",
@@ -166,6 +166,10 @@ export async function discoverCourse(
           content: { format: "topik", value: parsed.content },
         },
       };
+      if (!validation.valid) {
+        unvalidatedDocuments.push({ resource: page, sourcePath: file.path });
+        continue;
+      }
       resources.push(page);
       navigation.pages.push({ name: page.name, declarationIndex: pageIndex });
       sourcePathsByResource[key] = file.path;
@@ -191,6 +195,7 @@ export async function discoverCourse(
     diagnostics,
     sourcePathsByResource,
     bodyLinesByResource,
+    unvalidatedDocuments,
     consumedSourcePaths: [loaded.path],
     courseNavigation: { [course.name]: { modules } },
     assetDirectory: config.assets.directory,

@@ -81,6 +81,25 @@ export interface CompileAssetResourcesInput extends AssetCompilationOptions {
   sourceDirectoriesByResource?: Readonly<Record<string, string>>;
   /** Other consumed compiler inputs that cannot be owned as Asset bytes. */
   protectedSourcePaths?: readonly string[];
+  /**
+   * @internal When given, a failure in one document or one Asset is recorded here and the rest
+   * are still checked; compilation then ends with {@link AssetFailuresCollected}.
+   */
+  failures?: AssetCompilationFailure[];
+}
+
+/** @internal An Asset failure and the source paths of the documents it was found in. */
+export interface AssetCompilationFailure {
+  error: AssetCompilationError;
+  documents: readonly string[];
+}
+
+/** @internal Ends a collecting compilation once failures were recorded in `input.failures`. */
+export class AssetFailuresCollected extends Error {
+  constructor() {
+    super("Asset compilation failures were collected");
+    this.name = "AssetFailuresCollected";
+  }
 }
 
 export interface AssetPayload {
@@ -248,9 +267,25 @@ async function compileAssetResourcesWithReader(
     allPaths.add(path);
     protectedPaths.add(path);
   }
+  // Collect a failure for a document or an Asset, or throw it when not collecting.
+  const recordFailure = (error: unknown, documents: readonly string[]) => {
+    if (input.failures === undefined || !(error instanceof AssetCompilationError)) throw error;
+    input.failures.push({ error, documents });
+  };
   for (const resource of topikContentResources) {
     const key = resourceKey(resource);
     const sourcePath = sourcePaths.get(key) as string;
+    try {
+      await collectDocumentAssets(resource, key, sourcePath);
+    } catch (error) {
+      recordFailure(error, [sourcePath]);
+    }
+  }
+  async function collectDocumentAssets(
+    resource: (typeof topikContentResources)[number],
+    key: string,
+    sourcePath: string,
+  ): Promise<void> {
     const directory = input.sourceDirectoriesByResource?.[key] ?? "";
     if (directory !== "") {
       requirePath(directory, "Asset containment directory is not portable");
@@ -385,6 +420,7 @@ async function compileAssetResourcesWithReader(
       allPaths.add(normalizedPath);
     }
   }
+  if (input.failures?.length) throw new AssetFailuresCollected();
 
   const completePathSet = validateTopikPathSet([...allPaths]);
   if (!completePathSet.ok) {
@@ -397,6 +433,19 @@ async function compileAssetResourcesWithReader(
     { bytes: Uint8Array; mediaType: string; names: Set<string> }
   >();
   for (const [name, sourcePath] of localPathByGeneratedName) {
+    try {
+      await resolveAsset(name, sourcePath);
+    } catch (error) {
+      const documents = new Set(
+        mappings
+          .filter((mapping) => mapping.name === name)
+          .map((mapping) => sourcePaths.get(mapping.resource) as string),
+      );
+      recordFailure(error, [...documents].sort(compareUtf8));
+    }
+  }
+  if (input.failures?.length) throw new AssetFailuresCollected();
+  async function resolveAsset(name: GeneratedAssetName, sourcePath: string): Promise<void> {
     const roles = rolesByName.get(name) ?? [];
     const file =
       readCache.get(sourcePath) ??

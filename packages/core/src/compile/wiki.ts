@@ -128,6 +128,7 @@ export async function discoverWiki(
   const diagnostics: CompileResult["diagnostics"] = [];
   const sourcePathsByResource: Record<string, string> = {};
   const bodyLinesByResource: Record<string, number> = {};
+  const unvalidatedDocuments: NonNullable<CompileResourceDiscovery["unvalidatedDocuments"]> = [];
   const pageNamesBySource = new Map<string, string>();
 
   for (let i = 0; i < pagePaths.length; i++) {
@@ -146,11 +147,29 @@ export async function discoverWiki(
     }
     const validation = memo.validate(content, sourcePath);
     diagnostics.push(...withFileLines(validation.errors, parsed.bodyLineOffset));
-    if (!validation.valid) continue;
     const name =
       config.sourceVersion === 1 && typeof frontmatter.id === "string"
         ? frontmatter.id
         : pagePathToName(config.id, pagePath);
+    if (!validation.valid) {
+      if (!Object.hasOwn(sourcePathsByResource, `WikiPage/${name}`)) {
+        pageNamesBySource.set(pagePath, name);
+        unvalidatedDocuments.push({
+          sourcePath,
+          resource: {
+            apiVersion: "v1",
+            type: "WikiPage",
+            name,
+            spec: {
+              wiki: config.id,
+              title: pagePathToTitleFallback(pagePath),
+              content: { format: "topik", value: content },
+            },
+          },
+        });
+      }
+      continue;
+    }
     // Page paths are already unique, so a repeated name comes from two frontmatter IDs.
     if (Object.hasOwn(sourcePathsByResource, `WikiPage/${name}`))
       throw new PublicCompileError("frontmatter-invalid", sourcePath, {
@@ -227,6 +246,7 @@ export async function discoverWiki(
     resources,
     sourcePathsByResource,
     bodyLinesByResource,
+    unvalidatedDocuments,
     consumedSourcePaths: [loadedConfig.path],
     assetDirectory: config.assets.directory,
     sourceVersion: config.sourceVersion,

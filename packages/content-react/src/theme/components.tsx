@@ -8,7 +8,9 @@ import {
   createContext,
   isValidElement,
   useContext,
+  useEffect,
   useId,
+  useRef,
   useState,
   type CSSProperties,
   type MouseEvent,
@@ -285,9 +287,48 @@ export function TopikCodeTab({ children }: TopikComponentProps) {
   return <>{children}</>;
 }
 
-export function TopikAccordion({ children, open, title }: TopikComponentProps) {
+/** The element a URL fragment names, decoded like browsers do for fragment navigation. */
+function fragmentTarget(document: Document): Element | null {
+  const hash = document.defaultView?.location.hash.slice(1);
+  if (!hash) return null;
+  try {
+    return document.getElementById(decodeURIComponent(hash));
+  } catch {
+    return document.getElementById(hash);
+  }
+}
+
+export function TopikAccordion({ children, id, open, title }: TopikComponentProps) {
+  const initiallyOpen = booleanAttribute(open);
+  const [expanded, setExpanded] = useState(initiallyOpen);
+  const [authoredOpen, setAuthoredOpen] = useState(initiallyOpen);
+  const ref = useRef<HTMLDetailsElement>(null);
+  if (authoredOpen !== initiallyOpen) {
+    setAuthoredOpen(initiallyOpen);
+    setExpanded(initiallyOpen);
+  }
+  // A link to the accordion, or to a heading inside it, opens it. Browsers reveal only targets
+  // inside a closed accordion, and not all of them do, so the fragment is checked here as well.
+  useEffect(() => {
+    const details = ref.current;
+    const view = details?.ownerDocument.defaultView;
+    if (!details || !view) return;
+    const reveal = () => {
+      const target = fragmentTarget(details.ownerDocument);
+      if (target && details.contains(target)) setExpanded(true);
+    };
+    reveal();
+    view.addEventListener("hashchange", reveal);
+    return () => view.removeEventListener("hashchange", reveal);
+  }, []);
   return (
-    <details className="topik-accordion" open={booleanAttribute(open)}>
+    <details
+      className="topik-accordion"
+      id={stringAttribute(id)}
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+      open={expanded}
+      ref={ref}
+    >
       <summary className="topik-accordion__summary">{stringAttribute(title)}</summary>
       <div className="topik-accordion__body">{children}</div>
     </details>

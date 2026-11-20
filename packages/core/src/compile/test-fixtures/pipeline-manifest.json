@@ -12,7 +12,7 @@
       "id": "link-fragment-not-found",
       "type": "link",
       "level": "warning",
-      "message": "Link target heading was not found.",
+      "message": "Link target heading or accordion was not found.",
       "lines": [13],
       "file": "docs/index.md"
     },
@@ -20,7 +20,7 @@
       "id": "link-fragment-not-found",
       "type": "link",
       "level": "warning",
-      "message": "Link target heading was not found.",
+      "message": "Link target heading or accordion was not found.",
       "lines": [5],
       "file": "docs/guide/usage.md"
     }

@@ -43,9 +43,9 @@ export interface TopikContentDiagnostic {
 const TOPIK_LINK_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "link-asset-invalid": "Asset link target is not a canonical generated name.",
   "link-asset-navigation-unsupported": "Navigation targets cannot use generated Asset names.",
-  "link-fragment-not-found": "Link target heading was not found.",
+  "link-fragment-not-found": "Link target heading or accordion was not found.",
   "link-fragment-positional":
-    "Link target heading shares its title with another heading, so its generated ID depends on position; give the heading an explicit ID.",
+    "Link target shares its title with another heading or accordion, so its generated ID depends on position; give the heading an explicit {% #id %} or the accordion an explicit id.",
   "link-href-empty": "Link target is required.",
   "link-page-not-found": "Internal link target page was not found.",
   "link-reference-ambiguous": "Resource reference target is ambiguous.",
@@ -75,7 +75,7 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
     "A Markdown file named in capitals is not read as a guide. Rename it in lowercase to make it a guide, or exclude it.",
   "guide-not-regular-file": "Guide entries must be regular files.",
   "guide-outside-compilation-root": "Guide files must resolve within the compilation directory.",
-  "heading-id-duplicate": "Explicit heading IDs must be unique within a document.",
+  "heading-id-duplicate": "Explicit heading and accordion IDs must be unique within a document.",
   "missing-closing": "A tag has no matching closing tag.",
   "missing-opening": "A closing tag has no matching opening tag.",
   "node-undefined": "This Markdown construct is not supported, such as raw HTML.",
@@ -97,6 +97,8 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "tag-undefined": "A tag is not supported.",
   "tag-unterminated": "A tag is missing its closing %} delimiter.",
   "topik-accordion-children": "An accordion may contain only block content.",
+  "topik-accordion-id":
+    "An accordion ID may contain only letters, digits, '_', '.', ':' and '-', like an explicit heading ID.",
   "topik-badge-children": "A badge requires inline content.",
   "topik-callout-children": "A callout may contain only block content.",
   "topik-card-children": "A card may contain only block content.",
@@ -129,7 +131,7 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "topik-footnote-content":
     "A footnote definition cannot contain headings, link definitions or conditionals; make the reference conditional instead.",
   "topik-heading-id-reserved":
-    "Explicit heading IDs cannot start with fn: or fnref:, which footnote anchors use.",
+    "Explicit heading and accordion IDs cannot start with fn: or fnref:, which footnote anchors use.",
   "topik-figure-children": "A figure cannot contain children; use its alt and caption attributes.",
   "topik-math-children": "Block math cannot contain children; use its content attribute.",
   "topik-math-inline-children": "Inline math cannot contain children; use its content attribute.",

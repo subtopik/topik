@@ -41,7 +41,7 @@ function referenceOrder(document: TreeNode): string[] {
   return order;
 }
 
-/** Footnote anchors are `fn:N`, `fnref:N` and `fnref:N:K`; explicit heading IDs avoid them. */
+/** Footnote anchors are `fn:N`, `fnref:N` and `fnref:N:K`; explicit heading and accordion IDs avoid them. */
 const reservedAnchor = /^fn(?:ref)?:/u;
 
 /** Placement, uniqueness and reference rules; shapes are checked by the node grammar. */
@@ -74,15 +74,19 @@ export function footnoteProblems(document: ContentDocument): FootnoteProblem[] {
         });
       else definitions.set(key, node);
     }
-    if (node.type === "heading") {
-      const id = (node as TreeNode & { data?: { topikId?: unknown } }).data?.topikId;
-      if (typeof id === "string" && reservedAnchor.test(id))
-        problems.push({
-          node,
-          id: "topik-heading-id-reserved",
-          message: "Explicit heading IDs cannot start with fn: or fnref:",
-        });
-    }
+    // Headings and accordions share one set of IDs with each other, and the page with footnotes.
+    const explicitId =
+      node.type === "heading"
+        ? (node as TreeNode & { data?: { topikId?: unknown } }).data?.topikId
+        : node.type === "topikComponent" && node.name === "accordion"
+          ? node.props?.id
+          : undefined;
+    if (typeof explicitId === "string" && reservedAnchor.test(explicitId))
+      problems.push({
+        node,
+        id: "topik-heading-id-reserved",
+        message: "Explicit heading and accordion IDs cannot start with fn: or fnref:",
+      });
     if (
       (node.type === "heading" || node.type === "definition" || node.type === "topikConditional") &&
       ancestors.some((ancestor) => ancestor.type === "footnoteDefinition")

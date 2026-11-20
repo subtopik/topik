@@ -665,3 +665,17 @@ Expect these differences:
 
 A caller that already owns a validated reader tree can use
 [`renderTrustedTopikTree`](#render-a-validated-reader-tree).
+
+## Migrate from 0.1.0-alpha.7
+
+1. A hand-written complete `TopikComponentMap` must add `TopikColumns`,
+   `TopikColumn`, `TopikKbd`, `TopikVideo`, `TopikYouTube`, `TopikFootnote`,
+   `TopikFootnoteReference` and `TopikFootnotes`, and drop `TopikCardGrid`.
+   Partial override maps need no change.
+2. Stylesheets that target the theme's card grid must use `.topik-columns` for
+   `.topik-card-grid`, and `--topik-columns-count` for
+   `--topik-card-grid-columns`.
+3. To render Mermaid diagrams, install `pele@1.13.0`; `1.12.0` no longer
+   satisfies the peer dependency.
+4. A page with a Content-Security-Policy that embeds YouTube videos must allow
+   `frame-src https://www.youtube-nocookie.com`.

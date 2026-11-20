@@ -518,3 +518,23 @@ trees must keep to those constraints as well as the component rules.
 The current content schema version is `0.3.0` and `FORMAT_VERSION` is `2`. These
 versions describe the content contract. They are separate from package versions
 and from the `apiVersion` of [resource envelopes](../resources/index.md).
+
+## Migrate from 0.1.0-alpha.7
+
+Content schema `0.3.0` and `FORMAT_VERSION` `2` change some syntax and the
+canonical form:
+
+1. Replace `cardGrid` with `columns`. Write `{% columns count=N %}` where you
+   wrote `{% cardGrid columns=N %}`, and `{% /columns %}` for its closing tag. A
+   `cardGrid` without `columns` showed three columns and `columns` without
+   `count` shows two, so write `count=3` to keep that layout.
+2. If your configuration registers a component named `kbd`, `video`, `youtube`,
+   `column` or `columns` in `components`, rename it and the tags that use it.
+   These names are built-in components now.
+3. Run `topik format` once and review the result. The canonical form changed for
+   emphasis and horizontal rules, so the first run rewrites them.
+4. Code that passes a format version to `parseDocument` or `writeDocument` must
+   pass `2`, or leave it out. Version `1` is refused.
+5. Code that matched the diagnostic IDs `topik-transform-failed` or
+   `parse-error` must match the specific IDs that replace them, such as
+   `topik-variable-missing`, `missing-closing` or `tag-unterminated`.

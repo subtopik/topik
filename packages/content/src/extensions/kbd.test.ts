@@ -37,8 +37,15 @@ test("kbd works in headings, lists and table cells", () => {
   expect(parseDocument(source)).toMatchObject({ ok: true });
 });
 
-test("kbd needs a key name", () => {
-  expect(diagnosticIds("Press {% kbd %}{% /kbd %} now.")).toContain("topik-kbd-children");
+test("kbd needs a key name, not only whitespace", () => {
+  for (const source of [
+    "Press {% kbd %}{% /kbd %} now.",
+    "Press {% kbd %} {% /kbd %} now.",
+    "Press {% kbd %}&#x20;{% /kbd %} now.",
+  ])
+    expect(diagnosticIds(source)).toContain("topik-kbd-children");
+  // The space key is named, like any other key.
+  expect(parseDocument("Press {% kbd %}Space{% /kbd %} now.")).toMatchObject({ ok: true });
 });
 
 test("kbd is inline only, like underline", () => {

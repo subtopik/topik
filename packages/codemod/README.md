@@ -126,15 +126,15 @@ or dropdowns with groups, the codemod keeps the first kind and reports the rest.
 
 ## Supported components
 
-| Mintlify                                                        | Topik                     | Notes                                                                               |
-| --------------------------------------------------------------- | ------------------------- | ----------------------------------------------------------------------------------- |
-| `<Note>`, `<Info>`, `<Tip>`, `<Check>`, `<Warning>`, `<Danger>` | `callout`                 | `variant` is `info`, `info`, `tip`, `tip`, `warning` or `danger`.                   |
-| `<Card>`                                                        | `card`                    |                                                                                     |
-| `<CardGroup>`, `<Columns>`, `<Column>`                          | `columns`, `column`       | `cols` becomes `count`. A `className` keeps the page unchanged for manual review.   |
-| `<Tabs>`, `<Tab>`                                               | `tabs`, `tab`             | `icon` on a tab is dropped with a warning.                                          |
-| `<Steps>`, `<Step>`                                             | `steps`, `step`           | `icon` on a step is dropped with a warning.                                         |
-| `<Accordion>`                                                   | `accordion`               | `defaultOpen` becomes `open`; `icon` is dropped with a warning.                     |
-| `<CodeGroup>`                                                   | `codeGroup` and `codeTab` | Each fence becomes a code tab titled by the text after its language, such as `npm`. |
+| Mintlify                                                        | Topik                     | Notes                                                                                                                                                |
+| --------------------------------------------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<Note>`, `<Info>`, `<Tip>`, `<Check>`, `<Warning>`, `<Danger>` | `callout`                 | `variant` is `info`, `info`, `tip`, `tip`, `warning` or `danger`.                                                                                    |
+| `<Card>`                                                        | `card`                    |                                                                                                                                                      |
+| `<CardGroup>`, `<Columns>`, `<Column>`                          | `columns`, `column`       | `cols` becomes `count`. Other content between cards is wrapped in a `column`, with a note. A `className` keeps the page unchanged for manual review. |
+| `<Tabs>`, `<Tab>`                                               | `tabs`, `tab`             | `icon` on a tab is dropped with a warning.                                                                                                           |
+| `<Steps>`, `<Step>`                                             | `steps`, `step`           | `icon` on a step is dropped with a warning.                                                                                                          |
+| `<Accordion>`                                                   | `accordion`               | `defaultOpen` becomes `open`; `icon` is dropped with a warning.                                                                                      |
+| `<CodeGroup>`                                                   | `codeGroup` and `codeTab` | Each fence becomes a code tab titled by the text after its language, such as `npm`.                                                                  |
 
 Attributes can be quoted strings, literal numbers and booleans (`cols={2}`,
 `defaultOpen={false}`) or boolean shorthand (`defaultOpen`). The codemod dedents

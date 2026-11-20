@@ -892,6 +892,57 @@ describe("Mintlify grids", () => {
     ]);
   });
 
+  test("wraps other content between cells in a column, with a note", () => {
+    const result = transformMintlify(
+      [
+        "<Columns cols={2}>",
+        "  Intro text.",
+        "",
+        "  <Note>Careful.</Note>",
+        '  <Card title="A" />',
+        "  More.",
+        "</Columns>",
+        "",
+      ].join("\n"),
+    );
+    expect(result.changed).toBe(true);
+    expect(result.content).toBe(
+      [
+        "{% columns count=2 %}",
+        "{% column %}",
+        "Intro text.",
+        "",
+        '{% callout variant="info" %}',
+        "Careful.",
+        "{% /callout %}",
+        "{% /column %}",
+        '{% card title="A" /%}',
+        "{% column %}",
+        "More.",
+        "{% /column %}",
+        "{% /columns %}",
+        "",
+      ].join("\n"),
+    );
+    expect(validateTopikContent(result.content)).toMatchObject({ valid: true });
+    // One note per group, at the first wrapped content.
+    expect(result.warnings).toEqual([
+      expect.objectContaining({
+        line: 2,
+        message: expect.stringContaining("wrapped in a column"),
+      }),
+    ]);
+  });
+
+  test("wraps text in a CardGroup the same way", () => {
+    const result = transformMintlify('<CardGroup>\nText\n<Card title="A" />\n</CardGroup>\n');
+    expect(result).toMatchObject({
+      changed: true,
+      content:
+        '{% columns %}\n{% column %}\nText\n{% /column %}\n{% card title="A" /%}\n{% /columns %}\n',
+    });
+  });
+
   test("a CardGroup without cols keeps Mintlify's two columns", () => {
     expect(converted('<CardGroup>\n<Card title="A" />\n</CardGroup>\n')).toBe(
       '{% columns %}\n{% card title="A" /%}\n{% /columns %}\n',

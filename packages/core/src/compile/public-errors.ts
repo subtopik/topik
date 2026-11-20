@@ -192,8 +192,8 @@ function sanitizeCompileLocation(value: string | undefined): string | undefined 
   const normalized = value.replaceAll("\\", "/");
   const components = normalized.split("/");
   // The same relative-path rule as content diagnostic labels: any printable name except a
-  // drive or scheme (`:`), percent-escapes that could carry an encoded URL, and segments that
-  // are empty, `.`, `..` or padded with spaces.
+  // drive or scheme (`:`), percent-escapes that could carry an encoded URL, HTML character
+  // references such as `&#47;`, and segments that are empty, `.`, `..` or padded with spaces.
   if (
     components.some(
       (component) =>
@@ -204,7 +204,8 @@ function sanitizeCompileLocation(value: string | undefined): string | undefined 
     ) ||
     containsForbiddenCodePoint(normalized) ||
     normalized.includes(":") ||
-    /%[0-9a-f]{2}/iu.test(normalized)
+    /%[0-9a-f]{2}/iu.test(normalized) ||
+    /&(?:#(?:x[0-9a-f]*|[0-9]*)|[a-z][a-z0-9]*);?/iu.test(normalized)
   ) {
     return undefined;
   }

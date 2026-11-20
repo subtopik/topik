@@ -39,14 +39,16 @@ function located(
 ): Pick<PreviewDiagnostic, "location" | "resource"> {
   // The sanitizer's stand-in for a path it cannot show safely is not a location.
   if (path === undefined || path === UNSHOWN_PATH) return {};
-  const location: PreviewDiagnosticLocation = { path };
+  // A preview location separates with `/`, and resources are keyed the same way.
+  const slashPath = path.replaceAll("\\", "/");
+  const location: PreviewDiagnosticLocation = { path: slashPath };
   const safeLine = positive(line);
   if (safeLine !== undefined) {
     location.line = safeLine;
     const safeColumn = positive(column);
     if (safeColumn !== undefined) location.column = safeColumn;
   }
-  const resource = resources.get(path);
+  const resource = resources.get(slashPath);
   return { location, ...(resource ? { resource: { ...resource } } : {}) };
 }
 

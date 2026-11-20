@@ -54,6 +54,8 @@ const BLOCK_TAGS = new Map([
   ["CodeTab", "codeTab"],
 ]);
 
+/** Children of <Columns> that are already Topik cells. */
+const CELL_TAGS = new Set(["Card", "Column"]);
 const UNSUPPORTED_TAGS = new Set([
   "Frame",
   "Image",
@@ -279,6 +281,44 @@ function convert(
   const openTags: FoundTag[] = [];
   // Reported after indented code, which often causes a mismatch after dedenting.
   let nesting: { offset: number; message: string } | undefined;
+  // Mintlify lays out each direct child of <Columns> and <CardGroup> as a cell. Topik's cells are
+  // cards and columns, so other content between them is wrapped in a column.
+  const wrapped = new Set<FoundTag>();
+  const noted = new Set<FoundTag>();
+  const columnsTop = (): FoundTag | undefined => {
+    const top = openTags.at(-1);
+    return top?.name === "Columns" || top?.name === "CardGroup" ? top : undefined;
+  };
+  const openWrap = (columns: FoundTag, at: number): void => {
+    if (wrapped.has(columns)) return;
+    wrapped.add(columns);
+    if (!noted.has(columns)) {
+      noted.add(columns);
+      warn(
+        notes,
+        source,
+        at,
+        `Content between the cards of <${columns.name}> is wrapped in a column; Mintlify gives each element its own cell`,
+      );
+    }
+    startLine(at);
+    emit("{% column %}", at, false);
+    emit(eolAt(at), at, false);
+  };
+  const closeWrap = (columns: FoundTag, at: number): void => {
+    if (!wrapped.delete(columns)) return;
+    startLine(at);
+    emit("{% /column %}", at, false);
+    emit(eolAt(at), at, false);
+  };
+  const copyBetweenTags = (start: number, end: number): void => {
+    const columns = columnsTop();
+    const first = source.slice(start, end).search(/\S/u);
+    if (!columns || first < 0 || wrapped.has(columns)) return copy(start, end);
+    copy(start, start + first);
+    openWrap(columns, start + first);
+    copy(start + first, end);
+  };
 
   while (cursor < source.length) {
     const next = findNextTag(source, cursor, protectedRanges);
@@ -287,7 +327,7 @@ function convert(
       break;
     }
 
-    copy(cursor, next.start);
+    copyBetweenTags(cursor, next.start);
     if (UNSUPPORTED_TAGS.has(next.name)) {
       warn(warnings, source, next.start, `<${next.name}> has no equivalent Topik component`);
       copy(next.start, next.end);
@@ -315,6 +355,13 @@ function convert(
         `JSX inside ${inline} cannot be converted to a block component safely; source kept`,
       );
       return kept();
+    }
+
+    const columns = columnsTop();
+    if (columns) {
+      if (next.kind === "close" ? next.name === columns.name : CELL_TAGS.has(next.name))
+        closeWrap(columns, next.start);
+      else if (next.kind !== "close") openWrap(columns, next.start);
     }
 
     if (next.kind === "close") {

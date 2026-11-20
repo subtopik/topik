@@ -173,7 +173,8 @@ text; a tree built in code reports `topik-footnote-missing`.
 | `kbd`                                       | An inline key, such as `{% kbd %}Ctrl{% /kbd %}+{% kbd %}C{% /kbd %}`.    |
 | `quiz`, `question`, `choice`, `explanation` | Questions, answer choices, and explanations.                              |
 
-A `kbd` holds one key; write a combination as several keys. Two keys need an
+A `kbd` holds one key, named by text that is not only whitespace
+(`topik-kbd-children`); write a combination as several keys. Two keys need an
 escape: write the backslash key as `{% kbd %}\\{% /kbd %}`, since a single
 backslash escapes the closing tag, and in a table cell write the pipe key as
 `\|`, since a bare `|` ends the cell.

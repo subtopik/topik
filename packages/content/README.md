@@ -358,9 +358,11 @@ Rewriting rules:
 Accepted references:
 
 - Images, figure sources, and video sources and posters accept canonical
-  relative paths or credential-free HTTPS URLs. A `video.src` occurrence has the
-  `video` role and its title in `semantics.title` or `semantics.titleTemplate`;
-  an application that allows only some video services checks it here.
+  relative paths or credential-free HTTPS URLs. An HTTPS URL with trailing
+  whitespace or an undecodable fragment, such as `#%E9`, is refused, because
+  rendering would drop it. A `video.src` occurrence has the `video` role and its
+  title in `semantics.title` or `semantics.titleTemplate`; an application that
+  allows only some video services checks it here.
 - Compiler-generated `asset:` references are accepted in rewritten output.
   Source admission accepts them only with `allowCompiledAssetReferences: true`.
 - Generic links count as download assets only when their decoded file path is

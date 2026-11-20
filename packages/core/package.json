@@ -37,7 +37,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "vp pack",
+    "build": "vp pack && node scripts/copy-licenses.mjs",
     "dev": "vp pack --watch",
     "test": "vp test",
     "check": "vp check",

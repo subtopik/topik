@@ -25,8 +25,12 @@ import type {
   TopikLinkResolver,
 } from "../core/components";
 import { useTopikLinkHandler, useTopikLinkRenderer, useTopikLinkResolver } from "../core/context";
+import { footnoteAnchor, footnoteBackrefs, footnoteNumber } from "../core/components";
 import { CodeBlockView } from "./code-block";
 import { TopikTablist } from "./tablist";
+import { TopikVideo } from "./video";
+
+export { TopikVideo };
 import type { CodePresentationEffectiveOptions } from "@topik/content";
 
 interface TopikRoleProps {
@@ -159,16 +163,21 @@ export function TopikCallout({ children, title, variant = "info" }: TopikCompone
   );
 }
 
-export function TopikCardGrid({ children, columns }: TopikComponentProps) {
-  const columnCount = numberAttribute(columns);
+/** Cells flow into rows of `count` columns and stack on narrow screens. */
+export function TopikColumns({ children, count }: TopikComponentProps) {
+  const columnCount = numberAttribute(count);
   const style = columnCount
-    ? ({ "--topik-card-grid-columns": columnCount } as React.CSSProperties)
+    ? ({ "--topik-columns-count": columnCount } as React.CSSProperties)
     : undefined;
   return (
-    <div className="topik-card-grid" style={style}>
+    <div className="topik-columns" style={style}>
       {children}
     </div>
   );
+}
+
+export function TopikColumn({ children }: TopikComponentProps) {
+  return <div className="topik-column">{children}</div>;
 }
 
 export function TopikCard({
@@ -322,6 +331,52 @@ export function TopikStep({ children, title }: TopikComponentProps) {
 
 function colorSchemeAttribute(value: unknown): TopikColorScheme | undefined {
   return value === "light" || value === "dark" ? value : undefined;
+}
+
+export function TopikFootnoteReference({ id, number, target }: TopikComponentProps) {
+  const value = footnoteNumber(number);
+  const anchor = footnoteAnchor(target);
+  if (value === undefined) return null;
+  return (
+    <sup className="topik-footnote-ref">
+      <a aria-label={`Footnote ${value}`} href={anchor && `#${anchor}`} id={footnoteAnchor(id)}>
+        {value}
+      </a>
+    </sup>
+  );
+}
+
+/** The notes of the page, after its content, in order of first reference. */
+export function TopikFootnotes({ children }: TopikComponentProps) {
+  return (
+    <section aria-label="Footnotes" className="topik-footnotes">
+      <ol>{children}</ol>
+    </section>
+  );
+}
+
+export function TopikFootnote({ backrefs, children, id, number }: TopikComponentProps) {
+  const value = footnoteNumber(number);
+  const links = footnoteBackrefs(backrefs);
+  return (
+    <li className="topik-footnote" id={footnoteAnchor(id)}>
+      {children}
+      {links.length ? (
+        <span className="topik-footnote__backrefs">
+          {links.map((anchor, index) => (
+            <a
+              key={anchor}
+              // The visible sub-number ends the name, so speech and sight agree.
+              aria-label={`Back to reference ${value ?? ""}${links.length > 1 ? `, ${index + 1}` : ""}`}
+              href={`#${anchor}`}
+            >
+              ↩{links.length > 1 ? <sup>{index + 1}</sup> : null}
+            </a>
+          ))}
+        </span>
+      ) : null}
+    </li>
+  );
 }
 
 export function TopikFigure({ alt, caption, colorScheme, darkSrc, src }: TopikComponentProps) {
@@ -595,13 +650,17 @@ export const defaultTopikComponents = {
   TopikBadge,
   TopikCallout,
   TopikCard,
-  TopikCardGrid,
+  TopikColumn,
+  TopikColumns,
   TopikCodeBlock,
   TopikCodeGroup,
   TopikCodeTab,
   TopikChoice,
   TopikExplanation,
   TopikFigure,
+  TopikFootnote,
+  TopikFootnoteReference,
+  TopikFootnotes,
   TopikImage,
   TopikInlineCode,
   TopikKbd,
@@ -620,6 +679,7 @@ export const defaultTopikComponents = {
   TopikTableHeader,
   TopikTableRow,
   TopikUnderline,
+  TopikVideo,
 } satisfies TopikComponentMap;
 
 /** @internal Rendering options that themed slots read at render time, not at map creation. */

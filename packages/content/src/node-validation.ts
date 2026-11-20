@@ -153,7 +153,12 @@ export function nodeShapeProblem(value: unknown, registry: Registry): string | u
   } else if (children !== undefined) return `${type} cannot contain children`;
 
   const nodes = (children ?? []) as TreeNode[];
-  if (type === "root" || type === "blockquote" || type === "listItem") {
+  if (
+    type === "root" ||
+    type === "blockquote" ||
+    type === "listItem" ||
+    type === "footnoteDefinition"
+  ) {
     if (
       nodes.some(
         (child) =>
@@ -274,12 +279,21 @@ export function nodeShapeProblem(value: unknown, registry: Registry): string | u
     case "topikComponent":
       if (typeof node.name !== "string") return "Components require a string name";
       break;
+    case "footnoteDefinition":
+      if (!nodes.length) return "Footnote definitions require block content";
+      break;
   }
-  if (type === "definition" || type === "imageReference" || type === "linkReference") {
+  if (
+    type === "definition" ||
+    type === "imageReference" ||
+    type === "linkReference" ||
+    type === "footnoteDefinition" ||
+    type === "footnoteReference"
+  ) {
     if (!string(node.identifier) || !node.identifier.trim() || !optionalString(node.label))
       return "References require a nonempty identifier and optional string label";
     if (
-      type !== "definition" &&
+      (type === "imageReference" || type === "linkReference") &&
       !["shortcut", "collapsed", "full"].includes(node.referenceType as string)
     )
       return "References require a supported reference type";

@@ -4,6 +4,7 @@ import {
   extractTopikAssetOccurrences,
   rewriteTopikAssetOccurrences,
   validateTopikAssetReference,
+  type TextTemplate,
   type TopikAssetOccurrence,
   type TopikContentDiagnostic,
 } from "@topik/content";
@@ -692,14 +693,21 @@ function hasAccessibleMeaning(occurrence: TopikAssetOccurrence): boolean {
     return (occurrence.semantics.linkLabel?.trim().length ?? 0) > 0;
   // Templates declare accessible authoring intent without resolving application context.
   if (occurrence.slot.startsWith("figure."))
-    return (
-      (occurrence.semantics.alt?.trim().length ?? 0) > 0 ||
-      occurrence.semantics.altTemplate?.segments.some(
-        (segment) => segment.type === "variable" || segment.value.trim().length > 0,
-      ) === true
-    );
+    return hasText(occurrence.semantics.alt, occurrence.semantics.altTemplate);
+  // A video and its poster are named by the video title.
+  if (occurrence.slot.startsWith("video."))
+    return hasText(occurrence.semantics.title, occurrence.semantics.titleTemplate);
   return (
     occurrence.semantics.decorative === true || (occurrence.semantics.alt?.trim().length ?? 0) > 0
+  );
+}
+
+function hasText(value: string | undefined, template: TextTemplate | undefined): boolean {
+  return (
+    (value?.trim().length ?? 0) > 0 ||
+    template?.segments.some(
+      (segment) => segment.type === "variable" || segment.value.trim().length > 0,
+    ) === true
   );
 }
 

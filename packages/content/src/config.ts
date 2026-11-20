@@ -100,7 +100,7 @@ function attributeProblem(attribute: unknown): string | undefined {
       !plainObject(reference) ||
       unknownField(reference, ["slot", "role", "conditional"]) !== undefined ||
       typeof reference.slot !== "string" ||
-      !["image", "image-light", "image-dark", "media", "download"].includes(
+      !["image", "image-light", "image-dark", "video", "media", "download"].includes(
         String(reference.role),
       ) ||
       (reference.conditional !== undefined && reference.conditional !== "proven-download")

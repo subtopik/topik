@@ -1,5 +1,6 @@
 import type { ContentDocument, TextTemplate, TreeNode } from "./model.js";
 import { canonicalizeInlineMarks } from "./inline-marks.js";
+import { canonicalizeFootnotes } from "./footnotes.js";
 import { referenceIdentifier } from "./document-index.js";
 import {
   codePresentationChildRows,
@@ -13,10 +14,12 @@ import {
  * This compares meaning; it does not validate arbitrary caller-constructed trees.
  */
 export function sameDocumentMeaning(left: ContentDocument, right: ContentDocument): boolean {
-  return equal(
-    meaning(canonicalizeInlineMarks(left) as TreeNode),
-    meaning(canonicalizeInlineMarks(right) as TreeNode),
-  );
+  return equal(meaning(canonical(left)), meaning(canonical(right)));
+}
+
+/** Inline mark nesting and footnote definition positions are spelling, not meaning. */
+function canonical(document: ContentDocument): TreeNode {
+  return canonicalizeFootnotes(canonicalizeInlineMarks(document)) as TreeNode;
 }
 
 /**
@@ -29,8 +32,8 @@ export function locateMeaningDifference(
   right: ContentDocument,
 ): { line: number; column: number } | undefined {
   const origins = new WeakMap<object, TreeNode>();
-  let expected = meaning(canonicalizeInlineMarks(left) as TreeNode, origins);
-  let actual = meaning(canonicalizeInlineMarks(right) as TreeNode);
+  let expected = meaning(canonical(left), origins);
+  let actual = meaning(canonical(right));
   let located: TreeNode | undefined;
   const locate = (fields: unknown) => {
     const node = origins.get(fields as object);
@@ -89,7 +92,15 @@ function meaning(node: TreeNode, origins?: WeakMap<object, TreeNode>): Record<st
         typeof value === "object" ? templateMeaning(value) : value,
       ]),
     );
-  if (["definition", "linkReference", "imageReference"].includes(node.type)) {
+  if (
+    [
+      "definition",
+      "linkReference",
+      "imageReference",
+      "footnoteDefinition",
+      "footnoteReference",
+    ].includes(node.type)
+  ) {
     fields.identifier = referenceIdentifier(fields.identifier as string);
     // A full label can replace a shortcut without changing its definition binding.
     delete fields.label;

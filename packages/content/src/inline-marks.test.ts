@@ -361,7 +361,7 @@ describe("randomized mark nestings", () => {
         let authored: string;
         try {
           authored = serializeDocument(document, undefined, FORMAT_VERSION, {
-            preserveMarkNesting: true,
+            preserveTreePositions: true,
           });
         } catch {
           continue;

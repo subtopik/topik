@@ -58,15 +58,16 @@ describe("codemod literal ranges in the Topik Markdown dialect", () => {
     });
   });
 
-  test("retains the existing refusal of unsupported footnotes", () => {
+  test("keeps literal code in footnotes while converting the page", () => {
     const source =
       "Text[^a]\n\n[^a]: `<Note>literal</Note>` and `<Icon />`\n\n<Note>Real.</Note>\n";
     const result = transformMintlify(source);
-    expect(result).toMatchObject({ content: source, changed: false });
-    // One warning per unsupported node: the footnote reference and its definition.
-    expect(result.warnings.map(({ line }) => line)).toEqual([1, 3]);
-    for (const warning of result.warnings)
-      expect(warning.message).toContain("not valid Topik content; source kept");
+    expect(result).toMatchObject({
+      changed: true,
+      content:
+        'Text[^a]\n\n[^a]: `<Note>literal</Note>` and `<Icon />`\n\n{% callout variant="info" %}\nReal.\n{% /callout %}\n',
+      warnings: [],
+    });
   });
 
   test("ends a JSX body before following inline code", () => {

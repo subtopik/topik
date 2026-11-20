@@ -79,6 +79,7 @@ export async function discoverCourse(
 ): Promise<CompileResourceDiscovery> {
   const dir = configurationDirectory(options.dir, options.configFile);
   const loaded = selectedConfig ?? (await loadCourseConfig(options.dir, options.configFile));
+  rejectCourseOrder(loaded.value, options.configFile ?? loaded.path);
   let config;
   try {
     config = parseCourseConfig(loaded.value);
@@ -122,6 +123,8 @@ export async function discoverCourse(
     for (const sourcePath of module.pages) {
       const file = await readCoursePage(dir, sourcePath);
       const parsed = parseMarkdownFrontmatter(file.raw, file.path, 1);
+      if (isRecord(parsed.frontmatter) && Object.hasOwn(parsed.frontmatter, "order"))
+        throw new PublicCompileError("course-order-removed", file.path, { field: "order" });
       let metadata;
       try {
         metadata = parseCoursePageMetadata(parsed.frontmatter);
@@ -187,6 +190,20 @@ export async function discoverCourse(
     assetDirectory: config.assets.directory,
     sourceVersion: 1,
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** An `order` from a source written before list order is refused, never silently ignored. */
+function rejectCourseOrder(raw: unknown, location: string): void {
+  if (!isRecord(raw) || !Array.isArray(raw.modules)) return;
+  for (const [index, module] of raw.modules.entries())
+    if (isRecord(module) && Object.hasOwn(module, "order"))
+      throw new PublicCompileError("course-order-removed", location, {
+        field: `modules[${index}].order`,
+      });
 }
 
 async function loadCourseConfig(dir: string, configFile?: string): Promise<LoadedConfig> {

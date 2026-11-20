@@ -62,6 +62,8 @@ const KIND_BY_ID: Record<PublicCompileErrorId, CompileFailureKind> = {
   "wiki-page-ambiguous": "content",
   "course-page-not-found": "content",
   "course-page-ambiguous": "content",
+  // Sources written for an earlier release; the fix is a source migration.
+  "course-order-removed": "configuration",
   "author-not-found": "content",
 };
 

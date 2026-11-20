@@ -112,8 +112,8 @@ membership. Markdown supplies the page metadata and body.
 - Order is list position, as in Wiki navigation: modules appear in the order of
   `modules`, and pages in the order of their module's `pages`. Compiled resources
   carry the same order as `Course.spec.modules` and `CourseModule.spec.pages`. An
-  `order` key left from an older source fails with `config-invalid` or
-  `frontmatter-invalid` naming the field.
+  `order` key left from an older source fails with `course-order-removed`
+  naming the field.
 - IDs are stable independently of file names, public slugs and ordering.
 
 ### Course links
@@ -273,10 +273,22 @@ keeps its entry in its module's `pages` list.
 A Course's `modules` and each module's `pages` change the way Wiki navigation
 does, below. A new page or module is listed in its parent resource, so adding
 one is an update of that parent too, as adding a Wiki page is an update of the
-Wiki. A moved module is written again from its resource as one flow mapping,
-which drops the comments and unrecognized keys inside that entry. When a list is
-rewritten as one value, the authority must admit that list's value, not only its
-insertion anchor.
+Wiki. Each module record is written from its resource, so a rewrite loses what
+the resource does not carry:
+
+- Appending a page or module, removing one, or putting a page in the place of a
+  removed one edits the list in place.
+- Moving a module to the end, as in swapping two modules, removes its entry and
+  appends it as one flow mapping. That drops the comments and unrecognized keys
+  in the moved module.
+- Inserting a page before kept pages rewrites that module's `pages` as one flow
+  list.
+- Inserting a module before kept modules, or any other module order that
+  removals and appends cannot reach, rewrites all of `modules` as one flow list.
+  That drops the comments and unrecognized keys in every module.
+
+When a list is rewritten as one value, the authority must admit that list's
+value, not only its insertion anchor.
 
 Wiki navigation edits work the same way at every nesting level: removed entries
 are deleted in place, changed entries are edited in place and added entries are

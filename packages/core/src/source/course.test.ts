@@ -975,3 +975,109 @@ test("Course lists change in place where they can and are rewritten where they c
     diagnostics: [{ code: "resource-invalid", resource: "CourseModule/basics" }],
   });
 });
+
+test("Course list edits that cannot be made in place rewrite that one list", async () => {
+  const project = await courseProject();
+  const raw = rawFile(project, "lessons/course.yaml");
+  const run = async (
+    label: string,
+    edit: (desired: Resource[]) => {
+      operations: SourceResourceOperation[];
+      extra?: string[];
+      create?: string[];
+    },
+  ) => {
+    const desired = structuredClone(project.compilation.resources);
+    const { operations, extra = [], create = [] } = edit(desired);
+    const result = await plan(project, desired, operations, {
+      authority: {
+        ...authority(project),
+        resources: [...authority(project).resources, ...extra],
+        create,
+      },
+    });
+    expect(result.ok, `${label}: ${JSON.stringify(result)}`).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.plan.candidate.compilation.resources).toEqual(expect.arrayContaining(desired));
+    return rawFile(result.plan.candidate, "lessons/course.yaml");
+  };
+  const newPage = (name: string, module: string): CoursePage => ({
+    apiVersion: "v1",
+    type: "CoursePage",
+    name,
+    spec: { module, title: name, slug: name, content: { format: "topik", value: `# ${name}\n` } },
+  });
+  // A page inserted before kept pages rewrites that module's list only.
+  const inserted = await run("page inserted first", (desired) => {
+    resource(desired, "CourseModule", "basics").spec.pages.unshift("first");
+    desired.push(newPage("first", "basics"));
+    return {
+      operations: [
+        { kind: "update", resource: "CourseModule/basics" },
+        {
+          kind: "create",
+          resource: "CoursePage/first",
+          config: "lessons/course.yaml",
+          path: "lessons/pages/first.md",
+        },
+      ],
+      extra: ["CoursePage/first"],
+      create: ["lessons/pages/first.md"],
+    };
+  });
+  expect(inserted).toBe(
+    raw.replace(
+      "      - pages/intro # retain membership comment\n      - pages/target\n",
+      '      ["pages/first","pages/intro","pages/target"]\n',
+    ),
+  );
+  // A module inserted before kept modules rewrites the whole module list from the resources,
+  // with the title edit included, so comments and unrecognized keys in every module are lost.
+  const moduleFirst = await run("module inserted first with a title edit", (desired) => {
+    resource(desired, "Course").spec.modules.unshift("intro");
+    resource(desired, "CourseModule", "advanced").spec.title = "Advanced topics";
+    desired.push({
+      apiVersion: "v1",
+      type: "CourseModule",
+      name: "intro",
+      spec: { course: "fundamentals", title: "Intro", slug: "intro", pages: [] },
+    });
+    return {
+      operations: [
+        { kind: "update", resource: "Course/fundamentals" },
+        { kind: "update", resource: "CourseModule/advanced" },
+        { kind: "create", resource: "CourseModule/intro", config: "lessons/course.yaml" },
+      ],
+      extra: ["CourseModule/intro"],
+    };
+  });
+  const head = raw.slice(0, raw.indexOf("modules:"));
+  expect(moduleFirst).toBe(
+    `${head}modules:\n  [{"id":"intro","title":"Intro","slug":"intro","pages":[]},{"id":"basics","title":"Basics","slug":"basics","description":null,"labels":{"level":"introductory"},"pages":["pages/intro","pages/target"]},{"id":"advanced","title":"Advanced topics","slug":"advanced","pages":[]}]\ncustom: { exact: unchanged }\n`,
+  );
+  // A page that takes another's place replaces only that entry's value.
+  const replaced = await run("page replaced in place", (desired) => {
+    const basics = resource(desired, "CourseModule", "basics");
+    basics.spec.pages = ["intro", "replacement"];
+    const target = desired.findIndex((r) => r.type === "CoursePage" && r.name === "target");
+    desired.splice(target, 1, newPage("replacement", "basics"));
+    // The intro page links to the removed target, so it no longer can.
+    resource(desired, "CoursePage", "intro").spec.content.value = "# Intro\n";
+    return {
+      operations: [
+        { kind: "update", resource: "CourseModule/basics" },
+        { kind: "update", resource: "CoursePage/intro" },
+        { kind: "delete", resource: "CoursePage/target" },
+        {
+          kind: "create",
+          resource: "CoursePage/replacement",
+          config: "lessons/course.yaml",
+          path: "lessons/pages/replacement.md",
+        },
+      ],
+      extra: ["CoursePage/replacement"],
+      create: ["lessons/pages/replacement.md"],
+    };
+  });
+  expect(replaced).toBe(raw.replace("      - pages/target\n", '      - "pages/replacement"\n'));
+});

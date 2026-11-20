@@ -42,7 +42,7 @@ export interface Watcher {
   /** Compatibility inventory; replaced completely before any success notification. */
   resources: Map<string, Resource>;
   payloads: Map<string, AssetPayload>;
-  /** Immutable, complete authoritative state. Treat resources/order/payloads as one commit. */
+  /** Immutable, complete authoritative state. Treat resources and payloads as one commit. */
   readonly state: PreviewState;
   on(event: "preview-state", listener: PreviewStateListener): this;
   on(event: "update", listener: UpdateListener): this;

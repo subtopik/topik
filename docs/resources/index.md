@@ -504,8 +504,8 @@ system paths such as `/var` and `/tmp` are links there.
    - In each module, sort `pages` by the old `order` in the page frontmatter,
      then delete `order` from every page. Pages with equal `order` keep their
      listed order.
-   - A source that still has `order` fails with `config-invalid` or
-     `frontmatter-invalid` naming the field, so nothing is reordered silently.
+   - A source that still has `order` fails with `course-order-removed` naming
+     the file and field, so nothing is reordered silently.
    - Compiled `Course` resources carry `spec.modules` and `CourseModule`
      resources carry `spec.pages`, in reader order. `spec.order` is gone from
      `CourseModule` and `CoursePage`.

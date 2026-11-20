@@ -363,7 +363,7 @@ test("Course failures name the invalid field and reject invalid UTF-8 pages", as
     "pages/welcome.md": welcome.replace("slug: introduction\n", "slug: introduction\norder: 12\n"),
   });
   await expect(compileCourse({ dir })).rejects.toMatchObject({
-    id: "frontmatter-invalid",
+    id: "course-order-removed",
     location: "pages/welcome.md",
     field: "order",
   });
@@ -375,9 +375,10 @@ test("Course failures name the invalid field and reject invalid UTF-8 pages", as
     ),
   });
   await expect(compileCourse({ dir })).rejects.toMatchObject({
-    id: "config-invalid",
+    id: "course-order-removed",
     location: "course.yaml",
     field: "modules[0].order",
+    message: expect.stringContaining("list position"),
   });
 
   dir = await fixture({ ...sourceFiles(), "pages/welcome.md": Buffer.from([0x23, 0x20, 0xff]) });

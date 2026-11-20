@@ -544,7 +544,7 @@ test.each([
   ["replaces a sibling key", "title", '"KB"\nid: other'],
   ["swallows the following keys in an unclosed quote", "title", '"KB'],
   ["adds an item beside an admitted item", "navigation/0", "home\n  - extra"],
-  ["nests a key below an admitted scalar's parent", "navigation/1", "install\nid: other"],
+  ["adds a key after an admitted list item", "navigation/1", "install\nextra: 1"],
 ])("an admitted field's replacement cannot reach outside it: %s", (_, selector, replacement) => {
   const { base, provenance, authority, replace } = sharedScope(wikiConfig, [selector]);
   expect(() =>

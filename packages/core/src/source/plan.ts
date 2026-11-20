@@ -412,12 +412,13 @@ export function verifySharedEdits(
   // Byte ranges bound where an edit lands, not what its replacement means: a replacement can
   // close its own value and add sibling keys or items. Compare the configuration's meaning
   // before and after, outside the admitted fields.
+  const replayed = replaySourceByteEdits(file.bytes, edits);
   let before: unknown;
   let after: unknown;
   try {
     const json = file.path.endsWith(".json");
     before = inspectSourceSyntax(decodeSource(file.bytes), json).value;
-    after = inspectSourceSyntax(decodeSource(replaySourceByteEdits(file.bytes, edits)), json).value;
+    after = inspectSourceSyntax(decodeSource(replayed), json).value;
   } catch {
     block(
       "shared-scope-denied",

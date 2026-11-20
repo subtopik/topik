@@ -230,8 +230,8 @@ Install the package, then import the renderer.
 | `loop`    | `true` plays a silent looping clip with a pause button instead of player controls. Default `false`. |
 
 A `video` plays a video file in the browser's player. An external URL, including
-its query such as a signed CDN token, is kept exactly as written. Nothing loads
-until the reader starts the video. A YouTube URL is refused with
+its query such as a signed CDN token, is kept exactly as written. A normal video
+loads nothing until the reader starts it; a `loop` clip starts on its own. A YouTube URL is refused with
 `topik-video-youtube`: use [`youtube`](#youtube) for it.
 
 A `video` is placed wherever block content is allowed, like `figure`: in tabs,

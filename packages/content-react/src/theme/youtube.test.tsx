@@ -77,6 +77,33 @@ describe("TopikYouTube", () => {
     expect(container.querySelector("iframe")).toBeNull();
   });
 
+  test("another video waits for its own click; a new title keeps playback", async () => {
+    const { container, root } = mount();
+    const play = async () =>
+      act(async () =>
+        container
+          .querySelector("a.topik-youtube__start")!
+          .dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 })),
+      );
+    await act(async () => root.render(<TopikYouTube src={SOURCE} title="Intro" />));
+    await play();
+    await act(async () => root.render(<TopikYouTube src={SOURCE} title="Renamed" />));
+    expect(container.querySelector("iframe")?.getAttribute("title")).toBe("Renamed");
+    await act(async () =>
+      root.render(<TopikYouTube src="https://youtu.be/aaaaaaaaaaa" title="Next" />),
+    );
+    expect(container.querySelector("iframe")).toBeNull();
+    expect(container.querySelector("a.topik-youtube__start")?.getAttribute("href")).toBe(
+      "https://www.youtube.com/watch?v=aaaaaaaaaaa",
+    );
+    // A different start time is a different video too.
+    await play();
+    await act(async () =>
+      root.render(<TopikYouTube src="https://youtu.be/aaaaaaaaaaa?t=30" title="Next" />),
+    );
+    expect(container.querySelector("iframe")).toBeNull();
+  });
+
   test("a source that is not a YouTube video renders nothing", () => {
     expect(renderToStaticMarkup(<TopikYouTube src="https://example.com/v" title="x" />)).toBe("");
   });

@@ -148,6 +148,19 @@ describe("TopikVideo", () => {
     expect(container.querySelector(".topik-video__toggle")).not.toBeNull();
   });
 
+  test("without script the source stays reachable by a link", () => {
+    const html = renderToStaticMarkup(
+      <TopikVideo src="https://example.com/watch/1" title="Intro" />,
+    );
+    expect(html).toContain(
+      '<noscript><a class="topik-video__link" href="https://example.com/watch/1">Intro</a></noscript>',
+    );
+    // A preview stream needs CORS, which navigation cannot make, so it gets no link.
+    expect(
+      renderToStaticMarkup(<TopikVideo src="blob:x" title="Intro" crossOrigin="anonymous" />),
+    ).not.toContain("<noscript>");
+  });
+
   test("any source gets the player, whatever its address looks like", () => {
     // Signed and generated CDN addresses often name no file extension.
     for (const src of ["https://cdn.example.com/media?id=42", "/media/intro"]) {

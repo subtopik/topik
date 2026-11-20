@@ -13,4 +13,4 @@ Breaking:
 
 - `video` no longer guesses from a URL's file extension whether to show a player or a link. Every source gets the player, and a source the browser cannot play falls back to the link, as before. The internal `__topikVideoFile` prop is gone.
 - A `video` with a YouTube URL is refused with `topik-video-youtube`; use `youtube` instead.
-- A `video` loads nothing until the reader starts it (`preload="none"`), instead of its metadata.
+- A `video` without `loop` loads nothing until the reader starts it (`preload="none"`), instead of its metadata. A `loop` clip still starts on its own.

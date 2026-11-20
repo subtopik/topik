@@ -176,6 +176,14 @@ function VideoFigure({ caption, crossOrigin, loop, poster, src, title }: TopikCo
         title={titleText}
       />
       <div className="topik-video__print">{link}</div>
+      {/* Without script a source the browser cannot play never falls back, so keep its link. */}
+      {corsOnly ? null : (
+        <noscript>
+          <a className="topik-video__link" href={source}>
+            {titleText || source}
+          </a>
+        </noscript>
+      )}
       {figcaption}
     </figure>
   );

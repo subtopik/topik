@@ -9,5 +9,4 @@
 ---
 
 Publish READMEs for `@topik/core`, `@topik/content-react`, `@topik/schema`,
-`@topik/cli`, and `@topik/codemod`, and add homepage, issue tracker, keywords,
-and the `>=22.22.0` Node.js floor to every public package manifest.
+`@topik/cli`, and `@topik/codemod`, and add homepage, issue tracker and keywords to every public package manifest.

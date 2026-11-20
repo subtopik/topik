@@ -56,6 +56,9 @@ export interface NavigationSequenceEdit {
  * their syntax; removed items are deleted in place and new items are appended.
  * Returns undefined when the change needs a new item before a retained one.
  */
+/** Largest comparison table a list alignment builds, about 4 MB. */
+const MAX_ALIGNMENT_CELLS = 1_000_000;
+
 export function alignNavigation(
   previous: readonly unknown[],
   desired: readonly unknown[],
@@ -71,21 +74,37 @@ export function alignNavigation(
   | undefined {
   const before = previous.map((item) => serializeTopikJson(item ?? null));
   const after = desired.map((item) => serializeTopikJson(item ?? null));
-  // Longest common subsequence of identical items anchors the retained entries.
-  const table = Array.from({ length: before.length + 1 }, () =>
-    Array<number>(after.length + 1).fill(0),
-  );
-  for (let i = before.length - 1; i >= 0; i--)
-    for (let j = after.length - 1; j >= 0; j--)
+  // Identical leading and trailing items anchor themselves, so an unchanged list or a local
+  // edit compares only the changed middle.
+  let start = 0;
+  while (start < before.length && start < after.length && before[start] === after[start]) start++;
+  let end = 0;
+  while (
+    end < before.length - start &&
+    end < after.length - start &&
+    before[before.length - 1 - end] === after[after.length - 1 - end]
+  )
+    end++;
+  const rows = before.length - start - end;
+  const columns = after.length - start - end;
+  // A middle too large to compare is rewritten as one value, which is always faithful.
+  if ((rows + 1) * (columns + 1) > MAX_ALIGNMENT_CELLS) return undefined;
+  // Longest common subsequence of identical middle items anchors the retained entries.
+  const table = Array.from({ length: rows + 1 }, () => new Uint32Array(columns + 1));
+  for (let i = rows - 1; i >= 0; i--)
+    for (let j = columns - 1; j >= 0; j--)
       table[i][j] =
-        before[i] === after[j]
+        before[start + i] === after[start + j]
           ? table[i + 1][j + 1] + 1
           : Math.max(table[i + 1][j], table[i][j + 1]);
   const anchors: Array<[number, number]> = [];
-  for (let i = 0, j = 0; i < before.length && j < after.length;)
-    if (before[i] === after[j]) anchors.push([i++, j++]);
+  for (let index = 0; index < start; index++) anchors.push([index, index]);
+  for (let i = 0, j = 0; i < rows && j < columns;)
+    if (before[start + i] === after[start + j]) anchors.push([start + i++, start + j++]);
     else if (table[i + 1][j] >= table[i][j + 1]) i++;
     else j++;
+  for (let offset = end; offset > 0; offset--)
+    anchors.push([before.length - offset, after.length - offset]);
   const pairs: Array<[number, number]> = [];
   const removals: number[] = [];
   const additions: number[] = [];

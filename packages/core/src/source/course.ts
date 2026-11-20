@@ -20,10 +20,12 @@ import { alignNavigation } from "./plan-navigation";
 
 /** Items in the order a parent list names them; unlisted items follow in input order. */
 function inListOrder<T extends { name: string }>(items: readonly T[], order: readonly string[]) {
+  const byName = new Map(items.map((item) => [item.name, item]));
   const listed = order
-    .map((name) => items.find((item) => item.name === name))
+    .map((name) => byName.get(name))
     .filter((item): item is T => item !== undefined);
-  return [...listed, ...items.filter((item) => !listed.includes(item))];
+  const selected = new Set(listed);
+  return [...listed, ...items.filter((item) => !selected.has(item))];
 }
 
 /** Course references keep stable identities independently of route and file placement. */

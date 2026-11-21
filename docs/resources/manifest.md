@@ -142,6 +142,7 @@ The repository:
 
 - Git must accept the repository. A checkout owned by another user, common in containers and CI, fails with `git-repository-untrusted` until you compile as its owner or add it to Git's `safe.directory` setting.
 - An ancestor `.git` directory that Git does not recognize as a repository is ignored, as Git ignores it.
+- The repository's `core.fsmonitor` setting is turned off for these checks, so its configuration cannot run a command while the compiler reads the index.
 
 The files:
 

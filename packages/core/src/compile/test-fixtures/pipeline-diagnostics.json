@@ -39,7 +39,8 @@
         "column": 1,
         "file": "guides/asset.md"
       }
-    ]
+    ],
+    "failures": []
   },
   "error": {
     "diagnostics": [
@@ -83,7 +84,8 @@
         "message": "Internal link target page was not found.",
         "file": "wiki/other.md"
       }
-    ]
+    ],
+    "failures": []
   },
   "warning": {
     "diagnostics": [
@@ -91,45 +93,47 @@
         "id": "link-fragment-not-found",
         "type": "link",
         "level": "warning",
+        "lines": [3],
         "message": "Link target heading or accordion was not found.",
-        "lines": [3],
         "file": "guides/ok.md"
       },
       {
         "id": "link-page-not-found",
         "type": "link",
         "level": "warning",
-        "message": "Internal link target page was not found.",
         "lines": [3],
+        "message": "Internal link target page was not found.",
         "file": "guides/ok.md"
       },
       {
         "id": "link-page-not-found",
         "type": "link",
         "level": "warning",
-        "message": "Internal link target page was not found.",
         "lines": [3],
+        "message": "Internal link target page was not found.",
         "file": "wiki/index.md"
       },
       {
         "id": "link-fragment-not-found",
         "type": "link",
         "level": "warning",
-        "message": "Link target heading or accordion was not found.",
         "lines": [3],
+        "message": "Link target heading or accordion was not found.",
         "file": "wiki/index.md"
       },
       {
         "id": "link-page-not-found",
         "type": "card",
         "level": "warning",
-        "message": "Internal link target page was not found.",
         "lines": [3],
+        "message": "Internal link target page was not found.",
         "file": "wiki/other.md"
       }
-    ]
+    ],
+    "failures": []
   },
   "off": {
-    "diagnostics": []
+    "diagnostics": [],
+    "failures": []
   }
 }

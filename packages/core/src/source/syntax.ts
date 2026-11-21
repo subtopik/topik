@@ -127,6 +127,32 @@ export function patchFrontmatterFields(
 }
 
 /** All offsets exposed outside the parser are UTF-8 byte offsets in the immutable base. */
+/**
+ * The selector segment of a sequence item: Persons, sources and modules by their key, Course
+ * module pages by their name, and anything else by position. Undefined for a keyed item whose
+ * key is not a string; such an item has no field evidence.
+ */
+export function sourceSequenceItemIdentity(
+  selector: string,
+  value: unknown,
+  index: number,
+): string | undefined {
+  if (
+    (selector === "persons" || selector === "sources" || selector === "modules") &&
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value)
+  ) {
+    const record = value as Record<string, unknown>;
+    const key =
+      selector !== "sources" ? record.id : `${String(record.kind)}/${String(record.config)}`;
+    return typeof key === "string" ? encodeURIComponent(key) : undefined;
+  }
+  if (/^modules\/[^/]+\/pages$/.test(selector) && typeof value === "string")
+    return encodeURIComponent(value);
+  return String(index);
+}
+
 export function inspectSourceSyntax(raw: string, json = false) {
   // Configuration loading accepts a leading BOM; JSON validation excludes only
   // that marker while the YAML syntax parser retains original source positions.
@@ -246,24 +272,8 @@ export function inspectSourceSyntax(raw: string, json = false) {
     });
     for (const [index, child] of sequence.items.entries()) {
       if (!isNode(child) || !child.range) throw new TypeError("Missing sequence ranges");
-      let identity = String(index);
-      if (
-        (selector === "persons" || selector === "sources" || selector === "modules") &&
-        isMap(child)
-      ) {
-        const key =
-          selector !== "sources"
-            ? child.get("id")
-            : `${String(child.get("kind"))}/${String(child.get("config"))}`;
-        if (typeof key !== "string") continue;
-        identity = encodeURIComponent(key);
-      }
-      if (
-        /^modules\/[^/]+\/pages$/.test(selector) &&
-        isScalar(child) &&
-        typeof child.value === "string"
-      )
-        identity = encodeURIComponent(child.value);
+      const identity = sourceSequenceItemIdentity(selector, child.toJSON(), index);
+      if (identity === undefined) continue;
       const itemSelector = `${selector}/${identity}`;
       let start = child.range[0];
       let end = child.range[2];

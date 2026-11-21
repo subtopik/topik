@@ -1,11 +1,5 @@
 import { expect, test } from "vite-plus/test";
-import {
-  components,
-  getEffectiveProps,
-  parseDocument,
-  topikComponents,
-  writeDocument,
-} from "../index.js";
+import { components, getEffectiveProps, parseDocument, writeDocument } from "../index.js";
 import type { Component } from "../model.js";
 import { parse, withoutPositions } from "../test-helpers.js";
 
@@ -111,11 +105,8 @@ test("an empty layout names both cell kinds", () => {
     );
 });
 
-test("the catalog requires no single cell kind", () => {
-  expect(topikComponents.columns.allowedChildren).toEqual(["card", "column"]);
-  expect(topikComponents.columns).not.toHaveProperty("requiredChildren");
-  expect(topikComponents.codeGroup.requiredChildren).toEqual(["codeTab"]);
-  expect(topikComponents.codeTab.requiredChildren).toEqual(["fence"]);
+test("columns take cards or columns, and require neither kind alone", () => {
+  expect(components.columns.children).toEqual({ components: ["card", "column"], min: 1 });
 });
 
 test("a card still stands alone outside columns", () => {

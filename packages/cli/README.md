@@ -123,10 +123,24 @@ editor is saving the same files.
 
 ## Lint and compile
 
-`topik lint [dir]` checks the project's source content and prints its diagnostics.
-`topik compile [dir]` also writes the compiled resources, to `.topik` in the
-project directory unless `--out-dir` names another directory. Both exit 1 when
-there are errors. `compile --format` accepts only `json`.
+`topik lint [dir]` checks the project's source content and prints every problem
+it finds in one run: errors and warnings in every page, broken links, and missing
+or refused images and downloads. `topik compile [dir]` also writes the compiled
+resources, to `.topik` in the project directory unless `--out-dir` names another
+directory; it stops at the first kind of error it meets. Both exit 1 when there
+are errors. `compile --format` accepts only `json`.
+
+`lint` reports what it can judge now, so fixing one problem does not reveal
+another that was already there:
+
+- A page whose content has errors is reported once. Links to it are not
+  reported as missing, and its sections are checked once its content is valid.
+- A source whose configuration, frontmatter or page list cannot be read is
+  reported as one error, and the other sources are still checked. Links and
+  images are then not checked, since links into the failed source cannot be
+  judged.
+- An image or download that cannot be compiled is reported once, after the
+  pages that use it. Each page is checked up to its first such failure.
 
 A diagnostic names the component and attribute it is about and what the
 component accepts there, never the value that was written:
@@ -161,11 +175,17 @@ The exit status is the same as without the flag.
   allowed values of an attribute, its type, or the supported attribute names.
 - `severity` is `debug`, `info`, `warning`, `error` or `critical`.
 - `errors` counts the `error` and `critical` diagnostics.
+- A source that cannot be read, or an image or download that cannot be
+  compiled, is an `error` with empty `lines`. Its `id` is the failure's ID, such
+  as `wiki-page-not-found` or `TOPIK_ASSET_FILE_MISSING`. An image or download
+  has one entry for each page that uses it, with that page as `file`. Another
+  failure has a `file` only when it names one, such as the configuration file;
+  the message always says where it is.
 
-A failure that stops lint before it produces diagnostics, such as a missing
-`.topik.yaml`, prints its message on stderr. With `--json`, stdout still holds
-one report, with a single error diagnostic that carries the failure's `id`
-(such as `manifest-required`) and message and no `file`.
+A project whose `.topik.yaml` cannot be read cannot be linted at all. Lint prints
+the failure on stderr, and with `--json` stdout still holds one report, with a
+single error diagnostic that carries the failure's `id` (such as
+`manifest-required`) and message and no `file`.
 
 ## Validate resources
 

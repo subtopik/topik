@@ -18,9 +18,6 @@ updates:
           - "vite-plus"
           - "vite"
           - "@voidzero-dev/vite-plus-core"
-          - "vitest"
-          # Vitest plugins must match the vitest version that vite-plus pins.
-          - "@vitest/*"
       storybook:
         patterns:
           - "storybook"
@@ -40,6 +37,9 @@ updates:
           - "typescript"
           - "@typescript/*"
     ignore:
+      # vite-plus pins an exact vitest; vitest and its plugins move only with a vite-plus bump.
+      - dependency-name: "vitest"
+      - dependency-name: "@vitest/*"
       - dependency-name: "@types/node"
         update-types:
           - "version-update:semver-major"

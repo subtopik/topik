@@ -55,6 +55,14 @@ export function isTopikActiveMediaType(mediaType: string): boolean {
   ].includes(mediaType);
 }
 
+/**
+ * Media types a host must serve as a download (`Content-Disposition: attachment`) rather than
+ * display: opaque bytes and anything a browser could render or execute from the site origin.
+ */
+export function isTopikDownloadOnlyMediaType(mediaType: string): boolean {
+  return mediaType === "application/octet-stream" || isTopikActiveMediaType(mediaType);
+}
+
 /** Video slots admit only the formats every current browser plays in a `<video>` element. */
 const BROWSER_VIDEO_TYPES = new Set(["video/mp4", "video/webm"]);
 

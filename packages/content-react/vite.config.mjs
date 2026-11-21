@@ -4,8 +4,6 @@ import { basename } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const contentSource = fileURLToPath(new URL("../content/src/index.ts", import.meta.url));
-const coreSource = fileURLToPath(new URL("../core/src/index.ts", import.meta.url));
-const schemaSource = fileURLToPath(new URL("../schema/src", import.meta.url));
 
 const sourceRoot = fileURLToPath(new URL("src/", import.meta.url));
 const clientModules = new Map();
@@ -88,8 +86,6 @@ const config = defineConfig({
     testTimeout: 20_000,
     alias: {
       "@topik/content": contentSource,
-      "@topik/core": coreSource,
-      "@topik/schema": schemaSource,
     },
     environment: "jsdom",
     restoreMocks: true,

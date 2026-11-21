@@ -135,7 +135,13 @@ export {
   type ResolvedCourseContentReference,
 } from "./course-navigation";
 
-export { DEFAULT_WATCH_DEBOUNCE_MS, watch, type WatchOptions, type Watcher } from "./watch";
+export {
+  DEFAULT_WATCH_DEBOUNCE_MS,
+  isTopikWatchIgnoredName,
+  watch,
+  type WatchOptions,
+  type Watcher,
+} from "./watch";
 
 /** Compiler-derived Asset/v1 output, validation, identity, and safety APIs. */
 export * from "./assets";

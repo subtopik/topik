@@ -71,6 +71,7 @@ export {
 export {
   isInlineMediaCompatible,
   isTopikActiveMediaType,
+  isTopikDownloadOnlyMediaType,
   sniffPortableMediaType,
   TOPIK_UNRESOLVED_ACTIVE_CONTENT_TYPE,
 } from "./media";

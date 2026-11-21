@@ -5,7 +5,7 @@ import { command, positional, string } from "@drizzle-team/brocli";
 import {
   CompileError,
   DEFAULT_FILE_SAFETY,
-  isTopikActiveMediaType,
+  isTopikDownloadOnlyMediaType,
   watch,
   type FileSafety,
   TOPIK_PREVIEW_PROTOCOL,
@@ -113,7 +113,7 @@ function handleAssetPayload(
     "Accept-Ranges": "bytes",
     "Cache-Control": "no-cache",
     "X-Content-Type-Options": "nosniff",
-    ...(isDownloadMediaType(contentType) ? { "Content-Disposition": "attachment" } : {}),
+    ...(isTopikDownloadOnlyMediaType(contentType) ? { "Content-Disposition": "attachment" } : {}),
   };
   const range = parseByteRange(rangeHeader, payload.size);
   if (range === "unsatisfiable") {
@@ -134,10 +134,6 @@ function handleAssetPayload(
   res.end(method === "HEAD" ? undefined : payload.bytes);
 
   return true;
-}
-
-function isDownloadMediaType(mediaType: string): boolean {
-  return mediaType === "application/octet-stream" || isTopikActiveMediaType(mediaType);
 }
 
 function normalizeAllowedOrigin(value: string): string {

@@ -1,15 +1,8 @@
 import { isAbsolute, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AssetCompilationResult } from "@topik/core";
+import { isTopikWatchIgnoredName, type AssetCompilationResult } from "@topik/core";
 import type { LoaderContext } from "astro/loaders";
 import type { TopikAssetSnapshotControl } from "./assets";
-
-/**
- * Directory names the core watcher (and `topik dev`) ignores below a source root, including
- * `topik compile` output in `.topik` and its in-progress generation/prior directories.
- */
-const IGNORED_SEGMENT =
-  /^(?:node_modules|\.git|\.topik(?:-compilation-(?:generation|prior)-.+)?)$/u;
 
 /** Keep content entries and their Asset payloads on the same completed compilation. */
 export async function loadTopikSource(
@@ -46,7 +39,8 @@ export async function loadTopikSource(
     if (generatedDirectories.some((directory) => containsPath(directory, path))) return;
     const local = relative(root, path);
     if (isAbsolute(local) || local === ".." || local.startsWith(`..${sep}`)) return;
-    if (local.split(sep).some((part) => IGNORED_SEGMENT.test(part))) return;
+    // The names the core watcher (and `topik dev`) ignores below a source root.
+    if (local.split(sep).some((part) => isTopikWatchIgnoredName(part))) return;
     revision++;
     clearTimeout(timer);
     timer = setTimeout(() => {

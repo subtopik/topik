@@ -1,6 +1,6 @@
 import { writeFile } from "node:fs/promises";
 import type { AstroIntegration } from "astro";
-import { usesPortableFileReads } from "@topik/core";
+import { isTopikDownloadOnlyMediaType, usesPortableFileReads } from "@topik/core";
 import {
   assertTopikAssetLoaders,
   collectTopikAssetPayloads,
@@ -21,20 +21,6 @@ export interface TopikOptions {
 
 const PAYLOAD_PATH_PATTERN = /^\/blobs\/[0-9a-f]{64}$/u;
 const PAYLOAD_RELATIVE_PATTERN = /^blobs\/[0-9a-f]{64}$/u;
-/**
- * Media types a browser may render or execute from the site origin. Mirrors the
- * `topik dev` server so a download Asset is never displayed inline.
- */
-const DOWNLOAD_MEDIA_TYPES: readonly string[] = [
-  "application/octet-stream",
-  "text/html",
-  "image/svg+xml",
-  "application/javascript",
-  "text/javascript",
-  "application/x-executable",
-  "application/wasm",
-  "application/x-topik-active-content",
-];
 /** Development snapshots change between compilations; revalidate every request. */
 const DEVELOPMENT_CACHE_CONTROL = "no-cache";
 /** Production blob paths are content-addressed (`blobs/<sha256>`), so bytes never change. */
@@ -112,7 +98,7 @@ function assetHeaders(mediaType: string, size: number, cacheControl: string) {
     "Content-Length": String(size),
     "Content-Type": mediaType,
     "X-Content-Type-Options": "nosniff",
-    ...(DOWNLOAD_MEDIA_TYPES.includes(mediaType) ? { "Content-Disposition": "attachment" } : {}),
+    ...(isTopikDownloadOnlyMediaType(mediaType) ? { "Content-Disposition": "attachment" } : {}),
   };
 }
 
@@ -129,9 +115,11 @@ function snapshotPlugin(loaders: readonly TopikAssetLoader[], base: string) {
         payload.mediaType,
         payload.size,
         Buffer.from(payload.bytes).toString("base64"),
+        // Decided at build time with core's rule; the middleware does not import core.
+        isTopikDownloadOnlyMediaType(payload.mediaType),
       ]);
       const urls = [...collectTopikAssetUrls(loaders)];
-      return `const decode = (value) => Uint8Array.from(atob(value), (character) => character.charCodeAt(0));\nexport const topikAssetPayloads = new Map(${JSON.stringify(records)}.map(([path, mediaType, size, bytes]) => [path, { bytes: decode(bytes), mediaType, size }]));\nexport const topikAssetUrls = new Map(${JSON.stringify(urls)});\n`;
+      return `const decode = (value) => Uint8Array.from(atob(value), (character) => character.charCodeAt(0));\nexport const topikAssetPayloads = new Map(${JSON.stringify(records)}.map(([path, mediaType, size, bytes, attachment]) => [path, { bytes: decode(bytes), mediaType, size, attachment }]));\nexport const topikAssetUrls = new Map(${JSON.stringify(urls)});\n`;
     },
   };
 }
@@ -140,7 +128,6 @@ function productionMiddlewareSource(base: string): string {
   return `import { topikAssetPayloads, topikAssetUrls } from ${JSON.stringify(VIRTUAL_SNAPSHOT_ID)};
 globalThis[Symbol.for("@topik/astro/runtime-asset-urls")] = topikAssetUrls;
 const pattern = /^\\/blobs\\/[0-9a-f]{64}$/u;
-const downloadMediaTypes = new Set(${JSON.stringify(DOWNLOAD_MEDIA_TYPES)});
 export async function onRequest(context, next) {
   const request = context.request;
   if (request.method !== "GET" && request.method !== "HEAD") return next();
@@ -155,7 +142,7 @@ export async function onRequest(context, next) {
       "Content-Length": String(payload.size),
       "Content-Type": payload.mediaType,
       "X-Content-Type-Options": "nosniff",
-      ...(downloadMediaTypes.has(payload.mediaType) ? { "Content-Disposition": "attachment" } : {}),
+      ...(payload.attachment ? { "Content-Disposition": "attachment" } : {}),
     },
   });
 }

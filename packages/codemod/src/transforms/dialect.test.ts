@@ -28,7 +28,7 @@ describe("codemod literal ranges in the Topik Markdown dialect", () => {
     ],
     ["heading ID", "# `<Note>literal</Note>` {% #literal %}\n"],
   ])("preserves %s boundaries and migrates real JSX", (_name, literal) => {
-    expect(validateTopikContent(literal).valid).toBe(true);
+    expect(validateTopikContent(literal).ok).toBe(true);
     expect(transformMintlify(literal)).toEqual({ content: literal, changed: false, warnings: [] });
     for (const eol of ["\n", "\r\n"]) {
       const metadata = `\uFEFF---${eol}title: Example${eol}---${eol}${eol}`;
@@ -42,7 +42,7 @@ describe("codemod literal ranges in the Topik Markdown dialect", () => {
         expect(result.content).toContain(retained);
         expect(result.content).toContain(`variant="info" %}${eol}Actual.${eol}{% /callout %}`);
         if (eol === "\r\n") expect(result.content.replaceAll("\r\n", "")).not.toMatch(/[\r\n]/u);
-        expect(validateTopikContent(result.content).valid).toBe(true);
+        expect(validateTopikContent(result.content).ok).toBe(true);
       }
     }
   });

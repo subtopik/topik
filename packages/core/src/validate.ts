@@ -389,7 +389,7 @@ export function validateResourceContent(resources: readonly unknown[]): Validati
     const value = ownValue(content, "value");
     if (typeof value !== "string") continue;
     const validation = validateTopikContent(value, { allowCompiledAssetReferences: true });
-    for (const diagnostic of validation.errors) {
+    for (const diagnostic of validation.diagnostics) {
       if (diagnostic.level !== "error" && diagnostic.level !== "critical") continue;
       const line = diagnostic.lines[0];
       errors.push({

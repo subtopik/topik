@@ -3,7 +3,6 @@ import { ContentLimitError } from "./limits.js";
 import {
   components,
   extractTopikAssetOccurrences,
-  formatDocument,
   mergeTopikContentConfig,
   parseDocument,
   rewriteTopikAssetOccurrences,
@@ -12,6 +11,7 @@ import {
   writeDocument,
   type ContentDocument,
 } from "./index.js";
+import { formatDocument } from "./markdown.js";
 
 const variable = { type: "variable", path: ["package", "name"] };
 const template = { type: "topikTextTemplate", segments: [variable] };

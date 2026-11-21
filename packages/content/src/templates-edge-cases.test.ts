@@ -2,13 +2,13 @@ import { describe, expect, test, vi } from "vite-plus/test";
 import {
   compileTopikContent,
   evaluateDocument,
-  formatDocument,
   mergeTopikContentConfig,
   parseDocument,
   validateDocument,
   writeDocument,
   type ContentDocument,
 } from "./index.js";
+import { formatDocument } from "./markdown.js";
 import { parse, withoutPositions } from "./test-helpers.js";
 
 const open = "{% template code %}";

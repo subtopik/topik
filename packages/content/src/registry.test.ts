@@ -1,5 +1,6 @@
 import { expect, test } from "vite-plus/test";
-import { components, getEffectiveProps, type Registry } from "./index.js";
+import { components, type Registry } from "./index.js";
+import { getEffectiveProps } from "./registry.js";
 
 test("registry defaults are derived without changing authored values", () => {
   const registry: Registry = {

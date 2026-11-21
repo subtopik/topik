@@ -1,16 +1,13 @@
 import { describe, expect, test } from "vite-plus/test";
 import {
   evaluateDocument,
-  formatDocument,
   parseDocument,
-  rewriteAssets,
   validateDocument,
   writeDocument,
   type ContentDocument,
-  assignTopikHeadingIds,
-  removeInvalidTopikAssetReferences,
-  removeInvalidTopikNavigationReferences,
 } from "./index.js";
+import { formatDocument } from "./markdown.js";
+import { assignTopikHeadingIds } from "./test-helpers.js";
 import { parseExpression, writeExpression, type Expression } from "./expressions.js";
 import { parseDocumentTree } from "./parser.js";
 
@@ -59,10 +56,7 @@ describe("content resource boundaries", () => {
     for (const operation of [
       () => writeDocument(document),
       () => evaluateDocument(document, {}),
-      () => rewriteAssets(document, (url) => url),
       () => assignTopikHeadingIds(document),
-      () => removeInvalidTopikAssetReferences(document),
-      () => removeInvalidTopikNavigationReferences(document),
     ])
       expect(operation).toThrow(/cycle/i);
   });

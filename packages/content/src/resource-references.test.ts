@@ -212,7 +212,7 @@ describe("resource reference admission", () => {
       "[Example](ref://guide/missing)",
       "```",
     ].join("\n");
-    expect(validateTopikContent(source).valid).toBe(true);
+    expect(validateTopikContent(source).ok).toBe(true);
     expect(analyzeTopikContent(source).links.map(({ href, kind }) => ({ href, kind }))).toEqual([
       { href: "ref://guide/install#setup", kind: "link" },
       { href: "ref://wiki-page/overview", kind: "link" },
@@ -225,7 +225,7 @@ describe("resource reference admission", () => {
       "![Image](ref://guide/install)",
       '{% figure src="ref://guide/install" alt="Example" /%}',
     ]) {
-      expect(validateTopikContent(source).valid).toBe(false);
+      expect(validateTopikContent(source).ok).toBe(false);
     }
   });
 });

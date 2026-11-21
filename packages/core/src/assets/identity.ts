@@ -236,7 +236,7 @@ function expectedSemanticRecord(
       continue;
     }
     const content = resource.spec.content.value;
-    if (!validateTopikContent(content, { allowCompiledAssetReferences: true, cache }).valid) {
+    if (!validateTopikContent(content, { allowCompiledAssetReferences: true, cache }).ok) {
       return undefined;
     }
     for (const occurrence of extractTopikAssetOccurrences(content, { cache })) {

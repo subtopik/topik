@@ -230,10 +230,10 @@ async function compileAssetResourcesWithReader(
   for (const resource of topikContentResources) {
     const sourcePath = sourcePaths.get(resourceKey(resource)) as string;
     const validation = memo.validate(resource.spec.content.value, sourcePath);
-    if (!validation.valid) {
+    if (!validation.ok) {
       throw new AssetCompilationError(
         "Asset compilation received invalid Topik content",
-        contentValidationDiagnostics(validation.errors, sourcePath),
+        contentValidationDiagnostics(validation.diagnostics, sourcePath),
       );
     }
   }

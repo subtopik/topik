@@ -1,6 +1,6 @@
 import { parseTopikContent } from "./content.js";
 import { describe, expect, test } from "vite-plus/test";
-import { assignTopikHeadingIds } from "./headings";
+import { assignTopikHeadingIds } from "./test-helpers";
 import {
   analyzeTopikContent,
   isContentTag,
@@ -210,7 +210,7 @@ describe("accordion IDs", () => {
     const result = validateTopikContent(
       '{% accordion title="Grading" id="two words" %}\nA\n{% /accordion %}',
     );
-    expect(result.errors).toEqual([expect.objectContaining({ id: "topik-accordion-id" })]);
+    expect(result.diagnostics).toEqual([expect.objectContaining({ id: "topik-accordion-id" })]);
   });
 
   test("the reader tree carries generated and explicit IDs", () => {

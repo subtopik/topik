@@ -51,7 +51,7 @@ describe("ContentMemo", () => {
     const memo = createContentMemo();
     const validation = memo.validate(source, "intro.md");
     const analysis = memo.analyze("# Unused\n", "unused.md");
-    expect(Object.isFrozen(validation.errors)).toBe(true);
+    expect(Object.isFrozen(validation.diagnostics)).toBe(true);
     memo.prune();
     expect(memo.validate(source, "intro.md")).toBe(validation);
     memo.prune();

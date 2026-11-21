@@ -207,8 +207,8 @@ export async function discoverGuides(
       throw new PublicCompileError("guide-duplicate", file, { relatedLocation: duplicate });
     claimedNames.set(name, file);
     const validation = memo.validate(content, file);
-    diagnostics.push(...withFileLines(validation.errors, parsed.bodyLineOffset));
-    if (!validation.valid) {
+    diagnostics.push(...withFileLines(validation.diagnostics, parsed.bodyLineOffset));
+    if (!validation.ok) {
       unvalidatedDocuments.push({
         sourcePath: file,
         resource: {

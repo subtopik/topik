@@ -52,6 +52,7 @@ test("unchanged navigation retains exact source without output admission", () =>
   const replace = vi.fn(() => undefined);
   expect(rewriteTopikNavigationReferences(source, replace)).toEqual({
     ok: true,
+    source,
     content: source,
     changes: [],
     diagnostics: [],
@@ -127,7 +128,7 @@ test("rewrites a document whose generated heading IDs only compilation would exc
   const source = `# ${"a".repeat(500_100)}\n\n[Next](next.md)\n`;
   const result = rewriteTopikNavigationReferences(source, () => "/next");
   expect(result).toMatchObject({ ok: true, changes: [{ href: "next.md", replacement: "/next" }] });
-  expect(validateTopikContent(source).valid).toBe(true);
+  expect(validateTopikContent(source).ok).toBe(true);
   expect(compileTopikContent(source).ok).toBe(false);
 });
 

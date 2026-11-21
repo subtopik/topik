@@ -2,59 +2,12 @@ import { describe, expect, test, vi } from "vite-plus/test";
 import {
   extractTopikAssetOccurrences,
   formatTopikContent,
-  parseTopikContent,
-  removeInvalidTopikAssetReferences,
   rewriteTopikAssetOccurrences,
-  transformTopikContent,
-  validateDocument,
   validateTopikContent,
-  type ContentDocument,
   type TopikContentConfig,
 } from "./index.js";
 
 describe("source boundaries", () => {
-  test.each([
-    "mailto:hello@example.com",
-    "tel:+123456",
-    "#section",
-    "/guide",
-    "../guide.md",
-    "https://example.com/guide",
-  ])("asset sanitization preserves admitted navigation %s", (href) => {
-    for (const source of [`[Contact](${href})`, `[Contact][id]\n\n[id]: ${href}`]) {
-      expect(validateTopikContent(source).valid).toBe(true);
-      for (const evidence of [source, undefined]) {
-        const document = parseTopikContent(source);
-        const before = transformTopikContent(document);
-        removeInvalidTopikAssetReferences(document, evidence);
-        expect(validateDocument(document)).toEqual([]);
-        expect(transformTopikContent(document)).toEqual(before);
-      }
-    }
-  });
-
-  test.each([
-    "javascript:alert(1)",
-    "http://example.com/file",
-    "https://user:secret@example.com/file",
-    "asset:invalid",
-    "//example.com/file",
-  ])("unsafe links retain their label as renderable content: %s", (href) => {
-    for (const source of [`[**Contact**](${href})`, `[**Contact**][id]\n\n[id]: ${href}`]) {
-      const document = parseTopikContent(source);
-      removeInvalidTopikAssetReferences(document, source);
-      expect(validateDocument(document)).toEqual([]);
-      expect(transformTopikContent(document)).toMatchObject({
-        children: expect.arrayContaining([
-          expect.objectContaining({
-            name: "p",
-            children: [expect.objectContaining({ name: "strong", children: ["Contact"] })],
-          }),
-        ]),
-      });
-    }
-  });
-
   test.each([
     "javascript:alert(1)",
     "http://example.com/file.png",
@@ -74,8 +27,8 @@ describe("source boundaries", () => {
     const result = rewriteTopikAssetOccurrences(source, () => `asset:auto-v1-${"a".repeat(52)}`);
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("Expected compiled output");
-    expect(validateTopikContent(result.content).valid).toBe(false);
-    expect(validateTopikContent(result.content, { allowCompiledAssetReferences: true }).valid).toBe(
+    expect(validateTopikContent(result.content).ok).toBe(false);
+    expect(validateTopikContent(result.content, { allowCompiledAssetReferences: true }).ok).toBe(
       true,
     );
   });
@@ -177,177 +130,5 @@ describe("source boundaries", () => {
       diagnostics: [expect.objectContaining({ id: "TOPIK_EXTERNAL_REFERENCE_UNSAFE" })],
     });
     expect(replace).not.toHaveBeenCalled();
-  });
-
-  test.each([true, false])(
-    "sanitizes an authoring tree with source evidence=%s",
-    (includeSource) => {
-      const source =
-        '![Unsafe](http://example.com/image.png)\n\n{% figure src="https://example.com/safe.png" darkSrc="asset:invalid" alt="Theme" /%}';
-      const document = parseTopikContent(source);
-      removeInvalidTopikAssetReferences(document, includeSource ? source : undefined);
-      expect(document.children).toMatchObject([
-        { type: "paragraph", children: [{ type: "text", value: "Unsafe" }] },
-        { type: "topikComponent", props: { src: "https://example.com/safe.png", alt: "Theme" } },
-      ]);
-      expect(document.children[1]).not.toHaveProperty("props.darkSrc");
-      expect(validateDocument(document)).toEqual([]);
-      expect(() => transformTopikContent(document)).not.toThrow();
-    },
-  );
-
-  describe.each([
-    ["structured clone", (document: ContentDocument) => structuredClone(document)],
-    [
-      "JSON copy",
-      (document: ContentDocument) => JSON.parse(JSON.stringify(document)) as ContentDocument,
-    ],
-  ] as const)("preview sanitization of a %s", (_name, copy) => {
-    test.each(["\n", "\r\n", "\r"])("preserves safe resources with line endings %j", (ending) => {
-      const source = [
-        "![Logo](images/logo.png) [Site](https://example.com)",
-        "",
-        "> ![Reference][image]",
-        ">",
-        "> [image]:",
-        ">   images/reference.png",
-        "",
-        "{% if $show %}",
-        "![First][scoped]",
-        "",
-        "[scoped]: images/first.png",
-        "{% else /%}",
-        "![Second][scoped]",
-        "",
-        "[scoped]: images/second.png",
-        "{% /if %}",
-        "",
-        "![Unsafe](http://example.com/image.png) ![Escaped](images/logo\\.png)",
-        "![Entity](images/l&#111;go.png)",
-      ].join(ending);
-      const authored = parseTopikContent(source);
-      const original = structuredClone(authored);
-      const preview = copy(authored);
-      const expected = parseTopikContent(source);
-      removeInvalidTopikAssetReferences(expected, source);
-      removeInvalidTopikAssetReferences(preview, source);
-      expect(preview).toEqual(expected);
-      expect(authored).toEqual(original);
-      for (const show of [true, false]) {
-        const tree = transformTopikContent(preview, { variables: { show } });
-        expect(tree).toMatchObject({
-          children: [
-            {
-              children: [
-                { name: "TopikImage", attributes: { src: "images/logo.png" } },
-                " ",
-                { name: "TopikLink", attributes: { href: "https://example.com" } },
-              ],
-            },
-            {
-              children: [
-                { children: [{ name: "TopikImage", attributes: { src: "images/reference.png" } }] },
-                null,
-              ],
-            },
-            {
-              children: [
-                {
-                  name: "TopikImage",
-                  attributes: { src: show ? "images/first.png" : "images/second.png" },
-                },
-              ],
-            },
-            null,
-            { children: ["Unsafe Escaped\nEntity"] },
-          ],
-        });
-      }
-    });
-
-    test("recovers source evidence inside custom components", () => {
-      const config: TopikContentConfig = {
-        components: {
-          notice: { kind: "block", render: "Notice", attributes: {}, children: "blocks" },
-          label: {
-            kind: "inline",
-            render: "Label",
-            attributes: { title: { type: "string" } },
-            children: "inline",
-          },
-        },
-      };
-      const source =
-        '{% notice %}\n![Logo](images/logo.png)\n\n[Read {% label title="[detail]" %}here{% /label %}](https://example.com)\n{% /notice %}';
-      const authored = parseTopikContent(source, { config });
-      const preview = copy(authored);
-      removeInvalidTopikAssetReferences(preview, source, { config });
-      expect(preview).toEqual(authored);
-    });
-
-    test("does not borrow source evidence for changed or positionless resources", () => {
-      const source = "![Logo](images/logo.png)";
-      for (const change of ["destination", "position"] as const) {
-        const preview = copy(parseTopikContent(source));
-        const paragraph = preview.children[0];
-        if (paragraph.type !== "paragraph" || paragraph.children[0].type !== "image")
-          throw new Error("Expected image");
-        if (change === "destination") paragraph.children[0].url = "images/changed.png";
-        else delete paragraph.children[0].position;
-        removeInvalidTopikAssetReferences(preview, source);
-        expect(preview.children).toMatchObject([{ children: [{ type: "text", value: "Logo" }] }]);
-      }
-    });
-  });
-
-  test("sanitizes nested resources and removes empty inline wrappers", () => {
-    const source = [
-      "[![Logo](http://example.com/logo.png)](javascript:alert(1))",
-      "",
-      "{% badge %}**![](http://example.com/empty.png)**{% /badge %}",
-      "",
-      "![Reference][bad]",
-      "",
-      "[bad]: http://example.com/reference.png",
-    ].join("\n");
-    const document = parseTopikContent(source);
-    removeInvalidTopikAssetReferences(document, source);
-    expect(validateDocument(document)).toEqual([]);
-    expect(transformTopikContent(document)).toMatchObject({
-      children: [{ name: "p", children: ["Logo"] }, { name: "p", children: ["Reference"] }, null],
-    });
-  });
-
-  test("preserves figure descriptions when removing an unsafe required source", () => {
-    const source =
-      '{% figure src="http://example.com/image.png" alt="Diagram" caption="Overview" /%}';
-    const document = parseTopikContent(source);
-    removeInvalidTopikAssetReferences(document, source);
-    expect(validateDocument(document)).toEqual([]);
-    expect(transformTopikContent(document)).toMatchObject({
-      children: [{ name: "p", children: ["Diagram\nOverview"] }],
-    });
-  });
-
-  test("preserves navigation sharing a definition with a rejected image", () => {
-    const source = "![Image][id] [Page][id]\n\n[id]: /guide";
-    const document = parseTopikContent(source);
-    removeInvalidTopikAssetReferences(document, source);
-    expect(validateDocument(document)).toEqual([]);
-    expect(transformTopikContent(document)).toMatchObject({
-      children: [
-        { name: "p", children: ["Image ", { name: "TopikLink", attributes: { href: "/guide" } }] },
-        null,
-      ],
-    });
-  });
-
-  test("does not leave a trailing hard break after removing a decorative image", () => {
-    const document = parseTopikContent("Before  \n![](http://example.com/empty.png)");
-    removeInvalidTopikAssetReferences(document);
-    expect(validateDocument(document)).toEqual([]);
-    expect(transformTopikContent(document)).toMatchObject({
-      children: [{ name: "p", children: ["Before"] }],
-    });
   });
 });

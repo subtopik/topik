@@ -12,7 +12,7 @@ describe("CLI diagnostic serialization", () => {
     const result = validateTopikContent(
       `{% card title="Unsafe" href="https://user:${sentinel}@[" /%}`,
     );
-    const output = result.errors.map(formatDiagnostic).join("\n");
+    const output = result.diagnostics.map(formatDiagnostic).join("\n");
 
     expect(output).not.toBe("");
     expect(output).not.toContain(sentinel);
@@ -24,7 +24,7 @@ describe("CLI diagnostic serialization", () => {
     const result = validateTopikContent(`{% callout variant="${sentinel}" %}\nx\n{% /callout %}`, {
       file: "intro.md",
     });
-    const output = result.errors.map(formatDiagnostic).join("\n");
+    const output = result.diagnostics.map(formatDiagnostic).join("\n");
 
     expect(output).toBe(
       "intro.md:1:1 error attribute-value-invalid: An attribute has an invalid value. (tag: callout; attribute: variant; expected: info, tip, warning, danger)",

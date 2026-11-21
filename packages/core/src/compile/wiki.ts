@@ -143,9 +143,9 @@ export async function discoverWiki(
       throw publicSchemaError("frontmatter-invalid", sourcePath, error);
     }
     const validation = memo.validate(content, sourcePath);
-    diagnostics.push(...withFileLines(validation.errors, parsed.bodyLineOffset));
+    diagnostics.push(...withFileLines(validation.diagnostics, parsed.bodyLineOffset));
     const name = frontmatter.id ?? pagePathToName(config.id, pagePath);
-    if (!validation.valid) {
+    if (!validation.ok) {
       if (!Object.hasOwn(sourcePathsByResource, `WikiPage/${name}`)) {
         pageNamesBySource.set(pagePath, name);
         unvalidatedDocuments.push({

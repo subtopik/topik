@@ -22,6 +22,18 @@ function validateQuestion(
       id: "topik-question-choice-count",
       message: "question requires at least two choice children",
     });
+  // One explanation, after every choice: readers see it below the answers they chose from.
+  const explanations = component.children.flatMap((child, index) =>
+    child.type === "topikComponent" && child.name === "explanation" ? [index] : [],
+  );
+  const lastChoice = component.children.findLastIndex(
+    (child) => child.type === "topikComponent" && child.name === "choice",
+  );
+  if (explanations.length > 1 || explanations.some((index) => index < lastChoice))
+    issues.push({
+      id: "topik-question-explanation-placement",
+      message: "question allows one explanation, after its choices",
+    });
   const correct = choices.filter((choice) => choice.props.correct === true).length;
   if (props.type === "multiple-choice" && correct === 0)
     issues.push({

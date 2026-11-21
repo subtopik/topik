@@ -2,20 +2,9 @@ import { expect, test, vi } from "vite-plus/test";
 import {
   formatTopikContent,
   rewriteTopikAssetOccurrences,
-  topikAssetReferenceSlots,
   validateTopikContent,
   type TopikContentConfig,
 } from "./index.js";
-
-test("public asset metadata cannot be mutated to bypass image admission", () => {
-  const slot = topikAssetReferenceSlots[0];
-  try {
-    Reflect.set(slot, "node", "link");
-    expect(validateTopikContent("![image](javascript:alert)").valid).toBe(false);
-  } finally {
-    Reflect.set(slot, "node", "image");
-  }
-});
 
 const config: TopikContentConfig = {
   components: {
@@ -45,9 +34,9 @@ test.each(["src", "poster"])("custom %s assets use source URL admission", (prope
   ]) {
     const source = `{% media ${property}="${value}" /%}`;
     const result = validateTopikContent(source, { config });
-    expect(result).toMatchObject({ source, valid: false });
-    expect(result.errors[0].type).toBe(`media.${property}`);
-    expect(JSON.stringify(result.errors)).not.toContain(value);
+    expect(result).toMatchObject({ source, ok: false });
+    expect(result.diagnostics[0].type).toBe(`media.${property}`);
+    expect(JSON.stringify(result.diagnostics)).not.toContain(value);
     expect(formatTopikContent(source, { config })).toMatchObject({ ok: false, source });
     const replace = vi.fn();
     expect(rewriteTopikAssetOccurrences(source, replace, { config })).toMatchObject({
@@ -67,23 +56,21 @@ test("custom asset defaults and inactive branches are validated", () => {
       },
     },
   };
-  expect(validateTopikContent("{% media /%}", { config: withDefault }).valid).toBe(false);
+  expect(validateTopikContent("{% media /%}", { config: withDefault }).ok).toBe(false);
   const source = '{% if false %}\n\n{% media src="javascript:alert(1)" /%}\n\n{% /if %}';
-  expect(validateTopikContent(source, { config }).valid).toBe(false);
+  expect(validateTopikContent(source, { config }).ok).toBe(false);
 });
 
 test("custom assets preserve safe values and compiled-output boundaries", () => {
   for (const value of ["images/photo.png", "https://example.test/photo.png?signature=abc"]) {
     const source = `{% media src="${value}" poster="${value}" /%}`;
-    expect(validateTopikContent(source, { config })).toMatchObject({ valid: true });
+    expect(validateTopikContent(source, { config })).toMatchObject({ ok: true });
   }
   const source = `{% media src="asset:auto-v1-${"a".repeat(52)}" /%}`;
-  expect(validateTopikContent(source, { config }).valid).toBe(false);
-  expect(validateTopikContent(source, { config, allowCompiledAssetReferences: true }).valid).toBe(
+  expect(validateTopikContent(source, { config }).ok).toBe(false);
+  expect(validateTopikContent(source, { config, allowCompiledAssetReferences: true }).ok).toBe(
     true,
   );
   // A property is an asset only when the schema explicitly declares it as one.
-  expect(validateTopikContent('{% media label="javascript:literal" /%}', { config }).valid).toBe(
-    true,
-  );
+  expect(validateTopikContent('{% media label="javascript:literal" /%}', { config }).ok).toBe(true);
 });

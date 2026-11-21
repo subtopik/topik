@@ -132,6 +132,8 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
     "Emphasis and strong marks allow at most two levels each; strikethrough cannot be nested.",
   "topik-question-choice-count": "A question requires at least two choices.",
   "topik-question-children": "A question contains an unsupported child.",
+  "topik-question-explanation-placement":
+    "A question allows one explanation, written after its choices.",
   "topik-question-correct-choice-required":
     "A multiple-choice question requires at least one correct choice.",
   "topik-question-parent-required":
@@ -342,18 +344,6 @@ export function sanitizeTopikContentDiagnostic(
       ? { variable }
       : {}),
   };
-}
-
-export function toTopikContentDiagnostic(error: ContentValidationIssue): TopikContentDiagnostic {
-  return sanitizeTopikContentDiagnostic({
-    id: error.error.id,
-    type: error.type,
-    level: error.error.level,
-    message: error.error.message,
-    lines: error.lines,
-    ...(error.column === undefined ? {} : { column: error.column }),
-    ...(error.location?.file ? { file: error.location.file } : {}),
-  });
 }
 
 /** Convert an untrusted diagnostic location to a browser-compatible safe label. */

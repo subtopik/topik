@@ -1,7 +1,7 @@
 import type { Heading } from "mdast";
 import GithubSlugger, { slug } from "github-slugger";
-import type { AuthoredAttributeValue, ContentDocument, TreeNode } from "./model.js";
-import { plainText, walkContent } from "./traversal.js";
+import type { AuthoredAttributeValue, TreeNode } from "./model.js";
+import { plainText } from "./traversal.js";
 
 /** Base anchor for headings whose text has no sluggable characters. */
 const FALLBACK_HEADING_ID = "section";
@@ -46,14 +46,6 @@ export function explicitId(node: TreeNode): unknown {
   return node.type === "heading"
     ? (node as unknown as Heading).data?.topikId
     : (node.props?.id ?? undefined);
-}
-
-export function assignTopikHeadingIds(document: ContentDocument): TopikHeading[] {
-  const nodes: TreeNode[] = [];
-  walkContent(document, (node) => {
-    if (isAnchorNode(node as TreeNode)) nodes.push(node as TreeNode);
-  });
-  return assignHeadingIds(nodes);
 }
 
 /** @internal Reuse headings and accordions collected by a bounded document index. */

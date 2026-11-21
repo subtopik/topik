@@ -146,7 +146,7 @@ export async function discoverCourse(
           relatedLocation: sameRoute,
         });
       const validation = memo.validate(parsed.content, file.path);
-      diagnostics.push(...withFileLines(validation.errors, parsed.bodyLineOffset));
+      diagnostics.push(...withFileLines(validation.diagnostics, parsed.bodyLineOffset));
       const page: CoursePage = {
         apiVersion: "v1",
         type: "CoursePage",
@@ -161,7 +161,7 @@ export async function discoverCourse(
           content: { format: "topik", value: parsed.content },
         },
       };
-      if (!validation.valid) {
+      if (!validation.ok) {
         unvalidatedDocuments.push({ resource: page, sourcePath: file.path });
         continue;
       }

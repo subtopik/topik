@@ -19,8 +19,8 @@ describe("external references that rendering would drop", () => {
   test.each(dropped)("refuses %s during validation", (url) => {
     for (const source of [`![Image](${url})`, `{% figure src="${url}" alt="Figure" /%}`])
       expect(validateTopikContent(source)).toMatchObject({
-        valid: false,
-        errors: [expect.objectContaining({ id: "TOPIK_EXTERNAL_REFERENCE_UNSAFE" })],
+        ok: false,
+        diagnostics: [expect.objectContaining({ id: "TOPIK_EXTERNAL_REFERENCE_UNSAFE" })],
       });
   });
 
@@ -58,7 +58,7 @@ describe("external references that rendering would drop", () => {
   });
 
   test("keeps a decodable fragment", () => {
-    expect(validateTopikContent("![Image](https://example.com/a.png#%C3%A9)").valid).toBe(true);
+    expect(validateTopikContent("![Image](https://example.com/a.png#%C3%A9)").ok).toBe(true);
   });
 });
 
@@ -75,7 +75,10 @@ describe("source asset validation", () => {
       }),
     );
     const options = { file: "lesson.md" };
-    expect(validateTopikContent(source, options)).toMatchObject({ valid: false, errors: expected });
+    expect(validateTopikContent(source, options)).toMatchObject({
+      ok: false,
+      diagnostics: expected,
+    });
     expect(formatTopikContent(source, options)).toMatchObject({
       ok: false,
       source,
@@ -104,7 +107,7 @@ describe("source asset validation", () => {
       "",
       "[Download](http://example.com/manual.pdf)",
     ].join("\r\n");
-    expect(validateTopikContent(source).errors).toEqual([
+    expect(validateTopikContent(source).diagnostics).toEqual([
       expect.objectContaining({
         id: "TOPIK_EXTERNAL_REFERENCE_UNSAFE",
         type: "image.src",
@@ -142,8 +145,8 @@ describe("source asset validation", () => {
     "é.png",
   ])("rejects unsafe or noncanonical asset reference %s", (reference) => {
     const result = validateTopikContent(`{% figure src="${reference}" alt="Unsafe reference" /%}`);
-    expect(result.valid).toBe(false);
-    expect(result.errors).toEqual(
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: expect.stringMatching(/^TOPIK_(?:ASSET_PATH_INVALID|EXTERNAL_REFERENCE_UNSAFE)$/u),
@@ -158,12 +161,12 @@ describe("source asset validation", () => {
       validateTopikContent(
         '{% figure src="assets/caf%C3%A9.png" darkSrc="https://example.com/dark.png?q=1#x" alt="Hero" /%}',
       ),
-    ).toMatchObject({ valid: true, errors: [] });
+    ).toMatchObject({ ok: true, diagnostics: [] });
     expect(
       validateTopikContent(
         "![External image](https://example.com/image.png)\n\n[External file](https://example.com/file.pdf)\n",
       ),
-    ).toMatchObject({ valid: true, errors: [] });
+    ).toMatchObject({ ok: true, diagnostics: [] });
   });
 
   test("accepts mixed-case credential-free HTTPS in every Asset-capable Markdown form", () => {
@@ -176,7 +179,7 @@ describe("source asset validation", () => {
           '{% figure src="HTtPs://example.com/light.png" darkSrc="htTPs://example.com/dark.png" alt="Theme" /%}',
         ].join("\n\n"),
       ),
-    ).toMatchObject({ valid: true, errors: [] });
+    ).toMatchObject({ ok: true, diagnostics: [] });
   });
 
   test("accepts image and possible-download references with Markdown titles", () => {
@@ -186,7 +189,7 @@ describe("source asset validation", () => {
       validateTopikContent(
         '![Hero](hero.png "title (detail)")\n\n[Manual](manual.bin "title (detail)")\n',
       ),
-    ).toMatchObject({ valid: true, errors: [] });
+    ).toMatchObject({ ok: true, diagnostics: [] });
   });
 
   test.each([
@@ -199,8 +202,8 @@ describe("source asset validation", () => {
     "<person@example.com> <http://example.com/file.pdf>",
   ])("rejects unsafe HTTP policy in a possible download link: %s", (source) => {
     expect(validateTopikContent(source)).toMatchObject({
-      valid: false,
-      errors: expect.arrayContaining([
+      ok: false,
+      diagnostics: expect.arrayContaining([
         expect.objectContaining({ id: "TOPIK_EXTERNAL_REFERENCE_UNSAFE", type: "link.href" }),
       ]),
     });
@@ -213,8 +216,8 @@ describe("source asset validation", () => {
     '{% figure src="https://example.com/light.png" darkSrc="hTtPs://user:secret@example.com/dark.png" alt="Unsafe" /%}',
   ])("rejects unsafe mixed-case external media reference: %s", (source) => {
     expect(validateTopikContent(source)).toMatchObject({
-      valid: false,
-      errors: expect.arrayContaining([
+      ok: false,
+      diagnostics: expect.arrayContaining([
         expect.objectContaining({ id: "TOPIK_EXTERNAL_REFERENCE_UNSAFE" }),
       ]),
     });
@@ -222,8 +225,8 @@ describe("source asset validation", () => {
 
   test("accepts a credential-free HTTPS autolink", () => {
     expect(validateTopikContent("<https://example.com/file.pdf>")).toMatchObject({
-      valid: true,
-      errors: [],
+      ok: true,
+      diagnostics: [],
     });
   });
 
@@ -240,8 +243,8 @@ describe("source asset validation", () => {
       const paragraph =
         placement === "before" ? `${unavailable} ${parsed}` : `${parsed} ${unavailable}`;
       expect(validateTopikContent(`${paragraph}\n\n> [id]: ${reference}`)).toMatchObject({
-        valid: false,
-        errors: expect.arrayContaining([
+        ok: false,
+        diagnostics: expect.arrayContaining([
           expect.objectContaining({ id: "TOPIK_EXTERNAL_REFERENCE_UNSAFE", type: "link.href" }),
         ]),
       });
@@ -257,8 +260,8 @@ describe("source asset validation", () => {
       const paragraph =
         placement === "before" ? `${unavailable} ${parsed}` : `${parsed} ${unavailable}`;
       expect(validateTopikContent(`${paragraph}\n\n> [id]: ${reference}`)).toMatchObject({
-        valid: true,
-        errors: [],
+        ok: true,
+        diagnostics: [],
       });
     },
   );
@@ -274,10 +277,10 @@ describe("source asset validation", () => {
       const source = `![Unavailable][id] ![Hero](${reference})\n\n> [id]: ${reference}`;
       expect(validateTopikContent(source)).toMatchObject(
         valid
-          ? { valid: true, errors: [] }
+          ? { ok: true, diagnostics: [] }
           : {
-              valid: false,
-              errors: expect.arrayContaining([
+              ok: false,
+              diagnostics: expect.arrayContaining([
                 expect.objectContaining({
                   id: diagnosticId,
                   type: "image.src",
@@ -293,14 +296,14 @@ describe("source asset validation", () => {
     expect(
       validateTopikContent(`{% card title="Asset" href="asset:${generated}" /%}`),
     ).toMatchObject({
-      valid: false,
-      errors: expect.arrayContaining([
+      ok: false,
+      diagnostics: expect.arrayContaining([
         expect.objectContaining({ id: "link-asset-navigation-unsupported" }),
       ]),
     });
     expect(validateTopikContent(`![Compiled](asset:${generated})\n`)).toMatchObject({
-      valid: false,
-      errors: expect.arrayContaining([
+      ok: false,
+      diagnostics: expect.arrayContaining([
         expect.objectContaining({ id: "TOPIK_ASSET_REFERENCE_MALFORMED" }),
       ]),
     });
@@ -309,15 +312,15 @@ describe("source asset validation", () => {
         allowCompiledAssetReferences: true,
       }),
     ).toMatchObject({
-      valid: true,
-      errors: [],
+      ok: true,
+      diagnostics: [],
     });
   });
 
   test("reports malformed reserved generated names with a typed diagnostic", () => {
     expect(validateTopikContent("![Hero](asset:auto-v1-short)\n")).toMatchObject({
-      valid: false,
-      errors: expect.arrayContaining([
+      ok: false,
+      diagnostics: expect.arrayContaining([
         expect.objectContaining({ id: "TOPIK_ASSET_REFERENCE_MALFORMED", type: "image.src" }),
       ]),
     });
@@ -333,8 +336,8 @@ describe("source asset validation", () => {
     "asset&#58;company-logo",
   ])("rejects reserved Asset link spelling %s with a typed diagnostic", (reference) => {
     expect(validateTopikContent(`[Download](${reference})\n`)).toMatchObject({
-      valid: false,
-      errors: expect.arrayContaining([
+      ok: false,
+      diagnostics: expect.arrayContaining([
         expect.objectContaining({
           id: "TOPIK_ASSET_REFERENCE_MALFORMED",
           type: "link.href",
@@ -345,22 +348,22 @@ describe("source asset validation", () => {
 
   test("rejects a raw non-ASCII reference-style image destination", () => {
     expect(validateTopikContent("![Hero][id]\n\n[id]: é.png\n")).toMatchObject({
-      valid: false,
-      errors: expect.arrayContaining([
+      ok: false,
+      diagnostics: expect.arrayContaining([
         expect.objectContaining({ id: "TOPIK_ASSET_PATH_INVALID", type: "image.src" }),
       ]),
     });
     expect(
       validateTopikContent("![Good][good]\n\n[unused]: &eacute;.png\n[good]: good.png\n"),
-    ).toMatchObject({ valid: true, errors: [] });
+    ).toMatchObject({ ok: true, diagnostics: [] });
   });
 
   test("does not accept exact-source proof from an unrelated component attribute", () => {
     const source =
       '![x][id]\n\n{% callout title="![x](%C3%A9.png)" %}\nfoo\n{% /callout %}\n\n> [id]: é.png';
     expect(validateTopikContent(source)).toMatchObject({
-      valid: false,
-      errors: expect.arrayContaining([
+      ok: false,
+      diagnostics: expect.arrayContaining([
         expect.objectContaining({ id: "TOPIK_ASSET_PATH_INVALID", type: "image.src" }),
       ]),
     });
@@ -373,8 +376,8 @@ describe("source asset validation", () => {
     "![Hero][id]\n\n[id]: hero\\.png\n",
   ])("rejects parser-unescaped source destination bytes in %s", (source) => {
     expect(validateTopikContent(source)).toMatchObject({
-      valid: false,
-      errors: expect.arrayContaining([
+      ok: false,
+      diagnostics: expect.arrayContaining([
         expect.objectContaining({ id: "TOPIK_ASSET_PATH_INVALID", type: "image.src" }),
       ]),
     });
@@ -390,8 +393,8 @@ describe("source asset validation", () => {
     "[![Nested image](é.png)](manual.bin)\n",
   ])("rejects exact noncanonical destinations behind nested labels in %s", (source) => {
     expect(validateTopikContent(source)).toMatchObject({
-      valid: false,
-      errors: expect.arrayContaining([
+      ok: false,
+      diagnostics: expect.arrayContaining([
         expect.objectContaining({ id: "TOPIK_ASSET_PATH_INVALID", type: "image.src" }),
       ]),
     });
@@ -402,7 +405,7 @@ describe("source asset validation", () => {
       validateTopikContent(
         "![Inline [canonical]](%C3%A9.png)\n\n![Reference [canonical]][id]\n\n[id]: %C3%A9.png\n",
       ),
-    ).toMatchObject({ valid: true, errors: [] });
+    ).toMatchObject({ ok: true, diagnostics: [] });
   });
 
   test.each([
@@ -414,8 +417,8 @@ describe("source asset validation", () => {
     "![Reference `]`][id]\n\n[id]: hero\\.png\n",
   ])("rejects exact noncanonical destinations behind code-span labels in %s", (source) => {
     expect(validateTopikContent(source)).toMatchObject({
-      valid: false,
-      errors: expect.arrayContaining([
+      ok: false,
+      diagnostics: expect.arrayContaining([
         expect.objectContaining({ id: "TOPIK_ASSET_PATH_INVALID", type: "image.src" }),
       ]),
     });
@@ -426,15 +429,15 @@ describe("source asset validation", () => {
       validateTopikContent(
         "![Inline `]`](%C3%A9.png)\n\n![Reference `[`][id]\n\n[id]: %C3%A9.png\n",
       ),
-    ).toMatchObject({ valid: true, errors: [] });
+    ).toMatchObject({ ok: true, diagnostics: [] });
   });
 
   test("rejects a multiline external entity without borrowing a later escaped construct", () => {
     const source =
       "![Multiline](\n  https://example.com/a&amp;b\n) \\![fake](https://example.com/a&b)";
     expect(validateTopikContent(source)).toMatchObject({
-      valid: false,
-      errors: expect.arrayContaining([
+      ok: false,
+      diagnostics: expect.arrayContaining([
         expect.objectContaining({ id: "TOPIK_EXTERNAL_REFERENCE_UNSAFE", type: "image.src" }),
       ]),
     });
@@ -446,15 +449,15 @@ describe("source asset validation", () => {
       '![Hero][id]\n\n[id]:\n  &eacute;.png\n  "Title"\n',
     ]) {
       expect(validateTopikContent(source)).toMatchObject({
-        valid: false,
-        errors: expect.arrayContaining([
+        ok: false,
+        diagnostics: expect.arrayContaining([
           expect.objectContaining({ id: "TOPIK_ASSET_PATH_INVALID", type: "image.src" }),
         ]),
       });
     }
     expect(validateTopikContent('![Hero][id]\n\n[id]:\n  hero.png\n  "Title"\n')).toMatchObject({
-      valid: true,
-      errors: [],
+      ok: true,
+      diagnostics: [],
     });
   });
 });

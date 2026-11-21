@@ -5,7 +5,6 @@ import {
   formatTopikContent,
   rewriteTopikAssetOccurrences,
   rewriteTopikNavigationReferences,
-  toTopikContentDiagnostic,
   validateTopikContent,
 } from "./index.js";
 import { locateMeaningDifference } from "./document-meaning.js";
@@ -29,7 +28,7 @@ describe("diagnostic columns", () => {
     ["text <b>html</b>", "node-undefined", 1, 6],
     ["{% tabs %}\nhello\n{% /tabs %}", "topik-tabs-children", 1, 1],
   ])("validation of %j reports line and column", (source, id, line, column) => {
-    expect(validateTopikContent(source, { file: "guide.md" }).errors).toContainEqual(
+    expect(validateTopikContent(source, { file: "guide.md" }).diagnostics).toContainEqual(
       expect.objectContaining({ id, lines: [line], column, file: "guide.md" }),
     );
   });
@@ -46,7 +45,8 @@ describe("diagnostic columns", () => {
       },
     };
     expect(
-      validateTopikContent('Text\n\n  {% poster src="http://x.test/a.png" /%}', { config }).errors,
+      validateTopikContent('Text\n\n  {% poster src="http://x.test/a.png" /%}', { config })
+        .diagnostics,
     ).toContainEqual(
       expect.objectContaining({ id: "TOPIK_EXTERNAL_REFERENCE_UNSAFE", lines: [3], column: 3 }),
     );
@@ -72,28 +72,15 @@ describe("diagnostic columns", () => {
       "[x](https://user:secret@example.test)",
     ];
     for (const source of sources) {
-      const { errors } = validateTopikContent(source);
-      expect(errors.length).toBeGreaterThan(0);
-      for (const error of errors)
+      const { diagnostics } = validateTopikContent(source);
+      expect(diagnostics.length).toBeGreaterThan(0);
+      for (const error of diagnostics)
         expect({ source, id: error.id, column: typeof error.column }).toEqual({
           source,
           id: error.id,
           column: error.lines.length ? "number" : "undefined",
         });
     }
-  });
-
-  test("toTopikContentDiagnostic keeps a valid column", () => {
-    const issue = {
-      type: "link",
-      lines: [2],
-      error: { id: "link-href-empty", level: "error" as const, message: "untrusted" },
-    };
-    expect(toTopikContentDiagnostic({ ...issue, column: 4 })).toMatchObject({
-      lines: [2],
-      column: 4,
-    });
-    expect(toTopikContentDiagnostic({ ...issue, column: -1 })).not.toHaveProperty("column");
   });
 });
 

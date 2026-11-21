@@ -1,4 +1,7 @@
+import { assignHeadingIds, isAnchorNode, type TopikHeading } from "./headings.js";
 import { parseDocument, type ContentDocument, type Registry } from "./index.js";
+import type { TreeNode } from "./model.js";
+import { walkContent } from "./traversal.js";
 
 export function parse(source: string, registry?: Registry): ContentDocument {
   const result = parseDocument(source, registry);
@@ -16,4 +19,13 @@ export function withoutPositions(value: unknown): unknown {
         .map(([key, item]) => [key, withoutPositions(item)]),
     );
   return value;
+}
+
+/** Assign heading and accordion IDs across a whole parsed document, as compilation does. */
+export function assignTopikHeadingIds(document: ContentDocument): TopikHeading[] {
+  const nodes: TreeNode[] = [];
+  walkContent(document, (node) => {
+    if (isAnchorNode(node as TreeNode)) nodes.push(node as TreeNode);
+  });
+  return assignHeadingIds(nodes);
 }

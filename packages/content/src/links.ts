@@ -2,7 +2,7 @@ import type { TopikContentCache } from "./parse-cache.js";
 import type { Heading } from "mdast";
 import type { ContentDocument, TreeNode } from "./model.js";
 import type { TopikContentConfig } from "./config.js";
-import { plainText, walkContent } from "./traversal.js";
+import { plainText } from "./traversal.js";
 import { indexDocument, isReference, type DocumentIndex } from "./document-index.js";
 type ValidationError = { id: string; level: "error"; message: string };
 import { isTopikGeneratedAssetName } from "./asset-reference-policy.js";
@@ -215,15 +215,6 @@ export function validateTopikNavigationHref(value: unknown): ValidationError[] {
     return [linkError("link-asset-navigation-unsupported")];
   }
   return validateTopikHref(value);
-}
-
-/** Remove invalid navigation attributes before a renderer can emit a browser-facing URL. */
-export function removeInvalidTopikNavigationReferences(root: ContentDocument): void {
-  walkContent(root, (node) => {
-    if (node.type !== "topikComponent" || node.name !== "card") return;
-    const href = node.props?.href;
-    if (href !== undefined && validateTopikNavigationHref(href).length > 0) delete node.props!.href;
-  });
 }
 
 function linkKind(node: TreeNode): TopikContentLinkKind | undefined {

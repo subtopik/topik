@@ -1,6 +1,5 @@
 import { expect, test } from "vite-plus/test";
 import {
-  formatDocument,
   formatTopikContent,
   parseDocument,
   rewriteTopikAssetOccurrences,
@@ -9,6 +8,7 @@ import {
   writeDocument,
   type ContentDocument,
 } from "./index.js";
+import { formatDocument } from "./markdown.js";
 import type { PhrasingContent } from "mdast";
 import { parse, withoutPositions } from "./test-helpers.js";
 

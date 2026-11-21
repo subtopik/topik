@@ -287,7 +287,7 @@ const config: TopikContentConfig = {
   },
 };
 const source = '{% notice title="Remember" %}\nKeep a backup.\n{% /notice %}';
-if (!validateTopikContent(source, { config }).valid) throw new Error("Invalid notice");
+if (!validateTopikContent(source, { config }).ok) throw new Error("Invalid notice");
 transformTopikContent(parseTopikContent(source, { config }), config);
 ```
 

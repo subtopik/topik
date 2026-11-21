@@ -95,7 +95,7 @@ describe("formatting properties", () => {
     let valid = 0;
     for (let iteration = 0; iteration < 200; iteration++) {
       const source = generate(next);
-      if (!validateTopikContent(source).valid) continue;
+      if (!validateTopikContent(source).ok) continue;
       valid++;
       const formatted = formatTopikContent(source);
       expect({ source, diagnostics: formatted.ok ? [] : formatted.diagnostics }).toEqual({

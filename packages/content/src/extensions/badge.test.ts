@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
-import { getEffectiveProps, parseDocument, writeDocument } from "../index.js";
+import { parseDocument, writeDocument } from "../index.js";
+import { getEffectiveProps } from "../registry.js";
 import { parse, withoutPositions } from "../test-helpers.js";
 
 describe("badge source contract", () => {

@@ -139,6 +139,13 @@ describe("content resource boundaries", () => {
     ["unclosed resources", "[a](".repeat(25_000)],
     ["nested images", "![".repeat(100_000) + "a" + "](b)".repeat(100_000)],
     ["deep inline tags", "{% badge %}".repeat(8_000) + "x" + "{% /badge %}".repeat(8_000)],
+    // micromark copies the whole document event list each time container exits move back.
+    ["lazy quote lines", "> a\nb\n".repeat(20_000)],
+    ["block quotes ended by blank lines", "> a\n\n".repeat(30_000)],
+    ["lists followed by paragraphs", "- a\n- b\n\nText\n\n".repeat(8_000)],
+    ["sibling items with nested lists", "- a\n  - b\n".repeat(12_000)],
+    ["sibling items with nested quotes", "- > a\n".repeat(20_000)],
+    ["lazy lines after quoted headings", "> # h\nb\n".repeat(12_000)],
   ])("bounds parser work before resolving %s", (_label, source) => {
     const started = performance.now();
     const result = parseDocument(source);
@@ -197,6 +204,14 @@ describe("content resource boundaries", () => {
         (_, item) => `- **Fix** issue \`${item}\` in [#${item}](https://e.com/${item})\n`,
       ).join(""),
     ],
+    ["quoted lines", "> A quoted line of ordinary prose.\n".repeat(5_000)],
+    ["thematic breaks that look like list items", "* * *\n\n- - -\n\n".repeat(5_000)],
+    [
+      "nested lists",
+      "- Item\n  - Detail\n  - Detail\n    > A note\n- Item\n\nText.\n\n".repeat(150),
+    ],
+    ["lazily wrapped quotes", `> ${sentence}\n${sentence}\n\n`.repeat(300)],
+    ["lazily wrapped list items", `- ${sentence}\n${sentence}\n`.repeat(250)],
     [
       "a long table",
       "| a | b | c |\n| - | - | - |\n" +

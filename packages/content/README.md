@@ -434,7 +434,7 @@ diagnostic and returns the exact source. The values are exported as
 | Limit                      | Value        | Bounds                                                          |
 | -------------------------- | ------------ | --------------------------------------------------------------- |
 | `sourceLength`             | 1,000,000    | Source length                                                   |
-| `parserSteps`              | 67,108,864   | Superlinear inline parser work per document (see below)         |
+| `parserSteps`              | 67,108,864   | Superlinear parser work per document (see below)                |
 | `treeDepth`                | 64           | Nesting of blocks, lists, quotes, components and inline nodes   |
 | `treeNodes`                | 50,000       | Authoring tree nodes, including template segments               |
 | `dataDepth`, `dataEntries` | 160, 500,000 | Nesting and values in trees, metadata and variable data         |
@@ -460,6 +460,20 @@ than its paragraph:
   label
 - each run of brackets or escapes left as text costs a fraction of its
   paragraph's events
+
+Block quotes and lists cost parser work when they close in ways that make the
+Markdown parser rebuild its event list for the whole document so far:
+
+- a lazy line (one without the `>` or indentation of its container) that ends
+  a block quote or list, or a blank line that ends a block quote, costs the
+  number of parser events in the document so far
+- a list item that closes a block quote or list nested in the previous item
+  costs the same
+- a lazy line that continues a paragraph costs the paragraph's lines so far
+
+A document with a few hundred such closings is unaffected. Thousands of them,
+for example a very long changelog whose every entry nests a list and is followed
+by a paragraph, exhaust the budget: split such a document.
 
 ## Edge cases
 

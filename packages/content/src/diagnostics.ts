@@ -67,10 +67,7 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "attribute-type-invalid": "An attribute has an invalid type.",
   "attribute-undefined": "An attribute is not supported.",
   "attribute-value-invalid": "An attribute has an invalid value.",
-  "child-invalid": "A child node is not supported in this location.",
   "duplicate-attribute": "An attribute is specified more than once.",
-  "fence-tag-error": "A fenced tag is invalid.",
-  "function-undefined": "A referenced function is not defined.",
   "guide-left-out":
     "A Markdown file named in capitals is not read as a guide. Rename it in lowercase to make it a guide, or exclude it.",
   "guide-not-regular-file": "Guide entries must be regular files.",
@@ -79,14 +76,7 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "missing-closing": "A tag has no matching closing tag.",
   "missing-opening": "A closing tag has no matching opening tag.",
   "node-undefined": "This Markdown construct is not supported, such as raw HTML.",
-  "no-inline-annotations": "Inline annotations are not supported in this location.",
-  "parameter-missing-required": "A required function parameter is missing.",
-  "parameter-type-invalid": "A function parameter has an invalid type.",
-  "parameter-undefined": "A function parameter is not supported.",
   "parse-error": "Content could not be parsed.",
-  "slot-missing-required": "A required slot is missing.",
-  "slot-undefined": "A slot is not supported.",
-  "table-syntax": "Table syntax is invalid.",
   "attribute-syntax-invalid":
     'Tag attributes must be written as name="value", a finite number, or a boolean.',
   "tag-closing-invalid": "A closing tag cannot have attributes or be self-closing.",
@@ -148,8 +138,6 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
     "A component must be nested inside its required parent, such as a choice inside a question.",
   "topik-question-single-correct-choice":
     "A single-choice question requires exactly one correct choice.",
-  "topik-partial-cycle": "Partial references must not be cyclic.",
-  "topik-partial-invalid": "Partial content is invalid or unavailable.",
   "topik-quiz-children": "A quiz contains an unsupported child.",
   "topik-quiz-requires-question": "A quiz requires at least one question.",
   "topik-step-children": "A step may contain only block content.",
@@ -215,7 +203,6 @@ const TOPIK_CONTENT_DIAGNOSTIC_MESSAGES: Readonly<Record<string, string>> = {
   "topik-youtube-src":
     "A youtube source must be a YouTube video URL, such as youtu.be/… or youtube.com/watch?v=….",
   "topik-youtube-title": "A YouTube video requires a title that is not blank.",
-  "variable-undefined": "A referenced variable is not defined.",
 };
 
 const DIAGNOSTIC_URL_BASE = new URL("https://topik.invalid/");

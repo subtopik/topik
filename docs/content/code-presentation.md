@@ -201,7 +201,10 @@ stored.
 | Escaped text and row decorations, per document | 8,000,000 units                                             |
 
 Topik reserves the per-document budget conservatively before it allocates any
-output. The ordinary source, tree and data limits also apply.
+output: six units per character of code, 768 units per row and per folded
+range, and 4,096 units per block. Because of the row reservation, the presented
+blocks of one document hold at most about 10,000 rows in total, fewer when their
+lines are long. The ordinary source, tree and data limits also apply.
 
 ## Compatibility
 

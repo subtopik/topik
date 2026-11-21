@@ -17,6 +17,116 @@ const REFERENCE_EXTENT = 1_003;
 const SERIALIZE_WEIGHT = 4;
 /** Merging a data run moves the events after it in one shift, cheaper than a walk. */
 const MERGE_DIVISOR = 4;
+const BLANK_LINE = /^[ \t]*$/u;
+/** Flow that a lazy line cannot continue: headings, fences, HTML, breaks, tables, code. */
+const BLOCK_START = /^(?:#{1,6}(?:[ \t]|$)|`{3,}|~{3,}|<|(?:[-*_][ \t]*){3,}$|\|)/u;
+const QUOTE_MARKER = /^ {0,3}>[ \t]?/u;
+const ITEM_MARKER = /^ {0,3}(?:[-*+]|[0-9]{1,9}[.)])(?:[ \t]+|$)/u;
+/** A thematic break such as `* * *` is not a list item, though it starts like one. */
+const THEMATIC_BREAK = /^ {0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$/u;
+const startsItem = (text: string) => ITEM_MARKER.test(text) && !THEMATIC_BREAK.test(text);
+
+/** One-based line access into the normalized (LF) source. */
+function sourceLines(source: string) {
+  const starts = [0];
+  for (let index = source.indexOf("\n"); index !== -1; index = source.indexOf("\n", index + 1))
+    starts.push(index + 1);
+  return {
+    text: (line: number) =>
+      line < 1 || line > starts.length
+        ? ""
+        : source.slice(starts[line - 1], line < starts.length ? starts[line] - 1 : source.length),
+  };
+}
+
+const leadingSpaces = (text: string) => text.length - text.trimStart().length;
+
+/**
+ * Follow block quotes and list items line by line, as the CommonMark document parser opens
+ * and continues them, to tell when micromark rewrites its event list. Columns count tabs as
+ * one character: the model only estimates parser work and never decides the parse.
+ */
+function containerModel() {
+  type Open = { quote: true } | { quote: false; content: number };
+  let stack: Open[] = [];
+  /** Lines of the paragraph a lazy line would continue; 0 after a blank line or a block. */
+  let paragraph = 0;
+  const open = (rest: string, column: number) => {
+    for (;;) {
+      const quote = QUOTE_MARKER.exec(rest);
+      if (quote) {
+        stack.push({ quote: true });
+        column += quote[0].length;
+        rest = rest.slice(quote[0].length);
+        continue;
+      }
+      const item = startsItem(rest) ? ITEM_MARKER.exec(rest) : null;
+      if (!item || (BLANK_LINE.test(rest.slice(item[0].length)) && stack.length === 0)) return rest;
+      column += item[0].length;
+      stack.push({ quote: false, content: column });
+      rest = rest.slice(item[0].length);
+    }
+  };
+  return {
+    line(text: string, lazy: boolean): { rewrite: boolean; walk: number } {
+      const blank = BLANK_LINE.test(text);
+      let rest = text;
+      let column = 0;
+      let continued = 0;
+      let sibling = false;
+      for (; continued < stack.length; continued++) {
+        const container = stack[continued];
+        if (container.quote) {
+          const marker = QUOTE_MARKER.exec(rest);
+          if (!marker) break;
+          column += marker[0].length;
+          rest = rest.slice(marker[0].length);
+          continue;
+        }
+        if (blank) continue;
+        const indent = leadingSpaces(rest);
+        if (column + indent >= container.content) {
+          const skip = container.content - column;
+          column += skip;
+          rest = rest.slice(skip);
+          continue;
+        }
+        // A new item of the same list continues it, closing what was nested in the item.
+        sibling = startsItem(rest) && !BLANK_LINE.test(rest.replace(ITEM_MARKER, ""));
+        break;
+      }
+      const nested = stack.length - continued - 1;
+      const previous = paragraph;
+      let rewrite = false;
+      let walk = 0;
+      if (sibling) {
+        rewrite = nested > 0;
+        stack = stack.slice(0, continued);
+        rest = open(rest, column);
+      } else if (continued < stack.length && !blank && lazy) {
+        // A lazy line keeps the containers when it continues the open paragraph.
+        if (previous > 0 && !BLOCK_START.test(rest.trimStart())) walk = previous;
+        else rewrite = true;
+        if (rewrite) stack = stack.slice(0, continued);
+      } else {
+        // A blank line that ends a block quote is lazy and moves its exits back as well.
+        if (continued < stack.length && lazy) rewrite = true;
+        stack = stack.slice(0, continued);
+        if (!blank) rest = open(rest, column);
+      }
+      const content = rest.trimStart();
+      paragraph = walk
+        ? previous + 1
+        : blank || BLANK_LINE.test(content) || BLOCK_START.test(content) || leadingSpaces(rest) >= 4
+          ? 0
+          : sibling || continued < stack.length
+            ? 1
+            : paragraph + 1;
+      return { rewrite, walk };
+    },
+  };
+}
+
 /** Tokens that end the GFM footnote tokenizer's backward search for a `![`. */
 const FOOTNOTE_STOPS = new Set([
   "gfmFootnoteCall",
@@ -325,12 +435,34 @@ export function parserLimitSyntax(source: string): Extension {
       return nok(code);
     };
   };
+  // micromark copies the document's whole event list each time it moves container exits back
+  // (a lazy line that ends containers, or a sibling list item that closes containers nested in
+  // the previous item), and walks back over the open paragraph for every lazy line that
+  // continues it. None of this happens in a paragraph's text: charge it as lines start.
+  const lines = sourceLines(source);
+  const model = containerModel();
+  let seen = 0;
+  const lazyGuard: Tokenizer = function (_effects, _ok, nok) {
+    return (code) => {
+      const current = this.now().line;
+      while (seen < current - 1) {
+        const line = ++seen;
+        const step = model.line(lines.text(line), Boolean(this.parser.lazy[line]));
+        if (step.rewrite) spend(this.events.length);
+        else if (step.walk) spend(LINE_EVENTS * step.walk);
+      }
+      return nok(code);
+    };
+  };
   return {
-    document: Object.fromEntries(
-      "*+->0123456789"
-        .split("")
-        .map((marker) => [marker.charCodeAt(0), { tokenize: containerGuard }]),
-    ),
+    document: {
+      ...Object.fromEntries(
+        "*+->0123456789"
+          .split("")
+          .map((marker) => [marker.charCodeAt(0), { tokenize: containerGuard }]),
+      ),
+      null: { tokenize: lazyGuard },
+    },
     text: {
       ...Object.fromEntries(GUARDED_CODES.map((code) => [code, { tokenize: guard }])),
       96: {

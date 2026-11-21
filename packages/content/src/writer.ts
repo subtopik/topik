@@ -331,15 +331,47 @@ export function serializeDocument(
   const tree = options.preserveTreePositions
     ? document
     : canonicalizeFootnotes(canonicalizeInlineMarks(document));
+  const written = writeTree(tree, registry, true);
+  if (!options.preserveTreePositions || sameShape(tree, canonicalizeInlineMarks(tree)))
+    return written;
+  // Delimiters are chosen for canonical nesting. Other authored nesting, such as
+  // two strong marks inside one emphasis, can need the other delimiter somewhere
+  // to read back the same way, so let the Markdown writer choose then.
+  const read = (source: string) => {
+    const parsed = parseDocumentTree(source, registry, formatVersion);
+    return parsed.document && !parsed.diagnostics.length ? parsed.document : undefined;
+  };
+  const pinned = read(written);
+  if (pinned && sameShape(tree, pinned)) return written;
+  const fallback = writeTree(tree, registry, false);
+  if (!pinned || !sameDocumentMeaning(tree, pinned)) return fallback;
+  // Keep the chosen delimiters when they keep the meaning and the fallback
+  // does not keep the nesting either.
+  const unpinned = read(fallback);
+  return unpinned && sameShape(tree, unpinned) ? fallback : written;
+}
+
+/** Whether two trees nest the same node types, ignoring values and positions. */
+function sameShape(left: TreeNode, right: TreeNode): boolean {
+  const leftChildren = left.children ?? [];
+  const rightChildren = right.children ?? [];
+  return (
+    left.type === right.type &&
+    leftChildren.length === rightChildren.length &&
+    leftChildren.every((child, index) => sameShape(child, rightChildren[index]!))
+  );
+}
+
+function writeTree(tree: ContentDocument, registry: Registry, pinMarks: boolean): string {
   const expansion = sourceExpansion(tree, registry);
-  const baseline = writeMarkdown(asTags(tree, registry, true), registry);
+  const baseline = writeMarkdown(asTags(tree, registry, true), registry, pinMarks);
   assertSourceLimit(baseline);
   if (expansion === 0) return baseline;
   if (baseline.length + expansion > CONTENT_LIMITS.sourceLength)
     throw new ContentLimitError(
       `Content exceeds the source length limit of ${CONTENT_LIMITS.sourceLength}`,
     );
-  const written = writeMarkdown(asTags(tree, registry), registry);
+  const written = writeMarkdown(asTags(tree, registry), registry, pinMarks);
   assertSourceLimit(written);
   return written;
 }
@@ -388,12 +420,12 @@ const thematicBreak: Handle = (node: ThematicBreak, parent, state) => {
   return marker.repeat(3);
 };
 
-function writeMarkdown(tree: Root, registry: Registry): string {
+function writeMarkdown(tree: Root, registry: Registry, pinMarks: boolean): string {
   return toMarkdown(tree, {
     handlers: { blockquote, thematicBreak },
     extensions: [
       gfmToMarkdown(),
-      markWriterExtension(tree as TreeNode),
+      markWriterExtension(tree as TreeNode, { pin: pinMarks }),
       frontmatterToMarkdown(),
       tagToMarkdown(
         Object.fromEntries(

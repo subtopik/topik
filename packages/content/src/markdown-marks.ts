@@ -21,8 +21,17 @@ function touchesWord(siblings: readonly TreeNode[], index: number): boolean {
   );
 }
 
-/** Choose delimiters before writing so handlers and their lookahead agree. */
-export function markWriterExtension(root: TreeNode): NonNullable<Options["extensions"]>[number] {
+/**
+ * Choose delimiters before writing so handlers and their lookahead agree.
+ *
+ * With `pin`, the writer may use only the chosen delimiter. Without it, the
+ * writer may swap in the other delimiter to keep the meaning, which can cost
+ * character references for neighbouring letters.
+ */
+export function markWriterExtension(
+  root: TreeNode,
+  { pin = true }: { pin?: boolean } = {},
+): NonNullable<Options["extensions"]>[number] {
   const markers = new WeakMap<TreeNode, "*" | "_">();
   function walk(
     node: TreeNode,
@@ -84,7 +93,13 @@ export function markWriterExtension(root: TreeNode): NonNullable<Options["extens
           const previous = state.options[kind];
           state.options[kind] = markers.get(node as TreeNode) ?? "*";
           try {
-            return attention(node, state);
+            // mdast-util-to-markdown 2.2.3 and later swap the delimiter for the
+            // other one when it touches a parent's delimiter, and then encode
+            // letters next to `_` as character references: `**a*b***` becomes
+            // `**&#x61;_&#x62;_**`. Offering only the chosen delimiter keeps it.
+            const info = attention(node, state);
+            const marker = markers.get(node as TreeNode);
+            return pin && marker ? { ...info, markers: [marker] } : info;
           } finally {
             state.options[kind] = previous;
           }

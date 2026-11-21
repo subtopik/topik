@@ -3,6 +3,7 @@ import {
   formatDocument,
   formatTopikContent,
   parseDocument,
+  rewriteTopikAssetOccurrences,
   sameDocumentMeaning,
   validateDocument,
   writeDocument,
@@ -27,6 +28,19 @@ test.each([
   expect(sameDocumentMeaning(parse(written), document)).toBe(true);
   expect(writeDocument(parse(written))).toBe(written);
   expect(formatTopikContent(source)).toMatchObject({ ok: true, formatted: written });
+});
+
+// Newer Markdown writers swap a delimiter that touches its parent's delimiter
+// and then encode the letters next to it, as in `**&#x61;_&#x62;_**`.
+test.each([
+  ["**a*b***_c_", "**a*b***_c_\n"],
+  ["__*first*__middle__*last*__", "**_first_**middle**_last_**\n"],
+  ["***_a_****_a_***", "_**_a_**__*a*___\n"],
+])("targeted rewrites keep authored marks without character references: %s", (source, expected) => {
+  const rewritten = rewriteTopikAssetOccurrences(source, () => undefined);
+  expect(rewritten).toMatchObject({ ok: true, content: expected });
+  if (!rewritten.ok) throw new Error("Expected rewritten content");
+  expect(withoutPositions(parse(rewritten.content))).toEqual(withoutPositions(parse(source)));
 });
 
 test.each([

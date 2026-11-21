@@ -66,6 +66,18 @@ export function isInlineMediaCompatible(mediaType: string, role: string): boolea
 }
 
 function sniffPortableMarkupType(bytes: Uint8Array): string | undefined {
+  // UTF-16 text with a byte order mark is read as its characters, like UTF-8 text below.
+  const utf16 =
+    bytes[0] === 0xff && bytes[1] === 0xfe
+      ? "utf-16le"
+      : bytes[0] === 0xfe && bytes[1] === 0xff
+        ? "utf-16be"
+        : undefined;
+  if (utf16 !== undefined) {
+    const end = Math.min(bytes.byteLength, MARKUP_INSPECTION_LIMIT) & ~1;
+    const text = new TextDecoder(utf16).decode(bytes.slice(2, end)).toLowerCase();
+    return classifyMarkupText(text, bytes.byteLength > end);
+  }
   const boundary = Math.min(bytes.byteLength, MARKUP_INSPECTION_LIMIT);
   const completionBytes = trailingUtf8Completion(bytes.slice(0, boundary));
   if (completionBytes > bytes.byteLength - boundary) {
@@ -90,7 +102,11 @@ function sniffPortableMarkupType(bytes: Uint8Array): string | undefined {
   } catch {
     return undefined;
   }
+  return classifyMarkupText(text, bytes.byteLength > inspectedEnd);
+}
 
+/** Classify lowercased text; `truncated` says that more of the file follows it. */
+function classifyMarkupText(text: string, truncated: boolean): string | undefined {
   let cursor = skipMarkupWhitespace(text, 0);
   let consumedPreamble = false;
   let xmlDeclaration = false;
@@ -118,13 +134,12 @@ function sniffPortableMarkupType(bytes: Uint8Array): string | undefined {
   }
 
   if (cursor === text.length) {
-    return bytes.byteLength > inspectedEnd && (cursor > 0 || consumedPreamble)
+    return truncated && (cursor > 0 || consumedPreamble)
       ? TOPIK_UNRESOLVED_ACTIVE_CONTENT_TYPE
       : undefined;
   }
 
   const markup = text.slice(cursor);
-  const truncated = bytes.byteLength > inspectedEnd;
   if (/<!doctype\s+svg\b/u.test(markup) || hasSvgElement(markup, truncated)) {
     return "image/svg+xml";
   }
@@ -164,6 +179,27 @@ const EVENT_HANDLER_ATTRIBUTE = /[\s"'/]on[a-z][a-z0-9_-]*\s*=/u;
 const JAVASCRIPT_URL_ATTRIBUTE = /(?:href|src)\s*=\s*["']?\s*javascript:/u;
 
 /**
+ * A tag's text as an HTML parser reads its URLs: character references decoded, and the tabs
+ * and line breaks that URL parsing removes taken out, so `&#106;avascript:` and
+ * `java\tscript:` are recognized.
+ */
+function urlText(tag: string): string {
+  const decoded = tag.includes("&")
+    ? tag
+        .replace(/&#x([0-9a-f]{1,6});?/gu, (_, hex: string) => codePoint(Number.parseInt(hex, 16)))
+        .replace(/&#([0-9]{1,7});?/gu, (_, decimal: string) => codePoint(Number(decimal)))
+        .replace(/&(?:colon|tab|newline);/gu, (entity) =>
+          entity === "&colon;" ? ":" : entity === "&tab;" ? "\t" : "\n",
+        )
+    : tag;
+  return decoded.replace(/[\t\n\r]/gu, "");
+}
+
+function codePoint(value: number): string {
+  return value > 0 && value <= 0x10ffff ? String.fromCodePoint(value).toLowerCase() : "";
+}
+
+/**
  * Scan each start tag (`<` followed by a letter, up to the next `>`) once for active attributes,
  * so the check is linear in the inspected text and only real attributes count: `x < y then on =`
  * and `i<n;el.onclick=` are not tags. A tag left open at the end of complete text is discarded
@@ -185,7 +221,8 @@ function hasActiveAttribute(markup: string, truncated: boolean): boolean {
     }
     // A later `<` before this `>` starts a suffix of the same span, so one test covers both.
     const tag = markup.slice(start, end);
-    if (EVENT_HANDLER_ATTRIBUTE.test(tag) || JAVASCRIPT_URL_ATTRIBUTE.test(tag)) return true;
+    if (EVENT_HANDLER_ATTRIBUTE.test(tag) || JAVASCRIPT_URL_ATTRIBUTE.test(urlText(tag)))
+      return true;
     cursor = end + 1;
   }
   return false;

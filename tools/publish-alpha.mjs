@@ -20,8 +20,10 @@ export function publishAlpha({
   cwd = root,
   temporaryDirectory = process.env.RUNNER_TEMP ?? tmpdir(),
   run = runCommand,
+  ref,
 } = {}) {
   const versions = validateWorkspace(cwd);
+  if (ref !== undefined) validateReleaseRef(ref, versions);
   const releaseDirectory = mkdtempSync(join(temporaryDirectory, "topik-alpha-"));
   const planPath = join(releaseDirectory, "publish-plan.json");
   const packDirectory = join(releaseDirectory, "packed");
@@ -112,6 +114,19 @@ function validateWorkspace(cwd) {
   return versions;
 }
 
+/**
+ * A release runs from a tag that names the packages' version, such as `v0.1.0-alpha.8`, or by
+ * hand from `main`, so a tag on an arbitrary commit cannot publish what that commit holds.
+ */
+function validateReleaseRef(ref, versions) {
+  const version = versions.values().next().value;
+  if (ref.type === "tag" && ref.name === `v${version}`) return;
+  if (ref.type === "branch" && ref.name === "main") return;
+  throw new Error(
+    `Publish from the tag v${version} or from main, not the ${ref.type ?? "unknown"} ${ref.name ?? ""}`.trim(),
+  );
+}
+
 function validatePlan(plan, versions, packDirectory) {
   if (plan.version !== 1 || !Array.isArray(plan.plan)) {
     throw new Error("Invalid Changesets publish plan");
@@ -168,5 +183,7 @@ function runCommand(command, args, options) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  publishAlpha();
+  publishAlpha({
+    ref: { type: process.env.GITHUB_REF_TYPE, name: process.env.GITHUB_REF_NAME },
+  });
 }

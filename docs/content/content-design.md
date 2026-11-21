@@ -180,8 +180,8 @@ backslash escapes the closing tag, and in a table cell write the pipe key as
 `\|`, since a bare `|` ends the cell.
 
 A `quiz` holds one or more `question` components. A question holds at least two
-`choice` components and an optional `explanation`, which the reader sees after
-answering. A single-choice question, the default, has exactly one choice with
+`choice` components and any `explanation` components, which the reader sees
+after answering. A single-choice question, the default, has exactly one choice with
 `correct=true`; a question with `type="multiple-choice"` has at least one. A
 question has no prompt of its own, so write the prompt as text before the quiz:
 

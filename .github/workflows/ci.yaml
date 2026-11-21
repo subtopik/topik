@@ -55,6 +55,9 @@ jobs:
           runtime_node="$(vp env exec --node 22.22.0 node -p process.execPath)"
           vp run verify:public-packages --runtime-node "$runtime_node"
 
+      - name: Verify schema and Asset package boundaries
+        run: vp run verify:asset-packages
+
       - run: vp check
 
       - run: vp test

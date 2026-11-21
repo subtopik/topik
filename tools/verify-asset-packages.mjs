@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { discoverSchemaTargets } from "../packages/schema/scripts/schema-targets.mjs";
+import { listNpmRootMetadata } from "./public-packlist.mjs";
 
 const root = join(import.meta.dirname, "..");
 const schemaRoot = join(root, "packages", "schema");
@@ -95,7 +96,7 @@ const expected = new Map([
   [
     schemaRoot,
     [
-      "LICENSE",
+      ...listNpmRootMetadata(schemaRoot),
       ...schemaTargets.flatMap(({ resource, version }) => [
         `dist/${resource}/${version}.json`,
         `dist/${resource}/${version}.d.mts`,
@@ -107,7 +108,8 @@ const expected = new Map([
   [
     coreRoot,
     [
-      "LICENSE",
+      ...listNpmRootMetadata(coreRoot),
+      ...readdirSync(join(coreRoot, "dist", "LICENSES")).map((file) => `dist/LICENSES/${file}`),
       "dist/index.d.mts",
       "dist/index.mjs",
       "dist/course-navigation.d.mts",

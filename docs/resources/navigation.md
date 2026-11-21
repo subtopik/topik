@@ -282,7 +282,7 @@ that a reference, a public URL and a source-relative link each identify one
 target. The check is therefore stricter than one on names and routes alone.
 
 `resolveWikiContentHref` resolves `ref://wiki-page/<name>` itself, by page name,
-whatever the current page and source version are; other `ref://` types return
+whatever the current page is; other `ref://` types return
 `null`. Other hrefs resolve from the current page, and return `null` when it is
 unknown. A result has these fields:
 
@@ -311,8 +311,11 @@ with exactly that route wins, and the folder rule applies only when no route
 matches. `/folder/` and `./folder` always use the folder rule.
 
 Href paths are percent-decoded once before matching, so `next%20page.md` and
-`next page.md` name the same source. Source paths may contain `%`, `#`, `?` or
-spaces. A path with a malformed escape, such as `/%ZZ`, returns `null`.
+`next page.md` name the same source. Source paths may contain spaces, and Course
+source paths may also contain `#`, which a link writes as `%23`. Neither may
+contain `%` or `?`. A path with a malformed escape, such as `/%ZZ`, returns
+`null`. A link that is only a query or fragment, such as `?tab=1`, stays on the
+current page.
 
 ### Resolve links in Astro
 

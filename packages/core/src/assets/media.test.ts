@@ -14,6 +14,15 @@ function mp3Frame(): Uint8Array {
   return frame;
 }
 
+function utf16be(value: string): Uint8Array {
+  const bytes = new Uint8Array(value.length * 2);
+  for (let index = 0; index < value.length; index++) {
+    bytes[index * 2] = value.charCodeAt(index) >> 8;
+    bytes[index * 2 + 1] = value.charCodeAt(index) & 0xff;
+  }
+  return bytes;
+}
+
 function utf16le(value: string): Uint8Array {
   const bytes = new Uint8Array(value.length * 2);
   for (let index = 0; index < value.length; index++) {
@@ -59,7 +68,7 @@ describe("MPEG audio signatures", () => {
     // FF FE 20 00 is a valid MPEG-1 Layer I header whose frame is exactly 68 bytes long.
     [
       "UTF-16LE text exactly one Layer I frame long",
-      concat([0xff, 0xfe], utf16le(" <script>alert(1)</script>".padEnd(33, " "))),
+      concat([0xff, 0xfe], utf16le(" Plain notes, nothing more.".padEnd(33, " "))),
     ],
     ["sync bits without a following frame", concat(mp3Frame(), text("not another frame"))],
     ["a reserved MPEG version", concat([0xff, 0xeb, 0x90, 0x00], new Uint8Array(500))],
@@ -449,4 +458,27 @@ test("reads only the first compatible brands of a box that claims the whole file
   const started = performance.now();
   expect(sniffPortableMediaType(large)).toBe("application/octet-stream");
   expect(performance.now() - started).toBeLessThan(1_000);
+});
+
+describe("active markup in other spellings", () => {
+  test.each([
+    ["UTF-16LE HTML", concat([0xff, 0xfe], utf16le("<html><script>alert(1)</script></html>"))],
+    ["UTF-16BE SVG", concat([0xfe, 0xff], utf16be('<svg onload="alert(1)"></svg>'))],
+    [
+      "UTF-16LE script one MPEG frame long",
+      concat([0xff, 0xfe], utf16le(" <script>alert(1)</script>".padEnd(33, " "))),
+    ],
+    ["a character-referenced javascript: URL", text('Notes\n<a href="&#106;avascript:x">a</a>')],
+    ["a hexadecimal reference", text('Notes\n<a href="&#x6A;avascript:x">a</a>')],
+    ["a tab inside the scheme", text('Notes\n<a href="java\tscript:x">a</a>')],
+    ["an encoded colon", text('Notes\n<a href="javascript&colon;x">a</a>')],
+  ])("refuses %s as HTML or SVG", (_name, bytes) => {
+    expect(["text/html", "image/svg+xml"]).toContain(sniffPortableMediaType(bytes));
+  });
+
+  test("keeps UTF-16 prose a download", () => {
+    expect(sniffPortableMediaType(concat([0xff, 0xfe], utf16le("Plain notes, a < b.")))).toBe(
+      "application/octet-stream",
+    );
+  });
 });

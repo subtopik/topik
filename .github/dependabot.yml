@@ -19,6 +19,8 @@ updates:
           - "vite"
           - "@voidzero-dev/vite-plus-core"
           - "vitest"
+          # Vitest plugins must match the vitest version that vite-plus pins.
+          - "@vitest/*"
       storybook:
         patterns:
           - "storybook"

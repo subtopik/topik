@@ -512,15 +512,8 @@ async function readPortableAssetFileAnchored(
       await afterDirectoryOpened?.(components.slice(0, index + 1));
     }
 
-    if (
-      attributes !== undefined &&
-      (attributes.filter === "set" || attributes.workingTreeEncoding === "set")
-    ) {
-      return fail({
-        message: "Effective Git content filters or working-tree encoding are not portable",
-        reason: "git-filtered",
-      });
-    }
+    const filtered = attributes && filteredAttributesFailure(attributes);
+    if (filtered) return fail(filtered);
 
     const parent = directoryHandles.at(-1);
     if (parent === undefined) throw new Error("Missing anchored parent directory handle");
@@ -533,16 +526,7 @@ async function readPortableAssetFileAnchored(
     const before = await fileHandle.stat({ bigint: true });
     const unsafeFile = unsafeFilesystemFileReason(before, maxBytes);
     if (unsafeFile !== undefined) return fail(unsafeFile);
-    // Bound allocation/read even if the file grows after stat. The identity check below
-    // rejects any mutation; one extra byte detects growth without an unbounded readFile.
-    const buffer = Buffer.alloc(Number(before.size) + 1);
-    let length = 0;
-    while (length < buffer.length) {
-      const { bytesRead } = await fileHandle.read(buffer, length, buffer.length - length, null);
-      if (bytesRead === 0) break;
-      length += bytesRead;
-    }
-    const bytes = buffer.subarray(0, length);
+    const bytes = await readInspectedFile(fileHandle, before.size);
     await afterFileRead?.();
     const after = await fileHandle.stat({ bigint: true });
     if (!hasStableFileIdentity(before, after)) {
@@ -597,11 +581,7 @@ async function readPortableAssetFileAnchored(
         code === "ENOENT"
           ? missingFile(options.path)
           : code === "ELOOP"
-            ? unsupportedPath(
-                options.path,
-                "Symbolic links cannot be read; replace the link with the file or directory it names",
-                "symbolic-link",
-              )
+            ? unsupportedPath(options.path, SYMBOLIC_LINK_MESSAGE, "symbolic-link")
             : unsupportedPath(options.path, "File read failed without a portable no-follow proof"),
       ],
     };
@@ -693,8 +673,7 @@ async function readPortableAssetFileByPath(
       const stats = await lstat(current, { bigint: true });
       if (stats.isSymbolicLink()) {
         return fail({
-          message:
-            "Symbolic links cannot be read; replace the link with the file or directory it names",
+          message: SYMBOLIC_LINK_MESSAGE,
           reason: "symbolic-link",
         });
       }
@@ -721,22 +700,14 @@ async function readPortableAssetFileByPath(
       }
       await afterDirectoryInspected?.(components.slice(0, index + 1));
     }
-    if (
-      attributes !== undefined &&
-      (attributes.filter === "set" || attributes.workingTreeEncoding === "set")
-    ) {
-      return fail({
-        message: "Effective Git content filters or working-tree encoding are not portable",
-        reason: "git-filtered",
-      });
-    }
+    const filtered = attributes && filteredAttributesFailure(attributes);
+    if (filtered) return fail(filtered);
 
     const filePath = join(current, components.at(-1) ?? "");
     const entry = await lstat(filePath, { bigint: true });
     if (entry.isSymbolicLink()) {
       return fail({
-        message:
-          "Symbolic links cannot be read; replace the link with the file or directory it names",
+        message: SYMBOLIC_LINK_MESSAGE,
         reason: "symbolic-link",
       });
     }
@@ -763,14 +734,7 @@ async function readPortableAssetFileByPath(
         reason: "symbolic-link",
       });
     }
-    const buffer = Buffer.alloc(Number(before.size) + 1);
-    let length = 0;
-    while (length < buffer.length) {
-      const { bytesRead } = await fileHandle.read(buffer, length, buffer.length - length, null);
-      if (bytesRead === 0) break;
-      length += bytesRead;
-    }
-    const bytes = buffer.subarray(0, length);
+    const bytes = await readInspectedFile(fileHandle, before.size);
     await afterFileRead?.();
     const after = await fileHandle.stat({ bigint: true });
     if (!hasStableFileIdentity(before, after))
@@ -833,8 +797,7 @@ async function readPortableAssetFileByPath(
     // O_NOFOLLOW (where the platform has it) refuses a final link swapped in after lstat.
     if (code === "ELOOP") {
       return fail({
-        message:
-          "Symbolic links cannot be read; replace the link with the file or directory it names",
+        message: SYMBOLIC_LINK_MESSAGE,
         reason: "symbolic-link",
       });
     }
@@ -886,12 +849,7 @@ async function portableGitBoundaryFingerprint(
         },
       };
     }
-    // Directory timestamps change with every lock file Git creates; identity suffices.
-    return {
-      ok: true,
-      present: true,
-      fingerprint: `present:${entry.isDirectory() ? identityStamp(entry) : statStamp(entry)}`,
-    };
+    return { ok: true, present: true, fingerprint: gitBoundaryFingerprint(entry) };
   } catch (error) {
     return isMissingFilesystemError(error)
       ? { ok: true, present: false, fingerprint: "absent" }
@@ -1168,6 +1126,14 @@ async function entryStamp(path: string): Promise<string> {
   } catch (error) {
     return `error:${(error as NodeJS.ErrnoException).code ?? "unknown"}`;
   }
+}
+
+/**
+ * How a `.git` entry is bound while a file is read, by both readers: a gitfile by its full
+ * stats, a directory by identity alone, because Git's lock files change its timestamps.
+ */
+function gitBoundaryFingerprint(stats: BigIntStats): string {
+  return `present:${stats.isDirectory() ? identityStamp(stats) : statStamp(stats)}`;
 }
 
 function identityStamp(stats: BigIntStats): string {
@@ -1473,13 +1439,7 @@ async function anchoredGitBoundaryFingerprint(
       };
     }
     const after = await handle.stat({ bigint: true });
-    // Directory timestamps change with every lock file Git creates; identity suffices.
-    const boundaryIsDirectory = before.isDirectory();
-    if (
-      boundaryIsDirectory
-        ? identityStamp(before) !== identityStamp(after)
-        : !hasStableFileIdentity(before, after)
-    ) {
+    if (gitBoundaryFingerprint(before) !== gitBoundaryFingerprint(after)) {
       return {
         ok: false,
         failure: {
@@ -1491,7 +1451,7 @@ async function anchoredGitBoundaryFingerprint(
     return {
       ok: true,
       present: true,
-      fingerprint: `present:${boundaryIsDirectory ? identityStamp(after) : statStamp(after)}`,
+      fingerprint: gitBoundaryFingerprint(after),
     };
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
@@ -1557,6 +1517,18 @@ async function effectiveGitAttributeFailure(
     };
   }
   return undefined;
+}
+
+/** Attributes collected outside a worktree that would make Git change the stored bytes. */
+function filteredAttributesFailure(
+  attributes: EffectiveGitAttributes,
+): PortableReadFailure | undefined {
+  return attributes.filter === "set" || attributes.workingTreeEncoding === "set"
+    ? {
+        message: "Effective Git content filters or working-tree encoding are not portable",
+        reason: "git-filtered",
+      }
+    : undefined;
 }
 
 function isIneffectiveGitAttribute(value: string | undefined): boolean {
@@ -1988,6 +1960,24 @@ function hasPortableMode(file: PortableAssetFileDescriptor): boolean {
   if (file.source === "archive") return file.mode === "0644";
   return file.mode === "100644" || file.mode === "0644";
 }
+
+/**
+ * Read a file whose size was inspected, allocating for that size plus one byte: growth after
+ * the stat is detected without an unbounded read, and the identity check afterwards rejects it.
+ */
+async function readInspectedFile(handle: FileHandle, size: bigint): Promise<Buffer> {
+  const buffer = Buffer.alloc(Number(size) + 1);
+  let length = 0;
+  while (length < buffer.length) {
+    const { bytesRead } = await handle.read(buffer, length, buffer.length - length, null);
+    if (bytesRead === 0) break;
+    length += bytesRead;
+  }
+  return buffer.subarray(0, length);
+}
+
+const SYMBOLIC_LINK_MESSAGE =
+  "Symbolic links cannot be read; replace the link with the file or directory it names";
 
 function procFdChild(parentFd: number, component: string): string {
   return `/proc/self/fd/${parentFd}/${component}`;

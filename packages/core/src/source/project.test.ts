@@ -1,3 +1,7 @@
+import { execFileSync } from "node:child_process";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, test, vi } from "vite-plus/test";
 import { digestSourceResourceGraph, readSourceProject, snapshotSourceTree } from "./project";
 import { planSourceUpdates } from "./plan";
@@ -276,10 +280,6 @@ test("retained source context resolves saved links after candidate source moves"
 test.skipIf(process.platform === "win32")(
   "inspection ignores a Git repository above the temporary directory",
   async () => {
-    const { execFileSync } = await import("node:child_process");
-    const { mkdir, mkdtemp, rm, writeFile } = await import("node:fs/promises");
-    const { tmpdir } = await import("node:os");
-    const { join } = await import("node:path");
     const repository = await mkdtemp(join(tmpdir(), "topik-scratch-ancestor-"));
     const previous = process.env.TMPDIR;
     try {

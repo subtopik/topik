@@ -14,9 +14,20 @@
     line-height: 1.65;
   }
 
+  /* Dark-scheme adjustments are set on each content root, never matched from an ancestor
+     root, so a light root nested in a dark one keeps its own colours. */
+  .topik-content {
+    --topik-callout-dark-heading: initial;
+    --topik-badge-dark-ink: initial;
+    --topik-badge-dark-tint: initial;
+  }
+
   /* An explicit content theme overrides a .dark ancestor in both directions. */
   .topik-content[data-theme="dark"],
   .dark .topik-content:not([data-theme="light"]) {
+    --topik-callout-dark-heading: var(--topik-color-text);
+    --topik-badge-dark-ink: 45%;
+    --topik-badge-dark-tint: 20%;
     --topik-color-canvas: #101828;
     --topik-color-text: #f2f4f7;
     --topik-color-muted: #98a2b3;
@@ -88,13 +99,8 @@
     --topik-callout-heading: rgb(95 33 32);
   }
 
-  .topik-content[data-theme="dark"] .topik-callout,
-  .dark .topik-content:not([data-theme="light"]) .topik-callout {
-    --topik-callout-heading: var(--topik-color-text);
-  }
-
   .topik-callout__title {
-    color: var(--topik-callout-heading);
+    color: var(--topik-callout-dark-heading, var(--topik-callout-heading));
     font-size: 0.875rem;
     line-height: 1.25rem;
     margin-bottom: 0.25rem;
@@ -818,20 +824,14 @@
 
     background: color-mix(
       in srgb,
-      var(--topik-badge-color) var(--topik-badge-tint),
+      var(--topik-badge-color) var(--topik-badge-dark-tint, var(--topik-badge-tint)),
       var(--topik-color-canvas)
     );
     color: color-mix(
       in srgb,
-      var(--topik-badge-color) var(--topik-badge-ink),
+      var(--topik-badge-color) var(--topik-badge-dark-ink, var(--topik-badge-ink)),
       var(--topik-color-text)
     );
-  }
-
-  .topik-content[data-theme="dark"] .topik-badge,
-  .dark .topik-content:not([data-theme="light"]) .topik-badge {
-    --topik-badge-ink: 45%;
-    --topik-badge-tint: 20%;
   }
 
   .topik-math,
@@ -931,19 +931,15 @@
       --topik-color-panel: #f8fafc;
       --topik-color-accent: #0f766e;
       --topik-color-accent-soft: #ccfbf1;
+      --topik-callout-dark-heading: initial;
+      --topik-badge-dark-ink: initial;
+      --topik-badge-dark-tint: initial;
 
       background: none;
     }
 
     .topik-content .topik-callout {
       --topik-callout-heading: var(--topik-color-text);
-    }
-
-    .topik-content .topik-badge,
-    .topik-content[data-theme="dark"] .topik-badge,
-    .dark .topik-content:not([data-theme="light"]) .topik-badge {
-      --topik-badge-ink: 65%;
-      --topik-badge-tint: 14%;
     }
 
     .topik-code-block__controls,

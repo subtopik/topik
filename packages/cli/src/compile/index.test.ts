@@ -496,7 +496,7 @@ describe("compile command", () => {
     expect(await readFile(outside, "utf8")).toBe("outside");
   });
 
-  test("names an output path that cannot be resolved", async () => {
+  test("refuses an output path beneath a file as a collision", async () => {
     await writeFile(join(dir, "plain.txt"), "file");
     const failure = await (compile as CompileCommand)
       .handler?.({
@@ -508,8 +508,8 @@ describe("compile command", () => {
         links: "error",
       })
       .catch((error: unknown) => error);
-    expect(failure).toMatchObject({ id: "compilation-output-scope-unproven" });
-    expect(formatPublicCliError(failure)).toMatch(/could not be resolved/u);
+    expect(failure).toMatchObject({ id: "compilation-output-collision" });
+    expect(formatPublicCliError(failure)).toMatch(/non-directory collision/u);
   });
 
   test("notes staging directories an interrupted compile left beside the output", async () => {

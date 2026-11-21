@@ -66,10 +66,14 @@ export async function initProject(
   options: InitProjectOptions = {},
 ): Promise<{ created: string[]; agentInstructions: AgentInstructionsOutcome }> {
   const files = initProjectFiles(options);
-  // The first directory this call created, if any; rollback removes what it created.
+  // Rollback removes only the directories this call created. Record them before creating them,
+  // in the caller's spelling: `mkdir` may report another spelling of the same path (Windows
+  // short and long names), so its result only says whether it created any.
+  const missing = await missingDirectories(dir);
   const firstCreated = await mkdir(dir, { recursive: true }).catch(() => {
     throw new PublicCliError("init-target-access-failed");
   });
+  const createdDirectories = firstCreated === undefined ? 0 : missing;
   const info = await stat(dir).catch(() => undefined);
   if (info?.isDirectory() !== true) throw new PublicCliError("init-target-access-failed");
 
@@ -96,7 +100,7 @@ export async function initProject(
   } catch (error) {
     // Leave the directory as it was: remove only files and directories this run created.
     for (const name of created) await unlink(join(dir, name)).catch(() => undefined);
-    if (firstCreated !== undefined) await removeCreatedDirectories(dir, firstCreated);
+    await removeCreatedDirectories(dir, createdDirectories);
     throw new PublicCliError(
       (error as NodeJS.ErrnoException).code === "EEXIST" ? "init-file-exists" : "init-write-failed",
       { cause: error },
@@ -105,15 +109,24 @@ export async function initProject(
   return { created, agentInstructions };
 }
 
-/** Remove `dir` and its parents up to `first`, each only while it is empty. */
-async function removeCreatedDirectories(dir: string, first: string): Promise<void> {
-  for (let current = dir; ; current = dirname(current)) {
+/** How many of `dir` and its ancestors do not exist yet. */
+async function missingDirectories(dir: string): Promise<number> {
+  let count = 0;
+  for (let current = dir; !(await exists(current)); current = dirname(current)) {
+    count++;
+    if (dirname(current) === current) break;
+  }
+  return count;
+}
+
+/** Remove `dir` and its parents, `levels` in all, each only while it is empty. */
+async function removeCreatedDirectories(dir: string, levels: number): Promise<void> {
+  for (let current = dir; levels > 0; current = dirname(current), levels--) {
     try {
       await rmdir(current);
     } catch {
       return;
     }
-    if (current === first || dirname(current) === current) return;
   }
 }
 

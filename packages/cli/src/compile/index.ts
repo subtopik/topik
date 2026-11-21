@@ -188,7 +188,11 @@ async function assertCompilationOutputScope(sourceDir: string, outDir: string): 
   try {
     canonicalOutput = await realpath(outDir);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+    const code = (error as NodeJS.ErrnoException).code;
+    // A file where a directory belongs: report it as the collision publication would refuse,
+    // as on Windows, which reports such paths as missing.
+    if (code === "ENOTDIR") throw new PublicCliError("compilation-output-collision");
+    if (code !== "ENOENT") {
       throw new PublicCliError("compilation-output-scope-unproven", { cause: error });
     }
   }

@@ -1,10 +1,16 @@
-import { resolve } from "node:path";
+import { posix, resolve } from "node:path";
 import { boolean, command, positional, string } from "@drizzle-team/brocli";
-import { sanitizeTopikContentDiagnostic, type TopikContentDiagnostic } from "@topik/content";
 import {
+  sanitizeTopikContentDiagnostic,
+  sanitizeTopikDiagnosticFile,
+  type TopikContentDiagnostic,
+} from "@topik/content";
+import {
+  AssetCompilationError,
   isErrorDiagnostic,
   lint as lintContent,
   PublicCompileError,
+  type LintFailure,
   type LinkValidationPolicy,
 } from "@topik/core";
 import { printDiagnostics } from "../diagnostics";
@@ -41,27 +47,70 @@ export interface LintJsonReport {
   warnings: number;
 }
 
+/** The stable ID of a failure that stopped part of lint, for its JSON diagnostic. */
+function failureId(error: unknown): string {
+  if (error instanceof PublicCliError || error instanceof PublicCompileError) return error.id;
+  if (error instanceof AssetCompilationError) {
+    const id = error.diagnostics[0]?.id;
+    if (typeof id === "string" && /^[A-Z0-9_]{1,64}$/.test(id)) return id;
+  }
+  return "lint-failed";
+}
+
+/** A failure's text line, prefixed with the documents that reference a failed Asset. */
+export function formatLintFailure(failure: LintFailure): string {
+  const documents = (failure.documents ?? [])
+    .map((document) => sanitizeTopikDiagnosticFile(document))
+    .filter((document): document is string => document !== undefined);
+  const message = formatPublicCliError(withProjectPlatformRequirement(failure.error));
+  return documents.length > 0 ? `${documents.join(", ")}: ${message}` : message;
+}
+
+/** A failure as error diagnostics: one for each document it was found in, or one without a file. */
+function failureDiagnostics(failure: LintFailure): LintJsonDiagnostic[] {
+  const error = withProjectPlatformRequirement(failure.error);
+  const entry = { lines: [], id: failureId(error), severity: "error" as const };
+  const message = formatPublicCliError(error);
+  const documents = (failure.documents ?? [])
+    .map((document) => sanitizeTopikDiagnosticFile(document))
+    .filter((document): document is string => document !== undefined);
+  if (documents.length > 0) return documents.map((file) => ({ file, ...entry, message }));
+  // Only a location that names a file: a missing page's navigation entry, such as `docs/intro`,
+  // stays in the message.
+  const location =
+    error instanceof PublicCompileError ? sanitizeTopikDiagnosticFile(error.location) : undefined;
+  const file = location !== undefined && posix.extname(location) !== "" ? location : undefined;
+  return [{ ...(file === undefined ? {} : { file }), ...entry, message }];
+}
+
 /** Build the `--json` report from the same sanitized fields the text output prints. */
-export function lintJsonReport(diagnostics: readonly TopikContentDiagnostic[]): LintJsonReport {
+export function lintJsonReport(
+  diagnostics: readonly TopikContentDiagnostic[],
+  failures: readonly LintFailure[] = [],
+): LintJsonReport {
+  const failed = failures.flatMap(failureDiagnostics);
   return {
-    diagnostics: diagnostics.map((diagnostic) => {
-      const safe = sanitizeTopikContentDiagnostic(diagnostic);
-      return {
-        ...(safe.file === undefined ? {} : { file: safe.file }),
-        ...(safe.lines.length > 0 ? { line: safe.lines[0] } : {}),
-        lines: [...safe.lines],
-        ...(safe.column === undefined ? {} : { column: safe.column }),
-        id: safe.id,
-        severity: safe.level,
-        message: safe.message,
-        ...(safe.tag === undefined ? {} : { tag: safe.tag }),
-        ...(safe.attribute === undefined ? {} : { attribute: safe.attribute }),
-        ...(safe.option === undefined ? {} : { option: safe.option }),
-        ...(safe.variable === undefined ? {} : { variable: safe.variable }),
-        ...(safe.expected === undefined ? {} : { expected: [...safe.expected] }),
-      };
-    }),
-    errors: diagnostics.filter(isErrorDiagnostic).length,
+    diagnostics: [
+      ...diagnostics.map((diagnostic) => {
+        const safe = sanitizeTopikContentDiagnostic(diagnostic);
+        return {
+          ...(safe.file === undefined ? {} : { file: safe.file }),
+          ...(safe.lines.length > 0 ? { line: safe.lines[0] } : {}),
+          lines: [...safe.lines],
+          ...(safe.column === undefined ? {} : { column: safe.column }),
+          id: safe.id,
+          severity: safe.level,
+          message: safe.message,
+          ...(safe.tag === undefined ? {} : { tag: safe.tag }),
+          ...(safe.attribute === undefined ? {} : { attribute: safe.attribute }),
+          ...(safe.option === undefined ? {} : { option: safe.option }),
+          ...(safe.variable === undefined ? {} : { variable: safe.variable }),
+          ...(safe.expected === undefined ? {} : { expected: [...safe.expected] }),
+        };
+      }),
+      ...failed,
+    ],
+    errors: diagnostics.filter(isErrorDiagnostic).length + failed.length,
     warnings: diagnostics.filter((diagnostic) => diagnostic.level === "warning").length,
   };
 }
@@ -83,7 +132,7 @@ export const lint = command({
   handler: async (options) => {
     const links = options.links as LinkValidationPolicy;
     notePortableReads(options.fileSafety);
-    const { diagnostics } = await lintContent({
+    const { diagnostics, failures } = await lintContent({
       dir: resolve(options.dir),
       validation: { links },
       fileSafety: options.fileSafety,
@@ -111,16 +160,17 @@ export const lint = command({
       throw error;
     });
     if (options.json) {
-      const report = lintJsonReport(diagnostics);
+      const report = lintJsonReport(diagnostics, failures);
       console.log(JSON.stringify(report));
       if (report.errors > 0) throw new PublicCliError("lint-failed");
       return;
     }
     printDiagnostics(diagnostics);
+    for (const failure of failures) console.error(formatLintFailure(failure));
 
-    const errors = diagnostics.filter(isErrorDiagnostic);
-    if (errors.length > 0) {
-      console.error(`${errors.length} lint error(s)`);
+    const errors = diagnostics.filter(isErrorDiagnostic).length + failures.length;
+    if (errors > 0) {
+      console.error(`${errors} lint error(s)`);
       throw new PublicCliError("lint-failed");
     }
 

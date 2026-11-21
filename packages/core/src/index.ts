@@ -61,6 +61,7 @@ export {
   type PublicCompileErrorId,
   type PublicCompileErrorReason,
   type LinkValidationPolicy,
+  type LintFailure,
   type LintResult,
   AssetCompilationError,
   classifyCompileFailure,

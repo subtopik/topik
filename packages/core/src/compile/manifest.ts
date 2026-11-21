@@ -1,3 +1,4 @@
+import { sanitizeTopikContentDiagnostic } from "@topik/content";
 import { lstat } from "node:fs/promises";
 import { join, posix, resolve } from "node:path";
 import { DEFAULT_ASSET_DIRECTORY } from "../config/assets";
@@ -12,7 +13,12 @@ import {
   refusesProjectFileReads,
   type PortableReadSession,
 } from "../assets/files";
-import { compileAssetResourcesInSession } from "./assets";
+import {
+  AssetCompilationError,
+  AssetFailuresCollected,
+  compileAssetResourcesInSession,
+  type AssetCompilationFailure,
+} from "./assets";
 import { createProjectAssetNameGenerator } from "./asset-names";
 import { readConfigurationText, parseSafeConfigurationYaml, readExactConfigFile } from "./config";
 import {
@@ -217,6 +223,44 @@ export async function listManifestDocuments(
 
 /** Compile only declared sources, sharing the existing local compiler and Asset pipeline. */
 export async function compileManifest(options: CompileOptions): Promise<ManifestCompileResult> {
+  return (await runManifest(options)).compiled!;
+}
+
+/**
+ * @internal A failure that stopped part of a lint: a source that could not be read or
+ * discovered, a check across sources, or an Asset, with the documents it was found in.
+ */
+export interface ManifestLintFailure {
+  error: unknown;
+  /** Project-relative paths of the documents that reference a failed Asset. */
+  documents?: readonly string[];
+}
+
+/**
+ * @internal Check every declared source and report every problem found, rather than stopping at
+ * the first stage with an error. A failing source is recorded and the others are still checked.
+ * Pages whose content is invalid stay link targets, so links to them are not reported as missing.
+ * Link and Asset checks are skipped once a source failed, since links into it cannot be judged.
+ * A manifest that cannot be loaded still throws.
+ */
+export async function lintManifest(
+  options: CompileOptions,
+): Promise<{ diagnostics: CompileResult["diagnostics"]; failures: ManifestLintFailure[] }> {
+  const failures: ManifestLintFailure[] = [];
+  const { diagnostics } = await runManifest(options, failures);
+  // The same fixed public wording and safe labels a CompileError carries.
+  return { diagnostics: diagnostics.map(sanitizeTopikContentDiagnostic), failures };
+}
+
+/** The compile stages; with `failures`, they collect problems instead of stopping at the first. */
+async function runManifest(
+  options: CompileOptions,
+  failures?: ManifestLintFailure[],
+): Promise<{ diagnostics: CompileResult["diagnostics"]; compiled?: ManifestCompileResult }> {
+  const collect = (error: unknown) => {
+    if (failures === undefined) throw error;
+    failures.push({ error });
+  };
   const root = resolve(options.dir);
   // One session shares Git repository evidence across every portable read of this build.
   const session = createPortableReadSession(options.fileSafety, options.gitExecutable);
@@ -235,6 +279,7 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
   const protectedSourcePaths = [TOPIK_MANIFEST_FILENAME, ...sources.map((source) => source.config)];
   const authoredKeys = new Set<string>();
   const versionedGuideNames = new Set<string>();
+  const unvalidatedDocuments: NonNullable<CompileResourceDiscovery["unvalidatedDocuments"]> = [];
 
   for (const source of sources) {
     let discovered: CompileResourceDiscovery;
@@ -243,7 +288,8 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
       // Read against the project root so every config path component is checked.
       selected = await readExactConfigFile(root, source.config, session);
     } catch (error) {
-      throw manifestSourceFailure(error, source, "");
+      collect(manifestSourceFailure(error, source, ""));
+      continue;
     }
     try {
       const localOptions = { dir: join(root, source.directory), validation: options.validation };
@@ -254,18 +300,26 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
           : discoverGuides(localOptions, selected, memo));
     } catch (error) {
       // Discovery locations are relative to the source's configuration directory.
-      throw manifestSourceFailure(error, source, source.directory);
+      collect(manifestSourceFailure(error, source, source.directory));
+      continue;
     }
     const paths: Record<string, string> = {};
-    for (const resource of discovered.resources) {
-      const key = `${resource.type}/${resource.name}`;
-      if (authoredKeys.has(key))
-        throw new ManifestSourceError(
+    const conflict = discovered.resources.some((resource) =>
+      authoredKeys.has(`${resource.type}/${resource.name}`),
+    );
+    if (conflict) {
+      collect(
+        new ManifestSourceError(
           "manifest-resource-conflict",
           source.sourceIndex,
           source.kind,
           source.config,
-        );
+        ),
+      );
+      continue;
+    }
+    for (const resource of discovered.resources) {
+      const key = `${resource.type}/${resource.name}`;
       authoredKeys.add(key);
       paths[key] =
         discovered.sourcePathsByResource[key] === undefined
@@ -292,6 +346,15 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
       for (const resource of discovered.resources)
         if (resource.type === "Guide") versionedGuideNames.add(resource.name);
     Object.assign(bodyLinesByResource, discovered.bodyLinesByResource);
+    for (const document of discovered.unvalidatedDocuments ?? []) {
+      const key = `${document.resource.type}/${document.resource.name}`;
+      if (authoredKeys.has(key)) continue;
+      unvalidatedDocuments.push({
+        resource: document.resource,
+        sourcePath: posix.join(source.directory, document.sourcePath),
+      });
+      sourceDirectoriesByResource[key] = source.directory;
+    }
     for (const [key, path] of Object.entries(discovered.sourcePathsByResource)) {
       sourcePathsByResource[key] = posix.join(source.directory, path);
       sourceDirectoriesByResource[key] = source.directory;
@@ -300,41 +363,82 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
       ...discovered.consumedSourcePaths.map((path) => posix.join(source.directory, path)),
     );
   }
-  throwOnCompileErrors(diagnostics);
-  validateGuideAuthors(resources, sourcePathsByResource, versionedGuideNames);
-  validateCourseAuthors(
-    resources,
-    Object.assign({}, ...provenance.map((source) => source.sourcePathsByResource)),
-  );
-  const linked = await compileResourceLinksInSession(
-    session,
-    {
-      rootDir: root,
+  if (failures === undefined) throwOnCompileErrors(diagnostics);
+  try {
+    validateGuideAuthors(resources, sourcePathsByResource, versionedGuideNames);
+  } catch (error) {
+    collect(error);
+  }
+  try {
+    validateCourseAuthors(
       resources,
-      sourcePathsByResource,
-      sourceDirectoriesByResource,
-      bodyLinesByResource,
-      validation: options.validation,
-      referenceTargets: options.referenceTargets,
-    },
-    memo,
-  );
+      Object.assign({}, ...provenance.map((source) => source.sourcePathsByResource)),
+    );
+  } catch (error) {
+    collect(error);
+  }
+  // Links into a source that failed cannot be judged, so a lint stops before them.
+  if (failures?.some((failure) => failure.error instanceof ManifestSourceError))
+    return { diagnostics };
+  let linked;
+  try {
+    linked = await compileResourceLinksInSession(
+      session,
+      {
+        rootDir: root,
+        resources,
+        sourcePathsByResource,
+        sourceDirectoriesByResource,
+        bodyLinesByResource,
+        // Compilation stops before here when any document failed validation.
+        ...(failures === undefined ? {} : { unvalidatedDocuments }),
+        validation: options.validation,
+        referenceTargets: options.referenceTargets,
+      },
+      memo,
+    );
+  } catch (error) {
+    collect(error);
+    return { diagnostics };
+  }
   diagnostics.push(...linked.diagnostics);
-  throwOnCompileErrors(diagnostics);
-  const compiled = await compileAssetResourcesInSession(
-    session,
-    {
-      rootDir: root,
-      resources: linked.resources,
-      sourcePathsByResource,
-      sourceDirectoriesByResource,
-      protectedSourcePaths,
-      generateName: createProjectAssetNameGenerator({
-        projectRoot: root,
-        projectNamespace: manifest.namespace,
-      }),
+  if (failures === undefined) throwOnCompileErrors(diagnostics);
+  const assetFailures: AssetCompilationFailure[] = [];
+  let compiled;
+  try {
+    compiled = await compileAssetResourcesInSession(
+      session,
+      {
+        rootDir: root,
+        resources: linked.resources,
+        sourcePathsByResource,
+        sourceDirectoriesByResource,
+        protectedSourcePaths,
+        generateName: createProjectAssetNameGenerator({
+          projectRoot: root,
+          projectNamespace: manifest.namespace,
+        }),
+        ...(failures === undefined ? {} : { failures: assetFailures }),
+      },
+      memo,
+    );
+  } catch (error) {
+    if (failures === undefined) throw error;
+    failures.push(...assetFailures);
+    if (!(error instanceof AssetFailuresCollected)) {
+      if (!(error instanceof AssetCompilationError)) throw error;
+      failures.push({ error });
+    }
+    return { diagnostics };
+  }
+  return {
+    diagnostics,
+    compiled: {
+      diagnostics,
+      references: linked.references,
+      provenance,
+      courseNavigation,
+      ...compiled,
     },
-    memo,
-  );
-  return { diagnostics, references: linked.references, provenance, courseNavigation, ...compiled };
+  };
 }

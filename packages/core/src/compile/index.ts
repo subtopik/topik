@@ -1,6 +1,6 @@
 import type { FileSafety } from "../assets/files";
-import { compileManifest } from "./manifest";
-import { CompileError, type CompileResult, type CompileValidationOptions } from "./shared";
+import { compileManifest, lintManifest } from "./manifest";
+import { type CompileResult, type CompileValidationOptions } from "./shared";
 
 export {
   compileResourceLinks,
@@ -85,16 +85,30 @@ export async function compile(options: CompileOptions): Promise<CompileResult> {
 }
 
 export interface LintResult {
+  /** Every content and link diagnostic, errors and warnings, from every source. */
   diagnostics: CompileResult["diagnostics"];
+  /**
+   * Problems that stopped part of the check, each also an error: a source whose configuration
+   * or frontmatter could not be read, a check across sources, or an image or download. An Asset
+   * failure names the documents it was found in.
+   */
+  failures: LintFailure[];
 }
 
+export interface LintFailure {
+  /** A `PublicCompileError`, `ManifestSourceError` or `AssetCompilationError`. */
+  error: unknown;
+  /** Project-relative paths of the documents that reference a failed Asset. */
+  documents?: readonly string[];
+}
+
+/**
+ * Check the project like {@link compile} without producing output, and report every problem
+ * found instead of stopping at the first stage with an error. Only a manifest that cannot be
+ * loaded throws.
+ */
 export async function lint(options: CompileOptions): Promise<LintResult> {
-  try {
-    return { diagnostics: (await compile(options)).diagnostics };
-  } catch (error) {
-    if (error instanceof CompileError) return { diagnostics: error.diagnostics };
-    throw error;
-  }
+  return lintManifest(options);
 }
 
 export {

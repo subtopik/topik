@@ -1,4 +1,5 @@
 import { posix } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import {
   formatTopikContent,
   rewriteTopikAssetOccurrences,
@@ -80,6 +81,7 @@ import {
   patchSourceSequence,
   replaySourceByteEdits,
   sourceHash,
+  sourceSequenceItemIdentity,
   type SourceFieldEvidence,
   type SourceByteEdit,
 } from "./syntax";
@@ -316,6 +318,13 @@ export function verifySharedEdits(
   authority: SourceSharedAuthority | undefined,
   edits: readonly SourceByteEdit[],
 ): void {
+  if (sourceHash(file.bytes) !== provenance.sha256)
+    block(
+      "source-base-changed",
+      "Shared configuration bytes differ from the inspected base.",
+      undefined,
+      file.path,
+    );
   if (!authority || authority.sha256 !== provenance.sha256 || authority.mode !== file.mode)
     block(
       "shared-authority-required",
@@ -393,7 +402,97 @@ export function verifySharedEdits(
         );
     }
   }
-  replaySourceByteEdits(file.bytes, edits);
+  // Byte ranges bound where an edit lands, not what its replacement means: a replacement can
+  // close its own value and add sibling keys or items. Compare the configuration's meaning
+  // before and after, outside the admitted fields.
+  const replayed = replaySourceByteEdits(file.bytes, edits);
+  let before: unknown;
+  let after: unknown;
+  try {
+    const json = file.path.endsWith(".json");
+    before = inspectSourceSyntax(decodeSource(file.bytes), json).value;
+    after = inspectSourceSyntax(decodeSource(replayed), json).value;
+  } catch {
+    block(
+      "shared-scope-denied",
+      "Configuration edits do not form a valid configuration.",
+      undefined,
+      file.path,
+    );
+  }
+  if (!sharedChangesStayAdmitted(authority.fields, before, after))
+    block(
+      "shared-scope-denied",
+      "A configuration edit changes values outside its admitted fields.",
+      undefined,
+      file.path,
+    );
+}
+
+/**
+ * Whether every difference between two configuration values lies inside an admitted field: a
+ * replaced or removed admitted value, or an addition at an admitted insertion anchor.
+ */
+function sharedChangesStayAdmitted(
+  fields: readonly SourceFieldEvidence[],
+  before: unknown,
+  after: unknown,
+): boolean {
+  const admitted = new Map(fields.map((field) => [field.selector, field]));
+  const covered = (selector: string) => {
+    for (let end = selector.length; end > 0; end = selector.lastIndexOf("/", end - 1))
+      if (admitted.get(selector.slice(0, end))?.value) return true;
+    return false;
+  };
+  const isRecord = (value: unknown): value is Record<string, unknown> =>
+    typeof value === "object" && value !== null && !Array.isArray(value);
+  const compareMap = (
+    prefix: string,
+    left: Record<string, unknown>,
+    right: Record<string, unknown>,
+  ): boolean => {
+    for (const key of Object.keys(left)) {
+      const selector = `${prefix}${encodeURIComponent(key)}`;
+      if (!Object.hasOwn(right, key)) {
+        if (!covered(selector)) return false;
+      } else if (!compare(selector, left[key], right[key])) return false;
+    }
+    return (
+      Object.keys(right).every((key) => Object.hasOwn(left, key)) || admitted.has(`${prefix}+`)
+    );
+  };
+  // Items are matched in order: an admitted item may be replaced or removed, any other item
+  // must survive in place, and additions may only follow the last item at an admitted anchor.
+  const compareSequence = (
+    selector: string,
+    left: readonly unknown[],
+    right: readonly unknown[],
+  ): boolean => {
+    const identities = left.map((value, index) =>
+      sourceSequenceItemIdentity(selector, value, index),
+    );
+    if (identities.includes(undefined)) return false;
+    const failed = new Set<string>();
+    const match = (i: number, j: number): boolean => {
+      if (i === left.length) return j === right.length || admitted.has(`${selector}/+`);
+      const key = `${i}:${j}`;
+      if (failed.has(key)) return false;
+      const item = `${selector}/${identities[i]}`;
+      const result = covered(item)
+        ? match(i + 1, j) || (j < right.length && match(i + 1, j + 1))
+        : j < right.length && compare(item, left[i], right[j]) && match(i + 1, j + 1);
+      if (!result) failed.add(key);
+      return result;
+    };
+    return match(0, 0);
+  };
+  const compare = (selector: string, left: unknown, right: unknown): boolean => {
+    if (isDeepStrictEqual(left, right) || covered(selector)) return true;
+    if (isRecord(left) && isRecord(right)) return compareMap(`${selector}/`, left, right);
+    if (Array.isArray(left) && Array.isArray(right)) return compareSequence(selector, left, right);
+    return false;
+  };
+  return isRecord(before) && isRecord(after) && compareMap("", before, after);
 }
 
 /** At a shared block boundary, nested insertions belong before enclosing siblings. */

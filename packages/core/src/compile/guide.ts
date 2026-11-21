@@ -55,6 +55,11 @@ export interface CompileResourceDiscovery {
   sourcePathsByResource: Record<string, string>;
   /** Lines before each document's body, by resource key, where there are any. */
   bodyLinesByResource?: Record<string, number>;
+  /**
+   * Documents whose content failed validation, with paths like `sourcePathsByResource`. They are
+   * not resources; lint passes them to link checking only so that links to them still resolve.
+   */
+  unvalidatedDocuments?: { resource: SourceResource; sourcePath: string }[];
   consumedSourcePaths: string[];
 }
 
@@ -141,6 +146,7 @@ export async function discoverGuides(
   }));
   const sourcePathsByResource: Record<string, string> = {};
   const bodyLinesByResource: Record<string, number> = {};
+  const unvalidatedDocuments: NonNullable<CompileResourceDiscovery["unvalidatedDocuments"]> = [];
   const claimedNames = new Map<string, string>();
 
   for (const file of markdownFiles) {
@@ -202,7 +208,18 @@ export async function discoverGuides(
     claimedNames.set(name, file);
     const validation = memo.validate(content, file);
     diagnostics.push(...withFileLines(validation.errors, parsed.bodyLineOffset));
-    if (!validation.valid) continue;
+    if (!validation.valid) {
+      unvalidatedDocuments.push({
+        sourcePath: file,
+        resource: {
+          apiVersion: "v1",
+          type: "Guide",
+          name,
+          spec: { title: slug, slug, content: { format: "topik", value: content } },
+        },
+      });
+      continue;
+    }
     const analysis = memo.analyze(content, file);
     diagnostics.push(...withFileLines(analysis.diagnostics, parsed.bodyLineOffset));
     const title =
@@ -244,6 +261,7 @@ export async function discoverGuides(
     resources,
     sourcePathsByResource,
     bodyLinesByResource,
+    unvalidatedDocuments,
     consumedSourcePaths: [loadedConfig.path],
     assetDirectory: config.assets.directory,
   };

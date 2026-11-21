@@ -23,7 +23,7 @@ vi.mock("node:child_process", async (importOriginal) => {
     ...actual,
     execFile: ((...args: Parameters<typeof actual.execFile>) => {
       const commandArgs = Array.isArray(args[1]) ? (args[1] as string[]) : [];
-      spawned.commands.push(commandArgs[2] ?? String(args[0]));
+      spawned.commands.push(commandArgs[4] ?? String(args[0]));
       spawned.executables.push(String(args[0]));
       return (actual.execFile as (...values: unknown[]) => unknown)(...args);
     }) as typeof actual.execFile,
@@ -90,6 +90,20 @@ describe("Git repository evidence", () => {
     // with one `check-attr` (manifest, collection config and the linked PDF).
     expect(counts[1]).toBe(counts[0]);
     expect(counts[0]).toBeLessThanOrEqual(5);
+  });
+
+  gitTest("never runs a command the repository configures as its fsmonitor", async () => {
+    for (const run of [compile, lint]) {
+      const dir = await temporaryDirectory("topik-git-fsmonitor-");
+      await collectionProject(dir, 1);
+      git(dir, "init", "-q");
+      git(dir, "add", "-A");
+      const marker = join(dir, "fsmonitor-ran");
+      git(dir, "config", "core.fsmonitor", `touch '${marker}'; false`);
+
+      await run({ dir });
+      expect(existsSync(marker)).toBe(false);
+    }
   });
 
   gitTest("ignores an inherited GIT_DIR meant for another repository", async () => {

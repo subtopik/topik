@@ -68,7 +68,6 @@ export function analyzeTopikContent(
   options: AnalyzeTopikContentOptions = {},
 ): AnalyzeTopikContentResult {
   const ast = parseTopikContent(source, {
-    file: options.file,
     config: options.config,
     cache: options.cache,
   });

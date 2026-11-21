@@ -96,28 +96,74 @@ describe("lint command", () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
-  test("--json still prints one report when the project cannot be loaded", async () => {
-    // intro.md is missing, so the Wiki cannot be compiled at all.
+  test("--json reports a missing page with the other problems", async () => {
+    // intro.md is missing, so the Wiki source fails; lint still reports it in the report.
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
     vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     await expect(
       (lint as LintCommand).handler?.({ dir, links: "error", json: true }),
-    ).rejects.toMatchObject({ id: "wiki-page-not-found" });
+    ).rejects.toMatchObject({ id: "lint-failed" });
 
     expect(log).toHaveBeenCalledTimes(1);
     expect(JSON.parse(String(log.mock.calls[0]?.[0]))).toEqual({
+      // The location is the navigation entry, not a file, so it stays in the message.
       diagnostics: [
         {
           lines: [],
           id: "wiki-page-not-found",
           severity: "error",
-          message: expect.stringContaining("A configured Wiki page file was not found."),
+          message:
+            ".topik.yaml sources[0] (wiki) intro: A configured Wiki page file was not found.",
         },
       ],
       errors: 1,
       warnings: 0,
     });
+  });
+
+  test("--json still prints one report when the manifest cannot be loaded", async () => {
+    await rm(join(dir, ".topik.yaml"));
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect(
+      (lint as LintCommand).handler?.({ dir, links: "error", json: true }),
+    ).rejects.toMatchObject({ id: "manifest-required" });
+
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(log.mock.calls[0]?.[0]))).toMatchObject({
+      diagnostics: [{ lines: [], id: "manifest-required", severity: "error" }],
+      errors: 1,
+      warnings: 0,
+    });
+  });
+
+  test("prints a missing image with the page that uses it, alongside content errors", async () => {
+    await writeFile(
+      join(dir, "wiki.yaml"),
+      "id: docs\ntitle: Docs\nnavigation:\n  - intro\n  - other\n",
+    );
+    await writeFile(
+      join(dir, "intro.md"),
+      '# Intro\n\n{% callout variant="bad" %}\nX\n{% /callout %}\n',
+    );
+    await writeFile(join(dir, "other.md"), "# Other\n\n![Diagram](diagram.png)\n");
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect((lint as LintCommand).handler?.({ dir, links: "error" })).rejects.toMatchObject({
+      id: "lint-failed",
+    });
+
+    const lines = error.mock.calls.map(([line]) => String(line));
+    expect(lines).toContain(
+      "other.md: diagram.png: An image or download could not be compiled (TOPIK_ASSET_FILE_MISSING).",
+    );
+    expect(
+      lines.some((line) => line.startsWith("intro.md:3:1 error attribute-value-invalid")),
+    ).toBe(true);
+    expect(lines).toContain("2 lint error(s)");
   });
 
   test("--json reports warnings and passes", async () => {

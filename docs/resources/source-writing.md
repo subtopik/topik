@@ -245,7 +245,14 @@ In an isolated runner integration, the trusted coordinator must independently
 admit the scope and replay shared byte edits, checking that all bytes outside it
 are identical. `@topik/core` exports `verifySharedEdits` and
 `replaySourceByteEdits` for this, and `SourcePlanningError` and `SourceTreeError`
-for their failures.
+for their failures. `verifySharedEdits` refuses:
+
+- bytes whose hash differs from the inspected base, with `source-base-changed`;
+- an edit outside the admitted field ranges and insertion anchors, with
+  `shared-scope-denied`;
+- edits whose result changes any value outside the admitted fields, with
+  `shared-scope-denied`. A replacement can only change its own field: it cannot
+  close its value and add, change or remove sibling keys or list items.
 
 ### How edits are written
 

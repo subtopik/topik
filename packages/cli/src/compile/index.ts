@@ -1,5 +1,5 @@
-import { realpath } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { readdir, realpath } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { boolean, command, positional, string } from "@drizzle-team/brocli";
 import {
   CompileError,
@@ -117,12 +117,31 @@ export const compile = command({
     console.log(
       `Compiled ${resources.length} resources and ${payloads.length} payloads to ${outDir}`,
     );
-    if (priorRetained)
+    const leftovers = await leftoverPublicationDirectories(outDir);
+    if (priorRetained || leftovers > 0)
       console.error(
-        `Warning: the previous output could not be removed; it remains beside the output in a directory starting with ${COMPILATION_PRIOR_PREFIX}`,
+        priorRetained
+          ? `Warning: the previous output could not be removed; it remains beside the output in a directory starting with ${COMPILATION_PRIOR_PREFIX}`
+          : `Note: ${leftovers} director${leftovers === 1 ? "y" : "ies"} beside the output starting with ${COMPILATION_GENERATION_PREFIX} or ${COMPILATION_PRIOR_PREFIX} remain from an interrupted compile. Remove them once no other compile is running.`,
       );
   },
 });
+
+/**
+ * Staging and prior directories beside the output, left by a compile that was killed. They are
+ * reported rather than removed: another compile may own one, and a prior output is the only
+ * copy a failed publication leaves for manual recovery.
+ */
+async function leftoverPublicationDirectories(outDir: string): Promise<number> {
+  try {
+    return (await readdir(dirname(outDir))).filter(
+      (name) =>
+        name.startsWith(COMPILATION_GENERATION_PREFIX) || name.startsWith(COMPILATION_PRIOR_PREFIX),
+    ).length;
+  } catch {
+    return 0;
+  }
+}
 
 export async function replaceCompilationTree(
   absolutePath: string,

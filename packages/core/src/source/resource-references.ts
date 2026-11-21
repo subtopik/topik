@@ -31,20 +31,29 @@ function courseName(
   return module?.type === "CourseModule" ? module.spec.course : undefined;
 }
 
-const resolvedWikiNavigations = new WeakMap<object, ReturnType<typeof resolveWikiNavigation>>();
-const EMPTY_NAVIGATION: readonly never[] = [];
+const resolvedWikiNavigations = new WeakMap<
+  ReadonlyMap<string, Resource>,
+  Map<Wiki, ReturnType<typeof resolveWikiNavigation>>
+>();
 
 /**
- * A Wiki's resolved navigation, computed once per navigation list: references are checked one
- * by one, and resolving the navigation for each would make planning quadratic. Navigation
- * lists are never edited in place.
+ * A Wiki's resolved navigation, computed once per resource map: references are checked one by
+ * one, and resolving the navigation for each would make planning quadratic. Each plan builds
+ * its own resource maps, so a caller who edits a Wiki between plans gets fresh navigation.
  */
-function wikiNavigationOf(wiki: Wiki): ReturnType<typeof resolveWikiNavigation> {
-  const navigation = wiki.spec.navigation ?? EMPTY_NAVIGATION;
-  let resolved = resolvedWikiNavigations.get(navigation);
+function wikiNavigationOf(
+  wiki: Wiki,
+  resources: ReadonlyMap<string, Resource>,
+): ReturnType<typeof resolveWikiNavigation> {
+  let byWiki = resolvedWikiNavigations.get(resources);
+  if (byWiki === undefined) {
+    byWiki = new Map();
+    resolvedWikiNavigations.set(resources, byWiki);
+  }
+  let resolved = byWiki.get(wiki);
   if (resolved === undefined) {
-    resolved = resolveWikiNavigation(navigation);
-    resolvedWikiNavigations.set(navigation, resolved);
+    resolved = resolveWikiNavigation(wiki.spec.navigation ?? []);
+    byWiki.set(wiki, resolved);
   }
   return resolved;
 }
@@ -59,7 +68,7 @@ function sourcePublicRouteTarget(
   if (resource.type === "WikiPage") {
     const wiki = resources.get(`Wiki/${resource.spec.wiki}`);
     if (wiki?.type !== "Wiki") return undefined;
-    const navigation = wikiNavigationOf(wiki);
+    const navigation = wikiNavigationOf(wiki, resources);
     const page = resolveDeclaredPublicRoute(href, navigation.pageByRoute, true);
     const target = page && resources.get(`WikiPage/${page.page}`);
     return target?.type === "WikiPage" ? target : undefined;
@@ -365,7 +374,7 @@ export function restoreSourceResourceReferences(
       ) {
         const wiki = desired.get(`Wiki/${resource.spec.wiki}`);
         if (wiki?.type === "Wiki") {
-          const navigation = wikiNavigationOf(wiki);
+          const navigation = wikiNavigationOf(wiki, desired);
           const current = resolveWikiContentHref(saved.href, resource.name, navigation);
           unchangedContext =
             !shadowed() &&

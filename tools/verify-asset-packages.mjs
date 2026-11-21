@@ -131,7 +131,8 @@ const expected = new Map([
 ]);
 
 for (const [directory, expectedFiles] of expected) {
-  const output = execFileSync("pnpm", ["pack", "--dry-run", "--json"], {
+  // vp runs its own pinned pnpm, which CI has even where a global pnpm is absent.
+  const output = execFileSync("vp", ["pm", "pack", "--", "--dry-run", "--json"], {
     cwd: directory,
     encoding: "utf8",
   });
@@ -180,7 +181,7 @@ function verifyPackedTypeBoundaries() {
       ["core", coreRoot],
     ]) {
       const before = new Set(readdirSync(temporary));
-      execFileSync("pnpm", ["pack", "--pack-destination", temporary], {
+      execFileSync("vp", ["pm", "pack", "--pack-destination", temporary], {
         cwd: directory,
         stdio: "ignore",
       });

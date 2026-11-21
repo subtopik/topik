@@ -339,6 +339,15 @@ export async function readPortableAssetFileInSession(
   if (read === undefined) {
     read = readPortableAssetFileAnchored(options, session);
     session.reads.set(key, read);
+    // A file that changed while it was read may read cleanly a moment later: retry next time.
+    void read.then((result) => {
+      if (
+        !result.ok &&
+        portableReadFailureReason(result.diagnostics) === "changed-during-read" &&
+        session.reads.get(key) === read
+      )
+        session.reads.delete(key);
+    });
   }
   return read;
 }
@@ -985,7 +994,11 @@ async function canonicalRootIdentity(
 const ISOLATED_ROOTS = new Set<string>();
 
 function isIsolatedRoot(canonicalRoot: string): boolean {
-  for (const root of ISOLATED_ROOTS) if (isPathAtOrBelow(canonicalRoot, root)) return true;
+  for (const root of ISOLATED_ROOTS) {
+    // Canonical roots use the platform separator; Windows paths use `\`.
+    const below = relative(root, canonicalRoot);
+    if (below === "" || (!below.startsWith("..") && !isAbsolute(below))) return true;
+  }
   return false;
 }
 

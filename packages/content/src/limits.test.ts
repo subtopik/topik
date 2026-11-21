@@ -140,6 +140,10 @@ describe("content resource boundaries", () => {
     ["sibling items with nested lists", "- a\n  - b\n".repeat(12_000)],
     ["sibling items with nested quotes", "- > a\n".repeat(20_000)],
     ["lazy lines after quoted headings", "> # h\nb\n".repeat(12_000)],
+    [
+      "footnote definitions ended by paragraphs",
+      Array.from({ length: 8_000 }, (_, index) => `[^n${index}]: a\n\nb\n\n`).join(""),
+    ],
   ])("bounds parser work before resolving %s", (_label, source) => {
     const started = performance.now();
     const result = parseDocument(source);

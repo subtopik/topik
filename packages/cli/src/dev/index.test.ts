@@ -640,7 +640,7 @@ describe("dev command", () => {
     expect(errors).toEqual([
       ...NATIVE_NOTICE,
       "Compile error:",
-      expect.stringMatching(/^intro\.md:3 error [a-z-]+: /u),
+      expect.stringMatching(/^intro\.md:3:1 error [a-z-]+: /u),
     ]);
     const state = await (await fetch(`http://127.0.0.1:${port}/resources`)).json();
     expect(state).toMatchObject({
@@ -663,7 +663,7 @@ describe("dev command", () => {
 
     expect(runningServer.watcher.state.status).toBe("ready");
     expect(runningServer.watcher.state.resources).toHaveLength(1);
-    expect(warnings).toContainEqual(expect.stringMatching(/^intro\.md:3 warning [a-z-]+: /u));
+    expect(warnings).toContainEqual(expect.stringMatching(/^intro\.md:3:1 warning [a-z-]+: /u));
   });
 
   test("fails fast when the source directory does not exist", async () => {

@@ -6,6 +6,7 @@ import {
   CompileError,
   DEFAULT_FILE_SAFETY,
   isTopikDownloadOnlyMediaType,
+  parseTopikByteRange,
   watch,
   type FileSafety,
   TOPIK_PREVIEW_PROTOCOL,
@@ -55,31 +56,6 @@ function handleEvents(watcher: Watcher, res: ServerResponse, corsHeaders: Record
   res.on("close", () => watcher.off("preview-state", onState));
 }
 
-type ByteRange = { start: number; end: number } | "unsatisfiable" | undefined;
-
-/**
- * Parse a single `bytes` range (RFC 9110). Browsers request media in ranges to start playback
- * early and to seek. Absent, malformed and multiple ranges are ignored: the whole payload follows.
- */
-function parseByteRange(header: string | undefined, size: number): ByteRange {
-  const match = header === undefined ? null : /^bytes=(\d*)-(\d*)$/iu.exec(header.trim());
-  if (match === null) return undefined;
-  const [, first, last] = match;
-  if (first === "" && last === "") return undefined;
-  if (first === "") {
-    // A suffix range: the final bytes of the payload.
-    const length = Number(last);
-    if (!Number.isSafeInteger(length)) return undefined;
-    return length === 0 || size === 0
-      ? "unsatisfiable"
-      : { start: Math.max(0, size - length), end: size - 1 };
-  }
-  const start = Number(first);
-  const end = last === "" ? Number.MAX_SAFE_INTEGER : Number(last);
-  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || end < start) return undefined;
-  return start >= size ? "unsatisfiable" : { start, end: Math.min(end, size - 1) };
-}
-
 function handleAssetPayload(
   watcher: Watcher,
   rawPathname: string,
@@ -115,7 +91,7 @@ function handleAssetPayload(
     "X-Content-Type-Options": "nosniff",
     ...(isTopikDownloadOnlyMediaType(contentType) ? { "Content-Disposition": "attachment" } : {}),
   };
-  const range = parseByteRange(rangeHeader, payload.size);
+  const range = parseTopikByteRange(rangeHeader, payload.size);
   if (range === "unsatisfiable") {
     res.writeHead(416, { ...headers, "Content-Range": `bytes */${payload.size}` });
     res.end();

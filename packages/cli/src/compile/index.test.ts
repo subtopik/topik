@@ -257,7 +257,7 @@ describe("compile command", () => {
 
     expect(errors).toEqual([
       ...NATIVE_NOTICE,
-      expect.stringMatching(/^intro\.md:3 error [a-z-]+: /u),
+      expect.stringMatching(/^intro\.md:3:1 error [a-z-]+: /u),
       "1 compile error(s)",
     ]);
     expect(log).not.toHaveBeenCalled();
@@ -510,6 +510,28 @@ describe("compile command", () => {
       .catch((error: unknown) => error);
     expect(failure).toMatchObject({ id: "compilation-output-scope-unproven" });
     expect(formatPublicCliError(failure)).toMatch(/could not be resolved/u);
+  });
+
+  test("notes staging directories an interrupted compile left beside the output", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "topik-cli-leftover-"));
+    try {
+      await mkdir(join(parent, ".topik-compilation-generation-stale"));
+      vi.spyOn(console, "log").mockImplementation(() => undefined);
+      const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      await (compile as CompileCommand).handler?.({
+        dir,
+        outDir: join(parent, "compiled"),
+        format: "json",
+        dryRun: false,
+        validate: true,
+        links: "error",
+      });
+      expect(error.mock.calls.map(([line]) => String(line))).toContainEqual(
+        expect.stringMatching(/^Note: 1 directory beside the output .* interrupted compile/u),
+      );
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+    }
   });
 
   test("rejects source and source-ancestor output roots without mutation", async () => {

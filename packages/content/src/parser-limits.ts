@@ -22,6 +22,8 @@ const BLANK_LINE = /^[ \t]*$/u;
 const BLOCK_START = /^(?:#{1,6}(?:[ \t]|$)|`{3,}|~{3,}|<|(?:[-*_][ \t]*){3,}$|\|)/u;
 const QUOTE_MARKER = /^ {0,3}>[ \t]?/u;
 const ITEM_MARKER = /^ {0,3}(?:[-*+]|[0-9]{1,9}[.)])(?:[ \t]+|$)/u;
+/** A GFM footnote definition, a container like a list item. */
+const FOOTNOTE_MARKER = /^ {0,3}\[\^[^\]\s]{1,999}\]:[ \t]?/u;
 /** A thematic break such as `* * *` is not a list item, though it starts like one. */
 const THEMATIC_BREAK = /^ {0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$/u;
 const startsItem = (text: string) => ITEM_MARKER.test(text) && !THEMATIC_BREAK.test(text);
@@ -58,6 +60,14 @@ function containerModel() {
         stack.push({ quote: true });
         column += quote[0].length;
         rest = rest.slice(quote[0].length);
+        continue;
+      }
+      const footnote = FOOTNOTE_MARKER.exec(rest);
+      if (footnote) {
+        // A footnote definition continues on lines indented four columns past its start.
+        stack.push({ quote: false, content: column + leadingSpaces(rest) + 4 });
+        column += footnote[0].length;
+        rest = rest.slice(footnote[0].length);
         continue;
       }
       const item = startsItem(rest) ? ITEM_MARKER.exec(rest) : null;
@@ -447,8 +457,10 @@ export function parserLimitSyntax(source: string): Extension {
       const current = this.now().line;
       while (seen < current - 1) {
         const line = ++seen;
-        const step = model.line(lines.text(line), Boolean(this.parser.lazy[line]));
-        if (step.rewrite) spend(this.events.length);
+        const lazy = Boolean(this.parser.lazy[line]);
+        const step = model.line(lines.text(line), lazy);
+        // A lazy line the model cannot place may rewrite the event list: charge it as one.
+        if (step.rewrite || (lazy && !step.walk)) spend(this.events.length);
         else if (step.walk) spend(LINE_EVENTS * step.walk);
       }
       return nok(code);

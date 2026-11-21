@@ -83,6 +83,7 @@ describe("lint command", () => {
           file: "intro.md",
           line: 3,
           lines: [3],
+          column: 1,
           id: "link-page-not-found",
           severity: "error",
           message: "Internal link target page was not found.",

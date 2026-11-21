@@ -1,6 +1,10 @@
 import { writeFile } from "node:fs/promises";
 import type { AstroIntegration } from "astro";
-import { isTopikDownloadOnlyMediaType, usesPortableFileReads } from "@topik/core";
+import {
+  isTopikDownloadOnlyMediaType,
+  parseTopikByteRange,
+  usesPortableFileReads,
+} from "@topik/core";
 import {
   assertTopikAssetLoaders,
   collectTopikAssetPayloads,
@@ -85,6 +89,25 @@ export function topik(options: TopikOptions): AstroIntegration {
           )) {
             res.setHeader(name, value);
           }
+          // Ranges apply to GET only; payloads carry no validator, so If-Range never matches.
+          const range =
+            req.method === "GET" && req.headers["if-range"] === undefined
+              ? parseTopikByteRange(req.headers.range, payload.size)
+              : undefined;
+          if (range === "unsatisfiable") {
+            res.statusCode = 416;
+            res.setHeader("Content-Range", `bytes */${payload.size}`);
+            res.removeHeader("Content-Length");
+            res.end();
+            return;
+          }
+          if (range !== undefined) {
+            res.statusCode = 206;
+            res.setHeader("Content-Length", String(range.end - range.start + 1));
+            res.setHeader("Content-Range", `bytes ${range.start}-${range.end}/${payload.size}`);
+            res.end(Buffer.from(payload.bytes.subarray(range.start, range.end + 1)));
+            return;
+          }
           res.end(req.method === "HEAD" ? undefined : Buffer.from(payload.bytes));
         });
       },
@@ -97,6 +120,7 @@ function assetHeaders(mediaType: string, size: number, cacheControl: string) {
     "Cache-Control": cacheControl,
     "Content-Length": String(size),
     "Content-Type": mediaType,
+    "Accept-Ranges": "bytes",
     "X-Content-Type-Options": "nosniff",
     ...(isTopikDownloadOnlyMediaType(mediaType) ? { "Content-Disposition": "attachment" } : {}),
   };
@@ -128,6 +152,8 @@ function productionMiddlewareSource(base: string): string {
   return `import { topikAssetPayloads, topikAssetUrls } from ${JSON.stringify(VIRTUAL_SNAPSHOT_ID)};
 globalThis[Symbol.for("@topik/astro/runtime-asset-urls")] = topikAssetUrls;
 const pattern = /^\\/blobs\\/[0-9a-f]{64}$/u;
+// The same parser as topik dev, embedded because this module does not import core.
+const parseByteRange = ${parseTopikByteRange.toString()};
 export async function onRequest(context, next) {
   const request = context.request;
   if (request.method !== "GET" && request.method !== "HEAD") return next();
@@ -136,14 +162,31 @@ export async function onRequest(context, next) {
   if (!pathname.startsWith(base) || !pattern.test("/" + pathname.slice(base.length))) return next();
   const payload = topikAssetPayloads.get(pathname);
   if (payload === undefined) return next();
+  const headers = {
+    "Accept-Ranges": "bytes",
+    "Cache-Control": ${JSON.stringify(PRODUCTION_CACHE_CONTROL)},
+    "Content-Type": payload.mediaType,
+    "X-Content-Type-Options": "nosniff",
+    ...(payload.attachment ? { "Content-Disposition": "attachment" } : {}),
+  };
+  // Ranges apply to GET only; payloads carry no validator, so If-Range never matches.
+  const range =
+    request.method === "GET" && !request.headers.has("if-range")
+      ? parseByteRange(request.headers.get("range") ?? undefined, payload.size)
+      : undefined;
+  if (range === "unsatisfiable")
+    return new Response(null, { status: 416, headers: { ...headers, "Content-Range": "bytes */" + payload.size } });
+  if (range !== undefined)
+    return new Response(payload.bytes.subarray(range.start, range.end + 1), {
+      status: 206,
+      headers: {
+        ...headers,
+        "Content-Length": String(range.end - range.start + 1),
+        "Content-Range": "bytes " + range.start + "-" + range.end + "/" + payload.size,
+      },
+    });
   return new Response(request.method === "HEAD" ? null : payload.bytes, {
-    headers: {
-      "Cache-Control": ${JSON.stringify(PRODUCTION_CACHE_CONTROL)},
-      "Content-Length": String(payload.size),
-      "Content-Type": payload.mediaType,
-      "X-Content-Type-Options": "nosniff",
-      ...(payload.attachment ? { "Content-Disposition": "attachment" } : {}),
-    },
+    headers: { ...headers, "Content-Length": String(payload.size) },
   });
 }
 `;

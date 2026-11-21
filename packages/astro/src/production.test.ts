@@ -166,6 +166,21 @@ describe("Astro production Asset delivery", () => {
       expect((await head.arrayBuffer()).byteLength).toBe(0);
     }
 
+    for (const url of new Set(urls)) {
+      const ranged = await serverModule.fetch(
+        new Request(`http://example.test${url}`, { headers: { range: "bytes=0-3" } }),
+      );
+      expect(ranged.status).toBe(206);
+      expect(ranged.headers.get("accept-ranges")).toBe("bytes");
+      expect(ranged.headers.get("content-length")).toBe("4");
+      expect(ranged.headers.get("content-range")).toMatch(/^bytes 0-3\/\d+$/u);
+      expect((await ranged.arrayBuffer()).byteLength).toBe(4);
+      const beyond = await serverModule.fetch(
+        new Request(`http://example.test${url}`, { headers: { range: "bytes=999999-" } }),
+      );
+      expect(beyond.status).toBe(416);
+    }
+
     const canonicalUrl = urls[0];
     const digest = canonicalUrl.slice("/blobs/".length);
     for (const method of ["GET", "HEAD"] as const) {

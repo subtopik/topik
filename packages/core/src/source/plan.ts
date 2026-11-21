@@ -68,6 +68,7 @@ import { generateAutomaticAssetName } from "../assets/asset";
 import { computeTopikPathCollisionKey, validateTopikPathSet } from "../assets/path";
 import { resolveWikiNavigation, resolveWikiContentHref } from "../wiki-navigation";
 import {
+  compareSourcePaths,
   readSourceProject,
   digestSourceTree,
   digestSourceResourceGraph,
@@ -1529,7 +1530,7 @@ function collectFileChanges(
 ): SourceFileChange[] {
   const { input, files, modified, deleted } = state;
   const changes: SourceFileChange[] = [];
-  for (const path of [...new Set([...modified.keys(), ...deleted])].sort()) {
+  for (const path of [...new Set([...modified.keys(), ...deleted])].sort(compareSourcePaths)) {
     const old = files.get(path);
     const bytes = deleted.has(path) ? undefined : modified.get(path);
     if (old && bytes && sourceHash(old.bytes) === sourceHash(bytes)) continue;

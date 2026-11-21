@@ -135,6 +135,7 @@ export {
   type ResolvedCourseContentReference,
 } from "./course-navigation";
 
+export { parseTopikByteRange, type TopikByteRange } from "./byte-range";
 export {
   DEFAULT_WATCH_DEBOUNCE_MS,
   isTopikWatchIgnoredName,

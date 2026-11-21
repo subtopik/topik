@@ -140,7 +140,9 @@ Compilations are serialized, and filesystem notifications are coalesced:
 
 Directories named `node_modules`, `.git`, `.topik` and
 `.topik-compilation-{generation,prior}-*` are ignored only below the watched
-directory, so a project may itself live inside such a directory.
+directory, so a project may itself live inside such a directory. A host with
+its own watcher can apply the same rule to each path segment with
+`isTopikWatchIgnoredName`.
 
 ### Watcher failure
 
@@ -279,7 +281,10 @@ and no cache. It binds each fetch to the snapshot with
 
 Every payload response carries `Accept-Ranges: bytes`. Multiple or malformed
 ranges, a `Range` on `HEAD`, and any `If-Range` (payloads carry no validator) are
-ignored and return the whole payload.
+ignored and return the whole payload. A host that serves payloads itself can
+read the range with `parseTopikByteRange(header, size)` and decide
+`Content-Disposition: attachment` with `isTopikDownloadOnlyMediaType`, both from
+`@topik/core`, as the CLI and the Astro integration do.
 
 ### Verification
 

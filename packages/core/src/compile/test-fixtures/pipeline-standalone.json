@@ -7,6 +7,7 @@
         "level": "warning",
         "message": "Internal link target page was not found.",
         "lines": [3],
+        "column": 5,
         "file": "index.md"
       },
       {
@@ -15,6 +16,7 @@
         "level": "warning",
         "message": "Internal link target page was not found.",
         "lines": [3],
+        "column": 32,
         "file": "index.md"
       }
     ],

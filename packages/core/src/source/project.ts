@@ -171,9 +171,7 @@ export function snapshotSourceTree(input: readonly SourceTreeFile[]): SourceTree
     mode: file.mode,
     bytes: new Uint8Array(file.bytes),
   }));
-  return tree.sort((left, right) =>
-    Buffer.compare(encodeSource(left.path), encodeSource(right.path)),
-  );
+  return tree.sort((left, right) => compareSourcePaths(left.path, right.path));
 }
 export function digestSourceTree(tree: readonly SourceTreeFile[]): string {
   return sourceHash(
@@ -197,6 +195,11 @@ export function digestSourceResourceGraph(resources: readonly Resource[]): strin
       serializeTopikJson(resources.map((resource) => serializeTopikJson(resource)).sort()),
     ),
   );
+}
+
+/** Source paths in UTF-8 byte order, the order of every planned tree and change list. */
+export function compareSourcePaths(left: string, right: string): number {
+  return Buffer.compare(encodeSource(left), encodeSource(right));
 }
 
 export async function withSourceScratch<T>(

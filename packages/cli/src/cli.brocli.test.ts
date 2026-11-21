@@ -118,7 +118,7 @@ describe.skipIf(!existsSync(builtCli))("built topik binary", () => {
       stdout: "",
       stderr:
         NATIVE_NOTICE +
-        "index.md:3 error link-page-not-found: Internal link target page was not found.\n" +
+        "index.md:3:1 error link-page-not-found: Internal link target page was not found.\n" +
         "1 compile error(s)\n" +
         "Compilation found errors.\n",
     });
@@ -377,6 +377,7 @@ describe.skipIf(!existsSync(builtCli))("built topik binary", () => {
           file: "index.md",
           line: 3,
           lines: [3],
+          column: 1,
           id: "link-page-not-found",
           severity: "error",
           message: "Internal link target page was not found.",

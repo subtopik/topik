@@ -44,6 +44,7 @@ import { generateAutomaticAssetName } from "../assets/asset";
 import { validateTopikPathSet } from "../assets/path";
 import { resolveWikiNavigation } from "../wiki-navigation";
 import {
+  compareSourcePaths,
   readSourceProject,
   digestSourceTree,
   digestSourceResourceGraph,
@@ -822,7 +823,7 @@ function initializationPlan(
   const { input, existing, assetMappings } = draft;
   const changes: SourceFileChange[] = draft.generatedFiles
     // Bytewise like snapshotSourceTree: locale collation can vary between ICU builds.
-    .sort((a, b) => Buffer.compare(encodeSource(a.path), encodeSource(b.path)))
+    .sort((a, b) => compareSourcePaths(a.path, b.path))
     .map((file) => ({
       kind: existing && file.path === ".topik.yaml" ? "update" : "create",
       path: file.path,

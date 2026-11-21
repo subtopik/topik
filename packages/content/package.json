@@ -36,6 +36,7 @@
   "scripts": {
     "test": "vp test --run",
     "test:coverage": "vp test --run --coverage",
+    "fuzz": "TOPIK_FUZZ=1 vp test --run src/fuzz.test.ts",
     "check": "vp check",
     "build": "vp pack",
     "prepublishOnly": "vp run build"
@@ -63,6 +64,7 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "@vitest/coverage-v8": "catalog:",
+    "fast-check": "catalog:",
     "micromark-util-types": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",

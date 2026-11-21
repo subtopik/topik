@@ -23,6 +23,20 @@ others depend on.
 clean consumer projects, including browser checks that need Playwright's
 Chromium.
 
+### Property tests
+
+`packages/content/src/fuzz.test.ts` generates documents from the component
+registry and the Markdown grammar (`src/testing/grammar.ts`). It checks that
+formatting round trips and that no document costs more parser work than the
+`parserSteps` budget. `vp test` runs it with a fixed seed. To explore new inputs,
+run `vp run fuzz`. It picks a random seed and prints it, and runs twenty times
+as many cases. Set `TOPIK_FUZZ_SEED` to replay a seed and `TOPIK_FUZZ_RUNS` to
+choose the count. fast-check shrinks any failure to a small input: add that input
+to a regular test along with the fix.
+
+When you add syntax that the registry does not describe, add it to the grammar.
+A new component is generated from its schema without changes.
+
 ## Changes
 
 - Keep pull requests focused, and add or update tests for behavior changes.

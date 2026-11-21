@@ -83,7 +83,6 @@ modules:
   - id: foundations
     title: Foundations
     slug: foundations
-    order: 0
     pages:
       - lessons/start
 ```
@@ -96,7 +95,6 @@ configuration directory. Each page has explicit frontmatter:
 id: first-lesson
 title: First lesson
 slug: introduction
-order: 0
 ---
 
 # First lesson
@@ -105,13 +103,17 @@ order: 0
 The configuration supplies the Course and module metadata and each page's module
 membership. Markdown supplies the page metadata and body.
 
-- A page requires `id`, `title`, `slug` and `order`. It may also set
+- A page requires `id`, `title` and `slug`. It may also set
   `description` (at most 1024 characters), `authors` and string-valued `labels`.
 - Course, module and page descriptions distinguish absence from null; labels are
   string maps.
 - Course and page authors refer to Persons declared in the configuration's
   `persons` list.
-- Module and page `order` values are explicit nonnegative integers.
+- Order is list position, as in Wiki navigation: modules appear in the order of
+  `modules`, and pages in the order of their module's `pages`. Compiled resources
+  carry the same order as `Course.spec.modules` and `CourseModule.spec.pages`. An
+  `order` key left from an older source fails with `course-order-removed`
+  naming the field.
 - IDs are stable independently of file names, public slugs and ordering.
 
 ### Course links
@@ -272,9 +274,28 @@ indented flow list such as `tags:` followed by `  ["a"]`; an empty value such as
 leaves an empty `[]` list; the key is not deleted.
 
 List edits keep the entries they do not change. Person, module and Course page
-records are added or removed individually, and a moved Course page keeps its
-position in its module's `pages` list, so equal `order` values keep their
-declaration order.
+records are added or removed individually, and a Course page whose file moves
+keeps its entry in its module's `pages` list.
+
+A Course's `modules` and each module's `pages` change the way Wiki navigation
+does, below. A new page or module is listed in its parent resource, so adding
+one is an update of that parent too, as adding a Wiki page is an update of the
+Wiki. Each module record is written from its resource, so a rewrite loses what
+the resource does not carry:
+
+- Appending a page or module, removing one, or putting a page in the place of a
+  removed one edits the list in place.
+- Moving a module to the end, as in swapping two modules, removes its entry and
+  appends it as one flow mapping. That drops the comments and unrecognized keys
+  in the moved module.
+- Inserting a page before kept pages rewrites that module's `pages` as one flow
+  list.
+- Inserting a module before kept modules, or any other module order that
+  removals and appends cannot reach, rewrites all of `modules` as one flow list.
+  That drops the comments and unrecognized keys in every module.
+
+When a list is rewritten as one value, the authority must admit that list's
+value, not only its insertion anchor.
 
 Wiki navigation edits work the same way at every nesting level: removed entries
 are deleted in place, changed entries are edited in place and added entries are

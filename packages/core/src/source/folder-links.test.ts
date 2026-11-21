@@ -17,7 +17,7 @@ const file = (path: string, text: string) => ({
 });
 const body = "# Home\n\n[Folder](./files?view=%FF#landing)\n\n[Again](./files/?view=%FF#landing)\n";
 const frontmatter = (id: string, value: string) =>
-  `---\nid: ${id}\ntitle: ${id}\nslug: ${id}\norder: 0\n---\n${value}`;
+  `---\nid: ${id}\ntitle: ${id}\nslug: ${id}\n---\n${value}`;
 const getPage = (resources: SourceProject["compilation"]["resources"], name = "home") =>
   resources.find(
     (resource): resource is Page =>
@@ -54,7 +54,7 @@ async function fixture(kind: Kind, value = body) {
       : kind === "course"
         ? {
             slug: "docs",
-            modules: [{ id: "basics", title: "Basics", slug: "basics", order: 0, pages: sources }],
+            modules: [{ id: "basics", title: "Basics", slug: "basics", pages: sources }],
           }
         : {}),
   };
@@ -97,7 +97,7 @@ test.each(["wiki", "course"] as const)(
           }
         : {
             slug: "docs",
-            modules: [{ id: "basics", title: "Basics", slug: "basics", order: 0, pages: ["home"] }],
+            modules: [{ id: "basics", title: "Basics", slug: "basics", pages: ["home"] }],
           }),
     };
     const project = await readSourceProject({
@@ -282,6 +282,9 @@ test.each(["wiki", "course", "collection"] as const)(
         slug: "created",
         sourcePath: "nested/new",
       });
+    // A Course lists its pages in its module, as a Wiki does in its navigation.
+    const module = desired.find((resource) => resource.type === "CourseModule");
+    if (module?.type === "CourseModule") module.spec.pages.push("created");
     const key = `${home.type}/home`;
     const createdKey = `${created.type}/created`;
     const createdPath = kind === "collection" ? "docs/new.md" : "docs/nested/new.md";
@@ -299,6 +302,7 @@ test.each(["wiki", "course", "collection"] as const)(
           path: createdPath,
         },
         ...(wiki ? [{ kind: "update" as const, resource: "Wiki/docs" }] : []),
+        ...(module ? [{ kind: "update" as const, resource: `CourseModule/${module.name}` }] : []),
       ],
       authority: {
         ...authority(project),
@@ -343,6 +347,8 @@ test.each(["wiki", "course", "collection"] as const)(
         slug: "readme",
         sourcePath: "files/README",
       });
+    const module = desired.find((resource) => resource.type === "CourseModule");
+    if (module?.type === "CourseModule") module.spec.pages.push("readme");
     const newKey = `${home.type}/readme`;
     const request = {
       project,
@@ -357,6 +363,7 @@ test.each(["wiki", "course", "collection"] as const)(
           path: "docs/files/README.md",
         },
         ...(wiki ? [{ kind: "update" as const, resource: "Wiki/docs" }] : []),
+        ...(module ? [{ kind: "update" as const, resource: `CourseModule/${module.name}` }] : []),
       ],
       ...(wiki?.type === "Wiki" ? { referenceContexts: { [newKey]: wiki } } : {}),
       authority: {

@@ -15,5 +15,11 @@ export interface Course {
     slug: string;
     description?: string | null;
     authors?: string[];
+    /**
+     * The Course's modules in reader order, by CourseModule name.
+     *
+     * @maxItems 1000
+     */
+    modules: string[];
   };
 }

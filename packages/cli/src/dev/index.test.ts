@@ -748,7 +748,7 @@ test("HTTP and SSE share complete state; reconnect receives existing failure; he
   try {
     const health = (await (await fetch(`${origin}/health`)).json()) as { sessionId: string };
     expect(health).toMatchObject({
-      capabilities: ["topik-preview/1"],
+      capabilities: ["topik-preview/2"],
       sessionId: running.watcher.state.sessionId,
       version: expect.any(String),
     });

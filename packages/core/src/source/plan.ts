@@ -58,7 +58,7 @@ import {
   sourceNavigation,
   type NavigationSequenceEdit,
 } from "./plan-navigation";
-import { validateResources } from "../validate";
+import { validateResourceGraph, validateResources } from "../validate";
 import { isSourceNonPageReference, sourcePathInventory } from "../reference-paths";
 import { serializeTopikJson } from "../assets/json";
 import { generateAutomaticAssetName } from "../assets/asset";
@@ -894,7 +894,6 @@ function planCourseRepairs(state: PlanState, scope: ReferenceScope): void {
       );
     const config = document.config;
     const source = provenanceOf(project, config)!;
-    const rawModules = state.configs.get(config)!.modules as Array<{ id: string; pages: string[] }>;
     const configuration = planCourseConfiguration({
       before: [...base.values()],
       desired: [...desired.values()],
@@ -903,7 +902,6 @@ function planCourseRepairs(state: PlanState, scope: ReferenceScope): void {
       paths,
       originalPaths: state.originalPaths,
       directory: source.directory,
-      modules: rawModules,
       raw: decodeSource(state.files.get(config)!.bytes),
       json: config.endsWith(".json"),
     });
@@ -1711,6 +1709,17 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
     const project = await readSourceProject({ tree: input.project.tree });
     const base = resourceMap(project.compilation.resources);
     const desired = resourceMap(structuredClone(input.desiredResources));
+    // Course order lives in parent lists, so a page or module must be listed by the parent it
+    // names. Missing references keep their own, more specific diagnostics later.
+    const membership = validateResourceGraph([...desired.values()]).errors.find(
+      (error) => error.id === "membership-inconsistent",
+    );
+    if (membership)
+      block(
+        "resource-invalid",
+        "Each Course module and page must be listed, once, by the parent it names.",
+        membership.resource,
+      );
     const savedGraphDigest = digestSourceResourceGraph([...desired.values()]);
     applySourceAssetReferenceContexts(
       [...desired.values()],

@@ -60,7 +60,6 @@ function tree(kind: Kind, pages: Declaration[], guides: Declaration[] = []) {
                 id: "basics",
                 title: "Basics",
                 slug: "basics",
-                order: 0,
                 pages: pages.map(({ path }) => path.replace(/\.mdx?$/, "")),
               },
             ],
@@ -90,7 +89,7 @@ function tree(kind: Kind, pages: Declaration[], guides: Declaration[] = []) {
     ...[...pages, ...guides].map(({ path, name, slug, body }) =>
       file(
         path,
-        `---\nid: ${name}\ntitle: ${name}\nslug: ${slug ?? name}\norder: 0\n---\n${body ?? "# Landing\n"}`,
+        `---\nid: ${name}\ntitle: ${name}\nslug: ${slug ?? name}\n---\n${body ?? "# Landing\n"}`,
       ),
     ),
   ];

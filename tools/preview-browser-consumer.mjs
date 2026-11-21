@@ -43,7 +43,7 @@ const configuration = (pages = ["z", "a"]) =>
     id: "course",
     title: "Course",
     slug: "course",
-    modules: [{ id: "module", title: "Module", slug: "module", order: 0, pages }],
+    modules: [{ id: "module", title: "Module", slug: "module", pages }],
   });
 await writeFile(
   join(dir, ".topik.yaml"),
@@ -60,9 +60,9 @@ await writeFile(join(dir, "download.txt"), downloadBytes);
 await writeFile(join(dir, "clip.webm"), webm);
 await writeFile(
   join(dir, "z.md"),
-  '---\nid: z-page\ntitle: Z\nslug: z\norder: 0\n---\n# Z\n\n![Hero](hero.png)\n\n{% figure src="hero.png" darkSrc="dark.png" alt="Figure" /%}\n\n{% video src="clip.webm" title="Clip" /%}\n\n[Download](download.txt)\n',
+  '---\nid: z-page\ntitle: Z\nslug: z\n---\n# Z\n\n![Hero](hero.png)\n\n{% figure src="hero.png" darkSrc="dark.png" alt="Figure" /%}\n\n{% video src="clip.webm" title="Clip" /%}\n\n[Download](download.txt)\n',
 );
-await writeFile(join(dir, "a.md"), "---\nid: a-page\ntitle: A\nslug: a\norder: 0\n---\n# A\n");
+await writeFile(join(dir, "a.md"), "---\nid: a-page\ntitle: A\nslug: a\n---\n# A\n");
 const host = await createServer({
   root,
   configFile: false,
@@ -105,7 +105,7 @@ const origin = await new Promise((resolve, reject) => {
 });
 let browser;
 try {
-  assert.equal(TOPIK_PREVIEW_PROTOCOL, "topik-preview/1");
+  assert.equal(TOPIK_PREVIEW_PROTOCOL, "topik-preview/2");
   assert.deepEqual((await (await fetch(`${origin}/health`)).json()).capabilities, [
     TOPIK_PREVIEW_PROTOCOL,
   ]);
@@ -202,8 +202,14 @@ window.stream.addEventListener("preview-state", event => window.accept(JSON.pars
     first.generation,
   );
   const reordered = await page.evaluate(() => window.latest);
-  assert.deepEqual(reordered.resources, first.resources);
-  assert.equal(reordered.courseNavigation.course.modules[0].pages[0].name, "a-page");
+  // Order lives in the module's page list, so a reorder changes that list only.
+  const pages = (state) =>
+    state.resources.find((resource) => resource.type === "CourseModule").spec.pages;
+  assert.equal(pages(reordered)[0], "a-page");
+  assert.deepEqual(
+    reordered.resources.filter((resource) => resource.type === "CoursePage"),
+    first.resources.filter((resource) => resource.type === "CoursePage"),
+  );
   // Delayed HTTP snapshots cannot roll this example consumer back after an SSE commit.
   await page.evaluate((state) => window.accept(state), first);
   assert.equal(await page.evaluate(() => window.latest.sequence), reordered.sequence);
@@ -211,7 +217,7 @@ window.stream.addEventListener("preview-state", event => window.accept(JSON.pars
   await page.waitForFunction(() => window.latest.status === "error");
   const failed = await page.evaluate(() => window.latest);
   assert.equal(failed.generation, reordered.generation);
-  assert.deepEqual(failed.courseNavigation, reordered.courseNavigation);
+  assert.deepEqual(failed.resources, reordered.resources);
   await page.evaluate(() => window.stream.close());
   await page.evaluate((origin) => {
     window.stream = new EventSource(origin + "/events");

@@ -250,7 +250,6 @@ export function writeMarkdown(
   if (desired.type === "CoursePage") {
     const old = prior?.type === "CoursePage" ? prior : undefined;
     if (moved || !old || old.spec.slug !== desired.spec.slug) updates.slug = desired.spec.slug;
-    if (!old || old.spec.order !== desired.spec.order) updates.order = desired.spec.order;
     if (
       !old ||
       serializeTopikJson(old.spec.authors ?? null) !==

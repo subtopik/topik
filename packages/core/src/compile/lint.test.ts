@@ -139,26 +139,25 @@ test("compile still stops at the first stage with an error and writes nothing", 
 });
 
 test("Course links to a page whose content is invalid are not reported as missing", async () => {
-  const page = (id: string, slug: string, order: number, body: string) =>
-    `---\nid: ${id}\ntitle: ${id}\nslug: ${slug}\norder: ${order}\n---\n${body}`;
+  const page = (id: string, slug: string, body: string) =>
+    `---\nid: ${id}\ntitle: ${id}\nslug: ${slug}\n---\n${body}`;
   const dir = await fixture({
     ".topik.yaml":
       "version: 1\nnamespace: example/lint\nsources:\n  - kind: course\n    config: course.yaml\n",
     "course.yaml":
-      "sourceVersion: 1\nid: learning\ntitle: Learning\nslug: learning\nmodules:\n  - id: basics\n    title: Basics\n    slug: basics\n    order: 1\n    pages: [one, two]\n",
-    "one.md": page("one", "first", 1, `# One\n\n${badCallout}`),
+      "sourceVersion: 1\nid: learning\ntitle: Learning\nslug: learning\nmodules:\n  - id: basics\n    title: Basics\n    slug: basics\n    pages: [one, two]\n",
+    "one.md": page("one", "first", `# One\n\n${badCallout}`),
     "two.md": page(
       "two",
       "second",
-      2,
       "# Two\n\n[By path](./one.md)\n\n[By route](/basics/first)\n\n[Gone](./nope.md)\n",
     ),
   });
 
   expect(summary(await lint({ dir }))).toEqual({
     diagnostics: [
-      ["attribute-value-invalid", "one.md", [9], "error"],
-      ["link-page-not-found", "two.md", [13], "error"],
+      ["attribute-value-invalid", "one.md", [8], "error"],
+      ["link-page-not-found", "two.md", [12], "error"],
     ],
     failures: [],
   });

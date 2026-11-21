@@ -664,7 +664,6 @@ function writeInitialDocuments(draft: InitializationDraft): void {
       ...(resource.type === "CoursePage"
         ? {
             slug: resource.spec.slug,
-            order: resource.spec.order,
             ...(resource.spec.authors !== undefined ? { authors: resource.spec.authors } : {}),
           }
         : {}),

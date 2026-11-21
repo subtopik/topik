@@ -42,7 +42,7 @@ export interface Watcher {
   /** Compatibility inventory; replaced completely before any success notification. */
   resources: Map<string, Resource>;
   payloads: Map<string, AssetPayload>;
-  /** Immutable, complete authoritative state. Treat resources/order/payloads as one commit. */
+  /** Immutable, complete authoritative state. Treat resources and payloads as one commit. */
   readonly state: PreviewState;
   on(event: "preview-state", listener: PreviewStateListener): this;
   on(event: "update", listener: UpdateListener): this;
@@ -104,7 +104,6 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
     diagnostics: [],
     resources: [],
     payloads: [],
-    courseNavigation: {},
   });
   // The payload entries each Asset owns, so an Asset updates only when its own bytes or path do.
   let assetPayloads = new Map<string, string>();
@@ -201,7 +200,6 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
           generation: (state.generation ?? 0) + 1,
           ...previewResultDiagnostics(result.diagnostics, resourcesByPath),
           resources: result.resources,
-          courseNavigation: result.courseNavigation,
           payloads: result.payloads.map(({ bytes: _bytes, ...descriptor }) => descriptor),
         });
         for (const resource of updates)

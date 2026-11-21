@@ -50,7 +50,7 @@ test("lists the files every kind of source reads, valid or not, and nothing else
       id: "learning",
       title: "Learning",
       slug: "learning",
-      modules: [{ id: "basics", title: "Basics", slug: "basics", order: 0, pages: ["one", "two"] }],
+      modules: [{ id: "basics", title: "Basics", slug: "basics", pages: ["one", "two"] }],
     }),
     "course/one.md": "---\nnot: valid frontmatter for a course page\n---\n# One\n",
     "course/two.mdx": "# Two\n",
@@ -104,9 +104,7 @@ test("leaves out linked files, files below a linked directory and entries that a
         id: "learning",
         title: "Learning",
         slug: "learning",
-        modules: [
-          { id: "basics", title: "Basics", slug: "basics", order: 0, pages: ["one", "away/page"] },
-        ],
+        modules: [{ id: "basics", title: "Basics", slug: "basics", pages: ["one", "away/page"] }],
       }),
       "course/one.md": "# One\n",
     });
@@ -148,7 +146,7 @@ test("a configuration cannot name a page outside its directory", async () => {
       id: "learning",
       title: "Learning",
       slug: "learning",
-      modules: [{ id: "m", title: "M", slug: "m", order: 0, pages: ["index", "../outside"] }],
+      modules: [{ id: "m", title: "M", slug: "m", pages: ["index", "../outside"] }],
     }),
   });
   const pages = await listManifestDocuments({ dir }).catch((error: unknown) => error);

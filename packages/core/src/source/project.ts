@@ -538,9 +538,9 @@ function configurationOrigins(
   for (const field of resource.type === "Person"
     ? ["name", "email", "bio"]
     : resource.type === "Course"
-      ? ["title", "slug", "description", "authors"]
+      ? ["title", "slug", "description", "authors", "modules"]
       : resource.type === "CourseModule"
-        ? ["title", "slug", "order", "description"]
+        ? ["title", "slug", "pages", "description"]
         : ["title", "description", "navigation", "theme", "sourceVersion"])
     result.push(
       explicit(
@@ -615,7 +615,6 @@ function markdownOrigins(
   if (resource.type === "CoursePage") {
     result.push(
       explicit("spec/slug", "slug"),
-      explicit("spec/order", "order"),
       explicit("spec/authors", "authors", resource.spec.authors !== undefined),
     );
     result.push(

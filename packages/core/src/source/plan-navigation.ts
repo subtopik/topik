@@ -56,27 +56,50 @@ export interface NavigationSequenceEdit {
  * their syntax; removed items are deleted in place and new items are appended.
  * Returns undefined when the change needs a new item before a retained one.
  */
-function alignNavigation(
+/** Largest comparison table built for a list that repeats items, about 4 MB. */
+const MAX_ALIGNMENT_CELLS = 1_000_000;
+
+export function alignNavigation(
   previous: readonly unknown[],
   desired: readonly unknown[],
-): { pairs: Array<[number, number]>; removals: number[]; additions: number[] } | undefined {
+):
+  | {
+      /** Identical items, by previous and desired position. */
+      anchors: Array<[number, number]>;
+      /** Items in equal-sized gaps, edited in place. */
+      pairs: Array<[number, number]>;
+      removals: number[];
+      additions: number[];
+    }
+  | undefined {
   const before = previous.map((item) => serializeTopikJson(item ?? null));
   const after = desired.map((item) => serializeTopikJson(item ?? null));
-  // Longest common subsequence of identical items anchors the retained entries.
-  const table = Array.from({ length: before.length + 1 }, () =>
-    Array<number>(after.length + 1).fill(0),
-  );
-  for (let i = before.length - 1; i >= 0; i--)
-    for (let j = after.length - 1; j >= 0; j--)
-      table[i][j] =
-        before[i] === after[j]
-          ? table[i + 1][j + 1] + 1
-          : Math.max(table[i + 1][j], table[i][j + 1]);
+  // Identical leading and trailing items anchor themselves, so an unchanged list or a local
+  // edit compares only the changed middle.
+  let start = 0;
+  while (start < before.length && start < after.length && before[start] === after[start]) start++;
+  let end = 0;
+  while (
+    end < before.length - start &&
+    end < after.length - start &&
+    before[before.length - 1 - end] === after[after.length - 1 - end]
+  )
+    end++;
+  const rows = before.length - start - end;
+  const columns = after.length - start - end;
+  const middleBefore = before.slice(start, start + rows);
+  const middleAfter = after.slice(start, start + columns);
+  const middle =
+    distinct(middleBefore) && distinct(middleAfter)
+      ? uniqueCommonSubsequence(middleBefore, middleAfter)
+      : tableCommonSubsequence(middleBefore, middleAfter);
+  // A repeated-item middle too large to compare is rewritten as one value, which is faithful.
+  if (!middle) return undefined;
   const anchors: Array<[number, number]> = [];
-  for (let i = 0, j = 0; i < before.length && j < after.length;)
-    if (before[i] === after[j]) anchors.push([i++, j++]);
-    else if (table[i + 1][j] >= table[i][j + 1]) i++;
-    else j++;
+  for (let index = 0; index < start; index++) anchors.push([index, index]);
+  for (const [i, j] of middle) anchors.push([start + i, start + j]);
+  for (let offset = end; offset > 0; offset--)
+    anchors.push([before.length - offset, after.length - offset]);
   const pairs: Array<[number, number]> = [];
   const removals: number[] = [];
   const additions: number[] = [];
@@ -99,7 +122,7 @@ function alignNavigation(
     i = anchorBefore + 1;
     j = anchorAfter + 1;
   }
-  return { pairs, removals, additions };
+  return { anchors, pairs, removals, additions };
 }
 
 export function collectNavigationEdits(
@@ -156,4 +179,64 @@ export function collectNavigationEdits(
         after[field],
       );
   } else updates[selector] = desired;
+}
+
+function distinct(items: readonly string[]): boolean {
+  return new Set(items).size === items.length;
+}
+
+/**
+ * Longest common subsequence of two lists of distinct items, in O(n log n) without a table:
+ * the longest increasing run of the desired positions of the previous items.
+ */
+function uniqueCommonSubsequence(
+  before: readonly string[],
+  after: readonly string[],
+): Array<[number, number]> {
+  const position = new Map(after.map((item, index) => [item, index]));
+  const candidates = before.flatMap((item, index): Array<[number, number]> => {
+    const target = position.get(item);
+    return target === undefined ? [] : [[index, target]];
+  });
+  // Patience sorting: tails[k] ends the best increasing run of length k + 1.
+  const tails: number[] = [];
+  const previous = new Int32Array(candidates.length).fill(-1);
+  for (const [index, [, target]] of candidates.entries()) {
+    let low = 0;
+    let high = tails.length;
+    while (low < high) {
+      const mid = (low + high) >> 1;
+      if (candidates[tails[mid]][1] < target) low = mid + 1;
+      else high = mid;
+    }
+    if (low > 0) previous[index] = tails[low - 1];
+    tails[low] = index;
+  }
+  const run: Array<[number, number]> = [];
+  for (let index = tails.at(-1) ?? -1; index >= 0; index = previous[index])
+    run.push(candidates[index]);
+  return run.reverse();
+}
+
+/** Longest common subsequence by table, for lists that may repeat items; bounded in size. */
+function tableCommonSubsequence(
+  before: readonly string[],
+  after: readonly string[],
+): Array<[number, number]> | undefined {
+  const rows = before.length;
+  const columns = after.length;
+  if ((rows + 1) * (columns + 1) > MAX_ALIGNMENT_CELLS) return undefined;
+  const table = Array.from({ length: rows + 1 }, () => new Uint32Array(columns + 1));
+  for (let i = rows - 1; i >= 0; i--)
+    for (let j = columns - 1; j >= 0; j--)
+      table[i][j] =
+        before[i] === after[j]
+          ? table[i + 1][j + 1] + 1
+          : Math.max(table[i + 1][j], table[i][j + 1]);
+  const anchors: Array<[number, number]> = [];
+  for (let i = 0, j = 0; i < rows && j < columns;)
+    if (before[i] === after[j]) anchors.push([i++, j++]);
+    else if (table[i + 1][j] >= table[i][j + 1]) i++;
+    else j++;
+  return anchors;
 }

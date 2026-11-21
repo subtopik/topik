@@ -272,7 +272,6 @@ async function runManifest(
   const provenance: ManifestSourceProvenance[] = [];
   const diagnostics: CompileResult["diagnostics"] = [];
   const resources: SourceResource[] = [];
-  const courseNavigation: CompileResult["courseNavigation"] = {};
   const sourcePathsByResource: Record<string, string> = {};
   const bodyLinesByResource: Record<string, number> = {};
   const sourceDirectoriesByResource: Record<string, string> = {};
@@ -341,7 +340,6 @@ async function runManifest(
       })),
     );
     resources.push(...discovered.resources);
-    Object.assign(courseNavigation, discovered.courseNavigation);
     if (discovered.sourceVersion === 1)
       for (const resource of discovered.resources)
         if (resource.type === "Guide") versionedGuideNames.add(resource.name);
@@ -437,7 +435,6 @@ async function runManifest(
       diagnostics,
       references: linked.references,
       provenance,
-      courseNavigation,
       ...compiled,
     },
   };

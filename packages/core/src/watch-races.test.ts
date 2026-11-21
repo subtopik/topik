@@ -50,7 +50,15 @@ test("serializes work and discards candidates invalidated during compilation", a
   (control.fs as EventEmitter).emit("change", "intro.md");
   (control.fs as EventEmitter).emit("unlinkDir", "files");
   expect(control.compile).toHaveBeenCalledTimes(1);
-  first.resolve({ ...result, courseNavigation: { stale: { modules: [] } } });
+  // A marker resource identifies a result that must never be published.
+  const marked = (name: string) => ({
+    ...result,
+    resources: [
+      ...result.resources,
+      { apiVersion: "v1" as const, type: "Person" as const, name, spec: { name } },
+    ],
+  });
+  first.resolve(marked("stale"));
   await vi.waitFor(() => expect(control.compile).toHaveBeenCalledTimes(2));
   second.resolve(result);
   watcher = await starting;
@@ -58,16 +66,16 @@ test("serializes work and discards candidates invalidated during compilation", a
     sequence: 3,
     generation: 1,
     status: "ready",
-    courseNavigation: {},
   });
+  expect(watcher.state.resources).toEqual(result.resources);
   const state = watcher.state;
   const pending = deferred();
   control.compile.mockReturnValueOnce(pending.promise);
   (control.fs as EventEmitter).emit("change");
   await vi.waitFor(() => expect(control.compile).toHaveBeenCalledTimes(3));
   const closing = watcher.close();
-  pending.resolve({ ...result, courseNavigation: { late: { modules: [] } } });
+  pending.resolve(marked("late"));
   await closing;
   expect(watcher.state.generation).toBe(state.generation);
-  expect(watcher.state.courseNavigation).toEqual({});
+  expect(watcher.state.resources).toEqual(result.resources);
 });

@@ -6,7 +6,6 @@ spec:
   module: module-basics
   title: Variables and Types
   slug: Variables-And-Types
-  order: 0
   content:
     format: topik
     value: "# Variables and Types"

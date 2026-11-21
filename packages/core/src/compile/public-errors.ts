@@ -31,6 +31,8 @@ const PUBLIC_COMPILE_ERROR_MESSAGES = {
   "course-page-not-found": "A configured Course page file was not found.",
   "course-page-ambiguous":
     "A Course source path matches more than one Markdown file. Keep exactly one source file.",
+  "course-order-removed":
+    "Course order now comes from list position. Sort modules and each module's pages into reader order, then remove `order`.",
   "author-not-found": "An author must reference a Person in the declared project.",
 } as const;
 

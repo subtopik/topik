@@ -117,11 +117,11 @@ test("declared Course pages participate in cross-kind links, cards and portable 
     "guides/install.md":
       '---\nid: installation-guide\nslug: install\n---\n# Install\n\n{% card title="Lesson" href="../lessons/next.md#setup" /%}\n',
     "lessons/course.yaml":
-      "sourceVersion: 1\nid: lessons\ntitle: Lessons\nslug: learn\nmodules: [{id: basics, title: Basics, slug: basics, order: 0, pages: [intro, next]}]\n",
+      "sourceVersion: 1\nid: lessons\ntitle: Lessons\nslug: learn\nmodules: [{id: basics, title: Basics, slug: basics, pages: [intro, next]}]\n",
     "lessons/intro.md":
-      "---\nid: introduction\ntitle: Intro\nslug: intro\norder: 0\n---\n# Intro\n\n[Next](./next.md#setup)\n\n[Route](/basics/next#setup)\n\n[Guide](../guides/install.md#install)\n",
+      "---\nid: introduction\ntitle: Intro\nslug: intro\n---\n# Intro\n\n[Next](./next.md#setup)\n\n[Route](/basics/next#setup)\n\n[Guide](../guides/install.md#install)\n",
     "lessons/next.md":
-      "---\nid: lesson-page\ntitle: Next\nslug: next\norder: 1\n---\n# Setup\n\n[Overview](../docs/pages/start.md#overview)\n",
+      "---\nid: lesson-page\ntitle: Next\nslug: next\n---\n# Setup\n\n[Overview](../docs/pages/start.md#overview)\n",
   });
   const result = await compileManifest({ dir });
   expect(result.references).toHaveLength(6);
@@ -151,9 +151,9 @@ test("Course links and cards resolve dotted logical source aliases with query an
   const href = "./next.v1?view=full#next";
   const dir = await fixture({
     "course.yaml":
-      "sourceVersion: 1\nid: lessons\ntitle: Lessons\nslug: lessons\nmodules: [{id: basics, title: Basics, slug: basics, order: 0, pages: [home, next.v1]}]\n",
-    "home.md": `---\nid: home\ntitle: Home\nslug: home\norder: 0\n---\n# Home\n\n[Next](${href})\n\n{% card title="Next" href="${href}" /%}\n`,
-    "next.v1.md": "---\nid: next-page\ntitle: Next\nslug: next\norder: 1\n---\n# Next\n",
+      "sourceVersion: 1\nid: lessons\ntitle: Lessons\nslug: lessons\nmodules: [{id: basics, title: Basics, slug: basics, pages: [home, next.v1]}]\n",
+    "home.md": `---\nid: home\ntitle: Home\nslug: home\n---\n# Home\n\n[Next](${href})\n\n{% card title="Next" href="${href}" /%}\n`,
+    "next.v1.md": "---\nid: next-page\ntitle: Next\nslug: next\n---\n# Next\n",
   });
   const result = await compileCourse({ dir });
   const home = result.resources.find((resource) => resource.name === "home");
@@ -190,9 +190,9 @@ test.each(["error", "warning", "off"] as const)(
       .join("\n\n");
     const dir = await fixture({
       "course.yaml":
-        "sourceVersion: 1\nid: lessons\ntitle: Lessons\nslug: lessons\nmodules: [{id: basics, title: Basics, slug: basics, order: 0, pages: [home, next]}]\n",
-      "home.md": `---\nid: home\ntitle: Home\nslug: home\norder: 0\n---\n# Home\n\n${body}\n`,
-      "next.md": "---\nid: target\ntitle: Next\nslug: next\norder: 1\n---\n# Next\n",
+        "sourceVersion: 1\nid: lessons\ntitle: Lessons\nslug: lessons\nmodules: [{id: basics, title: Basics, slug: basics, pages: [home, next]}]\n",
+      "home.md": `---\nid: home\ntitle: Home\nslug: home\n---\n# Home\n\n${body}\n`,
+      "next.md": "---\nid: target\ntitle: Next\nslug: next\n---\n# Next\n",
     });
     const result = await compileCourse({ dir, validation: { links } });
     expect(result.diagnostics).toEqual([]);
@@ -212,10 +212,10 @@ test("Course dotted folders select their landing while explicit Markdown selects
   const href = "./next.v1?view=full#next";
   const dir = await fixture({
     "course.yaml":
-      "sourceVersion: 1\nid: lessons\ntitle: Lessons\nslug: lessons\nmodules: [{id: basics, title: Basics, slug: basics, order: 0, pages: [home, next.v1, next.v1/index]}]\n",
-    "home.md": `---\nid: home\ntitle: Home\nslug: home\norder: 0\n---\n# Home\n\n[Directory](${href})\n\n{% card title="Next" href="${href}" /%}\n\n[Page](./next.v1.md#next)\n`,
-    "next.v1.md": "---\nid: next-page\ntitle: Next\nslug: next\norder: 1\n---\n# Next\n",
-    "next.v1/index.md": "---\nid: landing\ntitle: Landing\nslug: landing\norder: 2\n---\n# Next\n",
+      "sourceVersion: 1\nid: lessons\ntitle: Lessons\nslug: lessons\nmodules: [{id: basics, title: Basics, slug: basics, pages: [home, next.v1, next.v1/index]}]\n",
+    "home.md": `---\nid: home\ntitle: Home\nslug: home\n---\n# Home\n\n[Directory](${href})\n\n{% card title="Next" href="${href}" /%}\n\n[Page](./next.v1.md#next)\n`,
+    "next.v1.md": "---\nid: next-page\ntitle: Next\nslug: next\n---\n# Next\n",
+    "next.v1/index.md": "---\nid: landing\ntitle: Landing\nslug: landing\n---\n# Next\n",
   });
   const result = await compileCourse({ dir });
   const home = result.resources.find((resource) => resource.name === "home");

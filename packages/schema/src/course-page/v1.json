@@ -41,10 +41,6 @@
           "maxLength": 256,
           "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
         },
-        "order": {
-          "type": "integer",
-          "minimum": 0
-        },
         "description": {
           "type": ["string", "null"],
           "maxLength": 1024
@@ -72,7 +68,7 @@
           "additionalProperties": false
         }
       },
-      "required": ["module", "title", "slug", "order", "content"],
+      "required": ["module", "title", "slug", "content"],
       "additionalProperties": false
     }
   },

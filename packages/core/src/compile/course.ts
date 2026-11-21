@@ -67,7 +67,6 @@ export async function inspectCourse(options: CompileCourseOptions): Promise<Comp
   return {
     diagnostics: [...discovered.diagnostics, ...linked.diagnostics],
     references: linked.references,
-    courseNavigation: discovered.courseNavigation!,
     ...compiled,
   };
 }
@@ -80,6 +79,7 @@ export async function discoverCourse(
 ): Promise<CompileResourceDiscovery> {
   const dir = configurationDirectory(options.dir, options.configFile);
   const loaded = selectedConfig ?? (await loadCourseConfig(options.dir, options.configFile));
+  rejectCourseOrder(loaded.value, options.configFile ?? loaded.path);
   let config;
   try {
     config = parseCourseConfig(loaded.value);
@@ -96,6 +96,7 @@ export async function discoverCourse(
       slug: config.slug,
       ...(config.description !== undefined ? { description: config.description } : {}),
       ...(config.authors !== undefined ? { authors: config.authors } : {}),
+      modules: config.modules.map((module) => module.id),
     },
   };
   const resources: SourceResource[] = [course, ...(config.persons ?? [])];
@@ -105,14 +106,7 @@ export async function discoverCourse(
   const unvalidatedDocuments: NonNullable<CompileResourceDiscovery["unvalidatedDocuments"]> = [];
   const pagePathsByRoute = new Map<string, string>();
   const pages: CourseReferenceContext["pages"][number][] = [];
-  const modules: import("../preview").CourseNavigationModule[] = [];
-  for (const [declarationIndex, module] of config.modules.entries()) {
-    const navigation = {
-      name: module.id,
-      declarationIndex,
-      pages: [] as { name: string; declarationIndex: number }[],
-    };
-    modules.push(navigation);
+  for (const module of config.modules) {
     const resource: CourseModule = {
       apiVersion: "v1",
       type: "CourseModule",
@@ -122,14 +116,16 @@ export async function discoverCourse(
         course: config.id,
         title: module.title,
         slug: module.slug,
-        order: module.order,
+        pages: [],
         ...(module.description !== undefined ? { description: module.description } : {}),
       },
     };
     resources.push(resource);
-    for (const [pageIndex, sourcePath] of module.pages.entries()) {
+    for (const sourcePath of module.pages) {
       const file = await readCoursePage(dir, sourcePath);
       const parsed = parseMarkdownFrontmatter(file.raw, file.path, 1);
+      if (isRecord(parsed.frontmatter) && Object.hasOwn(parsed.frontmatter, "order"))
+        throw new PublicCompileError("course-order-removed", file.path, { field: "order" });
       let metadata;
       try {
         metadata = parseCoursePageMetadata(parsed.frontmatter);
@@ -160,7 +156,6 @@ export async function discoverCourse(
           module: module.id,
           title: metadata.title,
           slug: metadata.slug,
-          order: metadata.order,
           ...(metadata.description !== undefined ? { description: metadata.description } : {}),
           ...(metadata.authors !== undefined ? { authors: metadata.authors } : {}),
           content: { format: "topik", value: parsed.content },
@@ -171,7 +166,7 @@ export async function discoverCourse(
         continue;
       }
       resources.push(page);
-      navigation.pages.push({ name: page.name, declarationIndex: pageIndex });
+      resource.spec.pages.push(page.name);
       sourcePathsByResource[key] = file.path;
       if (parsed.bodyLineOffset) bodyLinesByResource[key] = parsed.bodyLineOffset;
       pagePathsByRoute.set(route, file.path);
@@ -197,10 +192,23 @@ export async function discoverCourse(
     bodyLinesByResource,
     unvalidatedDocuments,
     consumedSourcePaths: [loaded.path],
-    courseNavigation: { [course.name]: { modules } },
     assetDirectory: config.assets.directory,
     sourceVersion: 1,
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** An `order` from a source written before list order is refused, never silently ignored. */
+function rejectCourseOrder(raw: unknown, location: string): void {
+  if (!isRecord(raw) || !Array.isArray(raw.modules)) return;
+  for (const [index, module] of raw.modules.entries())
+    if (isRecord(module) && Object.hasOwn(module, "order"))
+      throw new PublicCompileError("course-order-removed", location, {
+        field: `modules[${index}].order`,
+      });
 }
 
 async function loadCourseConfig(dir: string, configFile?: string): Promise<LoadedConfig> {

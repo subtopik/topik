@@ -5,4 +5,4 @@ name: module-basics
 spec:
   course: intro-to-typescript
   slug: basics
-  order: 0
+  pages: [lesson-intro]

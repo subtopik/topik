@@ -14,7 +14,6 @@ export interface CoursePage {
     module: string;
     title: string;
     slug: string;
-    order: number;
     description?: string | null;
     authors?: string[];
     content: {

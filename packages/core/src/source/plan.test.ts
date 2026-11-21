@@ -246,12 +246,9 @@ test("fresh relative links across resource kinds preserve authored spelling and 
       file("guides/install.mdx", "---\nid: install-mdx\nslug: install-mdx\n---\n# Other\n"),
       file(
         "lessons/course.yaml",
-        "sourceVersion: 1\nid: lessons\ntitle: Lessons\nslug: lessons\nmodules: [{id: basics, title: Basics, slug: basics, order: 0, pages: [intro]}]\n",
+        "sourceVersion: 1\nid: lessons\ntitle: Lessons\nslug: lessons\nmodules: [{id: basics, title: Basics, slug: basics, pages: [intro]}]\n",
       ),
-      file(
-        "lessons/intro.md",
-        "---\nid: tutorial\ntitle: Intro\nslug: intro\norder: 0\n---\n# Intro\n",
-      ),
+      file("lessons/intro.md", "---\nid: tutorial\ntitle: Intro\nslug: intro\n---\n# Intro\n"),
     ],
   });
   const desired = structuredClone(project.compilation.resources);
@@ -465,8 +462,8 @@ test.each(["guide-course", "wiki", "course", "course-dotted"] as const)(
     const homeType =
       kind === "guide-course" ? "Guide" : kind === "wiki" ? "WikiPage" : "CoursePage";
     const targetType = kind === "wiki" ? "WikiPage" : "CoursePage";
-    const home = `---\nid: home\ntitle: Home\nslug: home\norder: 0\n---\n# Home\n\n[Directory](${href})\n`;
-    const target = "---\nid: target\ntitle: Next\nslug: next\norder: 1\n---\n# Next\n";
+    const home = `---\nid: home\ntitle: Home\nslug: home\n---\n# Home\n\n[Directory](${href})\n`;
+    const target = "---\nid: target\ntitle: Next\nslug: next\n---\n# Next\n";
     const tree = [
       file(
         ".topik.yaml",
@@ -476,7 +473,7 @@ test.each(["guide-course", "wiki", "course", "course-dotted"] as const)(
         config,
         kind === "wiki"
           ? "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation: [home, {type: page, slug: next-file, source: next}, {type: page, slug: landing, source: next/index}]\n"
-          : `id: lessons\ntitle: Lessons\nslug: lessons\nsourceVersion: 1\nmodules: [{id: basics, title: Basics, slug: basics, order: 0, pages: [${kind === "guide-course" ? "" : "home, "}${stem}, ${stem}/index]}]\n`,
+          : `id: lessons\ntitle: Lessons\nslug: lessons\nsourceVersion: 1\nmodules: [{id: basics, title: Basics, slug: basics, pages: [${kind === "guide-course" ? "" : "home, "}${stem}, ${stem}/index]}]\n`,
       ),
       ...(kind === "guide-course"
         ? [file("guides/collection.yaml", "id: guides\ntitle: Guides\nsourceVersion: 1\n")]
@@ -485,7 +482,7 @@ test.each(["guide-course", "wiki", "course", "course-dotted"] as const)(
       file(`${directory}/${stem}.md`, target),
       file(
         `${directory}/${stem}/index.md`,
-        "---\nid: landing\ntitle: Landing\nslug: landing\norder: 2\n---\n# Next\n",
+        "---\nid: landing\ntitle: Landing\nslug: landing\n---\n# Next\n",
       ),
     ];
     const project = await readSourceProject({ tree });

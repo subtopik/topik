@@ -15,14 +15,16 @@ const slug = z
   .max(256)
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
 const title = z.string().min(1).max(256);
-const order = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+// Order comes from list position, as in Wiki navigation. An `order` key from an older source
+// is refused rather than ignored, so a list that disagrees with it cannot silently reorder.
+const noOrder = z.never({ error: "Order comes from list position; remove `order`" }).optional();
 const authors = z.array(name).max(1_000);
 
 const moduleSchema = z.object({
   id: name,
   title,
   slug,
-  order,
+  order: noOrder,
   description: z.string().max(1024).nullable().optional(),
   labels: sourceLabelsSchema.optional(),
   pages: z.array(pageSourcePathSchema).max(10_000),
@@ -61,7 +63,7 @@ const coursePageMetadataSchema = z.object({
   id: name,
   title,
   slug,
-  order,
+  order: noOrder,
   description: z.string().max(1024).nullable().optional(),
   authors: authors.optional(),
   labels: sourceLabelsSchema.optional(),

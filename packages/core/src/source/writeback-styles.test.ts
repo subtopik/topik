@@ -193,33 +193,38 @@ test("deleting the last record of a zero-indented list keeps valid configuration
       manifest("course", "course.yaml"),
       file(
         "course.yaml",
-        "id: c\ntitle: C\nslug: c\nsourceVersion: 1\nmodules:\n- id: m\n  title: M\n  slug: m\n  order: 0\n  pages:\n  - a\n",
+        "id: c\ntitle: C\nslug: c\nsourceVersion: 1\nmodules:\n- id: m\n  title: M\n  slug: m\n  pages:\n  - a\n",
       ),
-      file("a.md", "---\nid: a\ntitle: A\nslug: a\norder: 0\n---\n# A\n"),
+      file("a.md", "---\nid: a\ntitle: A\nslug: a\n---\n# A\n"),
     ],
     (desired) => {
       desired.splice(
         desired.findIndex((resource) => resource.type === "CoursePage"),
         1,
       );
-      return [{ kind: "delete", resource: "CoursePage/a" }];
+      const module = desired.find((resource) => resource.type === "CourseModule");
+      if (module?.type === "CourseModule") module.spec.pages = [];
+      return [
+        { kind: "delete", resource: "CoursePage/a" },
+        { kind: "update", resource: "CourseModule/m" },
+      ];
     },
   );
   expect(course.result.ok, JSON.stringify(course.result)).toBe(true);
   expect(course.written("course.yaml")).toBe(
-    "id: c\ntitle: C\nslug: c\nsourceVersion: 1\nmodules:\n- id: m\n  title: M\n  slug: m\n  order: 0\n  pages:\n    []\n",
+    "id: c\ntitle: C\nslug: c\nsourceVersion: 1\nmodules:\n- id: m\n  title: M\n  slug: m\n  pages:\n    []\n",
   );
 });
 
 test("moving a Course page file keeps its declaration position and comment", async () => {
   const config =
-    "id: c\ntitle: C\nslug: c\nsourceVersion: 1\nmodules:\n  - id: m1\n    title: M1\n    slug: m1\n    order: 0\n    pages:\n      - a # first\n      - b\n";
+    "id: c\ntitle: C\nslug: c\nsourceVersion: 1\nmodules:\n  - id: m1\n    title: M1\n    slug: m1\n    pages:\n      - a # first\n      - b\n";
   const { project, result, written } = await plan(
     [
       manifest("course", "course.yaml"),
       file("course.yaml", config),
-      file("a.md", "---\nid: a\ntitle: A\nslug: a\norder: 0\n---\n# A\n"),
-      file("b.md", "---\nid: b\ntitle: B\nslug: b\norder: 0\n---\n# B\n"),
+      file("a.md", "---\nid: a\ntitle: A\nslug: a\n---\n# A\n"),
+      file("b.md", "---\nid: b\ntitle: B\nslug: b\n---\n# B\n"),
     ],
     () => [{ kind: "move", resource: "CoursePage/a", path: "lessons/a.md" }],
     { create: ["lessons/a.md"] },
@@ -227,8 +232,11 @@ test("moving a Course page file keeps its declaration position and comment", asy
   expect(result.ok, JSON.stringify(result)).toBe(true);
   if (!result.ok) return;
   expect(written("course.yaml")).toBe(config.replace("- a # first", '- "lessons/a" # first'));
-  expect(result.plan.candidate.compilation.courseNavigation).toEqual(
-    project.compilation.courseNavigation,
+  // The move keeps the page's place in its module.
+  const lists = (resources: readonly import("../resource").Resource[]) =>
+    resources.flatMap((r) => (r.type === "CourseModule" ? [[r.name, r.spec.pages]] : []));
+  expect(lists(result.plan.candidate.compilation.resources)).toEqual(
+    lists(project.compilation.resources),
   );
   const shared = result.plan.changes.find((change) => change.path === "course.yaml")!.sharedEdits!;
   expect(shared.map((edit) => edit.selector)).toEqual(["modules/m1/pages/a"]);
@@ -435,9 +443,9 @@ test.each(["wiki", "course"] as const)(
               manifest("course", "course.yaml"),
               file(
                 "course.yaml",
-                "id: docs\ntitle: Docs\nslug: docs\nsourceVersion: 1\nmodules:\n  - {id: m, title: M, slug: m, order: 0, pages: [m/home]}\n",
+                "id: docs\ntitle: Docs\nslug: docs\nsourceVersion: 1\nmodules:\n  - {id: m, title: M, slug: m, pages: [m/home]}\n",
               ),
-              file("m/home.md", "---\nid: home\ntitle: Home\nslug: home\norder: 0\n---\n# Home\n"),
+              file("m/home.md", "---\nid: home\ntitle: Home\nslug: home\n---\n# Home\n"),
             ],
     });
     const request = (title: string) =>

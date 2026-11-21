@@ -41,7 +41,7 @@ export async function publishDigestSnapshot(
     await removeDigestSnapshot(outputDirectory, fileSafety);
     return;
   }
-  await publishOutputDirectory(
+  const { priorRetained } = await publishOutputDirectory(
     join(outputPath, TARGET),
     snapshots.map((file) => ({ path: file.digest, bytes: file.bytes })),
     {
@@ -57,6 +57,8 @@ export async function publishDigestSnapshot(
   ).catch((error: unknown) => {
     throw toAssetPublicationError(error);
   });
+  // A retained backup inside the build output would be deployed with the site.
+  if (priorRetained) throw publicationError("previous asset output could not be removed");
 }
 
 export async function removeDigestSnapshot(

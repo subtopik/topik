@@ -60,7 +60,7 @@ export function verifyCodePresentationConsumer() {
   assert.equal(TOPIK_CONTENT_SCHEMA_VERSION, "0.3.0");
   assert.equal(FORMAT_VERSION, 2);
   assert.equal(TOPIK_ASSET_REFERENCE_VERSION, "topik-asset-reference-v1");
-  assert.equal(CODE_PRESENTATION_LIMITS.rows, 20_000);
+  assert.equal(CODE_PRESENTATION_LIMITS.rows, 10_000);
   assert.deepEqual(effectiveCodePresentationOptions({}), {
     lineNumbers: false,
     startLine: 1,

@@ -127,12 +127,38 @@ describe.each(["linux", "darwin"] as const)("output publication (%s)", (platform
       }
     });
 
+    // The new output is live; the tampered previous output is kept, not followed.
     await expect(
       publishOutputDirectory(target, [{ path: "data/owned-2", bytes: "second" }], options),
-    ).rejects.toThrow();
+    ).resolves.toEqual({ priorRetained: true });
     expect(prior).not.toBe("");
     expect(await readFile(join(outside, "owned-1"), "utf8")).toBe("outside file");
     expect(await readdir(join(target, "data"))).toEqual(["owned-2"]);
+  });
+
+  it("reports a previous output it cannot remove once the new output is live", async () => {
+    const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+    vi.mocked(renameSync).mockImplementation((from, to) => {
+      actual.renameSync(from, to);
+      if (String(from).includes(".test-generation-")) {
+        // Make the moved-aside output fail ownership re-verification during removal.
+        const prior = (actual.readdirSync(root) as string[]).find((name) =>
+          name.startsWith(".test-prior-"),
+        )!;
+        actual.writeFileSync(join(root, prior, "data", "foreign.txt"), "keep");
+      }
+    });
+
+    await expect(
+      publishOutputDirectory(target, [{ path: "data/owned-2", bytes: "second" }], options),
+    ).resolves.toEqual({ priorRetained: true });
+    expect(await readdir(join(target, "data"))).toEqual(["owned-2"]);
+    const priors = (await readdir(root)).filter((name) => name.startsWith(".test-prior-"));
+    expect(priors).toHaveLength(1);
+    vi.mocked(renameSync).mockImplementation(actual.renameSync);
+    await expect(
+      publishOutputDirectory(target, [{ path: "data/owned-3", bytes: "third" }], options),
+    ).resolves.toEqual({ priorRetained: false });
   });
 
   it("removes an owned or empty output and ignores a missing one", async () => {

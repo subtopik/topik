@@ -17,7 +17,7 @@ export function sniffPortableMediaType(bytes: Uint8Array): string {
   if (isoMediaType !== undefined) return isoMediaType;
   if (isBmp(bytes)) return "image/bmp";
   if (isTiff(bytes)) return "image/tiff";
-  if (has(0x00, 0x00, 0x01, 0x00)) return "image/x-icon";
+  if (isIco(bytes)) return "image/x-icon";
   if (ascii(bytes, 0, 5) === "%PDF-") return "application/pdf";
   if (has(0x50, 0x4b, 0x03, 0x04) || has(0x50, 0x4b, 0x05, 0x06)) return "application/zip";
   if (has(0x1f, 0x8b)) return "application/gzip";
@@ -55,6 +55,14 @@ export function isTopikActiveMediaType(mediaType: string): boolean {
   ].includes(mediaType);
 }
 
+/**
+ * Media types a host must serve as a download (`Content-Disposition: attachment`) rather than
+ * display: opaque bytes and anything a browser could render or execute from the site origin.
+ */
+export function isTopikDownloadOnlyMediaType(mediaType: string): boolean {
+  return mediaType === "application/octet-stream" || isTopikActiveMediaType(mediaType);
+}
+
 /** Video slots admit only the formats every current browser plays in a `<video>` element. */
 const BROWSER_VIDEO_TYPES = new Set(["video/mp4", "video/webm"]);
 
@@ -66,6 +74,18 @@ export function isInlineMediaCompatible(mediaType: string, role: string): boolea
 }
 
 function sniffPortableMarkupType(bytes: Uint8Array): string | undefined {
+  // UTF-16 text with a byte order mark is read as its characters, like UTF-8 text below.
+  const utf16 =
+    bytes[0] === 0xff && bytes[1] === 0xfe
+      ? "utf-16le"
+      : bytes[0] === 0xfe && bytes[1] === 0xff
+        ? "utf-16be"
+        : undefined;
+  if (utf16 !== undefined) {
+    const end = Math.min(bytes.byteLength, MARKUP_INSPECTION_LIMIT) & ~1;
+    const text = new TextDecoder(utf16).decode(bytes.slice(2, end)).toLowerCase();
+    return classifyMarkupText(text, bytes.byteLength > end);
+  }
   const boundary = Math.min(bytes.byteLength, MARKUP_INSPECTION_LIMIT);
   const completionBytes = trailingUtf8Completion(bytes.slice(0, boundary));
   if (completionBytes > bytes.byteLength - boundary) {
@@ -90,7 +110,11 @@ function sniffPortableMarkupType(bytes: Uint8Array): string | undefined {
   } catch {
     return undefined;
   }
+  return classifyMarkupText(text, bytes.byteLength > inspectedEnd);
+}
 
+/** Classify lowercased text; `truncated` says that more of the file follows it. */
+function classifyMarkupText(text: string, truncated: boolean): string | undefined {
   let cursor = skipMarkupWhitespace(text, 0);
   let consumedPreamble = false;
   let xmlDeclaration = false;
@@ -118,13 +142,12 @@ function sniffPortableMarkupType(bytes: Uint8Array): string | undefined {
   }
 
   if (cursor === text.length) {
-    return bytes.byteLength > inspectedEnd && (cursor > 0 || consumedPreamble)
+    return truncated && (cursor > 0 || consumedPreamble)
       ? TOPIK_UNRESOLVED_ACTIVE_CONTENT_TYPE
       : undefined;
   }
 
   const markup = text.slice(cursor);
-  const truncated = bytes.byteLength > inspectedEnd;
   if (/<!doctype\s+svg\b/u.test(markup) || hasSvgElement(markup, truncated)) {
     return "image/svg+xml";
   }
@@ -159,9 +182,39 @@ function sniffPortableMarkupType(bytes: Uint8Array): string | undefined {
   return undefined;
 }
 
-/** An attribute that runs script when its tag is parsed: an event handler or a `javascript:` URL. */
+/**
+ * An attribute that runs script when its tag is parsed or followed: an event handler, or a
+ * `javascript:` URL in a link, source, form action or SVG link.
+ */
 const EVENT_HANDLER_ATTRIBUTE = /[\s"'/]on[a-z][a-z0-9_-]*\s*=/u;
-const JAVASCRIPT_URL_ATTRIBUTE = /(?:href|src)\s*=\s*["']?\s*javascript:/u;
+// URL parsing strips leading C0 controls and spaces before the scheme, so they are matched.
+const JAVASCRIPT_URL_ATTRIBUTE =
+  // eslint-disable-next-line no-control-regex
+  /(?:href|src|action|formaction|xlink:href)\s*=\s*["']?[\u0000-\u0020]*javascript:/u;
+
+/**
+ * A tag's text as an HTML parser reads its URLs: character references decoded, and the tabs
+ * and line breaks that URL parsing removes taken out, so `&#106;avascript:` and
+ * `java\tscript:` are recognized.
+ */
+function urlText(tag: string): string {
+  const decoded = tag.includes("&")
+    ? tag
+        // HTML allows any number of leading zeros in a character reference.
+        .replace(/&#x0*([0-9a-f]{1,6});?/gu, (_, hex: string) =>
+          codePoint(Number.parseInt(hex, 16)),
+        )
+        .replace(/&#0*([0-9]{1,7});?/gu, (_, decimal: string) => codePoint(Number(decimal)))
+        .replace(/&(?:colon|tab|newline);/gu, (entity) =>
+          entity === "&colon;" ? ":" : entity === "&tab;" ? "\t" : "\n",
+        )
+    : tag;
+  return decoded.replace(/[\t\n\r]/gu, "");
+}
+
+function codePoint(value: number): string {
+  return value > 0 && value <= 0x10ffff ? String.fromCodePoint(value).toLowerCase() : "";
+}
 
 /**
  * Scan each start tag (`<` followed by a letter, up to the next `>`) once for active attributes,
@@ -185,7 +238,8 @@ function hasActiveAttribute(markup: string, truncated: boolean): boolean {
     }
     // A later `<` before this `>` starts a suffix of the same span, so one test covers both.
     const tag = markup.slice(start, end);
-    if (EVENT_HANDLER_ATTRIBUTE.test(tag) || JAVASCRIPT_URL_ATTRIBUTE.test(tag)) return true;
+    if (EVENT_HANDLER_ATTRIBUTE.test(tag) || JAVASCRIPT_URL_ATTRIBUTE.test(urlText(tag)))
+      return true;
     cursor = end + 1;
   }
   return false;
@@ -321,7 +375,9 @@ function mpegAudioFrameLength(bytes: Uint8Array, offset: number): number | undef
 function isMpegAudioFrameSequence(bytes: Uint8Array): boolean {
   const length = mpegAudioFrameLength(bytes, 0);
   if (length === undefined) return false;
-  return length === bytes.byteLength || mpegAudioFrameLength(bytes, length) !== undefined;
+  if (mpegAudioFrameLength(bytes, length) !== undefined) return true;
+  // A lone frame is accepted only when it is not UTF-16LE text whose length happens to match.
+  return length === bytes.byteLength && !(bytes[0] === 0xff && bytes[1] === 0xfe);
 }
 
 /** Header bytes of the first ADTS frame, or undefined when they are not a valid header. */
@@ -528,12 +584,32 @@ function sniffIsoBaseMediaType(bytes: Uint8Array): string | undefined {
   if (bytes.byteLength < 16 || ascii(bytes, 4, 4) !== "ftyp") return undefined;
   const boxSize = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(0);
   if (boxSize < 16 || boxSize % 4 !== 0 || boxSize > bytes.byteLength) return undefined;
-  // Offset 8 holds the major brand, 12 the minor version, and compatible brands follow.
-  const brands = [ascii(bytes, 8, 4)];
-  for (let offset = 16; offset + 4 <= boxSize; offset += 4) brands.push(ascii(bytes, offset, 4));
-  const known = brands.filter((brand) => ISO_BMFF_BRANDS.has(brand));
-  const brand = known.find((value) => !GENERIC_ISO_BMFF_BRANDS.has(value)) ?? known[0];
-  return brand === undefined ? undefined : ISO_BMFF_BRANDS.get(brand);
+  // Offset 8 holds the major brand, 12 the minor version, and compatible brands follow. Only
+  // the first brands are read: a box may claim the whole file, and real files list a few.
+  const end = Math.min(boxSize, 16 + ISO_BMFF_MAX_COMPATIBLE_BRANDS * 4);
+  let generic: string | undefined;
+  for (let offset = 8; offset + 4 <= end; offset = offset === 8 ? 16 : offset + 4) {
+    const brand = ascii(bytes, offset, 4);
+    if (!ISO_BMFF_BRANDS.has(brand)) continue;
+    if (!GENERIC_ISO_BMFF_BRANDS.has(brand)) return ISO_BMFF_BRANDS.get(brand);
+    generic ??= brand;
+  }
+  return generic === undefined ? undefined : ISO_BMFF_BRANDS.get(generic);
+}
+
+/** Compatible brands read from an `ftyp` box; later brands are ignored. */
+const ISO_BMFF_MAX_COMPATIBLE_BRANDS = 64;
+
+/**
+ * An ICO header (reserved 0, type 1) with at least one image whose directory fits in the file.
+ * An ISO base media file whose `ftyp` box is 256 bytes long starts with the same four bytes.
+ */
+function isIco(bytes: Uint8Array): boolean {
+  if (bytes.byteLength < 6 || bytes[0] !== 0 || bytes[1] !== 0 || bytes[2] !== 1 || bytes[3] !== 0)
+    return false;
+  if (ascii(bytes, 4, 4) === "ftyp") return false;
+  const count = bytes[4] | (bytes[5] << 8);
+  return count > 0 && 6 + count * 16 <= bytes.byteLength;
 }
 
 function trailingUtf8Completion(bytes: Uint8Array): number {

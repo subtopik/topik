@@ -1,3 +1,7 @@
+import { execFileSync } from "node:child_process";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, test, vi } from "vite-plus/test";
 import { digestSourceResourceGraph, readSourceProject, snapshotSourceTree } from "./project";
 import { planSourceUpdates } from "./plan";
@@ -272,3 +276,40 @@ test("retained source context resolves saved links after candidate source moves"
     result.plan.candidate.wikiContexts["Wiki/docs"],
   );
 });
+
+test.skipIf(process.platform === "win32")(
+  "inspection ignores a Git repository above the temporary directory",
+  async () => {
+    const repository = await mkdtemp(join(tmpdir(), "topik-scratch-ancestor-"));
+    const previous = process.env.TMPDIR;
+    try {
+      execFileSync("/usr/bin/git", ["init", "-q", repository]);
+      // Attributes that would make every scratch file look filtered by Git LFS.
+      await writeFile(join(repository, ".gitattributes"), "*.md filter=lfs\n*.yaml filter=lfs\n");
+      await mkdir(join(repository, "tmp"));
+      process.env.TMPDIR = join(repository, "tmp");
+      const project = await readSourceProject({
+        tree: [
+          {
+            path: ".topik.yaml",
+            mode: "100644",
+            bytes: encodeSource(
+              "version: 1\nnamespace: example/docs\nsources: [{kind: collection, config: guides/collection.yaml}]\n",
+            ),
+          },
+          {
+            path: "guides/collection.yaml",
+            mode: "100644",
+            bytes: encodeSource("id: guides\ntitle: Guides\n"),
+          },
+          { path: "guides/start.md", mode: "100644", bytes: encodeSource("# Start\n") },
+        ],
+      });
+      expect(project.compilation.resources.map((resource) => resource.type)).toContain("Guide");
+    } finally {
+      if (previous === undefined) delete process.env.TMPDIR;
+      else process.env.TMPDIR = previous;
+      await rm(repository, { recursive: true, force: true });
+    }
+  },
+);

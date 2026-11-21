@@ -31,7 +31,7 @@ describe("Markdown contexts in JSX bodies", () => {
         expect(result.content.startsWith(prefix)).toBe(true);
         if (body.includes("`example`")) expect(result.content).toContain("`example`");
         expect(result.content).not.toContain("<Note>");
-        expect(validateTopikContent(result.content).valid).toBe(true);
+        expect(validateTopikContent(result.content).ok).toBe(true);
       }
     }
   });
@@ -43,7 +43,7 @@ describe("Markdown contexts in JSX bodies", () => {
     expect(result.warnings).toEqual([]);
     expect(result.changed).toBe(true);
     expect(result.content).toContain("`example`");
-    expect(validateTopikContent(result.content).valid).toBe(true);
+    expect(validateTopikContent(result.content).ok).toBe(true);
   });
 
   test.each(["> ", "- ", "> - "])("keeps container flow context with prefix %j", (prefix) => {

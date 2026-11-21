@@ -27,6 +27,7 @@ import {
 } from "../course-navigation";
 import type { SourceResource } from "../resource";
 import { createContentMemo, type ContentMemo } from "./content-memo";
+import { isResourceName } from "../resource-names";
 import { PublicCompileError } from "./public-errors";
 import {
   linkValidationPolicy,
@@ -498,8 +499,7 @@ function admitReferenceTargets(value: unknown): readonly CompileResourceReferenc
       Array.isArray(target) ||
       (target.type !== "WikiPage" && target.type !== "Guide" && target.type !== "CoursePage") ||
       typeof target.name !== "string" ||
-      target.name.length > 63 ||
-      !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(target.name) ||
+      !isResourceName(target.name) ||
       (target.headings !== undefined &&
         (!Array.isArray(target.headings) ||
           target.headings.some((heading: unknown) => typeof heading !== "string")))
@@ -553,6 +553,8 @@ function linkDiagnostic(
     level,
     message,
     lines: link.lines,
+    // Two links on one line stay distinguishable.
+    ...(link.column === undefined ? {} : { column: link.column }),
     ...(link.file ? { file: link.file } : {}),
   };
 }

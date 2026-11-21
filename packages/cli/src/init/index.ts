@@ -1,5 +1,5 @@
-import { lstat, mkdir, open, stat, unlink } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { lstat, mkdir, open, rmdir, stat, unlink } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { command, positional, string } from "@drizzle-team/brocli";
 import { parseTopikManifest, TOPIK_MANIFEST_FILENAME } from "@topik/core";
 import { stringify } from "yaml";
@@ -66,9 +66,14 @@ export async function initProject(
   options: InitProjectOptions = {},
 ): Promise<{ created: string[]; agentInstructions: AgentInstructionsOutcome }> {
   const files = initProjectFiles(options);
-  await mkdir(dir, { recursive: true }).catch(() => {
+  // Rollback removes only the directories this call created. Record them before creating them,
+  // in the caller's spelling: `mkdir` may report another spelling of the same path (Windows
+  // short and long names), so its result only says whether it created any.
+  const missing = await missingDirectories(dir);
+  const firstCreated = await mkdir(dir, { recursive: true }).catch(() => {
     throw new PublicCliError("init-target-access-failed");
   });
+  const createdDirectories = firstCreated === undefined ? 0 : missing;
   const info = await stat(dir).catch(() => undefined);
   if (info?.isDirectory() !== true) throw new PublicCliError("init-target-access-failed");
 
@@ -93,14 +98,36 @@ export async function initProject(
     agentInstructions = await writeAgentInstructions(dir);
     if (agentInstructions === "created") created.push(AGENT_INSTRUCTIONS_FILENAME);
   } catch (error) {
-    // Leave the directory as it was: remove only files this run created.
+    // Leave the directory as it was: remove only files and directories this run created.
     for (const name of created) await unlink(join(dir, name)).catch(() => undefined);
+    await removeCreatedDirectories(dir, createdDirectories);
     throw new PublicCliError(
       (error as NodeJS.ErrnoException).code === "EEXIST" ? "init-file-exists" : "init-write-failed",
       { cause: error },
     );
   }
   return { created, agentInstructions };
+}
+
+/** How many of `dir` and its ancestors do not exist yet. */
+async function missingDirectories(dir: string): Promise<number> {
+  let count = 0;
+  for (let current = dir; !(await exists(current)); current = dirname(current)) {
+    count++;
+    if (dirname(current) === current) break;
+  }
+  return count;
+}
+
+/** Remove `dir` and its parents, `levels` in all, each only while it is empty. */
+async function removeCreatedDirectories(dir: string, levels: number): Promise<void> {
+  for (let current = dir; levels > 0; current = dirname(current), levels--) {
+    try {
+      await rmdir(current);
+    } catch {
+      return;
+    }
+  }
 }
 
 async function exists(path: string): Promise<boolean> {

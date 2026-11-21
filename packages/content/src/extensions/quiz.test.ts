@@ -1,5 +1,6 @@
 import { expect, test } from "vite-plus/test";
-import { getEffectiveProps, parseDocument, writeDocument } from "../index.js";
+import { parseDocument, validateTopikContent, writeDocument } from "../index.js";
+import { getEffectiveProps } from "../registry.js";
 import { parse, withoutPositions } from "../test-helpers.js";
 
 function quiz(choices: string, type = ""): string {
@@ -99,4 +100,20 @@ test("explanation outside question is refused", () => {
   expect(result).toMatchObject({ ok: false, source });
   if (!result.ok)
     expect(result.diagnostics.map((item) => item.id)).toContain("topik-question-parent-required");
+});
+
+test.each([
+  [
+    "two explanations",
+    "{% choice correct=true %}\nA\n{% /choice %}\n{% choice %}\nB\n{% /choice %}\n{% explanation %}\nOne.\n{% /explanation %}\n{% explanation %}\nTwo.\n{% /explanation %}",
+  ],
+  [
+    "an explanation before a choice",
+    "{% choice correct=true %}\nA\n{% /choice %}\n{% explanation %}\nWhy.\n{% /explanation %}\n{% choice %}\nB\n{% /choice %}",
+  ],
+])("refuses %s", (_name, body) => {
+  const source = `{% quiz %}\n{% question %}\n${body}\n{% /question %}\n{% /quiz %}`;
+  expect(validateTopikContent(source).diagnostics.map(({ id }) => id)).toContain(
+    "topik-question-explanation-placement",
+  );
 });

@@ -1,19 +1,17 @@
 import { z } from "zod";
 import { sourceAssetsConfigSchema, DEFAULT_ASSET_DIRECTORY } from "./assets";
 import { rejectMisspelledKeys } from "./misspelled-keys";
-import { pageSourcePathSchema, parseSourcePersons, sourceLabelsSchema } from "./source-metadata";
+import {
+  pageSourcePathSchema,
+  parseSourcePersons,
+  resourceNameSchema,
+  slugSchema,
+  sourceLabelsSchema,
+} from "./source-metadata";
 import { validateCoursePageSources } from "../course-navigation";
 
-const name = z
-  .string()
-  .min(1)
-  .max(63)
-  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
-const slug = z
-  .string()
-  .min(1)
-  .max(256)
-  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+const name = resourceNameSchema;
+const slug = slugSchema;
 const title = z.string().min(1).max(256);
 // Order comes from list position, as in Wiki navigation. An `order` key from an older source
 // is refused rather than ignored, so a list that disagrees with it cannot silently reorder.
@@ -75,6 +73,11 @@ export type CourseModuleConfig = z.infer<typeof moduleSchema>;
 
 export function parseCourseConfig(raw: unknown): CourseConfig {
   rejectMisspelledKeys(raw, Object.keys(courseConfigSchema.shape));
+  const modules = (raw as { modules?: unknown } | null)?.modules;
+  if (Array.isArray(modules))
+    modules.forEach((module, index) =>
+      rejectMisspelledKeys(module, Object.keys(moduleSchema.shape), ["modules", index]),
+    );
   const config = courseConfigSchema.parse(raw);
   const { persons, ...rest } = config;
   return { ...rest, ...(persons !== undefined ? { persons: parseSourcePersons(persons) } : {}) };

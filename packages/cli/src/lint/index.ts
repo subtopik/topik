@@ -168,13 +168,13 @@ export const lint = command({
     printDiagnostics(diagnostics);
     for (const failure of failures) console.error(formatLintFailure(failure));
 
-    const errors = diagnostics.filter(isErrorDiagnostic).length + failures.length;
+    // Counted as in --json: a failed Asset counts once for each document that references it.
+    const { errors, warnings } = lintJsonReport(diagnostics, failures);
     if (errors > 0) {
       console.error(`${errors} lint error(s)`);
       throw new PublicCliError("lint-failed");
     }
 
-    const warnings = diagnostics.filter((diagnostic) => diagnostic.level === "warning").length;
     console.log(`Lint passed${warnings > 0 ? ` with ${warnings} warning(s)` : ""}`);
   },
 });

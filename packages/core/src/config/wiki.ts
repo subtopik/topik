@@ -4,6 +4,7 @@ import { DEFAULT_ASSET_DIRECTORY, sourceAssetsConfigSchema } from "./assets";
 import { rejectMisspelledKeys } from "./misspelled-keys";
 import wikiV1Schema from "@topik/schema/wiki/v1.json" with { type: "json" };
 import { sourceLabelsSchema, pageSourcePathSchema } from "./source-metadata";
+import { RESOURCE_NAME_MAX_LENGTH, RESOURCE_NAME_PATTERN, SLUG_PATTERN } from "../resource-names";
 
 const wikiNavIconPattern = new RegExp(wikiV1Schema.$defs.groupNode.properties.icon.pattern);
 const wikiExternalHrefPattern = new RegExp(
@@ -68,7 +69,7 @@ const pathSegment = z
   .string()
   .min(1)
   .max(256)
-  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Slugs must be lowercase DNS-style segments");
+  .regex(SLUG_PATTERN, "Slugs must be lowercase DNS-style segments");
 
 const wikiPagePath = z
   .string()
@@ -284,9 +285,7 @@ const themeSchema = z
   })
   .strict();
 
-const nameRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const WIKI_PAGE_NAME_HASH_LENGTH = 16;
-const RESOURCE_NAME_MAX_LENGTH = 63;
 const MAX_WIKI_ID_FOR_PAGE_NAMES = RESOURCE_NAME_MAX_LENGTH - WIKI_PAGE_NAME_HASH_LENGTH - 1;
 
 const wikiConfigSchema = z
@@ -298,7 +297,7 @@ const wikiConfigSchema = z
         MAX_WIKI_ID_FOR_PAGE_NAMES,
         `Wiki id must be ${MAX_WIKI_ID_FOR_PAGE_NAMES} characters or fewer`,
       )
-      .regex(nameRegex),
+      .regex(RESOURCE_NAME_PATTERN),
     title: z.string().min(1).max(256),
     labels: sourceLabelsSchema.optional(),
     assets: sourceAssetsConfigSchema.default({ directory: DEFAULT_ASSET_DIRECTORY }),

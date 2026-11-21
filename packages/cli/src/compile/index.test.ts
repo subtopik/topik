@@ -257,7 +257,7 @@ describe("compile command", () => {
 
     expect(errors).toEqual([
       ...NATIVE_NOTICE,
-      expect.stringMatching(/^intro\.md:3 error [a-z-]+: /u),
+      expect.stringMatching(/^intro\.md:3:1 error [a-z-]+: /u),
       "1 compile error(s)",
     ]);
     expect(log).not.toHaveBeenCalled();
@@ -492,8 +492,46 @@ describe("compile command", () => {
         validate: true,
         links: "error",
       }),
-    ).rejects.toThrow(/hard link/u);
+    ).rejects.toMatchObject({ id: "compilation-output-not-owned" });
     expect(await readFile(outside, "utf8")).toBe("outside");
+  });
+
+  test("refuses an output path beneath a file as a collision", async () => {
+    await writeFile(join(dir, "plain.txt"), "file");
+    const failure = await (compile as CompileCommand)
+      .handler?.({
+        dir,
+        outDir: join(dir, "plain.txt", "compiled"),
+        format: "json",
+        dryRun: false,
+        validate: true,
+        links: "error",
+      })
+      .catch((error: unknown) => error);
+    expect(failure).toMatchObject({ id: "compilation-output-collision" });
+    expect(formatPublicCliError(failure)).toMatch(/non-directory collision/u);
+  });
+
+  test("notes staging directories an interrupted compile left beside the output", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "topik-cli-leftover-"));
+    try {
+      await mkdir(join(parent, ".topik-compilation-generation-stale"));
+      vi.spyOn(console, "log").mockImplementation(() => undefined);
+      const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      await (compile as CompileCommand).handler?.({
+        dir,
+        outDir: join(parent, "compiled"),
+        format: "json",
+        dryRun: false,
+        validate: true,
+        links: "error",
+      });
+      expect(error.mock.calls.map(([line]) => String(line))).toContainEqual(
+        expect.stringMatching(/^Note: 1 directory beside the output .* interrupted compile/u),
+      );
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+    }
   });
 
   test("rejects source and source-ancestor output roots without mutation", async () => {
@@ -746,9 +784,9 @@ describe("compile command", () => {
     const linkPath = join(outDir, "resources", "linked.txt");
     await symlink(outside, linkPath);
 
-    await expect(replaceCompilationTree(outDir, ownedFiles("replacement"))).rejects.toThrow(
-      /link or special-node/u,
-    );
+    await expect(replaceCompilationTree(outDir, ownedFiles("replacement"))).rejects.toMatchObject({
+      id: "compilation-output-not-owned",
+    });
     expect((await lstat(linkPath)).isSymbolicLink()).toBe(true);
     expect(await readFile(outside, "utf8")).toBe("unchanged");
     await expectOwnedGeneration(outDir, "existing");
@@ -761,7 +799,10 @@ describe("compile command", () => {
         { path: "duplicate.txt", bytes: "first" },
         { path: "duplicate.txt", bytes: "second" },
       ]),
-    ).rejects.toThrow(/repeats a staged file path/u);
+    ).rejects.toMatchObject({
+      id: "compilation-output-unsafe",
+      cause: { message: expect.stringMatching(/repeats a staged file path/u) },
+    });
     await expect(lstat(outDir)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
@@ -1257,7 +1298,9 @@ describe.each(PORTABLE_PLATFORMS)("portable publication on %s", (platform) => {
     await writeOwnedTree(linked, "existing");
     await link(join(linked, "semantic.json"), join(root, "semantic-copy.json"));
     const before = await snapshotTree(linked);
-    await expect(replaceCompilationTree(linked, ownedFiles("x"))).rejects.toThrow(/hard link/u);
+    await expect(replaceCompilationTree(linked, ownedFiles("x"))).rejects.toMatchObject({
+      id: "compilation-output-not-owned",
+    });
     expect(await snapshotTree(linked)).toEqual(before);
     expect((await readdir(root)).filter((name) => name.startsWith(".topik-compilation"))).toEqual(
       [],

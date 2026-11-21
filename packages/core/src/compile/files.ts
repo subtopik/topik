@@ -1,7 +1,7 @@
 import { constants, type BigIntStats } from "node:fs";
 import { lstat, open, realpath, type FileHandle } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
-import { PublicCompileError } from "./public-errors";
+import { PublicCompileError, type PublicCompileErrorId } from "./public-errors";
 
 // Linux O_PATH (asm-generic/fcntl.h); Node does not expose this flag. Directory
 // descriptors need search permission only, including ancestors above the source root.
@@ -326,5 +326,32 @@ export async function existingDocuments(dir: string, paths: readonly string[]): 
     const info = await lstat(join(dir, path)).catch(() => undefined);
     if (info?.isFile()) found.push(path);
   }
+  return found;
+}
+
+/**
+ * Read the one Markdown file of a page source: `<source>.md` or `<source>.mdx`. Both existing
+ * is ambiguous; the error names the `.mdx` file and relates it to the `.md` one.
+ */
+export async function readMarkdownSource(
+  root: string,
+  source: string,
+  errors: { ambiguous: PublicCompileErrorId; notFound: PublicCompileErrorId },
+): Promise<{ path: string; raw: string }> {
+  let found: { path: string; raw: string } | undefined;
+  for (const extension of [".md", ".mdx"]) {
+    const path = `${source}${extension}`;
+    let bytes: Buffer;
+    try {
+      bytes = await readRegularFileWithinRoot(join(root, path), root);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+      throw error;
+    }
+    if (found)
+      throw new PublicCompileError(errors.ambiguous, path, { relatedLocation: found.path });
+    found = { path, raw: decodeUtf8Document(bytes, path) };
+  }
+  if (!found) throw new PublicCompileError(errors.notFound, source);
   return found;
 }

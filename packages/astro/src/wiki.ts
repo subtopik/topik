@@ -13,6 +13,14 @@ import {
 
 export type { WikiNavNode };
 
+/**
+ * Navigation of each loader's last published compilation, by loader name. Astro may run the
+ * loader and the pages in different module contexts, so the registry lives on `globalThis`.
+ */
+const publishedNavigation: Map<string, WikiNavNode[]> = ((
+  globalThis as { [key: symbol]: Map<string, WikiNavNode[]> | undefined }
+)[Symbol.for("@topik/astro/wiki-navigation")] ??= new Map());
+
 export interface TopikWikiOptions {
   /** Path to the wiki directory (containing wiki.yaml). */
   dir: string;
@@ -59,6 +67,7 @@ export function topikWikiLoader(options: TopikWikiOptions): TopikAssetLoader & {
             );
             const navigation = wiki?.spec.navigation ?? [];
             const resolvedNavigation = resolveWikiNavigation(navigation);
+            publishedNavigation.set(name, navigation);
 
             context.store.clear();
             for (const page of pageResources) {
@@ -93,10 +102,9 @@ export function topikWikiLoader(options: TopikWikiOptions): TopikAssetLoader & {
         };
       },
 
-      getNavigation: async () => {
-        const { navigation } = await loadCompiledWiki(resolvedDir, assets);
-        return navigation;
-      },
+      // The navigation of the entries in the store; compiled only before the first load.
+      getNavigation: async () =>
+        publishedNavigation.get(name) ?? (await loadCompiledWiki(resolvedDir, assets)).navigation,
     },
     compile,
     { kind: "wiki", name, sourceRoot: resolvedDir },

@@ -9,7 +9,8 @@ import { hasControlCharacters } from "./text-controls.js";
 export const CODE_PRESENTATION_LIMITS = Object.freeze({
   metadataLength: 16_384,
   selectionIntervals: 1_024,
-  rows: 20_000,
+  // A block of short rows at this size fits the 768-unit-per-row output reservation.
+  rows: 10_000,
   decorativeOutput: 8_000_000,
 });
 

@@ -16,7 +16,7 @@ const source = "# Intro\n\n![Logo](logo.png)\n\nSee [next](next.md) and [intro](
 describe("TopikContentCache", () => {
   test("shares one parse between every call given the same cache", () => {
     const cache = createTopikContentCache();
-    expect(validateTopikContent(source, { cache }).valid).toBe(true);
+    expect(validateTopikContent(source, { cache }).ok).toBe(true);
     const shared = parseTopikContent(source, { cache });
     expect(analyzeTopikContent(source, { cache }).headings).toMatchObject([{ id: "intro" }]);
     expect(extractTopikAssetOccurrences(source, { cache })).toHaveLength(1);

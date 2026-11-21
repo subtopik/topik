@@ -187,7 +187,6 @@ function resolveDocument(
     assignAnchorIds(index.entries.filter(({ node }) => isAnchorNode(node)).map(({ node }) => node));
   materializeReferences(resolved, index);
   let interpolatedLength = 0;
-  let templateResolved = false;
   type StringPlan = { parts: string[]; length: number };
   const strings = new WeakMap<object, Map<string, StringPlan>>();
   const stringLengths = new WeakMap<object, Map<string, number>>();
@@ -205,7 +204,6 @@ function resolveDocument(
   }
 
   function resolveTemplate(template: TextTemplate, node: TreeNode, attribute?: string): StringPlan {
-    templateResolved = true;
     const parts: string[] = [];
     let length = 0;
     for (const segment of template.segments) {
@@ -312,15 +310,12 @@ function resolveDocument(
         if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
           const text = String(value);
           interpolatedLength += text.length;
-          if (interpolatedLength > CONTENT_LIMITS.dataStringLength) {
-            if (templateResolved)
-              throw new TemplateEvaluationError(
-                "topik-content-limit",
-                original,
-                "Interpolated content exceeds the data string limit",
-              );
-            throw new ContentEvaluationError("Interpolated content exceeds the data string limit");
-          }
+          if (interpolatedLength > CONTENT_LIMITS.dataStringLength)
+            throw new TemplateEvaluationError(
+              "topik-content-limit",
+              original,
+              "Interpolated content exceeds the data string limit",
+            );
           if (typeof value === "string" && hasControlCharacters(value))
             throw new TemplateEvaluationError(
               "topik-variable-control",
@@ -401,11 +396,8 @@ function resolveDocument(
   try {
     assertDataLimits(resolved, { plain: true, stringLengths });
   } catch (error) {
-    if (error instanceof ContentLimitError) {
-      if (templateResolved)
-        throw new TemplateEvaluationError("topik-content-limit", resolved, error.message);
-      throw new ContentEvaluationError(error.message);
-    }
+    if (error instanceof ContentLimitError)
+      throw new TemplateEvaluationError("topik-content-limit", resolved, error.message);
     throw error;
   }
 
@@ -423,11 +415,26 @@ function resolveDocument(
   materialize(resolved);
   const resolvedErrors = validateDocument(resolved, registry);
   if (resolvedErrors.length) {
-    if (templateResolved && resolvedErrors[0].id === "topik-content-limit")
+    // Interpolated values can still break a component rule, such as a blank video title:
+    // report the rule's own diagnostic where it applies.
+    const [first] = resolvedErrors;
+    if (first.id === "topik-content-limit")
       throw new TemplateEvaluationError(
         "topik-content-limit",
         resolved,
         "Resolved content exceeds the data limits",
+      );
+    if (first.id !== undefined)
+      throw new TemplateEvaluationError(
+        first.id,
+        {
+          type: first.type ?? "document",
+          ...(first.line === undefined
+            ? {}
+            : { position: { start: { line: first.line, column: first.column ?? 1 } } }),
+        } as TreeNode,
+        resolvedErrors.map((error) => error.message).join("; "),
+        first.attribute,
       );
     throw new ContentEvaluationError(resolvedErrors.map((error) => error.message).join("; "));
   }

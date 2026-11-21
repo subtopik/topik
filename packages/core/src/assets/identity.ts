@@ -236,7 +236,7 @@ function expectedSemanticRecord(
       continue;
     }
     const content = resource.spec.content.value;
-    if (!validateTopikContent(content, { allowCompiledAssetReferences: true, cache }).valid) {
+    if (!validateTopikContent(content, { allowCompiledAssetReferences: true, cache }).ok) {
       return undefined;
     }
     for (const occurrence of extractTopikAssetOccurrences(content, { cache })) {
@@ -340,14 +340,14 @@ function expectedMaterializationRecord(
     const { integrity, size, uri } = resource.spec;
     if (
       integrity === undefined ||
+      !integrity.startsWith("sha256:") ||
       size === undefined ||
-      size > TOPIK_ASSET_LIMITS.maxAssetBytes ||
-      uri !== `${TOPIK_BLOB_OUTPUT_PREFIX}/${integrity.slice("sha256:".length)}`
+      size > TOPIK_ASSET_LIMITS.maxAssetBytes
     ) {
       return undefined;
     }
     const sha256 = integrity.slice("sha256:".length);
-    if (!isSha256(sha256)) return undefined;
+    if (!isSha256(sha256) || uri !== `${TOPIK_BLOB_OUTPUT_PREFIX}/${sha256}`) return undefined;
     const existing = payloads.get(uri);
     if (existing !== undefined) {
       if (existing.sha256 !== sha256 || existing.size !== size) return undefined;

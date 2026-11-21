@@ -1,5 +1,6 @@
 import { expect, test } from "vite-plus/test";
-import { components, getEffectiveProps, parseDocument, writeDocument } from "../index.js";
+import { components, parseDocument, writeDocument } from "../index.js";
+import { getEffectiveProps } from "../registry.js";
 import type { Component } from "../model.js";
 import { parse, withoutPositions } from "../test-helpers.js";
 

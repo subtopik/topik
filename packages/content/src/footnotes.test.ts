@@ -16,7 +16,7 @@ import {
 import { parse } from "./test-helpers.js";
 
 function ids(source: string): (string | undefined)[] {
-  return validateTopikContent(source).errors.map((error) => error.id);
+  return validateTopikContent(source).diagnostics.map((error) => error.id);
 }
 
 function formatted(source: string): string {
@@ -48,7 +48,7 @@ const authored = [
 
 describe("footnote source", () => {
   test("definitions are accepted anywhere at the top level", () => {
-    expect(validateTopikContent(authored)).toMatchObject({ valid: true });
+    expect(validateTopikContent(authored)).toMatchObject({ ok: true });
   });
 
   test.each([
@@ -133,7 +133,7 @@ describe("footnote source", () => {
       "",
       "[^a]: Note.",
     ].join("\n");
-    expect(validateTopikContent(source)).toMatchObject({ valid: true });
+    expect(validateTopikContent(source)).toMatchObject({ ok: true });
   });
 
   test("labels keep their authored spelling and match case-insensitively", () => {

@@ -23,11 +23,17 @@ const PDF_BYTES = Buffer.from("%PDF-1.7\nmanual\n");
 interface MockResponse {
   end: ReturnType<typeof vi.fn>;
   setHeader: ReturnType<typeof vi.fn>;
+  removeHeader: ReturnType<typeof vi.fn>;
+  statusCode: number;
 }
 
 function createMiddleware(loaders: TopikAssetLoader[]) {
   let middleware:
-    | ((req: { method?: string; url?: string }, res: MockResponse, next: () => void) => void)
+    | ((
+        req: { method?: string; url?: string; headers?: Record<string, string> },
+        res: MockResponse,
+        next: () => void,
+      ) => void)
     | undefined;
 
   const integration = topik({ loaders });
@@ -35,7 +41,11 @@ function createMiddleware(loaders: TopikAssetLoader[]) {
     server: {
       middlewares: {
         use(
-          fn: (req: { method?: string; url?: string }, res: MockResponse, next: () => void) => void,
+          fn: (
+            req: { method?: string; url?: string; headers?: Record<string, string> },
+            res: MockResponse,
+            next: () => void,
+          ) => void,
         ) {
           middleware = fn;
         },
@@ -48,7 +58,7 @@ function createMiddleware(loaders: TopikAssetLoader[]) {
 }
 
 function createResponse(): MockResponse {
-  return { end: vi.fn(), setHeader: vi.fn() };
+  return { end: vi.fn(), setHeader: vi.fn(), removeHeader: vi.fn(), statusCode: 200 };
 }
 
 function createMockContext() {
@@ -69,10 +79,11 @@ async function dispatch(
   middleware: ReturnType<typeof createMiddleware>,
   url: string,
   method = "GET",
+  headers: Record<string, string> = {},
 ) {
   const response = createResponse();
   const next = vi.fn();
-  middleware({ method, url }, response, next);
+  middleware({ method, url, headers }, response, next);
   await vi.waitFor(() => expect(response.end.mock.calls.length + next.mock.calls.length).toBe(1));
   return { next, response };
 }
@@ -97,7 +108,7 @@ async function startRawDevelopmentServer(
   middleware: ReturnType<typeof createMiddleware>,
 ): Promise<{ close: () => Promise<void>; port: number }> {
   const server: Server = createServer((req, res) => {
-    middleware(req, res as never, () => {
+    middleware(req as never, res as never, () => {
       res.statusCode = 404;
       res.end("Not Found");
     });
@@ -257,6 +268,43 @@ describe("topik integration", () => {
         asset.spec.mediaType === "application/pdf" ? undefined : "attachment",
       );
     }
+  });
+
+  test("answers single byte ranges so media can stream and seek", async () => {
+    await writeFile(join(dir, "collection.yaml"), "id: guides\ntitle: Guides\n");
+    await writeFile(join(dir, "manual.pdf"), PDF_BYTES);
+    await writeFile(join(dir, "intro.md"), "# Intro\n\n[Manual](manual.pdf)\n");
+    const loader = topikGuidesLoader({
+      dir,
+      name: "astro-guide-ranges",
+      assets: {
+        generateName: createProjectAssetNameGenerator({
+          projectRoot: dir,
+          projectNamespace: "astro-guide-ranges",
+        }),
+      },
+    });
+    await loader.load(createMockContext());
+    const middleware = createMiddleware([loader]);
+    const [asset] = loader.getAssets();
+    const url = `/${asset.spec.uri}`;
+
+    const partial = await dispatch(middleware, url, "GET", { range: "bytes=0-3" });
+    expect(partial.response.statusCode).toBe(206);
+    expect(partial.response.setHeader).toHaveBeenCalledWith(
+      "Content-Range",
+      `bytes 0-3/${PDF_BYTES.byteLength}`,
+    );
+    expect(partial.response.end).toHaveBeenCalledWith(Buffer.from(PDF_BYTES.subarray(0, 4)));
+
+    const beyond = await dispatch(middleware, url, "GET", { range: "bytes=999999-" });
+    expect(beyond.response.statusCode).toBe(416);
+
+    const conditional = await dispatch(middleware, url, "GET", {
+      range: "bytes=0-3",
+      "if-range": '"x"',
+    });
+    expect(conditional.response.statusCode).toBe(200);
   });
 
   test("shares snapshots only between logically identical loaders", async () => {

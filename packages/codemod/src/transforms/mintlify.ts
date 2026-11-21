@@ -431,12 +431,12 @@ function convert(
   if (nesting && warnings.length === 0) warn(warnings, source, nesting.offset, nesting.message);
   if (warnings.length > 0) return kept();
   const validation = validateTopikContent(out);
-  if (!validation.valid) {
+  if (!validation.ok) {
     const prefix = changed
       ? "Converted content is not valid Topik content; source kept"
       : "Source is not valid Topik content; source kept";
-    if (validation.errors.length === 0) warn(warnings, source, firstTag, prefix);
-    for (const diagnostic of validation.errors) {
+    if (validation.diagnostics.length === 0) warn(warnings, source, firstTag, prefix);
+    for (const diagnostic of validation.diagnostics) {
       const sourceLines = [
         ...new Set(diagnostic.lines.map((line) => outputLines[line - 1] ?? line)),
       ];

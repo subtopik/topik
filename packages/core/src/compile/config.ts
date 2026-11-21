@@ -1,5 +1,5 @@
-import { join, posix, resolve } from "node:path";
-import { parse as parseYaml, parseDocument, isAlias, isNode, isMap, isSeq, isScalar } from "yaml";
+import { posix, resolve } from "node:path";
+import { parseDocument, isAlias, isNode, isMap, isSeq, isScalar } from "yaml";
 import {
   createPortableReadSession,
   portableReadFailureReason,
@@ -8,66 +8,32 @@ import {
 } from "../assets/files";
 import { parseStrictTopikJson } from "../assets/json";
 import { isConfigurationPath, TOPIK_MANIFEST_LIMITS } from "../config/manifest";
-import { assertRegularFileWithinRoot, readRegularFileWithinRoot } from "./files";
 import { PublicCompileError } from "./public-errors";
 
-export async function readConfigFile(dir: string, candidates: string[]): Promise<unknown> {
-  const config = await readOptionalConfigFile(dir, candidates);
-  if (config != null) {
-    return config;
-  }
-  throw new PublicCompileError("config-not-found");
-}
-
-export async function readOptionalConfigFile(dir: string, candidates: string[]): Promise<unknown> {
-  return (await readOptionalConfigFileWithPath(dir, candidates))?.value;
-}
-
+/**
+ * Load the first conventional config file that exists, such as `wiki.yaml` then `wiki.json`,
+ * with the same reader, limits and parser as an explicitly selected configuration.
+ */
 export async function readOptionalConfigFileWithPath(
   dir: string,
-  candidates: string[],
-): Promise<{ path: string; value: unknown } | undefined> {
+  candidates: readonly string[],
+  session?: PortableReadSession,
+): Promise<LoadedConfig | undefined> {
   for (const name of candidates) {
-    const filePath = join(dir, name);
-    let raw: string;
-
     try {
-      raw = await readRegularFileWithinRoot(filePath, dir, "utf-8");
+      return await readExactConfigFile(dir, name, session);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        continue;
-      }
-      if (error instanceof PublicCompileError && error.id === "file-safe-read-unsupported") {
-        throw error;
-      }
-      throw new PublicCompileError("config-read-failed", name, { cause: error });
-    }
-
-    try {
-      return { path: name, value: name.endsWith(".json") ? JSON.parse(raw) : parseYaml(raw) };
-    } catch {
-      throw new PublicCompileError("config-parse-failed", name);
+      if (error instanceof PublicCompileError && error.id === "config-not-found") continue;
+      throw error;
     }
   }
   return undefined;
 }
 
-export async function findConfigFile(dir: string, candidates: string[]): Promise<string | null> {
-  for (const name of candidates) {
-    try {
-      await assertRegularFileWithinRoot(join(dir, name), dir);
-      return name;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        continue;
-      }
-      if (error instanceof PublicCompileError && error.id === "file-safe-read-unsupported") {
-        throw error;
-      }
-      throw new PublicCompileError("config-access-failed", name);
-    }
-  }
-  return null;
+function parseConfigurationText(path: string, raw: string): unknown {
+  return path.endsWith(".json")
+    ? parseStrictTopikJson(raw.replace(/^\uFEFF/u, ""), 32)
+    : parseSafeConfigurationYaml(raw);
 }
 
 /** Load exactly one portable config, without conventional-name fallback. */
@@ -79,12 +45,7 @@ export async function readExactConfigFile(
   if (!isConfigurationPath(path)) throw new PublicCompileError("config-invalid", path);
   const raw = await readConfigurationText(dir, path, session);
   try {
-    return {
-      path: posix.basename(path),
-      value: path.endsWith(".json")
-        ? parseStrictTopikJson(raw, 32)
-        : parseSafeConfigurationYaml(raw),
-    };
+    return { path: posix.basename(path), value: parseConfigurationText(path, raw) };
   } catch {
     throw new PublicCompileError("config-parse-failed", path);
   }

@@ -10,7 +10,7 @@ import { extractTopikAssetOccurrences } from "./asset-references.js";
 import { analyzeTopikContent } from "./links.js";
 
 function roundtrip(source: string): void {
-  expect(validateTopikContent(source).valid).toBe(true);
+  expect(validateTopikContent(source).ok).toBe(true);
   const formatted = formatTopikContent(source);
   expect(formatted.ok).toBe(true);
   if (!formatted.ok) throw new Error("Formatting failed");
@@ -79,7 +79,7 @@ describe("image alt and reference writer boundaries", () => {
     const label = `a${"\\".repeat(slashes)}|b`;
     roundtrip(`[${label}]: /next\n\n[label][${label}]`);
     const source = `[${label}]: /next\n\n| Heading |\n|---|\n| [label][${label}] |`;
-    expect(validateTopikContent(source).valid).toBe(false);
+    expect(validateTopikContent(source).ok).toBe(false);
     expect(formatTopikContent(source)).toMatchObject({ ok: false, source });
   });
 });

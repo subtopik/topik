@@ -4,7 +4,7 @@ import { validateTopikContent } from "./validate.js";
 import { validateTag } from "./validation.js";
 
 function ids(source: string): string[] {
-  return validateTopikContent(source).errors.map((error) => error.id);
+  return validateTopikContent(source).diagnostics.map((error) => error.id);
 }
 
 describe("catalog validation", () => {
@@ -17,7 +17,7 @@ describe("catalog validation", () => {
       '{% figure src="images/hero.png" darkSrc="images/hero-dark.png" alt="Hero" /%}\n\n' +
       "{% quiz %}\n\n{% question %}\n\n{% choice correct=true %}\n\nA.\n\n{% /choice %}\n\n" +
       "{% choice %}\n\nB.\n\n{% /choice %}\n\n{% /question %}\n\n{% /quiz %}";
-    expect(validateTopikContent(source)).toMatchObject({ source, valid: true, errors: [] });
+    expect(validateTopikContent(source)).toMatchObject({ source, ok: true, diagnostics: [] });
   });
 
   test.each([
@@ -31,8 +31,8 @@ describe("catalog validation", () => {
     ['{% columns count=5 %}\n\n{% card title="A" /%}\n\n{% /columns %}', "topik-count-range"],
   ])("reports stable attribute IDs and retains source", (source, id) => {
     const result = validateTopikContent(source);
-    expect(result).toMatchObject({ source, valid: false });
-    expect(result.errors.map((error) => error.id)).toContain(id);
+    expect(result).toMatchObject({ source, ok: false });
+    expect(result.diagnostics.map((error) => error.id)).toContain(id);
   });
 
   test("shares one expected attribute list between issues on the same component", () => {
@@ -73,8 +73,8 @@ describe("catalog validation", () => {
     const result = validateTopikContent(source, { file: "/private/workspace/lesson.md" });
     expect(result).toMatchObject({
       source,
-      valid: false,
-      errors: [
+      ok: false,
+      diagnostics: [
         {
           id: "topik-tabs-children",
           message: "Tabs contain an unsupported child.",
@@ -102,7 +102,7 @@ describe("catalog validation", () => {
 describe("validation boundary", () => {
   test("unknown tags and unsupported grammar are refused with retained source", () => {
     for (const source of ["{% unknown /%}", "{% $name + 1 %}", "{% else /%}"])
-      expect(validateTopikContent(source)).toMatchObject({ source, valid: false });
+      expect(validateTopikContent(source)).toMatchObject({ source, ok: false });
     expect(ids("{% unknown /%}")).toContain("tag-undefined");
   });
 
@@ -110,12 +110,12 @@ describe("validation boundary", () => {
     const result = validateTopikContent("{% card title=3 /%}", {
       file: "/private/workspace/lesson.md",
     });
-    expect(result).toMatchObject({ source: "{% card title=3 /%}", valid: false });
-    expect(result.errors).toEqual(
+    expect(result).toMatchObject({ source: "{% card title=3 /%}", ok: false });
+    expect(result.diagnostics).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: "attribute-type-invalid", file: "lesson.md", lines: [1] }),
       ]),
     );
-    expect(JSON.stringify(result.errors)).not.toContain("/private/workspace");
+    expect(JSON.stringify(result.diagnostics)).not.toContain("/private/workspace");
   });
 });

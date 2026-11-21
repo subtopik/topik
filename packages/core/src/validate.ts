@@ -9,6 +9,7 @@ import wikiV1Schema from "@topik/schema/wiki/v1.json" with { type: "json" };
 import wikiPageV1Schema from "@topik/schema/wiki-page/v1.json" with { type: "json" };
 import { validateTopikContent } from "@topik/content";
 import { validateAssetValue } from "./assets/asset";
+import { isResourceName } from "./resource-names";
 import type { TopikAssetDiagnosticId } from "./assets/diagnostics";
 
 // Report every schema violation in a resource, not only the first one.
@@ -160,12 +161,6 @@ export function validateResources(resources: readonly unknown[]): ValidationResu
   }
 
   return { valid: errors.length === 0, errors };
-}
-
-const RESOURCE_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
-
-function isResourceName(value: string): boolean {
-  return value.length <= 63 && RESOURCE_NAME.test(value);
 }
 
 function ownValue(record: Record<string, unknown>, key: string): unknown {
@@ -389,7 +384,7 @@ export function validateResourceContent(resources: readonly unknown[]): Validati
     const value = ownValue(content, "value");
     if (typeof value !== "string") continue;
     const validation = validateTopikContent(value, { allowCompiledAssetReferences: true });
-    for (const diagnostic of validation.errors) {
+    for (const diagnostic of validation.diagnostics) {
       if (diagnostic.level !== "error" && diagnostic.level !== "critical") continue;
       const line = diagnostic.lines[0];
       errors.push({

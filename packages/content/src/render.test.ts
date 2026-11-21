@@ -21,7 +21,7 @@ test("custom render names and typed defaults produce an independent serializable
     },
   };
   const source = "{% notice %}\nKeep a **backup**.\n{% /notice %}";
-  expect(validateTopikContent(source, { config }).valid).toBe(true);
+  expect(validateTopikContent(source, { config }).ok).toBe(true);
   const document = parseTopikContent(source, { config });
   const original = structuredClone(document);
   const tree: unknown = JSON.parse(JSON.stringify(transformTopikContent(document, config)));
@@ -68,7 +68,7 @@ test("declarative rendering can expose children or omit a component", () => {
     "Not rendered.",
     "{% /omitted %}",
   ].join("\n");
-  expect(validateTopikContent(source, { config }).valid).toBe(true);
+  expect(validateTopikContent(source, { config }).ok).toBe(true);
   const document = parseTopikContent(source, { config });
   expect(JSON.parse(JSON.stringify(transformTopikContent(document, config)))).toEqual({
     type: "element",
@@ -86,7 +86,7 @@ test("rendering resolves context as literal text and leaves the authored branche
     "Hello {% $name %}.",
     "{% /if %}",
   ].join("\n");
-  expect(validateTopikContent(source).valid).toBe(true);
+  expect(validateTopikContent(source).ok).toBe(true);
   const document = parseTopikContent(source);
   const original = structuredClone(document);
   const tree = transformTopikContent(document, {
@@ -137,7 +137,7 @@ test("the low-level transform drops URLs that fail the source URL policy", () =>
     `{% card title="b" href="asset:auto-v1-${"a".repeat(52)}" /%}`,
     "{% /columns %}",
   ].join("\n");
-  expect(validateTopikContent(source).valid).toBe(false);
+  expect(validateTopikContent(source).ok).toBe(false);
   const tree = transformUnadmitted(source);
 
   expect(attributesOf(tree, "TopikLink")).toEqual([{}, {}, {}, {}, {}, {}]);

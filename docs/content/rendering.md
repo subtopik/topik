@@ -294,6 +294,12 @@ tabs and expanded code regions is kept.
 Define component functions once, outside render. A new component function is a
 different component to React and remounts its content.
 
+The same state is kept when `content` changes, so an editor's live preview keeps
+the selected tab while the author types. An application that shows different
+pages in one `TopikContent` should give it a `key` per page, such as the page's
+route, so each page starts with its first tabs selected and its accordions as
+authored.
+
 ### Links to accordions
 
 `TopikAccordion` receives the accordion's `id`, explicit or generated, and sets
@@ -302,6 +308,12 @@ accordion or an element inside it, or the fragment changes to one, the
 accordion opens. Browsers already reveal some targets inside a closed
 `<details>`, but not the `<details>` itself and not in every browser. A custom
 `TopikAccordion` should render the `id` so links reach it.
+
+### Links into tabs
+
+When the page opens with a fragment that names an element inside a tab or code
+group panel that is not selected, or the fragment changes to one, the tab that
+holds it is selected and the element is scrolled into view.
 
 ### Compile before rendering
 

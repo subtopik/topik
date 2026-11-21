@@ -5,10 +5,6 @@ import {
   formatTopikContent,
   isContentTag,
   parseDocument,
-  parseTopikContent,
-  removeInvalidTopikAssetReferences,
-  transformTopikContent,
-  validateDocument,
   writeDocument,
   type RenderableTreeNode,
 } from "../index.js";
@@ -180,36 +176,4 @@ test("unsafe sources fail validation", () => {
     '{% video src="a.mp4" title="Intro" poster="http://example.com/a.png" /%}',
   ])
     expect(compileTopikContent(source).ok).toBe(false);
-});
-
-test("an unsafe poster is dropped and the video stays", () => {
-  const source = '{% video src="a.mp4" title="Intro" poster="http://example.com/a.png" /%}';
-  const document = parseTopikContent(source);
-  removeInvalidTopikAssetReferences(document, source);
-  expect(validateDocument(document)).toEqual([]);
-  expect(videos(transformTopikContent(document))).toEqual([
-    { src: "a.mp4", title: "Intro", loop: false },
-  ]);
-});
-
-test("an unsafe source keeps template variables in the remaining text", () => {
-  const source =
-    '{% video src="http://example.com/a.mp4" title=t"Intro for {% $name %}" caption=t"Tour" /%}';
-  const document = parseTopikContent(source);
-  removeInvalidTopikAssetReferences(document, source);
-  expect(validateDocument(document)).toEqual([]);
-  expect(JSON.stringify(document)).not.toContain("example.com");
-  expect(
-    transformTopikContent(document, { components: {}, variables: { name: "Ada" } }),
-  ).toMatchObject({ children: [{ name: "p", children: ["Intro for Ada\nTour"] }] });
-});
-
-test("an unsafe source leaves the title and caption as text", () => {
-  const source = '{% video src="http://example.com/a.mp4" title="Intro" caption="A tour" /%}';
-  const document = parseTopikContent(source);
-  removeInvalidTopikAssetReferences(document, source);
-  expect(validateDocument(document)).toEqual([]);
-  expect(transformTopikContent(document)).toMatchObject({
-    children: [{ name: "p", children: ["Intro\nA tour"] }],
-  });
 });

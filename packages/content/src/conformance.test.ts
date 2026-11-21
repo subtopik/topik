@@ -1,12 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import {
-  components,
-  FORMAT_VERSION,
-  parseDocument,
-  rewriteAssets,
-  writeDocument,
-  type Registry,
-} from "./index.js";
+import { components, FORMAT_VERSION, parseDocument, writeDocument } from "./index.js";
 import { withoutPositions, parse as parsed } from "./test-helpers.js";
 
 function canonical(source: string): string {
@@ -135,40 +128,6 @@ describe("independent Markdown meaning", () => {
     expect(parsed(writeDocument(document)).children[0]).toMatchObject(expected);
   });
 
-  test("reference identity and explicit empty definition title survive", () => {
-    const source = '![Demo][asset]\n\n[asset]: https://example.com/a.png ""';
-    const doc = parsed(source);
-    expect(doc.children[0]).toMatchObject({
-      type: "paragraph",
-      children: [{ type: "imageReference", identifier: "asset" }],
-    });
-    expect(doc.children[1]).toMatchObject({
-      type: "definition",
-      identifier: "asset",
-      url: "https://example.com/a.png",
-      title: "",
-    });
-    expect(withoutPositions(parsed(writeDocument(doc)).children)).toEqual(
-      withoutPositions(doc.children),
-    );
-    const rewritten = rewriteAssets(doc, (url) =>
-      url.endsWith("a.png") ? "asset:new" : undefined,
-    );
-    expect(rewritten.children[1]).toMatchObject({
-      type: "definition",
-      url: "asset:new",
-      title: "",
-    });
-  });
-
-  test("shared image/link definition refuses a rewrite that would alter the link", () => {
-    const doc = parsed("![Logo][asset] [Download][asset]\n\n[asset]: asset:old");
-    expect(() =>
-      rewriteAssets(doc, (url) => (url === "asset:old" ? "asset:new" : undefined)),
-    ).toThrow("shared by an image and a link");
-    expect(writeDocument(doc)).toContain("asset:old");
-  });
-
   test("one link with mixed styling remains one link through source writing", () => {
     const source = '[before **bold** after](https://example.com "Title")';
     const doc = parsed(source);
@@ -267,42 +226,6 @@ describe("component source conversion", () => {
     expect(withoutPositions(parsed(writeDocument(doc)).children)).toEqual(
       withoutPositions(doc.children),
     );
-  });
-
-  test("asset rewrite changes image identity without changing prose", () => {
-    const doc = parsed('Use asset:logo in prose. ![Logo](asset:logo "")');
-    const changed = rewriteAssets(doc, (url) =>
-      url === "asset:logo" ? "asset:new-logo" : undefined,
-    );
-    expect(parsed(writeDocument(changed)).children[0]).toMatchObject({
-      type: "paragraph",
-      children: [
-        { type: "text", value: "Use asset:logo in prose. " },
-        { type: "image", url: "asset:new-logo", title: "" },
-      ],
-    });
-  });
-
-  test("registered custom component uses its schema and asset declaration", () => {
-    const registry: Registry = {
-      ...components,
-      media: {
-        kind: "inline",
-        attributes: { src: { type: "string", required: true, asset: true } },
-        children: "none",
-        render: false,
-      },
-    };
-    const result = parseDocument('A {% media src="asset:old" /%}.', registry);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    const rewritten = rewriteAssets(
-      result.document,
-      (url) => (url === "asset:old" ? "asset:new" : undefined),
-      registry,
-    );
-    expect(writeDocument(rewritten, registry)).toContain('{% media src="asset:new" /%}');
-    expect(parseDocument('A {% media other="x" /%}.', registry)).toMatchObject({ ok: false });
   });
 
   test("writer refuses control characters in component attributes", () => {

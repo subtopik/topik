@@ -14,6 +14,15 @@ function mp3Frame(): Uint8Array {
   return frame;
 }
 
+function utf16be(value: string): Uint8Array {
+  const bytes = new Uint8Array(value.length * 2);
+  for (let index = 0; index < value.length; index++) {
+    bytes[index * 2] = value.charCodeAt(index) >> 8;
+    bytes[index * 2 + 1] = value.charCodeAt(index) & 0xff;
+  }
+  return bytes;
+}
+
 function utf16le(value: string): Uint8Array {
   const bytes = new Uint8Array(value.length * 2);
   for (let index = 0; index < value.length; index++) {
@@ -56,6 +65,11 @@ describe("MPEG audio signatures", () => {
       concat([0xff, 0xfe], utf16le("Hello, world. ".repeat(40))),
     ],
     ["a short UTF-16LE file", concat([0xff, 0xfe], utf16le("Hi"))],
+    // FF FE 20 00 is a valid MPEG-1 Layer I header whose frame is exactly 68 bytes long.
+    [
+      "UTF-16LE text exactly one Layer I frame long",
+      concat([0xff, 0xfe], utf16le(" Plain notes, nothing more.".padEnd(33, " "))),
+    ],
     ["sync bits without a following frame", concat(mp3Frame(), text("not another frame"))],
     ["a reserved MPEG version", concat([0xff, 0xeb, 0x90, 0x00], new Uint8Array(500))],
     ["a reserved layer", concat([0xff, 0xf9, 0x90, 0x00], new Uint8Array(500))],
@@ -278,6 +292,10 @@ describe("ISO base media brands", () => {
 
   test("keeps unknown brands and malformed boxes opaque", () => {
     expect(sniffPortableMediaType(ftyp("zzzz", ["yyyy"]))).toBe("application/octet-stream");
+    // A 256-byte box starts with the ICO signature 00 00 01 00.
+    expect(sniffPortableMediaType(ftyp("zzzz", Array(60).fill("yyyy")))).toBe(
+      "application/octet-stream",
+    );
     const malformed = ftyp("isom", ["mp41"]);
     new DataView(malformed.buffer).setUint32(0, 0x1000);
     expect(sniffPortableMediaType(malformed)).toBe("application/octet-stream");
@@ -410,5 +428,62 @@ describe("executable signatures", () => {
     ["a hash-bang without a path", text("#!python\n")],
   ])("keeps %s opaque", (_name, bytes) => {
     expect(sniffPortableMediaType(bytes)).toBe("application/octet-stream");
+  });
+});
+
+describe("ICO signatures", () => {
+  function ico(count: number, directoryBytes = count * 16): Uint8Array {
+    return concat([0, 0, 1, 0, count & 0xff, count >> 8], new Uint8Array(directoryBytes));
+  }
+
+  test("accepts a header whose image directory fits in the file", () => {
+    expect(sniffPortableMediaType(ico(1))).toBe("image/x-icon");
+    expect(sniffPortableMediaType(ico(2))).toBe("image/x-icon");
+  });
+
+  test.each([
+    ["no images", ico(0)],
+    ["a directory longer than the file", ico(4, 16)],
+  ])("keeps a header with %s opaque", (_name, bytes) => {
+    expect(sniffPortableMediaType(bytes)).toBe("application/octet-stream");
+  });
+});
+
+test("reads only the first compatible brands of a box that claims the whole file", () => {
+  const bytes = ftyp("zzzz", [...Array(100).fill("yyyy"), "mp41"]);
+  expect(sniffPortableMediaType(bytes)).toBe("application/octet-stream");
+  const large = new Uint8Array(64 * 1024 * 1024);
+  new DataView(large.buffer).setUint32(0, large.byteLength);
+  large.set(text("ftypzzzz"), 4);
+  const started = performance.now();
+  expect(sniffPortableMediaType(large)).toBe("application/octet-stream");
+  expect(performance.now() - started).toBeLessThan(1_000);
+});
+
+describe("active markup in other spellings", () => {
+  test.each([
+    ["UTF-16LE HTML", concat([0xff, 0xfe], utf16le("<html><script>alert(1)</script></html>"))],
+    ["UTF-16BE SVG", concat([0xfe, 0xff], utf16be('<svg onload="alert(1)"></svg>'))],
+    [
+      "UTF-16LE script one MPEG frame long",
+      concat([0xff, 0xfe], utf16le(" <script>alert(1)</script>".padEnd(33, " "))),
+    ],
+    ["a character-referenced javascript: URL", text('Notes\n<a href="&#106;avascript:x">a</a>')],
+    ["a hexadecimal reference", text('Notes\n<a href="&#x6A;avascript:x">a</a>')],
+    ["a tab inside the scheme", text('Notes\n<a href="java\tscript:x">a</a>')],
+    ["an encoded colon", text('Notes\n<a href="javascript&colon;x">a</a>')],
+    ["a zero-padded reference", text('Notes\n<a href="&#0000000106;avascript:x">a</a>')],
+    ["a zero-padded hexadecimal reference", text('Notes\n<a href="&#x0000006a;avascript:x">a</a>')],
+    ["a leading control character", text('Notes\n<a href="\u0001javascript:x">a</a>')],
+    ["a referenced leading control", text('Notes\n<a href="&#1;javascript:x">a</a>')],
+    ["a form action", text('Notes\n<button formaction="javascript:x">a</button>')],
+  ])("refuses %s as HTML or SVG", (_name, bytes) => {
+    expect(["text/html", "image/svg+xml"]).toContain(sniffPortableMediaType(bytes));
+  });
+
+  test("keeps UTF-16 prose a download", () => {
+    expect(sniffPortableMediaType(concat([0xff, 0xfe], utf16le("Plain notes, a < b.")))).toBe(
+      "application/octet-stream",
+    );
   });
 });

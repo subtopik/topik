@@ -14,6 +14,7 @@ import {
   parseCodePresentationMetadata,
   serializeCodePresentationMetadata,
 } from "./code-presentation.js";
+import { compileTopikContent } from "./compile.js";
 import type { TreeNode } from "./model.js";
 
 function metadata(source: string, rows = 4) {
@@ -448,10 +449,14 @@ describe("compact presentation authoring node admission", () => {
 
   test("bounds physical rows and canonical options before rendering", () => {
     expect(
-      codePresentationProblem(node(undefined, { type: "code", value: "\n".repeat(19999) })),
+      codePresentationProblem(
+        node(undefined, { type: "code", value: "\n".repeat(CODE_PRESENTATION_LIMITS.rows - 1) }),
+      ),
     ).toBeUndefined();
     expect(
-      codePresentationProblem(node(undefined, { type: "code", value: "\n".repeat(20000) })),
+      codePresentationProblem(
+        node(undefined, { type: "code", value: "\n".repeat(CODE_PRESENTATION_LIMITS.rows) }),
+      ),
     ).toMatchObject({ id: "topik-content-limit" });
     const make = (offset: number) =>
       Array.from({ length: 1024 }, (_, index) => [index * 2 + offset, index * 2 + offset]);
@@ -519,4 +524,11 @@ describe("compact presentation authoring node admission", () => {
     cyclic.push(cyclic);
     expect(() => normalizeCodePresentationOptions({ highlight: cyclic }, 2)).toThrow();
   });
+});
+
+test("a presented block of short rows can reach the row limit", () => {
+  const rows = CODE_PRESENTATION_LIMITS.rows;
+  const fenced = (count: number) => "```js lines\n" + "x\n".repeat(count - 1) + "x\n```";
+  expect(compileTopikContent(fenced(rows)).ok).toBe(true);
+  expect(compileTopikContent(fenced(rows + 1)).ok).toBe(false);
 });

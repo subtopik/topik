@@ -131,7 +131,9 @@ describe("tag syntax diagnostics", () => {
   test("unknown-tag classification uses the ID rather than message wording", () => {
     // A component whose name begins like the old prefix is still an ordinary tag.
     const result = validateTopikContent("{% unknown /%}");
-    expect(result.errors).toEqual([expect.objectContaining({ id: "tag-undefined", lines: [1] })]);
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({ id: "tag-undefined", lines: [1] }),
+    ]);
   });
 
   test("an unsupported expression is reported once", () => {
@@ -149,26 +151,26 @@ describe("unsupported Markdown nodes", () => {
     ["{% callout %}\n<div>x</div>\n\n{% /callout %}", "html", 2],
     ["{% if $a %}\n<div>x</div>\n\n{% /if %}", "html", 2],
   ])("%s reports node-undefined at the node", (source, type, line) => {
-    expect(validateTopikContent(source).errors).toEqual([
+    expect(validateTopikContent(source).diagnostics).toEqual([
       expect.objectContaining({ id: "node-undefined", type, lines: [line] }),
     ]);
   });
 
   test("inline HTML reports its line once, at the first column", () => {
-    expect(validateTopikContent("Text <b>bold</b>").errors).toEqual([
+    expect(validateTopikContent("Text <b>bold</b>").diagnostics).toEqual([
       expect.objectContaining({ id: "node-undefined", type: "html", lines: [1], column: 6 }),
     ]);
   });
 
   test("footnote errors locate the definition", () => {
     // Without a definition, `[^1]` stays text; the lone definition is unreferenced.
-    expect(validateTopikContent("Text[^1]\n\n[^2]: Note").errors).toEqual([
+    expect(validateTopikContent("Text[^1]\n\n[^2]: Note").diagnostics).toEqual([
       expect.objectContaining({ id: "topik-footnote-unreferenced", lines: [3], column: 1 }),
     ]);
   });
 
   test("a heading ID that does not end its heading has a placement diagnostic", () => {
-    expect(validateTopikContent("# A {% #x %} B").errors).toEqual([
+    expect(validateTopikContent("# A {% #x %} B").diagnostics).toEqual([
       expect.objectContaining({ id: "topik-heading-id-placement", lines: [1] }),
     ]);
   });
@@ -228,7 +230,7 @@ describe("custom component diagnostics", () => {
     ["{% slide %}\nA\n{% /slide %}", "topik-gallery-parent-required"],
   ])("%s has a meaningful fixed message", (source, id) => {
     const result = validateTopikContent(source, { config });
-    const diagnostic = result.errors.find((item) => item.id === id);
+    const diagnostic = result.diagnostics.find((item) => item.id === id);
     expect(diagnostic).toBeDefined();
     expect(diagnostic!.message).not.toBe("Content validation failed.");
   });
@@ -249,7 +251,7 @@ describe("custom component diagnostics", () => {
         },
       });
       const id = `topik-${parent.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}-parent-required`;
-      expect(result.errors.find((item) => item.id === id)?.message).toBe(
+      expect(result.diagnostics.find((item) => item.id === id)?.message).toBe(
         "A component must be nested inside its required parent component.",
       );
     }
@@ -271,7 +273,7 @@ describe("custom component diagnostics", () => {
         },
       });
       const id = `topik-${parent.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}-parent-required`;
-      expect(result.errors.find((item) => item.id === id)?.message).toMatch(
+      expect(result.diagnostics.find((item) => item.id === id)?.message).toMatch(
         /^A component must be nested inside its required parent, such as /,
       );
     }

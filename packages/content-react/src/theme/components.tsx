@@ -74,9 +74,13 @@ function tableTextAlignStyle(value: unknown): CSSProperties["textAlign"] | undef
   return undefined;
 }
 
+/** A plain CSS length or percentage, such as `12rem` or `40%`; never other declarations. */
+const TABLE_WIDTH = /^(?:\d+(?:\.\d+)?|\.\d+)(?:px|%|em|rem|ch|vw)?$/u;
+
 function tableCellStyle(align: unknown, width?: unknown): CSSProperties | undefined {
   const textAlign = tableTextAlignStyle(align);
-  const widthValue = stringAttribute(width);
+  const authored = stringAttribute(width);
+  const widthValue = authored !== undefined && TABLE_WIDTH.test(authored) ? authored : undefined;
   if (!textAlign && !widthValue) return undefined;
   return { textAlign, width: widthValue };
 }
@@ -558,7 +562,9 @@ export function TopikQuestion({ children, type = "single-choice" }: TopikCompone
         if (next.has(index)) next.delete(index);
         else next.add(index);
       }
-      const incorrect = next.size > 0 && !isCorrectAnswer(next, correctIndexes);
+      // Only choosing a wrong answer is an incorrect attempt; an incomplete set of right
+      // answers in a multiple-choice question is not.
+      const incorrect = next.has(index) && !correctIndexes.has(index);
       return {
         selected: next,
         incorrectAttempts: current.incorrectAttempts + (incorrect ? 1 : 0),

@@ -72,7 +72,7 @@ test("publishes located diagnostics with their resource, and warnings of a ready
       id: "link-page-not-found",
       message: "Internal link target page was not found.",
       severity: "error",
-      location: { path: "intro.md", line: 3 },
+      location: { path: "intro.md", line: 3, column: 5 },
       resource: { type: "WikiPage", name: expect.stringMatching(/^docs-[0-9a-f]+$/) },
     },
   ]);
@@ -86,7 +86,7 @@ test("publishes located diagnostics with their resource, and warnings of a ready
       {
         id: "link-page-not-found",
         severity: "warning",
-        location: { path: "intro.md", line: 3 },
+        location: { path: "intro.md", line: 3, column: 5 },
         resource: { type: "WikiPage", name: expect.stringMatching(/^docs-[0-9a-f]+$/) },
       },
     ],

@@ -6,7 +6,7 @@ function converted(source: string): string {
   const result = transformMintlify(source);
   expect(result.warnings).toEqual([]);
   expect(result.changed).toBe(true);
-  expect(validateTopikContent(result.content)).toMatchObject({ valid: true, errors: [] });
+  expect(validateTopikContent(result.content)).toMatchObject({ ok: true, diagnostics: [] });
   return result.content;
 }
 
@@ -203,7 +203,7 @@ describe("Mintlify to Topik content", () => {
       for (const header of ["", `\uFEFF---${eol}title: "Example"${eol}---${eol}${eol}`]) {
         const prefix = `${header}${resource.replaceAll("\n", eol)}`;
         const original = `${prefix}${eol}`;
-        expect(validateTopikContent(original).valid).toBe(true);
+        expect(validateTopikContent(original).ok).toBe(true);
         expect(transformMintlify(original)).toEqual({
           content: original,
           warnings: [],
@@ -924,7 +924,7 @@ describe("Mintlify grids", () => {
         "",
       ].join("\n"),
     );
-    expect(validateTopikContent(result.content)).toMatchObject({ valid: true });
+    expect(validateTopikContent(result.content)).toMatchObject({ ok: true });
     // One note per group, at the first wrapped content.
     expect(result.warnings).toEqual([
       expect.objectContaining({

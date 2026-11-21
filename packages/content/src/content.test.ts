@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 import { parseTopikContent } from "./content.js";
 import { formatTopikContent } from "./format.js";
-import { assignTopikHeadingIds } from "./headings.js";
+import { assignTopikHeadingIds } from "./test-helpers.js";
 import { transformTopikContent } from "./render.js";
 import { representativeDiagnosticFiles } from "./test-fixtures/diagnostic-files.js";
 describe("Topik content formatting", () => {

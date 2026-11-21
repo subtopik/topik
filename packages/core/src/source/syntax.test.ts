@@ -1,5 +1,12 @@
 import { expect, test } from "vite-plus/test";
-import { decodeSource, encodeSource, patchSourceFields, replaySourceByteEdits } from "./syntax";
+import {
+  decodeSource,
+  encodeSource,
+  inspectSourceSyntax,
+  patchSourceFields,
+  replaySourceByteEdits,
+  utf8Offsets,
+} from "./syntax";
 
 test("YAML value patches preserve comments, unknown entries, ordering and CRLF around UTF-8 byte ranges", () => {
   const base = '# context\r\ntitle: "Café" # keep\r\ntags:\r\n  - old\r\ncustom: untouched\r\n';
@@ -83,4 +90,33 @@ test("replacing all block-map entries with new keys does not leave an empty-map 
     "labels/new": "replacement",
   });
   expect(decodeSource(result.bytes)).toBe('labels:\n  new: "replacement"\ncustom: exact\n');
+});
+
+test("UTF-8 offsets match encoding each prefix, including split surrogate pairs", () => {
+  for (const text of [
+    "",
+    "plain",
+    "Café ✓",
+    "a😀b",
+    "\ud83d",
+    "\ude00x",
+    "😀😀\ud83d",
+    "\u0085\u2028",
+  ]) {
+    const offset = utf8Offsets(text);
+    for (let index = 0; index <= text.length; index++) {
+      expect(offset(index), `${JSON.stringify(text)} at ${index}`).toBe(
+        encodeSource(text.slice(0, index)).length,
+      );
+    }
+  }
+});
+
+test("inspecting a large configuration stays linear in its size", () => {
+  const entries = Array.from({ length: 30_000 }, (_, index) => `  - page: page-${index}\n`);
+  const raw = `title: Large\nnavigation:\n${entries.join("")}`;
+  const started = performance.now();
+  inspectSourceSyntax(raw);
+  // Re-encoding every prefix took tens of seconds at this size.
+  expect(performance.now() - started).toBeLessThan(5_000);
 });

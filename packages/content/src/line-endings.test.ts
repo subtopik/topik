@@ -20,7 +20,7 @@ describe.each(["\r\n", "\r"])("source line endings %j", (ending) => {
     "{% callout %}\nFirst\nsecond\n{% /callout %}",
   ])("preserves the meaning and formatting of %s", (lf) => {
     const source = lf.replaceAll("\n", ending);
-    expect(validateTopikContent(source).valid).toBe(true);
+    expect(validateTopikContent(source).ok).toBe(true);
     const document = parseTopikContent(source);
     expect(withoutPositions(document)).toEqual(withoutPositions(parseTopikContent(lf)));
     expect(transformTopikContent(document)).toEqual(transformTopikContent(parseTopikContent(lf)));
@@ -66,14 +66,14 @@ describe.each(["\r\n", "\r"])("source line endings %j", (ending) => {
 });
 
 test("does not normalize carriage returns decoded from character references", () => {
-  expect(validateTopikContent("Text&#13;more").valid).toBe(false);
+  expect(validateTopikContent("Text&#13;more").ok).toBe(false);
 });
 
 test("a leading byte order mark keeps source references exact", () => {
   const bom = "﻿";
-  expect(validateTopikContent(`${bom}<https://example.com/a>\n`)).toMatchObject({ valid: true });
+  expect(validateTopikContent(`${bom}<https://example.com/a>\n`)).toMatchObject({ ok: true });
   expect(validateTopikContent(`${bom}# T\r\n\r\n<https://example.com/a>\r\n`)).toMatchObject({
-    valid: true,
+    ok: true,
   });
   expect(formatTopikContent(`${bom}<https://example.com/a> [a](b)\n`)).toMatchObject({ ok: true });
 });

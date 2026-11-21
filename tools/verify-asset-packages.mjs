@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { discoverSchemaTargets } from "../packages/schema/scripts/schema-targets.mjs";
+import { listNpmRootMetadata } from "./public-packlist.mjs";
 
 const root = join(import.meta.dirname, "..");
 const schemaRoot = join(root, "packages", "schema");
@@ -95,19 +96,20 @@ const expected = new Map([
   [
     schemaRoot,
     [
-      "LICENSE",
+      ...listNpmRootMetadata(schemaRoot),
       ...schemaTargets.flatMap(({ resource, version }) => [
         `dist/${resource}/${version}.json`,
         `dist/${resource}/${version}.d.mts`,
         `dist/${resource}/${version}.mjs`,
       ]),
       "package.json",
-    ].sort(),
+    ].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0)),
   ],
   [
     coreRoot,
     [
-      "LICENSE",
+      ...listNpmRootMetadata(coreRoot),
+      ...readdirSync(join(coreRoot, "dist", "LICENSES")).map((file) => `dist/LICENSES/${file}`),
       "dist/index.d.mts",
       "dist/index.mjs",
       "dist/course-navigation.d.mts",
@@ -129,7 +131,8 @@ const expected = new Map([
 ]);
 
 for (const [directory, expectedFiles] of expected) {
-  const output = execFileSync("pnpm", ["pack", "--dry-run", "--json"], {
+  // vp runs its own pinned pnpm, which CI has even where a global pnpm is absent.
+  const output = execFileSync("vp", ["pm", "pack", "--", "--dry-run", "--json"], {
     cwd: directory,
     encoding: "utf8",
   });
@@ -178,7 +181,7 @@ function verifyPackedTypeBoundaries() {
       ["core", coreRoot],
     ]) {
       const before = new Set(readdirSync(temporary));
-      execFileSync("pnpm", ["pack", "--pack-destination", temporary], {
+      execFileSync("vp", ["pm", "pack", "--pack-destination", temporary], {
         cwd: directory,
         stdio: "ignore",
       });

@@ -51,8 +51,18 @@ export interface Watcher {
   close(): Promise<void>;
 }
 
-const IGNORED_SEGMENT =
-  /(^|[/\\])(?:node_modules|\.git|\.topik(?:-compilation-(?:generation|prior)-[^/\\]+)?)(?:[/\\]|$)/;
+const IGNORED_NAME = /^(?:node_modules|\.git|\.topik(?:-compilation-(?:generation|prior)-.+)?)$/u;
+
+/**
+ * Whether a watcher skips a directory or file of this name below a source root: dependencies,
+ * Git metadata, and `topik compile` output with its in-progress generation and prior copies.
+ */
+export function isTopikWatchIgnoredName(name: string): boolean {
+  return IGNORED_NAME.test(name);
+}
+
+const isIgnoredRelativePath = (path: string) =>
+  path.split(/[/\\]/u).some((segment) => isTopikWatchIgnoredName(segment));
 
 /** Default quiet period that coalesces bursts of filesystem notifications into one compile. */
 export const DEFAULT_WATCH_DEBOUNCE_MS = 100;
@@ -209,7 +219,7 @@ export async function watch(options: WatchOptions): Promise<Watcher> {
     ignoreInitial: true,
     // Match only below the watched directory: an ancestor named like an ignored
     // directory (for example a project inside `.topik/`) must not hide the project.
-    ignored: [(path) => IGNORED_SEGMENT.test(relative(dir, path))],
+    ignored: [(path) => isIgnoredRelativePath(relative(dir, path))],
   });
   fsWatcher.on("add", scheduleRecompile);
   fsWatcher.on("addDir", scheduleRecompile);

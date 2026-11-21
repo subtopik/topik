@@ -89,7 +89,7 @@ export function validatePortableAssetFile(
     !hasPortableMode(file) ||
     (file.source !== "git" && file.linkCount !== 1) ||
     file.hasAlternateDataStream === true ||
-    (file.contentFilter !== undefined && file.contentFilter !== "unspecified") ||
+    (file.contentFilter !== undefined && !isIneffectiveGitAttribute(file.contentFilter)) ||
     file.workingTreeEncoding !== undefined
   ) {
     diagnostics.push(
@@ -198,6 +198,12 @@ export function usesPortableFileReads(fileSafety: FileSafety = DEFAULT_FILE_SAFE
  */
 export interface PortableReadSession {
   readonly repositories: Map<string, RepositoryEvidence>;
+  /**
+   * Completed and in-flight file reads of this session, so one compilation reads each file
+   * once (a download link is proved by the link check and then compiled as an Asset) and
+   * every stage sees the same bytes.
+   */
+  readonly reads: Map<string, Promise<TopikAssetResult<PortableAssetFileDescriptor>>>;
   readonly fileSafety: FileSafety;
   /** Caller-configured Git executable; undefined searches the trusted locations. */
   readonly gitExecutable?: string;
@@ -210,6 +216,7 @@ export function createPortableReadSession(
 ): PortableReadSession {
   return {
     repositories: new Map(),
+    reads: new Map(),
     fileSafety,
     gitExecutable: validateGitExecutableOption(gitExecutable),
   };
@@ -324,7 +331,37 @@ export async function readPortableAssetFileInSession(
   session: PortableReadSession,
   options: ReadPortableAssetFileOptions,
 ): Promise<TopikAssetResult<PortableAssetFileDescriptor>> {
-  return readPortableAssetFileAnchored(options, session);
+  // Key on the canonical root, so a retargeted symlinked ancestor is a new read, and on every
+  // option that changes the result.
+  const root = await realpath(options.root).catch(() => resolve(options.root));
+  const key = [
+    root,
+    options.path,
+    options.maxBytes ?? "",
+    options.gitExecutable ?? "",
+    options.fileSafety ?? "",
+  ].join("\0");
+  let read = session.reads.get(key);
+  if (read === undefined) {
+    read = readPortableAssetFileAnchored(options, session);
+    session.reads.set(key, read);
+    // A file that changed while it was read may read cleanly a moment later: retry next time.
+    void read.then(
+      (result) => {
+        if (
+          !result.ok &&
+          portableReadFailureReason(result.diagnostics) === "changed-during-read" &&
+          session.reads.get(key) === read
+        )
+          session.reads.delete(key);
+      },
+      // The caller receives the rejection; a read that threw is not cached either.
+      () => {
+        if (session.reads.get(key) === read) session.reads.delete(key);
+      },
+    );
+  }
+  return read;
 }
 
 /** @internal Deterministic race seam; not re-exported from the package root. */
@@ -496,17 +533,8 @@ async function readPortableAssetFileAnchored(
       await afterDirectoryOpened?.(components.slice(0, index + 1));
     }
 
-    if (
-      attributes !== undefined &&
-      ((attributes.filter !== undefined && attributes.filter !== "unspecified") ||
-        (attributes.workingTreeEncoding !== undefined &&
-          attributes.workingTreeEncoding !== "unspecified"))
-    ) {
-      return fail({
-        message: "Effective Git content filters or working-tree encoding are not portable",
-        reason: "git-filtered",
-      });
-    }
+    const filtered = attributes && filteredAttributesFailure(attributes);
+    if (filtered) return fail(filtered);
 
     const parent = directoryHandles.at(-1);
     if (parent === undefined) throw new Error("Missing anchored parent directory handle");
@@ -519,16 +547,7 @@ async function readPortableAssetFileAnchored(
     const before = await fileHandle.stat({ bigint: true });
     const unsafeFile = unsafeFilesystemFileReason(before, maxBytes);
     if (unsafeFile !== undefined) return fail(unsafeFile);
-    // Bound allocation/read even if the file grows after stat. The identity check below
-    // rejects any mutation; one extra byte detects growth without an unbounded readFile.
-    const buffer = Buffer.alloc(Number(before.size) + 1);
-    let length = 0;
-    while (length < buffer.length) {
-      const { bytesRead } = await fileHandle.read(buffer, length, buffer.length - length, null);
-      if (bytesRead === 0) break;
-      length += bytesRead;
-    }
-    const bytes = buffer.subarray(0, length);
+    const bytes = await readInspectedFile(fileHandle, before.size);
     await afterFileRead?.();
     const after = await fileHandle.stat({ bigint: true });
     if (!hasStableFileIdentity(before, after)) {
@@ -583,11 +602,7 @@ async function readPortableAssetFileAnchored(
         code === "ENOENT"
           ? missingFile(options.path)
           : code === "ELOOP"
-            ? unsupportedPath(
-                options.path,
-                "Symbolic links cannot be read; replace the link with the file or directory it names",
-                "symbolic-link",
-              )
+            ? unsupportedPath(options.path, SYMBOLIC_LINK_MESSAGE, "symbolic-link")
             : unsupportedPath(options.path, "File read failed without a portable no-follow proof"),
       ],
     };
@@ -679,8 +694,7 @@ async function readPortableAssetFileByPath(
       const stats = await lstat(current, { bigint: true });
       if (stats.isSymbolicLink()) {
         return fail({
-          message:
-            "Symbolic links cannot be read; replace the link with the file or directory it names",
+          message: SYMBOLIC_LINK_MESSAGE,
           reason: "symbolic-link",
         });
       }
@@ -707,24 +721,14 @@ async function readPortableAssetFileByPath(
       }
       await afterDirectoryInspected?.(components.slice(0, index + 1));
     }
-    if (
-      attributes !== undefined &&
-      ((attributes.filter !== undefined && attributes.filter !== "unspecified") ||
-        (attributes.workingTreeEncoding !== undefined &&
-          attributes.workingTreeEncoding !== "unspecified"))
-    ) {
-      return fail({
-        message: "Effective Git content filters or working-tree encoding are not portable",
-        reason: "git-filtered",
-      });
-    }
+    const filtered = attributes && filteredAttributesFailure(attributes);
+    if (filtered) return fail(filtered);
 
     const filePath = join(current, components.at(-1) ?? "");
     const entry = await lstat(filePath, { bigint: true });
     if (entry.isSymbolicLink()) {
       return fail({
-        message:
-          "Symbolic links cannot be read; replace the link with the file or directory it names",
+        message: SYMBOLIC_LINK_MESSAGE,
         reason: "symbolic-link",
       });
     }
@@ -751,14 +755,7 @@ async function readPortableAssetFileByPath(
         reason: "symbolic-link",
       });
     }
-    const buffer = Buffer.alloc(Number(before.size) + 1);
-    let length = 0;
-    while (length < buffer.length) {
-      const { bytesRead } = await fileHandle.read(buffer, length, buffer.length - length, null);
-      if (bytesRead === 0) break;
-      length += bytesRead;
-    }
-    const bytes = buffer.subarray(0, length);
+    const bytes = await readInspectedFile(fileHandle, before.size);
     await afterFileRead?.();
     const after = await fileHandle.stat({ bigint: true });
     if (!hasStableFileIdentity(before, after))
@@ -821,8 +818,7 @@ async function readPortableAssetFileByPath(
     // O_NOFOLLOW (where the platform has it) refuses a final link swapped in after lstat.
     if (code === "ELOOP") {
       return fail({
-        message:
-          "Symbolic links cannot be read; replace the link with the file or directory it names",
+        message: SYMBOLIC_LINK_MESSAGE,
         reason: "symbolic-link",
       });
     }
@@ -874,12 +870,7 @@ async function portableGitBoundaryFingerprint(
         },
       };
     }
-    // Directory timestamps change with every lock file Git creates; identity suffices.
-    return {
-      ok: true,
-      present: true,
-      fingerprint: `present:${entry.isDirectory() ? identityStamp(entry) : statStamp(entry)}`,
-    };
+    return { ok: true, present: true, fingerprint: gitBoundaryFingerprint(entry) };
   } catch (error) {
     return isMissingFilesystemError(error)
       ? { ok: true, present: false, fingerprint: "absent" }
@@ -1011,12 +1002,46 @@ async function canonicalRootIdentity(
   }
 }
 
+/** Canonical roots of private scratch trees that no ancestor repository describes. */
+const ISOLATED_ROOTS = new Set<string>();
+
+function isIsolatedRoot(canonicalRoot: string): boolean {
+  for (const root of ISOLATED_ROOTS) {
+    // Canonical roots use the platform separator; Windows paths use `\`.
+    const below = relative(root, canonicalRoot);
+    if (below === "" || (!below.startsWith("..") && !isAbsolute(below))) return true;
+  }
+  return false;
+}
+
+/**
+ * @internal Read `root` as a tree outside any Git repository while `action` runs. For private
+ * scratch directories written from a complete source snapshot: the snapshot is the evidence, so
+ * a repository above the temporary directory, and its attributes, must not apply. Attribute
+ * files inside the tree still do.
+ */
+export async function withIsolatedSourceRoot<T>(
+  root: string,
+  action: () => Promise<T>,
+): Promise<T> {
+  // As canonicalRootIdentity does, a root that cannot be resolved stands for itself.
+  const canonical = await realpath(root).catch(() => resolve(root));
+  ISOLATED_ROOTS.add(canonical);
+  try {
+    return await action();
+  } finally {
+    ISOLATED_ROOTS.delete(canonical);
+  }
+}
+
 async function computeRepositoryEvidence(
   root: string,
   git: string | undefined,
 ): Promise<RepositoryEvidence> {
   // Git discovers repositories from the canonical directory, so evaluate the same one.
   const { canonicalRoot, rootIdentity } = await canonicalRootIdentity(root);
+  if (isIsolatedRoot(canonicalRoot))
+    return { ok: true, kind: "none", canonicalRoot, rootIdentity, stamp: "isolated" };
   const boundary = await gitBoundaryEvidence(canonicalRoot);
   if (!boundary.present)
     return { ok: true, kind: "none", canonicalRoot, rootIdentity, stamp: boundary.stamp };
@@ -1106,6 +1131,7 @@ async function computeRepositoryEvidence(
 }
 
 async function repositoryStamp(evidence: ProvenRepositoryEvidence): Promise<string> {
+  if (isIsolatedRoot(evidence.canonicalRoot)) return "isolated";
   const boundary = await gitBoundaryEvidence(evidence.canonicalRoot);
   return evidence.kind === "none"
     ? boundary.stamp
@@ -1125,6 +1151,14 @@ async function entryStamp(path: string): Promise<string> {
   } catch (error) {
     return `error:${(error as NodeJS.ErrnoException).code ?? "unknown"}`;
   }
+}
+
+/**
+ * How a `.git` entry is bound while a file is read, by both readers: a gitfile by its full
+ * stats, a directory by identity alone, because Git's lock files change its timestamps.
+ */
+function gitBoundaryFingerprint(stats: BigIntStats): string {
+  return `present:${stats.isDirectory() ? identityStamp(stats) : statStamp(stats)}`;
 }
 
 function identityStamp(stats: BigIntStats): string {
@@ -1430,7 +1464,7 @@ async function anchoredGitBoundaryFingerprint(
       };
     }
     const after = await handle.stat({ bigint: true });
-    if (!hasStableFileIdentity(before, after)) {
+    if (gitBoundaryFingerprint(before) !== gitBoundaryFingerprint(after)) {
       return {
         ok: false,
         failure: {
@@ -1439,7 +1473,11 @@ async function anchoredGitBoundaryFingerprint(
         },
       };
     }
-    return { ok: true, present: true, fingerprint: `present:${statStamp(after)}` };
+    return {
+      ok: true,
+      present: true,
+      fingerprint: gitBoundaryFingerprint(after),
+    };
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     return code === "ENOENT"
@@ -1493,9 +1531,10 @@ async function effectiveGitAttributeFailure(
     }
     values.set(fields[index + 1], fields[index + 2]);
   }
+  // `-filter` (unset) and an unspecified attribute both leave the bytes as stored.
   if (
-    values.get("filter") !== "unspecified" ||
-    values.get("working-tree-encoding") !== "unspecified"
+    !isIneffectiveGitAttribute(values.get("filter")) ||
+    !isIneffectiveGitAttribute(values.get("working-tree-encoding"))
   ) {
     return {
       message: "Effective Git content filters or working-tree encoding are not portable",
@@ -1503,6 +1542,22 @@ async function effectiveGitAttributeFailure(
     };
   }
   return undefined;
+}
+
+/** Attributes collected outside a worktree that would make Git change the stored bytes. */
+function filteredAttributesFailure(
+  attributes: EffectiveGitAttributes,
+): PortableReadFailure | undefined {
+  return attributes.filter === "set" || attributes.workingTreeEncoding === "set"
+    ? {
+        message: "Effective Git content filters or working-tree encoding are not portable",
+        reason: "git-filtered",
+      }
+    : undefined;
+}
+
+function isIneffectiveGitAttribute(value: string | undefined): boolean {
+  return value === "unspecified" || value === "unset";
 }
 
 interface EffectiveGitAttributes {
@@ -1930,6 +1985,24 @@ function hasPortableMode(file: PortableAssetFileDescriptor): boolean {
   if (file.source === "archive") return file.mode === "0644";
   return file.mode === "100644" || file.mode === "0644";
 }
+
+/**
+ * Read a file whose size was inspected, allocating for that size plus one byte: growth after
+ * the stat is detected without an unbounded read, and the identity check afterwards rejects it.
+ */
+async function readInspectedFile(handle: FileHandle, size: bigint): Promise<Buffer> {
+  const buffer = Buffer.alloc(Number(size) + 1);
+  let length = 0;
+  while (length < buffer.length) {
+    const { bytesRead } = await handle.read(buffer, length, buffer.length - length, null);
+    if (bytesRead === 0) break;
+    length += bytesRead;
+  }
+  return buffer.subarray(0, length);
+}
+
+const SYMBOLIC_LINK_MESSAGE =
+  "Symbolic links cannot be read; replace the link with the file or directory it names";
 
 function procFdChild(parentFd: number, component: string): string {
   return `/proc/self/fd/${parentFd}/${component}`;

@@ -1,11 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
-import {
-  evaluateDocument,
-  formatDocument,
-  parseDocument,
-  rewriteAssets,
-  writeDocument,
-} from "./index.js";
+import { evaluateDocument, parseDocument, writeDocument } from "./index.js";
+import { formatDocument } from "./markdown.js";
 import { parse, withoutPositions } from "./test-helpers.js";
 
 const source =
@@ -57,17 +52,6 @@ describe("conditional content", () => {
     expect(studentSource).not.toContain("Mentor path.");
     expect(document).toEqual(snapshot);
     expect(writeDocument(document)).toContain("{% else /%}");
-  });
-
-  test("rewrites assets in inactive branches without selecting one", () => {
-    const authored = parse(
-      "{% if $flag %}\n\n![Yes](asset:old)\n\n{% else /%}\n\n![No](asset:old)\n\n{% /if %}",
-    );
-    const rewritten = rewriteAssets(authored, (url) =>
-      url === "asset:old" ? "asset:new" : undefined,
-    );
-    expect(writeDocument(rewritten).match(/asset:new/g)).toHaveLength(2);
-    expect(writeDocument(authored).match(/asset:old/g)).toHaveLength(2);
   });
 
   test.each([

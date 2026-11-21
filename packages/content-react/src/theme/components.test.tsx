@@ -40,8 +40,11 @@ import {
   TopikTableRow,
   TopikKbd,
   TopikUnderline,
+  defaultTopikComponents,
   getDefaultTopikComponents,
 } from "./components";
+import type { TopikComponentProps } from "../core/components";
+import { renderTopikMarkdown } from "../core/render";
 
 // These tests drive React through act(); declare it, or React warns on every call.
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -106,6 +109,14 @@ describe("default Topik theme components", () => {
     ['<div class="dark"><div class="topik-content">', true],
     ['<div class="dark"><div class="topik-content" data-theme="light">', false],
     ['<div class="dark"><div class="topik-content" data-theme="dark">', true],
+    [
+      '<div class="topik-content" data-theme="dark"><div class="topik-content" data-theme="light">',
+      false,
+    ],
+    [
+      '<div class="dark"><div class="topik-content"><div class="topik-content" data-theme="light">',
+      false,
+    ],
   ])("applies dark theme variables to %s: %s", (markup, dark) => {
     const selectorsFor = (declaration: string) => {
       const block = new RegExp(`([^{}]+)\\{[^}]*${declaration}`, "u").exec(themeStyles);
@@ -114,14 +125,17 @@ describe("default Topik theme components", () => {
     };
     const host = document.createElement("div");
     host.innerHTML = markup;
-    const content = host.querySelector(".topik-content")!;
+    // The innermost content root decides; dark adjustments are set on each root, and every
+    // root resets them, so a nested light root never inherits them from a dark one.
+    const content = [...host.querySelectorAll(".topik-content")].at(-1)!;
     expect(content.matches(selectorsFor("--topik-color-canvas: #101828"))).toBe(dark);
-    content.innerHTML = '<aside class="topik-callout"></aside>';
     expect(
-      content.firstElementChild!.matches(
-        selectorsFor("--topik-callout-heading: var\\(--topik-color-text\\)"),
-      ),
+      content.matches(selectorsFor("--topik-callout-dark-heading: var\\(--topik-color-text\\)")),
     ).toBe(dark);
+    expect(content.matches(selectorsFor("--topik-callout-dark-heading: initial"))).toBe(true);
+    expect(themeStyles).not.toMatch(
+      /\.topik-content\[data-theme="dark"\] \.topik-(?:callout|badge)/u,
+    );
   });
 
   it("renders columns and cards with link, icon, title, and body slots", () => {
@@ -530,6 +544,11 @@ describe("default Topik theme components", () => {
     expect(table).toContain('style="text-align:right"');
     expect(table).toContain('colSpan="2"');
     expect(table).toContain('rowSpan="2"');
+    const injected = renderToStaticMarkup(
+      <TopikTableHeader width="1px;background:url(//example.com/x)">Head</TopikTableHeader>,
+    );
+    expect(injected).not.toContain("background");
+    expect(injected).not.toContain("style=");
   });
 
   it("intercepts link navigation through explicit props and provider context", () => {
@@ -963,9 +982,10 @@ describe("default Topik theme components", () => {
     expect(dom.querySelector(".topik-question")?.getAttribute("data-correct")).toBe("true");
     expect(status?.textContent).toBe("Correct");
 
+    // Gamma is the first wrong choice: incomplete sets of right answers are not attempts.
     act(() => inputs[2].click());
     expect(dom.querySelector(".topik-question")?.getAttribute("data-correct")).toBe("false");
-    expect(status?.textContent).toBe("Try again (2 incorrect attempts)");
+    expect(status?.textContent).toBe("Try again");
 
     act(() => {
       inputs[0].click();
@@ -1176,6 +1196,39 @@ describe("theme component fallbacks, accessibility and right-to-left layout", ()
     const fieldset = dom.querySelector("fieldset");
     expect(fieldset?.querySelector(":scope > legend")?.textContent).toBe(legend);
     expect(fieldset?.querySelectorAll(`input[type="${inputType}"]`)).toHaveLength(2);
+  });
+
+  it("shows a custom explanation rendered without the themed component map", () => {
+    const source =
+      "{% quiz %}\n{% question %}\n{% choice correct=true %}\n4\n{% /choice %}\n{% choice %}\n5\n{% /choice %}\n{% explanation %}\nMath.\n{% /explanation %}\n{% /question %}\n{% /quiz %}";
+    function Explanation({ children }: TopikComponentProps) {
+      return <aside className="custom-explanation">{children}</aside>;
+    }
+    const dom = mount(
+      renderTopikMarkdown(source, {
+        components: { ...defaultTopikComponents, TopikExplanation: Explanation },
+      }),
+    );
+    act(() => dom.querySelector<HTMLInputElement>("input")?.click());
+    expect(dom.querySelector(".custom-explanation")?.textContent).toContain("Math.");
+  });
+
+  it("does not count picking some of the right answers as incorrect attempts", () => {
+    const dom = mount(
+      <TopikQuestion type="multiple-choice">
+        <TopikChoice correct>Alpha</TopikChoice>
+        <TopikChoice correct>Beta</TopikChoice>
+        <TopikChoice correct>Gamma</TopikChoice>
+        <TopikChoice>Delta</TopikChoice>
+      </TopikQuestion>,
+    );
+    const inputs = dom.querySelectorAll<HTMLInputElement>("input");
+    const status = dom.querySelector('[role="status"]');
+    act(() => inputs[0].click());
+    act(() => inputs[1].click());
+    expect(status?.textContent).toBe("Try again");
+    act(() => inputs[2].click());
+    expect(status?.textContent).toBe("Correct");
   });
 
   it("changes the live feedback for each repeated wrong answer", () => {

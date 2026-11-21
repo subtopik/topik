@@ -1,12 +1,12 @@
 import { afterEach, expect, test, vi } from "vite-plus/test";
 import {
-  formatDocument,
   formatTopikContent,
   parseDocument,
   rewriteTopikAssetOccurrences,
   sameDocumentMeaning,
   writeDocument,
 } from "./index.js";
+import { formatDocument } from "./markdown.js";
 import { parse, withoutPositions } from "./test-helpers.js";
 import * as writer from "./writer.js";
 

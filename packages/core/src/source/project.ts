@@ -10,6 +10,7 @@ import { loadTopikManifest } from "../compile/manifest";
 import type { TopikManifest } from "../config/manifest";
 import { validateTopikPathSet } from "../assets/path";
 import { serializeTopikJson } from "../assets/json";
+import { withIsolatedSourceRoot } from "../assets/files";
 import {
   FORMAT_VERSION,
   TOPIK_CONTENT_SCHEMA_VERSION,
@@ -170,9 +171,7 @@ export function snapshotSourceTree(input: readonly SourceTreeFile[]): SourceTree
     mode: file.mode,
     bytes: new Uint8Array(file.bytes),
   }));
-  return tree.sort((left, right) =>
-    Buffer.compare(encodeSource(left.path), encodeSource(right.path)),
-  );
+  return tree.sort((left, right) => compareSourcePaths(left.path, right.path));
 }
 export function digestSourceTree(tree: readonly SourceTreeFile[]): string {
   return sourceHash(
@@ -198,6 +197,11 @@ export function digestSourceResourceGraph(resources: readonly Resource[]): strin
   );
 }
 
+/** Source paths in UTF-8 byte order, the order of every planned tree and change list. */
+export function compareSourcePaths(left: string, right: string): number {
+  return Buffer.compare(encodeSource(left), encodeSource(right));
+}
+
 export async function withSourceScratch<T>(
   tree: readonly SourceTreeFile[],
   action: (dir: string) => Promise<T>,
@@ -214,7 +218,8 @@ export async function withSourceScratch<T>(
         mode: file.mode === "100755" ? 0o755 : 0o644,
       });
     }
-    return await action(dir);
+    // The tree is the whole source: a repository above the temporary directory does not apply.
+    return await withIsolatedSourceRoot(dir, () => action(dir));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

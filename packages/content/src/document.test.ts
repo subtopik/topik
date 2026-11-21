@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { formatDocument } from "./index.js";
+import { formatDocument } from "./markdown.js";
 
 describe("content syntax", () => {
   test("formatting refuses unsupported expressions with raw source", () => {

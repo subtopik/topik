@@ -164,7 +164,7 @@ export interface SourcePlanDiagnostic {
   message: string;
   resource?: string;
   path?: string;
-  /** One-based lines in the compiled document body, excluding frontmatter. */
+  /** One-based lines in the source file, counted from its first line, frontmatter included. */
   lines?: readonly number[];
   sourceIndex?: number;
   kind?: "wiki" | "collection" | "course";

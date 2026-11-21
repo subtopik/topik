@@ -132,6 +132,57 @@ describe("alpha publication retries", () => {
     }
   });
 
+  test.each([
+    [{ type: "tag", name: "v0.0.0-alpha.0" }, false],
+    [{ type: "branch", name: "feature" }, false],
+    [{ type: "branch", name: "main" }, true],
+  ])("checks the release ref %j before publishing", (ref, accepted) => {
+    const temporary = mkdtempSync(join(tmpdir(), "topik-release-ref-"));
+    try {
+      const cwd = createPublishWorkspace(temporary);
+      const calls = [];
+      const publish = () =>
+        publishAlpha({
+          cwd,
+          temporaryDirectory: temporary,
+          ref,
+          run: (...args) => calls.push(args),
+        });
+      if (accepted) {
+        // The fake run writes no plan; getting past the ref check is what matters here.
+        expect(publish).toThrow(/ENOENT|no such file/u);
+        expect(calls.length).toBeGreaterThan(0);
+      } else {
+        expect(publish).toThrow(/Publish from the tag v/u);
+        expect(calls).toEqual([]);
+      }
+    } finally {
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  });
+
+  test("accepts the tag that names the packages' version", () => {
+    const temporary = mkdtempSync(join(tmpdir(), "topik-release-tag-"));
+    try {
+      const cwd = createPublishWorkspace(temporary);
+      const version = JSON.parse(
+        readFileSync(join(cwd, "packages", "core", "package.json"), "utf8"),
+      ).version;
+      const calls = [];
+      expect(() =>
+        publishAlpha({
+          cwd,
+          temporaryDirectory: temporary,
+          ref: { type: "tag", name: `v${version}` },
+          run: (...args) => calls.push(args),
+        }),
+      ).toThrow(/ENOENT|no such file/u);
+      expect(calls.length).toBeGreaterThan(0);
+    } finally {
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  });
+
   test("allows applied prerelease changesets and an already-published empty plan", () => {
     const temporary = mkdtempSync(join(tmpdir(), "topik-versioned-publish-"));
     try {

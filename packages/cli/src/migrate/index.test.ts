@@ -143,5 +143,12 @@ describe("agent instructions section", () => {
     expect(AGENT_INSTRUCTIONS.startsWith(AGENT_INSTRUCTIONS_START_MARKER)).toBe(true);
     expect(AGENT_INSTRUCTIONS.endsWith(`${AGENT_INSTRUCTIONS_END_MARKER}\n`)).toBe(true);
     expect(replaceAgentInstructionsSection(AGENT_INSTRUCTIONS)).toBe(AGENT_INSTRUCTIONS);
+    const crlf = AGENT_INSTRUCTIONS.replaceAll("\n", "\r\n");
+    expect(replaceAgentInstructionsSection(crlf)).toBe(crlf);
+    expect(
+      replaceAgentInstructionsSection(
+        "# Notes\r\n\r\n<!--TOPIK START-->\r\nold\r\n<!--TOPIK END-->\r\n",
+      ),
+    ).toBe(`# Notes\r\n\r\n${crlf}`);
   });
 });

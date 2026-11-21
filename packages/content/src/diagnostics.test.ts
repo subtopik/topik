@@ -33,9 +33,9 @@ test.each([
   "explains built-in source errors without exposing authored values: %s",
   (source, id, message) => {
     const result = validateTopikContent(source);
-    expect(result.valid).toBe(false);
-    expect(result.errors).toContainEqual(expect.objectContaining({ id, message, lines: [1] }));
-    expect(JSON.stringify(result.errors)).not.toContain("PRIVATE_VALUE");
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ id, message, lines: [1] }));
+    expect(JSON.stringify(result.diagnostics)).not.toContain("PRIVATE_VALUE");
   },
 );
 
@@ -175,7 +175,7 @@ describe("diagnostic file sanitization", () => {
 });
 
 test("tag diagnostics keep their source column", () => {
-  expect(validateTopikContent("Text {% badge label=x /%}\n\n{% /callout %}").errors).toEqual([
+  expect(validateTopikContent("Text {% badge label=x /%}\n\n{% /callout %}").diagnostics).toEqual([
     expect.objectContaining({ id: "attribute-syntax-invalid", lines: [1], column: 6 }),
     expect.objectContaining({ id: "missing-opening", lines: [3], column: 1 }),
   ]);
@@ -194,8 +194,8 @@ test("tag diagnostics keep their source column", () => {
 
 test("collapse diagnostics retain only the recognized option and safe source position", () => {
   const result = validateTopikContent('~~~ts collapse="1-"\nx\n~~~');
-  expect(result.valid).toBe(false);
-  expect(result.errors).toContainEqual(
+  expect(result.ok).toBe(false);
+  expect(result.diagnostics).toContainEqual(
     expect.objectContaining({
       id: "topik-code-presentation-lines",
       option: "collapse",
@@ -217,7 +217,7 @@ test("collapse diagnostics retain only the recognized option and safe source pos
 });
 
 test("attribute diagnostics name the component, the attribute and what the schema accepts", () => {
-  const diagnostics = (source: string) => validateTopikContent(source).errors;
+  const diagnostics = (source: string) => validateTopikContent(source).diagnostics;
   expect(diagnostics('{% callout variant="PRIVATE_VALUE" %}\nx\n{% /callout %}')).toContainEqual(
     expect.objectContaining({
       id: "attribute-value-invalid",

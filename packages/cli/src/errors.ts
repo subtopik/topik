@@ -26,6 +26,10 @@ const PUBLIC_CLI_ERROR_MESSAGES = Object.freeze({
   "compilation-output-not-owned":
     "Existing compilation output is populated but is not recognized as owned. Choose a new or empty output directory.",
   "compilation-output-empty": "Compilation output directory must not be empty.",
+  "compilation-output-scope-unproven":
+    "Compilation output path could not be resolved to prove it is outside the source directory.",
+  "compilation-output-unsafe":
+    "Compilation output could not be written safely. Choose a new or empty output directory.",
   "compilation-output-platform-unsupported":
     "Writing compilation output with --file-safety anchored requires Linux. Use --file-safety portable on a workspace you trust.",
   "compilation-publication-failed":

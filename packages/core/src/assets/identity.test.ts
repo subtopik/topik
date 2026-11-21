@@ -123,6 +123,31 @@ function noAssetMaterialization(
 }
 
 describe("exact Asset materialization inventory", () => {
+  test.each(["sha512:", "md5sum:"])(
+    "refuses an Asset whose integrity uses %s instead of sha256:",
+    (prefix) => {
+      const relabeled: Asset = {
+        ...asset,
+        spec: { ...asset.spec, integrity: `${prefix}${integrity.slice("sha256:".length)}` },
+      };
+      const relabeledResources: Resource[] = [relabeled, guide];
+      const record = createTopikMaterializationRecord(
+        relabeledResources.map((resource) => ({
+          resource,
+          bytes: new TextEncoder().encode(serializeTopikJson(resource)),
+        })),
+        [{ path: asset.spec.uri, bytes, assetNames: [asset.name] }],
+      );
+      expect(
+        validateTopikMaterializationRecord(
+          record,
+          relabeledResources,
+          createTopikAssetSemanticRecord([relabeled], [...semantic.references]),
+        ),
+      ).toMatchObject({ ok: false });
+    },
+  );
+
   test("validates every compiled resource descriptor and required payload", () => {
     const complete = completeRecord();
     expect(validateTopikMaterializationRecord(complete, resources)).toMatchObject({ ok: true });

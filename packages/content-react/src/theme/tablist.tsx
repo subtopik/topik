@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 function useRovingTabs(tabCount: number) {
   const [selectedIndex, setSelected] = useState(0);
@@ -82,6 +82,35 @@ export function TopikTablist({
 }: TopikTablistProps) {
   const id = useId();
   const { handleKeyDown, selectTab, selected, tabRefs } = useRovingTabs(items.length);
+  const panelRefs = useRef<Array<HTMLDivElement | null>>([]);
+
+  // A link to an element inside a hidden panel selects that panel's tab, on load and when
+  // the fragment changes, so the target can be seen.
+  useEffect(() => {
+    const view = panelRefs.current.find(Boolean)?.ownerDocument.defaultView;
+    if (!view) return;
+    const reveal = () => {
+      const hash = view.location.hash.slice(1);
+      if (!hash) return;
+      let name = hash;
+      try {
+        name = decodeURIComponent(hash);
+      } catch {
+        // Keep the fragment as written, as browsers do.
+      }
+      const target = view.document.getElementById(name);
+      if (!target) return;
+      const index = panelRefs.current.findIndex((panel) => panel?.contains(target));
+      if (index === -1) return;
+      selectTab(index);
+      view.requestAnimationFrame?.(() => target.scrollIntoView?.());
+    };
+    reveal();
+    view.addEventListener("hashchange", reveal);
+    return () => view.removeEventListener("hashchange", reveal);
+    // selectTab only sets state; the listener reads panels through refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className={className}>
@@ -119,6 +148,9 @@ export function TopikTablist({
           hidden={index !== selected}
           id={`${id}-${panelId}-${index}`}
           key={index}
+          ref={(element) => {
+            panelRefs.current[index] = element;
+          }}
           role="tabpanel"
           tabIndex={0}
         >

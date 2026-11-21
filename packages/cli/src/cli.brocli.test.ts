@@ -92,13 +92,13 @@ describe.skipIf(!existsSync(builtCli))("built topik binary", () => {
     expect(result.code).toBe(1);
     expect(result.stderr).not.toContain(SENTINEL);
     expect(result.stderr).not.toContain(tmpdir());
-    // POSIX reports ENOTDIR for a path below a regular file, which stops the output scope
-    // check with the generic failure. Windows reports ENOENT, the same as an output directory
-    // that does not exist yet, so the command goes on to read the project and fails there.
+    // POSIX reports ENOTDIR for a path below a regular file, which the output scope check
+    // refuses as a collision. Windows reports ENOENT, the same as an output directory that
+    // does not exist yet, so the command goes on to read the project and fails there.
     expect(result.stderr).toBe(
       process.platform === "win32"
         ? `${NATIVE_NOTICE}.topik.yaml: Project compilation requires .topik.yaml in the selected directory. Add a manifest such as: {"version":1,"namespace":"owner/project","sources":[{"kind":"wiki","config":"wiki.yaml"}]}\n`
-        : "Topik command failed.\n",
+        : "Compilation output contains a link or non-directory collision. Choose a new or empty output directory.\n",
     );
   });
 
@@ -118,7 +118,7 @@ describe.skipIf(!existsSync(builtCli))("built topik binary", () => {
       stdout: "",
       stderr:
         NATIVE_NOTICE +
-        "index.md:3 error link-page-not-found: Internal link target page was not found.\n" +
+        "index.md:3:1 error link-page-not-found: Internal link target page was not found.\n" +
         "1 compile error(s)\n" +
         "Compilation found errors.\n",
     });
@@ -377,6 +377,7 @@ describe.skipIf(!existsSync(builtCli))("built topik binary", () => {
           file: "index.md",
           line: 3,
           lines: [3],
+          column: 1,
           id: "link-page-not-found",
           severity: "error",
           message: "Internal link target page was not found.",

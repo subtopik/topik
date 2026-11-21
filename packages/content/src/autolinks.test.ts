@@ -27,7 +27,7 @@ describe("explicit link intent", () => {
     const document = parse(source);
     // Assert author intent independently of the parser's own interpretation.
     expect(withoutPositions(document)).toEqual(expected);
-    expect(validateTopikContent(source).valid).toBe(true);
+    expect(validateTopikContent(source).ok).toBe(true);
     expect(analyzeTopikContent(source).links).toEqual([]);
     expect(extractTopikAssetOccurrences(source, { includeGenericLinkCandidates: true })).toEqual(
       [],
@@ -134,7 +134,7 @@ describe("explicit Markdown links", () => {
     };
     const document = parse(source);
     expect(withoutPositions(document)).toEqual(expected);
-    expect(validateTopikContent(source).valid).toBe(true);
+    expect(validateTopikContent(source).ok).toBe(true);
     expect(analyzeTopikContent(source).links).toMatchObject([{ href: url }]);
     const written = writeDocument(document);
     expect(withoutPositions(parse(written))).toEqual(expected);
@@ -257,10 +257,10 @@ describe("explicit Markdown links", () => {
     "validates an explicit destination while allowing the same spelling as plain text: %s",
     (url) => {
       expect(urls(parse(url))).toEqual([]);
-      expect(validateTopikContent(url).valid).toBe(true);
+      expect(validateTopikContent(url).ok).toBe(true);
       for (const source of [`<${url}>`, `[Example](${url})`]) {
         expect(urls(parse(source))).toEqual([url]);
-        expect(validateTopikContent(source).valid).toBe(false);
+        expect(validateTopikContent(source).ok).toBe(false);
         expect(formatTopikContent(source)).toMatchObject({ ok: false, source });
       }
     },

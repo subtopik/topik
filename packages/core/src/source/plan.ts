@@ -7,6 +7,7 @@ import {
   parseTopikResourceReference,
   type TopikNavigationReference,
 } from "@topik/content";
+import type { Person } from "@topik/schema/person/v1";
 import type { Wiki, WikiNavNode } from "@topik/schema/wiki/v1";
 import type { WikiPage } from "@topik/schema/wiki-page/v1";
 import type { Course } from "@topik/schema/course/v1";
@@ -50,6 +51,8 @@ import {
   sourceMediaPath,
   type SourcePathCollisionPolicy,
   resourceKey,
+  isWritableDocument,
+  sourcePersonRecord,
   writeMarkdown,
   type WritableDocument,
 } from "./plan-markdown";
@@ -62,9 +65,10 @@ import { validateResourceGraph, validateResources } from "../validate";
 import { isSourceNonPageReference, sourcePathInventory } from "../reference-paths";
 import { serializeTopikJson } from "../assets/json";
 import { generateAutomaticAssetName } from "../assets/asset";
-import { validateTopikPathSet } from "../assets/path";
+import { computeTopikPathCollisionKey, validateTopikPathSet } from "../assets/path";
 import { resolveWikiNavigation, resolveWikiContentHref } from "../wiki-navigation";
 import {
+  compareSourcePaths,
   readSourceProject,
   digestSourceTree,
   digestSourceResourceGraph,
@@ -563,8 +567,6 @@ interface ReferenceScope {
   ): boolean;
 }
 
-const isWritableDocument = (resource: Resource): resource is WritableDocument =>
-  resource.type === "Guide" || resource.type === "WikiPage" || resource.type === "CoursePage";
 const documentOf = (project: SourceProject, key: string): SourceDocument | undefined =>
   project.documents.find((document) => document.resource === key);
 const provenanceOf = (project: SourceProject, config: string | undefined) =>
@@ -665,6 +667,13 @@ function requireExplicitIntent(
 /** Reserve the Markdown path of every created or moved document. */
 function allocateOperationPaths(state: PlanState): void {
   const { input, project, desired, paths, reserved } = state;
+  // Case and Unicode aliases of occupied paths collide too: `Start.md` beside `start.md`.
+  const aliases = new Map<string, string>();
+  const alias = (path: string) => {
+    const key = computeTopikPathCollisionKey(path);
+    return key.ok ? key.value : path;
+  };
+  for (const path of reserved) aliases.set(alias(path), path);
   for (const op of input.operations) {
     if (op.kind !== "create" && op.kind !== "move") continue;
     const next = desired.get(op.resource)!;
@@ -691,7 +700,10 @@ function allocateOperationPaths(state: PlanState): void {
         next,
         input.pathCollisions,
       );
-    if (reserved.has(path))
+    const occupant = aliases.get(alias(path));
+    // A move may change only the case of its own path.
+    const own = op.kind === "move" ? documentOf(project, op.resource)?.path : undefined;
+    if (reserved.has(path) || (occupant !== undefined && occupant !== own))
       block(
         "source-path-collision",
         "New paths cannot overwrite occupied paths.",
@@ -699,6 +711,7 @@ function allocateOperationPaths(state: PlanState): void {
         path,
       );
     reserved.add(path);
+    aliases.set(alias(path), path);
     paths.set(op.resource, path);
     if (op.kind === "move") state.createdModes.set(path, documentOf(project, op.resource)!.mode);
   }
@@ -1204,14 +1217,11 @@ function planPersonOperation(
   if (op.kind === "delete")
     state.personDeletions.set(config, [...(state.personDeletions.get(config) ?? []), selector]);
   else if (op.kind === "create") {
-    const person = next!;
+    // Person operations act only on desired Person resources.
+    const person = next as Person;
     state.personAdditions.set(config, [
       ...(state.personAdditions.get(config) ?? []),
-      {
-        id: person.name,
-        ...(person.labels !== undefined ? { labels: person.labels } : {}),
-        spec: person.spec,
-      },
+      sourcePersonRecord(person),
     ]);
   } else {
     collectMetadataEdits(updates, `${selector}/labels`, previous!.labels, next!.labels);
@@ -1520,7 +1530,7 @@ function collectFileChanges(
 ): SourceFileChange[] {
   const { input, files, modified, deleted } = state;
   const changes: SourceFileChange[] = [];
-  for (const path of [...new Set([...modified.keys(), ...deleted])].sort()) {
+  for (const path of [...new Set([...modified.keys(), ...deleted])].sort(compareSourcePaths)) {
     const old = files.get(path);
     const bytes = deleted.has(path) ? undefined : modified.get(path);
     if (old && bytes && sourceHash(old.bytes) === sourceHash(bytes)) continue;

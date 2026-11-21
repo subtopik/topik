@@ -97,8 +97,10 @@ export function renderTopikContent(
 }
 
 /**
- * Render a caller-trusted Topik render tree. The caller owns validation and this API remains separate
- * from normal source rendering. Post-transform link and Asset sanitization still applies.
+ * Render a caller-trusted Topik render tree. The caller owns validation, and this API remains
+ * separate from normal source rendering. Link and Asset slots of `Topik*` components are still
+ * sanitized, but any other element name renders as that element with every attribute as given,
+ * so pass only trees from `compileTopikContent` or an equally strict validator.
  */
 export function renderTrustedTopikTree(
   tree: RenderableTreeNode,
@@ -152,7 +154,7 @@ export function renderTrustedTopikTree(
     }
     return React.createElement(
       component,
-      { ...node.attributes, ...taskMarkerLabel(node), key: elementKey },
+      { ...node.attributes, ...taskMarkerLabel(node), ...questionRole(node), key: elementKey },
       ...children,
     );
   }
@@ -171,6 +173,16 @@ function serializeResolvedContent(node: RenderableTreeNode): string {
 }
 
 /** Task-list markers are read-only checkboxes; name them by their state for assistive technology. */
+/**
+ * Mark choices and explanations by their tag, so a question recognizes a custom component in
+ * either role without the themed component map's slot wrappers.
+ */
+function questionRole(node: ContentTag): { __topikRole?: "choice" | "explanation" } {
+  if (node.name === "TopikChoice") return { __topikRole: "choice" };
+  if (node.name === "TopikExplanation") return { __topikRole: "explanation" };
+  return {};
+}
+
 function taskMarkerLabel(node: ContentTag): { "aria-label"?: string } {
   const { attributes } = node;
   if (

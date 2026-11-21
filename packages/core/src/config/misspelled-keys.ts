@@ -1,11 +1,15 @@
 import { z } from "zod";
 
 /**
- * Reject unknown top-level configuration keys that look like misspellings of known keys,
+ * Reject unknown keys of a configuration record that look like misspellings of known keys,
  * such as `navigaton` or `Title`. Other unknown keys stay accepted: source writing
  * deliberately preserves unrelated configuration entries.
  */
-export function rejectMisspelledKeys(raw: unknown, known: readonly string[]): void {
+export function rejectMisspelledKeys(
+  raw: unknown,
+  known: readonly string[],
+  path: readonly (string | number)[] = [],
+): void {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return;
   for (const key of Object.keys(raw)) {
     if (known.includes(key)) continue;
@@ -14,7 +18,7 @@ export function rejectMisspelledKeys(raw: unknown, known: readonly string[]): vo
         {
           code: "unrecognized_keys",
           keys: [key],
-          path: [],
+          path: [...path],
           message: `Unrecognized key: "${key}"`,
           input: raw as Record<string, unknown>,
         },

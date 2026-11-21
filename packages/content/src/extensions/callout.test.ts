@@ -1,11 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
-import {
-  getEffectiveProps,
-  parseDocument,
-  writeDocument,
-  type Component,
-  type ContentDocument,
-} from "../index.js";
+import { parseDocument, writeDocument, type Component, type ContentDocument } from "../index.js";
+import { getEffectiveProps } from "../registry.js";
 import { parse } from "../test-helpers.js";
 
 function callout(document: ContentDocument): Component {

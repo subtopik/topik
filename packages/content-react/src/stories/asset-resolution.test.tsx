@@ -33,7 +33,7 @@ describe("compiled Asset stories", () => {
     const args = getStoryArgs(story);
     expect(
       validateTopikContent(args.content, { allowCompiledAssetReferences: true }),
-    ).toMatchObject({ valid: true, errors: [] });
+    ).toMatchObject({ ok: true, diagnostics: [] });
     expect(() => renderToStaticMarkup(<TopikContent {...args} />)).not.toThrow();
   });
 

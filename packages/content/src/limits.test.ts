@@ -1,16 +1,13 @@
 import { describe, expect, test } from "vite-plus/test";
 import {
   evaluateDocument,
-  formatDocument,
   parseDocument,
-  rewriteAssets,
   validateDocument,
   writeDocument,
   type ContentDocument,
-  assignTopikHeadingIds,
-  removeInvalidTopikAssetReferences,
-  removeInvalidTopikNavigationReferences,
 } from "./index.js";
+import { formatDocument } from "./markdown.js";
+import { assignTopikHeadingIds } from "./test-helpers.js";
 import { parseExpression, writeExpression, type Expression } from "./expressions.js";
 import { parseDocumentTree } from "./parser.js";
 
@@ -59,10 +56,7 @@ describe("content resource boundaries", () => {
     for (const operation of [
       () => writeDocument(document),
       () => evaluateDocument(document, {}),
-      () => rewriteAssets(document, (url) => url),
       () => assignTopikHeadingIds(document),
-      () => removeInvalidTopikAssetReferences(document),
-      () => removeInvalidTopikNavigationReferences(document),
     ])
       expect(operation).toThrow(/cycle/i);
   });
@@ -139,6 +133,20 @@ describe("content resource boundaries", () => {
     ["unclosed resources", "[a](".repeat(25_000)],
     ["nested images", "![".repeat(100_000) + "a" + "](b)".repeat(100_000)],
     ["deep inline tags", "{% badge %}".repeat(8_000) + "x" + "{% /badge %}".repeat(8_000)],
+    // micromark copies the whole document event list each time container exits move back.
+    ["lazy quote lines", "> a\nb\n".repeat(20_000)],
+    ["block quotes ended by blank lines", "> a\n\n".repeat(30_000)],
+    ["lists followed by paragraphs", "- a\n- b\n\nText\n\n".repeat(8_000)],
+    ["sibling items with nested lists", "- a\n  - b\n".repeat(12_000)],
+    ["sibling items with nested quotes", "- > a\n".repeat(20_000)],
+    ["lazy lines after quoted headings", "> # h\nb\n".repeat(12_000)],
+    ["tab-indented nested lists", "- a\n\t- b\n".repeat(20_000)],
+    ["setext headings", "Title\n=====\n\nBody.\n\n".repeat(20_000)],
+    ["nested lists under empty items", "-\n  - a\n".repeat(20_000)],
+    [
+      "footnote definitions ended by paragraphs",
+      Array.from({ length: 8_000 }, (_, index) => `[^n${index}]: a\n\nb\n\n`).join(""),
+    ],
   ])("bounds parser work before resolving %s", (_label, source) => {
     const started = performance.now();
     const result = parseDocument(source);
@@ -197,6 +205,21 @@ describe("content resource boundaries", () => {
         (_, item) => `- **Fix** issue \`${item}\` in [#${item}](https://e.com/${item})\n`,
       ).join(""),
     ],
+    ["quoted lines", "> A quoted line of ordinary prose.\n".repeat(5_000)],
+    ["setext headings near the budget", "Title\n=====\n\nBody.\n\n".repeat(1_000)],
+    ["thematic breaks between paragraphs", "Para.\n\n---\n\n".repeat(6_000)],
+    // Near the block budget: about 1,500 closings of nested containers are admitted.
+    ["steps with nested notes", "1. Step\n   - note\n".repeat(1_500)],
+    ["nested task lists", "- [ ] task\n  - [x] sub\n".repeat(1_500)],
+    ["terms with definition lists", "Term\n\n- def one\n- def two\n\n".repeat(1_500)],
+    ["quoted notes between paragraphs", "> **Note**\n> text here\n\nParagraph.\n\n".repeat(1_500)],
+    ["thematic breaks that look like list items", "* * *\n\n- - -\n\n".repeat(5_000)],
+    [
+      "nested lists",
+      "- Item\n  - Detail\n  - Detail\n    > A note\n- Item\n\nText.\n\n".repeat(150),
+    ],
+    ["lazily wrapped quotes", `> ${sentence}\n${sentence}\n\n`.repeat(300)],
+    ["lazily wrapped list items", `- ${sentence}\n${sentence}\n`.repeat(250)],
     [
       "a long table",
       "| a | b | c |\n| - | - | - |\n" +

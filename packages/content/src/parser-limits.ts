@@ -17,6 +17,137 @@ const REFERENCE_EXTENT = 1_003;
 const SERIALIZE_WEIGHT = 4;
 /** Merging a data run moves the events after it in one shift, cheaper than a walk. */
 const MERGE_DIVISOR = 4;
+const BLANK_LINE = /^[ \t]*$/u;
+/** Flow that a lazy line cannot continue: headings, fences, HTML, breaks, tables, code. */
+const BLOCK_START = /^(?:#{1,6}(?:[ \t]|$)|`{3,}|~{3,}|<|(?:[-*_][ \t]*){3,}$|\|)/u;
+const QUOTE_MARKER = /^ {0,3}>[ \t]?/u;
+const ITEM_MARKER = /^ {0,3}(?:[-*+]|[0-9]{1,9}[.)])(?:[ \t]+|$)/u;
+/** A GFM footnote definition, a container like a list item. */
+const FOOTNOTE_MARKER = /^ {0,3}\[\^[^\]\s]{1,999}\]:[ \t]?/u;
+/** A thematic break such as `* * *` is not a list item, though it starts like one. */
+const THEMATIC_BREAK = /^ {0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$/u;
+const startsItem = (text: string) => ITEM_MARKER.test(text) && !THEMATIC_BREAK.test(text);
+
+/** One-based line access into the normalized (LF) source. */
+function sourceLines(source: string) {
+  const starts = [0];
+  for (let index = source.indexOf("\n"); index !== -1; index = source.indexOf("\n", index + 1))
+    starts.push(index + 1);
+  return {
+    text: (line: number) =>
+      line < 1 || line > starts.length
+        ? ""
+        : source.slice(starts[line - 1], line < starts.length ? starts[line] - 1 : source.length),
+  };
+}
+
+const leadingSpaces = (text: string) => text.length - text.trimStart().length;
+
+function expandTabs(text: string): string {
+  let expanded = "";
+  for (const character of text)
+    expanded += character === "\t" ? " ".repeat(4 - (expanded.length % 4)) : character;
+  return expanded;
+}
+
+/**
+ * Follow block quotes and list items line by line, as the CommonMark document parser opens
+ * and continues them, to tell when micromark rewrites its event list. Columns count tabs as
+ * one character: the model only estimates parser work and never decides the parse.
+ */
+function containerModel() {
+  type Open = { quote: true } | { quote: false; content: number };
+  let stack: Open[] = [];
+  /** Lines of the paragraph a lazy line would continue; 0 after a blank line or a block. */
+  let paragraph = 0;
+  const open = (rest: string, column: number) => {
+    for (;;) {
+      const quote = QUOTE_MARKER.exec(rest);
+      if (quote) {
+        stack.push({ quote: true });
+        column += quote[0].length;
+        rest = rest.slice(quote[0].length);
+        continue;
+      }
+      const footnote = FOOTNOTE_MARKER.exec(rest);
+      if (footnote) {
+        // A footnote definition continues on lines indented four columns past its start.
+        stack.push({ quote: false, content: column + leadingSpaces(rest) + 4 });
+        column += footnote[0].length;
+        rest = rest.slice(footnote[0].length);
+        continue;
+      }
+      const item = startsItem(rest) ? ITEM_MARKER.exec(rest) : null;
+      // An empty marker line opens an item too (`-` alone, its content on the next lines). A
+      // setext underline looks the same; modelling it as an item only over-approximates.
+      if (!item) return rest;
+      column += item[0].length;
+      stack.push({ quote: false, content: column });
+      rest = rest.slice(item[0].length);
+    }
+  };
+  return {
+    line(authored: string, lazy: boolean): { rewrite: boolean; walk: number } {
+      // Tabs advance to the next multiple of four columns, as CommonMark counts indentation.
+      const text = authored.includes("\t") ? expandTabs(authored) : authored;
+      const blank = BLANK_LINE.test(text);
+      let rest = text;
+      let column = 0;
+      let continued = 0;
+      let sibling = false;
+      for (; continued < stack.length; continued++) {
+        const container = stack[continued];
+        if (container.quote) {
+          const marker = QUOTE_MARKER.exec(rest);
+          if (!marker) break;
+          column += marker[0].length;
+          rest = rest.slice(marker[0].length);
+          continue;
+        }
+        if (blank) continue;
+        const indent = leadingSpaces(rest);
+        if (column + indent >= container.content) {
+          const skip = container.content - column;
+          column += skip;
+          rest = rest.slice(skip);
+          continue;
+        }
+        // A new item of the same list continues it, closing what was nested in the item.
+        sibling = startsItem(rest);
+        break;
+      }
+      const nested = stack.length - continued - 1;
+      const previous = paragraph;
+      let rewrite = false;
+      let walk = 0;
+      if (sibling) {
+        rewrite = nested > 0;
+        stack = stack.slice(0, continued);
+        rest = open(rest, column);
+      } else if (continued < stack.length && !blank && lazy) {
+        // A lazy line keeps the containers when it continues the open paragraph.
+        if (previous > 0 && !BLOCK_START.test(rest.trimStart())) walk = previous;
+        else rewrite = true;
+        if (rewrite) stack = stack.slice(0, continued);
+      } else {
+        // A blank line that ends a block quote is lazy and moves its exits back as well.
+        if (continued < stack.length && lazy) rewrite = true;
+        stack = stack.slice(0, continued);
+        if (!blank) rest = open(rest, column);
+      }
+      const content = rest.trimStart();
+      paragraph = walk
+        ? previous + 1
+        : blank || BLANK_LINE.test(content) || BLOCK_START.test(content) || leadingSpaces(rest) >= 4
+          ? 0
+          : sibling || continued < stack.length
+            ? 1
+            : paragraph + 1;
+      return { rewrite, walk };
+    },
+  };
+}
+
 /** Tokens that end the GFM footnote tokenizer's backward search for a `![`. */
 const FOOTNOTE_STOPS = new Set([
   "gfmFootnoteCall",
@@ -141,6 +272,15 @@ function sourceIndex(source: string) {
   };
 }
 
+// Events between saved container depths: a rewrite rescans at most this many plus the rewritten tail.
+const CONTAINER_CHECKPOINT = 64;
+
+interface ContainerCheckpoint {
+  index: number;
+  last: unknown;
+  depth: number;
+}
+
 /**
  * Refuse expensive inline syntax before micromark resolves it.
  *
@@ -168,10 +308,7 @@ export function parserLimitSyntax(source: string): Extension {
   let work = 0;
   const index = sourceIndex(source);
   const texts = new WeakMap<TokenizeContext, TextState>();
-  const containers = new WeakMap<
-    TokenizeContext,
-    { index: number; last: unknown; depth: number }
-  >();
+  const containers = new WeakMap<TokenizeContext, ContainerCheckpoint[]>();
   // Text contexts are tokenized and resolved one at a time, in document order.
   let active: TextState | undefined;
   const cost = (state: TextState, to: number) => {
@@ -299,38 +436,90 @@ export function parserLimitSyntax(source: string): Extension {
   const containerGuard: Tokenizer = function (_effects, _ok, nok) {
     return (code) => {
       const events = this.events;
-      const previous = containers.get(this);
-      // Speculative constructs may rewind events. Reuse a count only when the
-      // last scanned event still occupies its original slot.
-      const state =
-        previous && previous.index <= events.length && events[previous.index - 1] === previous.last
-          ? previous
-          : { index: 0, last: undefined, depth: 0 };
-      for (; state.index < events.length; state.index++) {
-        const [action, token] = events[state.index];
+      let checkpoints = containers.get(this);
+      if (!checkpoints)
+        containers.set(this, (checkpoints = [{ index: 0, last: undefined, depth: 0 }]));
+      // micromark rewrites the tail of the event list as containers close, and speculative
+      // constructs rewind it. Resume from the newest checkpoint whose event still occupies its
+      // slot, so a rewrite costs a rescan of the tail rather than of the whole list.
+      while (checkpoints.length > 1) {
+        const { index, last } = checkpoints.at(-1)!;
+        if (index <= events.length && events[index - 1] === last) break;
+        checkpoints.pop();
+      }
+      let { index, depth } = checkpoints.at(-1)!;
+      for (; index < events.length; index++) {
+        const [action, token] = events[index];
         const weight =
           token.type === "blockQuote"
             ? 1
             : token.type === "listOrdered" || token.type === "listUnordered"
               ? 2
               : 0;
-        state.depth += action === "enter" ? weight : -weight;
+        depth += action === "enter" ? weight : -weight;
+        if ((index + 1) % CONTAINER_CHECKPOINT === 0)
+          checkpoints.push({ index: index + 1, last: events[index], depth });
       }
-      state.last = events.at(-1);
-      containers.set(this, state);
-      if (state.depth >= CONTENT_LIMITS.treeDepth)
+      if (depth >= CONTENT_LIMITS.treeDepth)
         throw new ContentLimitError(
           `Content exceeds the tree depth limit of ${CONTENT_LIMITS.treeDepth}`,
         );
       return nok(code);
     };
   };
+  // micromark copies the document's whole event list each time it moves container exits back
+  // (a lazy line that ends containers, or a sibling list item that closes containers nested in
+  // the previous item), and walks back over the open paragraph for every lazy line that
+  // continues it. None of this happens in a paragraph's text: charge it as lines start.
+  const lines = sourceLines(source);
+  const model = containerModel();
+  let seen = 0;
+  const lazyGuard: Tokenizer = function (_effects, _ok, nok) {
+    return (code) => {
+      const current = this.now().line;
+      while (seen < current - 1) {
+        const line = ++seen;
+        const lazy = Boolean(this.parser.lazy[line]);
+        const step = model.line(lines.text(line), lazy);
+        // A lazy line the model cannot place may rewrite the event list: charge it as one.
+        if (step.rewrite || (lazy && !step.walk)) spend(this.events.length);
+        else if (step.walk) spend(LINE_EVENTS * step.walk);
+      }
+      return nok(code);
+    };
+  };
+  // A setext underline (`===` or `---` under a paragraph) makes micromark resolve over, and
+  // then copy, the flow's whole event list: charge that list when the line can underline.
+  const setextGuard: Tokenizer = function (_effects, _ok, nok) {
+    return (code) => {
+      const events = this.events;
+      let index = events.length;
+      let paragraph = false;
+      // The same test micromark's setext construct makes before it takes the line.
+      while (index--) {
+        const type = events[index][1].type;
+        if (type !== "lineEnding" && type !== "linePrefix" && type !== "content") {
+          paragraph = type === "paragraph";
+          break;
+        }
+      }
+      if (!this.parser.lazy[this.now().line] && (this.interrupt || paragraph)) spend(events.length);
+      return nok(code);
+    };
+  };
   return {
-    document: Object.fromEntries(
-      "*+->0123456789"
-        .split("")
-        .map((marker) => [marker.charCodeAt(0), { tokenize: containerGuard }]),
-    ),
+    flow: {
+      45: { tokenize: setextGuard, add: "before" },
+      61: { tokenize: setextGuard, add: "before" },
+    },
+    document: {
+      ...Object.fromEntries(
+        "*+->0123456789"
+          .split("")
+          .map((marker) => [marker.charCodeAt(0), { tokenize: containerGuard }]),
+      ),
+      null: { tokenize: lazyGuard },
+    },
     text: {
       ...Object.fromEntries(GUARDED_CODES.map((code) => [code, { tokenize: guard }])),
       96: {

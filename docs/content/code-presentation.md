@@ -197,11 +197,14 @@ stored.
 | `filename`, `title`                            | 256 UTF-16 units, nonblank, one line, no control characters |
 | Intervals per selection, as written            | 1,024                                                       |
 | Option text on one fence                       | 16,384 UTF-16 units                                         |
-| Rows in a presented block                      | 20,000                                                      |
+| Rows in a presented block                      | 10,000                                                      |
 | Escaped text and row decorations, per document | 8,000,000 units                                             |
 
 Topik reserves the per-document budget conservatively before it allocates any
-output. The ordinary source, tree and data limits also apply.
+output: six units per character of code, 768 units per row and per folded
+range, and 4,096 units per block. A block of short rows can reach the row limit;
+long rows, or several large blocks in one document, reach the per-document
+budget first. The ordinary source, tree and data limits also apply.
 
 ## Compatibility
 

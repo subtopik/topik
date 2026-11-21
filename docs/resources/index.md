@@ -56,8 +56,8 @@ Each source kind finds its Markdown differently:
 Configuration files can use `.yaml`, `.yml` or `.json`. Markdown inputs can use
 `.md` or `.mdx`; the `.mdx` extension does not enable executable MDX.
 
-Versioned collections and Courses can declare Person records and author
-references in their configuration. See [Source writing](./source-writing.md)
+Collections and Courses can declare Person records and author references in
+their configuration. See [Source writing](./source-writing.md)
 for Course source layout, source metadata and reviewed project edits.
 
 ## Compile a wiki
@@ -171,8 +171,8 @@ exclude:
 - A file is a guide when an `include` pattern matches it and no `exclude`
   pattern does. Without `include`, the patterns are `*.md` and `*.mdx`.
 - Only `.md` and `.mdx` files become guides, whatever the patterns match.
-- A collection never reads `node_modules`, directories whose name starts with a
-  dot, or directories reached through a symbolic link.
+- A collection never reads `node_modules`, files or directories whose name
+  starts with a dot, or directories reached through a symbolic link.
 - The patterns do not know about other sources. If they reach a directory that
   belongs to a Wiki or another collection, exclude it.
 

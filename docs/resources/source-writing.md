@@ -49,7 +49,7 @@ resolve to declared Persons. A Wiki configuration supports `labels`.
 ### Wiki page sources and links
 
 A Wiki groups page identities into navigation; its pages carry the content.
-Source coordinates connect that navigation to authored files. Versioned Wiki page
+Source coordinates connect that navigation to authored files. Wiki page
 navigation can specify `source`, a config-relative Markdown path without its
 extension, separately from the public `slug`.
 
@@ -58,8 +58,6 @@ extension, separately from the public `slug`.
 - Extensionless root links address public routes; an explicit trailing slash
   selects a source folder landing.
 - Hidden pages are valid targets.
-
-Readers must pass the Wiki's source version to `resolveWikiNavigation`.
 
 ## Course sources
 

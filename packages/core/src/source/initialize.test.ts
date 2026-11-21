@@ -572,3 +572,68 @@ const file = (path: string, text: string): SourceTreeFile => ({
   mode: "100644",
   bytes: encodeSource(text),
 });
+
+test.each([
+  ["AGENTS.md", true],
+  ["CHANGELOG.md", true],
+  ["notes.md", false],
+  ["README.md", false],
+])("a new collection beside an existing %s is initialized: %s", async (name, accepted) => {
+  const tree: SourceTreeFile[] = [
+    ...occupied.filter((file) => file.path !== "README.md"),
+    { path: `content/${name}`, mode: "100644", bytes: encodeSource("# Existing\n") },
+  ];
+  const result = await initializeSourceProject({
+    tree,
+    expectedTreeDigest: digestSourceTree(tree),
+    packageCohort: cohort,
+    intent,
+    resources: [guide],
+    createPaths: [".topik.yaml", "content/custom.yml", "content/guide.md"],
+  });
+  if (accepted) expect(result.ok, JSON.stringify(result)).toBe(true);
+  else
+    expect(result).toMatchObject({ ok: false, diagnostics: [{ code: "initialization-unproven" }] });
+});
+
+test("a saved link to a page the new Wiki removes is a reference diagnostic", async () => {
+  const page = (name: string) => ({
+    type: "page" as const,
+    page: name,
+    slug: name,
+    sourcePath: name,
+  });
+  const saved: Wiki = {
+    apiVersion: "v1",
+    type: "Wiki",
+    name: "docs",
+    spec: { title: "Docs", navigation: [page("home"), page("target")] },
+  };
+  const wiki: Wiki = { ...saved, spec: { title: "Docs", navigation: [page("home")] } };
+  const home: WikiPage = {
+    apiVersion: "v1",
+    type: "WikiPage",
+    name: "home",
+    spec: {
+      wiki: "docs",
+      title: "Home",
+      content: { format: "topik", value: "# Home\n\nSee [target](./target.md).\n" },
+    },
+  };
+  const result = await initializeSourceProject({
+    tree: [],
+    expectedTreeDigest: digestSourceTree([]),
+    packageCohort: cohort,
+    intent: {
+      namespace: "ex/w",
+      source: { kind: "wiki", config: "docs/wiki.yaml", id: "docs", title: "Docs" },
+    },
+    resources: [wiki, home],
+    referenceContexts: { "WikiPage/home": saved },
+    createPaths: [".topik.yaml", "docs/wiki.yaml", "docs/home.md"],
+  });
+  expect(result).toMatchObject({
+    ok: false,
+    diagnostics: [{ code: "reference-target-removed", resource: "WikiPage/home" }],
+  });
+});

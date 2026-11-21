@@ -2,7 +2,7 @@ import { expect, test } from "vite-plus/test";
 import { markdownFrontmatter } from "./frontmatter";
 import { parseMarkdownFrontmatter } from "./shared";
 
-test.each(["\n", "\r\n"])(
+test.each(["\n", "\r\n", "\r"])(
   "accepts fence whitespace with exact header boundaries using %j",
   (eol) => {
     for (const bom of ["", "\uFEFF"]) {

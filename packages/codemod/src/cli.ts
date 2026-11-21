@@ -3,7 +3,7 @@
 import { resolve } from "node:path";
 import { boolean, command, positional, run } from "@drizzle-team/brocli";
 import { version } from "../package.json";
-import { isMigrationInput, runMintlify } from "./runner";
+import { migrationInputProblem, runMintlify } from "./runner";
 
 const MANIFEST_GUIDE_URL = "https://github.com/subtopik/topik/blob/main/docs/resources/manifest.md";
 
@@ -24,8 +24,9 @@ const mintlify = command({
   },
   handler: async (options) => {
     const dir = resolve(options.dir);
-    if (!(await isMigrationInput(dir))) {
-      console.error("Not a directory or a .md or .mdx file");
+    const problem = await migrationInputProblem(dir);
+    if (problem !== undefined) {
+      console.error(problem);
       process.exit(1);
     }
 

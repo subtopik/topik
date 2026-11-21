@@ -97,7 +97,7 @@ exclude: ["drafts/**"]
     ).toEqual(["a.md", "a.mdx", "README.md"]);
   });
 
-  test("matches folders, and never dependencies, dot-directories or convention files", () => {
+  test("matches folders, and never dependencies, dot-directories, dot-files or convention files", () => {
     const filter = collectionGuideFilter({
       include: ["**/*.md", "extra/**"],
       exclude: ["drafts/**", "**/skip-?.md"],
@@ -115,6 +115,8 @@ exclude: ["drafts/**"]
         "sub/skip-10.md",
         "node_modules/pkg/a.md",
         "sub/.cache/a.md",
+        ".draft.md",
+        "sub/.notes.mdx",
         "sub/CHANGELOG.md",
         "sub/README.md",
         "a.md.bak",

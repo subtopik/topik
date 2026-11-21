@@ -1,9 +1,9 @@
 import type { BigIntStats } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test, vi } from "vite-plus/test";
-import { readPortableAssetFile } from "./files";
+import { readPortableAssetFile, readPortableAssetFileWithReadHookForTest } from "./files";
 
 const injection = vi.hoisted(() => ({
   target: "",
@@ -52,6 +52,8 @@ const targets = [
   { target: ".gitattributes", message: "Git attribute evidence changed while it was evaluated" },
 ];
 const fields = ["dev", "ino", "mode", "nlink", "size", "ctimeNs", "mtimeNs"] as const;
+// A `.git` directory is bound by identity: Git lock files change its other stats.
+const identityFields = new Set<string>(["dev", "ino", "mode"]);
 
 async function fixture(target: string, field: keyof BigIntStats | "") {
   const root = await mkdtemp(join(tmpdir(), "topik-file-stability-"));
@@ -68,7 +70,11 @@ async function fixture(target: string, field: keyof BigIntStats | "") {
 test
   .skipIf(process.platform !== "linux")
   .each(
-    targets.flatMap(({ target, message }) => fields.map((field) => ({ target, message, field }))),
+    targets.flatMap(({ target, message }) =>
+      fields
+        .filter((field) => target !== ".git" || identityFields.has(field))
+        .map((field) => ({ target, message, field })),
+    ),
   )("rejects changed $field evidence for $target", async ({ target, message, field }) => {
   const result = await fixture(target, field);
   expect(injection.applied).toBe(true);
@@ -84,5 +90,34 @@ test.skipIf(process.platform !== "linux").each(targets)(
     expect(await fixture(target, "")).toMatchObject({ ok: true });
     expect(await fixture(target, "atimeNs")).toMatchObject({ ok: true });
     expect(injection.applied).toBe(true);
+  },
+);
+
+test
+  .skipIf(process.platform !== "linux")
+  .each(fields.filter((field) => !identityFields.has(field)))(
+  "accepts changed %s evidence for a .git directory",
+  async (field) => {
+    expect(await fixture(".git", field)).toMatchObject({ ok: true });
+    expect(injection.applied).toBe(true);
+  },
+);
+
+test.skipIf(process.platform !== "linux")(
+  "accepts a Git lock file created and removed while the file is read",
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), "topik-file-stability-"));
+    roots.push(root);
+    await writeFile(join(root, "hero.png"), "stable bytes");
+    await mkdir(join(root, ".git"));
+    const result = await readPortableAssetFileWithReadHookForTest(
+      { root, path: "hero.png" },
+      async () => {
+        // What `git status` does in another process: take and release the index lock.
+        await writeFile(join(root, ".git", "index.lock"), "");
+        await unlink(join(root, ".git", "index.lock"));
+      },
+    );
+    expect(result).toMatchObject({ ok: true });
   },
 );

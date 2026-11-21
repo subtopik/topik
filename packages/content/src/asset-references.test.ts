@@ -1,9 +1,5 @@
 import { describe, expect, test, vi } from "vite-plus/test";
-import {
-  extractTopikAssetOccurrences,
-  topikAssetReferenceSlots,
-  validateTopikAssetReference,
-} from "./asset-references";
+import { extractTopikAssetOccurrences, validateTopikAssetReference } from "./asset-references";
 import { rewriteTopikAssetOccurrences } from "./rewrite";
 import { representativeDiagnosticFiles } from "./test-fixtures/diagnostic-files";
 
@@ -703,7 +699,6 @@ describe("topik-asset-reference-v1 occurrence registry", () => {
     expect(
       extractTopikAssetOccurrences(source, { provenDownloadPaths: ["files/manual.bin"] }),
     ).toHaveLength(1);
-    expect(topikAssetReferenceSlots.some((slot) => slot.slot === "link.href")).toBe(true);
   });
 
   test("rewrites only declared slots", () => {

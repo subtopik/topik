@@ -1,9 +1,7 @@
 import { z } from "zod";
 import { DEFAULT_ASSET_DIRECTORY, sourceAssetsConfigSchema } from "./assets";
 import { rejectMisspelledKeys } from "./misspelled-keys";
-import { parseSourcePersons } from "./source-metadata";
-
-const nameRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+import { parseSourcePersons, resourceNameSchema } from "./source-metadata";
 
 /** The Markdown files directly beside the configuration. */
 export const DEFAULT_COLLECTION_INCLUDE: readonly string[] = ["*.md", "*.mdx"];
@@ -33,7 +31,7 @@ function isCollectionPattern(pattern: string): boolean {
 }
 
 const collectionConfigSchema = z.object({
-  id: z.string().min(1).max(63).regex(nameRegex),
+  id: resourceNameSchema,
   title: z.string().min(1).max(256),
   persons: z.unknown().optional(),
   assets: sourceAssetsConfigSchema.default({ directory: DEFAULT_ASSET_DIRECTORY }),
@@ -190,6 +188,8 @@ export function collectionGuideFilter(config: {
     const filename = segments.pop()!;
     return (
       /\.mdx?$/u.test(filename) &&
+      // Hidden files, such as an editor's `.draft.md`, are skipped like hidden directories.
+      !filename.startsWith(".") &&
       !segments.some(isSkippedCollectionDirectory) &&
       include.some((matches) => matches(path)) &&
       !exclude.some((matches) => matches(path))

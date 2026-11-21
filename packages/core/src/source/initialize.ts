@@ -3,6 +3,7 @@ import { rewriteTopikAssetOccurrences } from "@topik/content";
 import type { Resource } from "../resource";
 import type { Wiki } from "@topik/schema/wiki/v1";
 import type { Guide } from "@topik/schema/guide/v1";
+import type { Person } from "@topik/schema/person/v1";
 import type { WikiPage } from "@topik/schema/wiki-page/v1";
 import type { Course } from "@topik/schema/course/v1";
 import type { CourseModule } from "@topik/schema/course-module/v1";
@@ -34,7 +35,7 @@ import {
   type TopikManifestSource,
 } from "../config/manifest";
 import { parseWikiConfig } from "../config/wiki";
-import { parseCollectionConfig } from "../config/collection";
+import { collectionGuideFilter, parseCollectionConfig } from "../config/collection";
 import { parseCourseConfig } from "../config/course";
 import { parseSafeConfigurationYaml } from "../compile/config";
 import { validateResources } from "../validate";
@@ -43,6 +44,7 @@ import { generateAutomaticAssetName } from "../assets/asset";
 import { validateTopikPathSet } from "../assets/path";
 import { resolveWikiNavigation } from "../wiki-navigation";
 import {
+  compareSourcePaths,
   readSourceProject,
   digestSourceTree,
   digestSourceResourceGraph,
@@ -70,8 +72,10 @@ import {
 import {
   authoredBody,
   initialSourceDocumentPath,
+  isWritableDocument,
   sourceDocumentPathCandidates,
   sourceMediaPath,
+  sourcePersonRecord,
   type SourcePathCollisionPolicy,
 } from "./plan-markdown";
 import { sourceNavigation } from "./plan-navigation";
@@ -254,12 +258,7 @@ function checkInitializationInputs(
       "source-mapping-invalid",
       "Explicit document paths must identify new Guides or Course pages.",
     );
-  if (
-    !existing &&
-    occupied.some(
-      (file) => posix.basename(file.path) === ".topik.yaml" || file.path.endsWith(".topik.json"),
-    )
-  )
+  if (!existing && occupied.some((file) => posix.basename(file.path) === ".topik.yaml"))
     failure(
       "initialization-unproven",
       "An existing project or resource source requires inspection and an explicit source-add decision.",
@@ -395,12 +394,8 @@ function planInitialMedia(draft: InitializationDraft): void {
 
 const personRecords = (resources: readonly Resource[]) =>
   resources
-    .filter((resource) => resource.type === "Person")
-    .map((person) => ({
-      id: person.name,
-      ...(person.labels !== undefined ? { labels: person.labels } : {}),
-      spec: person.spec,
-    }));
+    .filter((resource): resource is Person => resource.type === "Person")
+    .map(sourcePersonRecord);
 
 /** A collection declares its Persons and places each Guide beside the configuration. */
 function planCollectionSource(draft: InitializationDraft): Record<string, unknown> {
@@ -410,9 +405,14 @@ function planCollectionSource(draft: InitializationDraft): Record<string, unknow
       "resource-unrepresentable",
       "A collection initializes Guides, Persons and their media only.",
     );
+  // Files the new collection would read as Guides; convention files such as AGENTS.md or
+  // CHANGELOG.md are left out by the compiler and may sit beside it. A README may be a Guide.
+  const guides = collectionGuideFilter({});
   if (
     draft.occupied.some(
-      (file) => /\.mdx?$/.test(file.path) && posix.dirname(file.path) === (directory || "."),
+      (file) =>
+        posix.dirname(file.path) === (directory || ".") &&
+        guides.matches(posix.basename(file.path)),
     )
   )
     failure(
@@ -518,8 +518,7 @@ function planWikiSource(draft: InitializationDraft): Record<string, unknown> {
             paths.get(key)!,
             key,
           ),
-        // Removed and unprovable targets stay unexpected writer failures here, unlike the
-        // coded diagnostics of Course initialization and of source updates.
+        // The same coded diagnostics as Course initialization and source updates.
         fail: (reason) => {
           switch (reason) {
             case "unresolved":
@@ -529,9 +528,17 @@ function planWikiSource(draft: InitializationDraft): Record<string, unknown> {
                 key,
               );
             case "removed":
-              throw new TypeError("Saved link target is missing from the new Wiki");
+              return failSourcePlan(
+                "reference-target-removed",
+                "An authored link targets a page that the new Wiki removes.",
+                key,
+              );
             case "unrepresentable":
-              throw new TypeError("Link target cannot be preserved");
+              return failSourcePlan(
+                "reference-unrepresentable",
+                "An authored link target cannot be preserved in the new Wiki.",
+                key,
+              );
             case "rewrite":
               return failure(
                 "source-reference-unrepresentable",
@@ -641,12 +648,9 @@ function planCourseSource(draft: InitializationDraft): Record<string, unknown> {
   return config;
 }
 
-const isDocument = (resource: Resource): resource is Guide | WikiPage | CoursePage =>
-  resource.type === "Guide" || resource.type === "WikiPage" || resource.type === "CoursePage";
-
 /** Write every new Markdown document with complete frontmatter. */
 function writeInitialDocuments(draft: InitializationDraft): void {
-  for (const resource of draft.expected.filter(isDocument)) {
+  for (const resource of draft.expected.filter(isWritableDocument)) {
     const path = draft.paths.get(`${resource.type}/${resource.name}`)!;
     const metadata = {
       id: resource.name,
@@ -754,11 +758,11 @@ async function verifyInitialRoundTrip(
   const { expected, existing } = draft;
   // Compiler remaps local media identities; supplied byte metadata must still match exactly.
   for (const resource of expected) {
-    if (!isDocument(resource)) continue;
+    if (!isWritableDocument(resource)) continue;
     const original = candidate.compilation.resources.find(
       (other) => other.type === resource.type && other.name === resource.name,
     );
-    if (!original || !isDocument(original))
+    if (!original || !isWritableDocument(original))
       failure("round-trip-mismatch", "A created document did not compile to its stable identity.");
     const normalized = {
       ...original,
@@ -819,7 +823,7 @@ function initializationPlan(
   const { input, existing, assetMappings } = draft;
   const changes: SourceFileChange[] = draft.generatedFiles
     // Bytewise like snapshotSourceTree: locale collation can vary between ICU builds.
-    .sort((a, b) => Buffer.compare(encodeSource(a.path), encodeSource(b.path)))
+    .sort((a, b) => compareSourcePaths(a.path, b.path))
     .map((file) => ({
       kind: existing && file.path === ".topik.yaml" ? "update" : "create",
       path: file.path,

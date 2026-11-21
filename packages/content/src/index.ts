@@ -1,4 +1,4 @@
-export { components, getEffectiveProps } from "./registry.js";
+export { components } from "./registry.js";
 export type {
   AttributeDefinition,
   ChildConstraint,
@@ -36,8 +36,7 @@ export {
   type TopikYouTubeVideo,
 } from "./youtube.js";
 export { sameDocumentMeaning } from "./document-meaning.js";
-export { FORMAT_VERSION, formatDocument, parseDocument, writeDocument } from "./markdown.js";
-export { rewriteAssets } from "./assets.js";
+export { FORMAT_VERSION, parseDocument, writeDocument } from "./markdown.js";
 export { ContentEvaluationError, evaluateDocument } from "./evaluate.js";
 export { CONTENT_LIMITS, ContentLimitError } from "./limits.js";
 
@@ -50,10 +49,8 @@ export {
   TOPIK_ASSET_REFERENCE_VERSION,
   TOPIK_GENERATED_ASSET_NAME_PATTERN,
   extractTopikAssetOccurrences,
-  removeInvalidTopikAssetReferences,
   isTopikGeneratedAssetName,
   parseTopikGeneratedAssetName,
-  topikAssetReferenceSlots,
   validateTopikAssetReference,
   type ExtractTopikAssetOccurrencesOptions,
   type TopikAssetOccurrence,
@@ -83,7 +80,7 @@ export {
   type RewriteTopikAssetOccurrencesResult,
   type RewriteTopikAssetOccurrencesSuccess,
 } from "./rewrite";
-export { assignTopikHeadingIds, type TopikAnchor, type TopikHeading } from "./headings";
+export type { TopikAnchor, TopikHeading } from "./headings";
 export {
   TOPIK_RESOURCE_REFERENCE_VERSION,
   parseTopikResourceReference,
@@ -97,7 +94,6 @@ export {
 } from "./navigation-rewrite";
 export {
   analyzeTopikContent,
-  removeInvalidTopikNavigationReferences,
   validateTopikNavigationHref,
   validateTopikHref,
   validateTopikBrowserHref,
@@ -120,7 +116,6 @@ export {
   sanitizeTopikDiagnosticFile,
   sanitizeTopikContentDiagnostic,
   topikLinkDiagnosticMessage,
-  toTopikContentDiagnostic,
   type TopikContentDiagnostic,
   type TopikContentDiagnosticLevel,
 } from "./diagnostics";

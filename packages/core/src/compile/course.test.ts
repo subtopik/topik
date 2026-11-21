@@ -263,7 +263,11 @@ test("rejects duplicate Course page identities and routes independently of their
 
 test("explicit Course page sources refuse ambiguous extensions and symlink traversal", async () => {
   const dir = await fixture({ ...sourceFiles(), "separate/next.mdx": next });
-  await expect(compileCourse({ dir })).rejects.toMatchObject({ id: "course-page-ambiguous" });
+  await expect(compileCourse({ dir })).rejects.toMatchObject({
+    id: "course-page-ambiguous",
+    location: "separate/next.mdx",
+    relatedLocation: "separate/next.md",
+  });
   await rm(join(dir, "separate/next.mdx"));
   await rm(join(dir, "separate/next.md"));
   await symlink("../pages/welcome.md", join(dir, "separate/next.md"));

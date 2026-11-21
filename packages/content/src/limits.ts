@@ -4,8 +4,9 @@ import type { Diagnostic, TreeNode } from "./model.js";
 export const CONTENT_LIMITS = Object.freeze({
   sourceLength: 1_000_000,
   /**
-   * Inline parser work per document: event visits charged for possible closing
-   * delimiters, plus code-span scans and label serialization. Linear syntax is free.
+   * Superlinear parser work per document: event visits charged for possible closing
+   * delimiters, code-span scans, label serialization, and the event-list rebuilds and
+   * lazy-line walks of closing block quotes and lists. Linear syntax is free.
    */
   parserSteps: 67_108_864,
   treeDepth: 64,

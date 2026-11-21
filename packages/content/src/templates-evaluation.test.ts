@@ -248,3 +248,27 @@ test("propagates application diagnostic callback failures for expected template 
     }),
   ).toThrow(error);
 });
+
+test.each([
+  ["body interpolations alone", "{% $v %} {% $v %}", 1],
+  ["body interpolations after a text template", `${title("{% $v %}")}\n\n{% $v %} {% $v %}`, 5],
+])("reports interpolation overflow from %s as a located content limit", (_name, source, line) => {
+  const v = "x".repeat(CONTENT_LIMITS.dataStringLength * 0.6);
+  expect(compileTopikContent(source, { config: { variables: { v } } }).diagnostics).toMatchObject([
+    { id: "topik-content-limit", level: "error", lines: [line] },
+  ]);
+});
+
+test.each([
+  ["video", '{% video src="x.mp4" title=t"{% $name %}" /%}', "topik-video-title"],
+  [
+    "youtube",
+    '{% youtube src="https://www.youtube.com/watch?v=dQw4w9WgXcQ" title=t"{% $name %}" /%}',
+    "topik-youtube-title",
+  ],
+])("reports a %s title that interpolates to blank text with its own ID", (_name, source, id) => {
+  expect(
+    compileTopikContent(`Intro.\n\n${source}`, { config: { variables: { name: " " } } })
+      .diagnostics,
+  ).toMatchObject([{ id, level: "error", lines: [3] }]);
+});

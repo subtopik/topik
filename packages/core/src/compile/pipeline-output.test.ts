@@ -29,8 +29,11 @@ function serialize(value: unknown): string {
     2,
   );
 }
+/** Set TOPIK_UPDATE_FIXTURES=1 to record new output after an intended change, then review the diff. */
 async function expectRecorded(value: unknown, name: string): Promise<void> {
-  const recorded = await readFile(new URL(`test-fixtures/${name}`, import.meta.url), "utf8");
+  const fixture = new URL(`test-fixtures/${name}`, import.meta.url);
+  if (process.env.TOPIK_UPDATE_FIXTURES === "1") await writeFile(fixture, `${serialize(value)}\n`);
+  const recorded = await readFile(fixture, "utf8");
   expect(serialize(value)).toBe(JSON.stringify(JSON.parse(recorded), null, 2));
 }
 

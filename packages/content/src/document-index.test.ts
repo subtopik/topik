@@ -5,7 +5,6 @@ import {
   formatTopikContent,
   parseDocument,
   parseTopikContent,
-  rewriteAssets,
   transformTopikContent,
   validateTopikContent,
   writeDocument,
@@ -89,13 +88,13 @@ describe("scoped reference bindings", () => {
   ] as const)("validates reference targets in the inactive branch: %s", (url, expectedIds) => {
     const text = `{% if $show %}\n[Go][ref]\n\n[ref]: https://example.com\n{% else /%}\n[Go][ref]\n\n[ref]: ${url}\n{% /if %}`;
     const result = validateTopikContent(text, { config: { variables: { show: true } } });
-    expect(result.valid).toBe(expectedIds.length === 0);
-    expect(result.errors.map(({ id }) => id)).toEqual(expectedIds);
+    expect(result.ok).toBe(expectedIds.length === 0);
+    expect(result.diagnostics.map(({ id }) => id)).toEqual(expectedIds);
   });
 
   test("retains first-definition precedence within each scope", () => {
     const text = "[Go][ref]\n\n[ref]: https://example.com\n[ref]: javascript:alert(1)";
-    expect(validateTopikContent(text).valid).toBe(true);
+    expect(validateTopikContent(text).ok).toBe(true);
     expect(
       extractTopikAssetOccurrences(text, { includeGenericLinkCandidates: true }),
     ).toMatchObject([{ parsedReference: "https://example.com" }]);
@@ -103,24 +102,10 @@ describe("scoped reference bindings", () => {
 
   test("hoists ordinary Markdown definitions through lists and blockquotes", () => {
     const text = "[Go][ref]\n\n> [ref]: https://example.com";
-    expect(validateTopikContent(text).valid).toBe(true);
+    expect(validateTopikContent(text).ok).toBe(true);
     expect(
       extractTopikAssetOccurrences(text, { includeGenericLinkCandidates: true }),
     ).toMatchObject([{ parsedReference: "https://example.com" }]);
-  });
-
-  test("rewrites only definitions used by images in their own scope", () => {
-    const text =
-      "[Navigation][id]\n\n[id]: guide.md\n\n{% if $show %}\n![Image][id]\n\n[id]: image.png\n{% /if %}";
-    const document = parse(text);
-    const calls: string[] = [];
-    const rewritten = rewriteAssets(document, (url) => {
-      calls.push(url);
-      return "new.png";
-    });
-    expect(calls).toEqual(["image.png"]);
-    expect(writeDocument(rewritten)).toContain("[id]: guide.md");
-    expect(writeDocument(rewritten)).toContain("[id]: new.png");
   });
 
   test("refuses cross-branch references during admission instead of changing targets", () => {

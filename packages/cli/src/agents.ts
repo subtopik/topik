@@ -40,10 +40,12 @@ export function replaceAgentInstructionsSection(
   const target = markedRange(existing);
   const source = markedRange(incoming);
   if (target === undefined || source === undefined) return undefined;
+  const section = incoming.slice(source.start, source.end);
+  // Keep the file's line endings: a CRLF file gets a CRLF section.
+  const current = existing.slice(target.start, target.end);
+  const eol = (current.includes("\n") ? current : existing).includes("\r\n") ? "\r\n" : "\n";
   return (
-    existing.slice(0, target.start) +
-    incoming.slice(source.start, source.end) +
-    existing.slice(target.end)
+    existing.slice(0, target.start) + section.replace(/\r?\n/gu, eol) + existing.slice(target.end)
   );
 }
 

@@ -414,8 +414,15 @@ Text counts as active content when it:
 - contains a script, frame, embed, form, meta, link, base, style, or document
   element;
 - contains an event-handler attribute inside a tag;
-- contains a `javascript:` URL in an `href` or `src` attribute;
+- contains a `javascript:` URL in an `href` or `src` attribute, including one
+  spelled with character references or tabs and line breaks;
 - starts with an `<svg>` element, or contains one with its closing tag.
+
+Text is UTF-8, or UTF-16 when it starts with a byte order mark. The compiler
+reads the first 64 KiB of a text file for these checks; markup that only
+appears later is not detected. Serve downloads with their declared `mediaType`,
+`X-Content-Type-Options: nosniff` and `Content-Disposition: attachment`, as the
+Astro integration does.
 
 A document that opens with an `<?xml ...?>` declaration and a root element
 other than HTML or SVG, such as a property list, is data when it contains none

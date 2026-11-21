@@ -136,6 +136,8 @@ describe("topik-path-v1 boundaries", () => {
     ["slash alias", "a∕b.png", "separator_alias"],
     ["Git control", ".Git/config", "reserved_name"],
     ["DOS name", "CON.txt", "reserved_name"],
+    ["DOS name before a spaced extension", "CON .txt", "reserved_name"],
+    ["DOS name before a spaced double extension", "lpt1  .tar.gz", "reserved_name"],
     ["trailing dot", "file.", "forbidden_character"],
     ["control", "a\u0000b", "forbidden_character"],
     ["bidi", "a\u202eb", "forbidden_character"],
@@ -370,7 +372,6 @@ describe("descriptor-anchored filesystem reads", () => {
     ["LFS", "*.png filter=lfs\n"],
     ["custom filter", "hero.png filter=custom\n"],
     ["working-tree encoding", "*.png working-tree-encoding=UTF-16\n"],
-    ["explicitly unset filter", "hero.png -filter\n"],
     ["unproven character class", "[h]ero.png filter=lfs\n"],
     ["unproven recursive pattern", "**/*.png filter=lfs\n"],
   ])("rejects effective or unproven %s attributes", async (_name, attributes) => {
@@ -442,7 +443,18 @@ describe("descriptor-anchored filesystem reads", () => {
     expect(performance.now() - started).toBeLessThan(1000);
   }, 20_000);
 
-  test("accepts only explicit nested resets to unspecified", async () => {
+  test.each([
+    ["unset", "hero.png -filter -working-tree-encoding\n"],
+    ["nested unset", "*.png filter=lfs\nhero.png -filter\n"],
+  ])("accepts %s filter attributes, which leave the bytes as stored", async (_name, attributes) => {
+    const root = await mkdtemp(join(tmpdir(), "topik-attributes-"));
+    roots.push(root);
+    await writeFile(join(root, ".gitattributes"), attributes);
+    await writeFile(join(root, "hero.png"), PNG_BYTES);
+    expect(await readPortableAssetFile({ root, path: "hero.png" })).toMatchObject({ ok: true });
+  });
+
+  test("accepts explicit nested resets to unspecified", async () => {
     const root = await mkdtemp(join(tmpdir(), "topik-attribute-reset-"));
     roots.push(root);
     await mkdir(join(root, "assets"));
@@ -472,6 +484,10 @@ describe("descriptor-anchored filesystem reads", () => {
     expect(await readPortableAssetFile({ root, path: "file.bin" })).toMatchObject({ ok: false });
 
     await writeFile(join(root, ".gitattributes"), "file.bin !filter\n");
+    expect(await readPortableAssetFile({ root, path: "file.bin" })).toMatchObject({ ok: true });
+
+    // `git check-attr` reports `-filter` as `unset`: no filter runs.
+    await writeFile(join(root, ".gitattributes"), "file.bin -filter\n");
     expect(await readPortableAssetFile({ root, path: "file.bin" })).toMatchObject({ ok: true });
 
     await mkdir(join(repository, ".git", "info"));

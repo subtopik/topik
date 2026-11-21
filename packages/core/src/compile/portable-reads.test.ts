@@ -399,3 +399,38 @@ describe("portable read diagnostics", () => {
     },
   );
 });
+
+test("a read session reads each file once and gives every stage the same bytes", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "topik-session-reads-"));
+  try {
+    await writeFile(join(dir, "manual.pdf"), "%PDF-1.7\n");
+    const session = createPortableReadSession();
+    const first = await readPortableAssetFileInSession(session, { root: dir, path: "manual.pdf" });
+    await writeFile(join(dir, "manual.pdf"), "%PDF-1.7\nchanged\n");
+    const second = await readPortableAssetFileInSession(session, { root: dir, path: "manual.pdf" });
+    expect(second).toBe(first);
+    const fresh = await readPortableAssetFileInSession(createPortableReadSession(), {
+      root: dir,
+      path: "manual.pdf",
+    });
+    expect(fresh).not.toBe(first);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a read that throws is reported to its caller only and is not cached", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "topik-session-throw-"));
+  try {
+    await writeFile(join(dir, "a.txt"), "text\n");
+    const session = createPortableReadSession();
+    const read = () =>
+      readPortableAssetFileInSession(session, { root: dir, path: "a.txt", gitExecutable: "git" });
+    await expect(read()).rejects.toThrow(TypeError);
+    // Let any detached handler settle; an unhandled rejection would fail this test.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(session.reads.size).toBe(0);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

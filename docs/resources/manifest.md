@@ -174,7 +174,7 @@ const project = await compileManifest({ dir: projectRoot });
 
 ### Compile one source without a manifest
 
-`compileWiki` and `compileGuides` compile a single source. They do not read or require a manifest:
+`compileWiki`, `compileGuides` and `compileCourse` compile a single source. They do not read or require a manifest:
 
 ```ts
 import { compileWiki, createProjectAssetNameGenerator } from "@topik/core";
@@ -191,7 +191,8 @@ const wiki = await compileWiki({
 });
 ```
 
-- `configFile` is optional in both functions. Without it, they discover the conventional configuration file of the single source.
+- `configFile` is optional. Without it, they discover the conventional configuration file of the single source, such as `wiki.yaml`, `wiki.yml` or `wiki.json`, and read it with the same rules as a selected configuration.
+- `fileSafety` and `gitExecutable` work as they do for `compile`.
 - `assets.generateName` receives the resolved absolute asset path and owns the naming policy. It is required only when the compiler discovers local assets.
 - `createProjectAssetNameGenerator` uses the explicit project root and namespace to produce the same IDs as a manifest build with those values, including for nested configurations. You can supply your own callback in its place.
 - With any callback, the compiler validates files, checks name collisions, emits payloads, and rewrites references.

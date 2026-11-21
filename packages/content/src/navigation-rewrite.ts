@@ -15,6 +15,8 @@ export interface TopikNavigationReference {
 export type RewriteTopikNavigationResult =
   | {
       ok: true;
+      /** Exact caller-supplied source before rewriting. */
+      source: string;
       content: string;
       changes: readonly (TopikNavigationReference & { replacement: string })[];
       diagnostics: TopikContentDiagnostic[];
@@ -61,7 +63,7 @@ export function rewriteTopikNavigationReferences(
     targets.set(target, replacement);
     if (replacement !== href) changes.push({ ...reference, replacement });
   }
-  if (!changes.length) return { ok: true, content: source, changes, diagnostics: [] };
+  if (!changes.length) return { ok: true, source, content: source, changes, diagnostics: [] };
   const { document, nodeAt } = mutablePreparedCopy(prepared);
   for (const [target, replacement] of targets) {
     const node = nodeAt(target);
@@ -81,5 +83,5 @@ export function rewriteTopikNavigationReferences(
   if (!output.ok) return writeFailure(source, options.file);
   if (!sameDocumentMeaning(document, output.document))
     return writeFailure(source, options.file, locateMeaningDifference(document, output.document));
-  return { ok: true, content, changes, diagnostics: [] };
+  return { ok: true, source, content, changes, diagnostics: [] };
 }

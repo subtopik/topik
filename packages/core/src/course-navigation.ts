@@ -7,16 +7,9 @@ import {
   resolveDeclaredPublicRoute,
   resolveNavigationPath,
 } from "./folder-links";
+import { isResourceName, isSlug } from "./resource-names";
 
 const INTERNAL_COURSE_ORIGIN = "https://topik.invalid";
-const RESOURCE_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-
-function isName(value: string): boolean {
-  return value.length <= 63 && RESOURCE_NAME.test(value);
-}
-function isSlug(value: string): boolean {
-  return value.length <= 256 && RESOURCE_NAME.test(value);
-}
 
 /** @internal Logical page sources become Markdown files and must agree on directory spelling. */
 export function validateCoursePageSources(paths: readonly string[]): boolean {
@@ -73,13 +66,13 @@ export type ResolvedCourseContentReference =
 export function resolveCourseNavigation(context: CourseReferenceContext): ResolvedCourseNavigation {
   const modules = new Map<string, string>();
   const moduleSlugs = new Set<string>();
-  if (!isName(context.course))
+  if (!isResourceName(context.course))
     throw new Error("Course reference context requires a Course identity");
   if (!validateCoursePageSources(context.pages.map((page) => page.sourcePath)))
     throw new Error("Course reference context contains invalid source paths");
   for (const module of context.modules) {
     if (
-      !isName(module.name) ||
+      !isResourceName(module.name) ||
       !isSlug(module.slug) ||
       modules.has(module.name) ||
       moduleSlugs.has(module.slug)
@@ -94,7 +87,7 @@ export function resolveCourseNavigation(context: CourseReferenceContext): Resolv
   const pageBySourcePath = new Map<string, ResolvedCoursePage>();
   for (const page of context.pages) {
     const moduleSlug = modules.get(page.module);
-    if (!moduleSlug || !isName(page.name) || !isSlug(page.slug) || !page.sourcePath)
+    if (!moduleSlug || !isResourceName(page.name) || !isSlug(page.slug) || !page.sourcePath)
       throw new Error("Course page lacks a module, identity, route, or source path");
     const route = `${moduleSlug}/${page.slug}`;
     if (
@@ -152,6 +145,14 @@ export function resolveCourseContentHref(
     return null;
   }
   if (url.origin !== INTERNAL_COURSE_ORIGIN) return null;
+  // A link with only a query or fragment stays on this page, even beside a same-named folder.
+  if (href.split(/[?#]/, 1)[0] === "")
+    return {
+      page: current,
+      route: current.route,
+      hash: url.hash.replace(/^#/, ""),
+      search: url.search,
+    };
   const pathname = resolveNavigationPath(href, current.sourcePath);
   if (pathname === undefined) return null;
   const markdown =

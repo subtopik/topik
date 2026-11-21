@@ -3,12 +3,12 @@ import type { PhrasingContent } from "mdast";
 import {
   CONTENT_LIMITS,
   ContentLimitError,
-  formatDocument,
   formatTopikContent,
   sameDocumentMeaning,
   writeDocument,
   type ContentDocument,
 } from "./index.js";
+import { formatDocument } from "./markdown.js";
 import { canonicalizeInlineMarks } from "./inline-marks.js";
 import { FORMAT_VERSION } from "./parser.js";
 import { parse, withoutPositions } from "./test-helpers.js";

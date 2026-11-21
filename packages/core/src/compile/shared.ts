@@ -4,6 +4,7 @@ import {
   type TopikContentDiagnostic,
   type TopikHeading,
 } from "@topik/content";
+import type { FileSafety } from "../assets/files";
 import type { TopikAssetSemanticRecordV1, TopikMaterializationRecordV1 } from "../assets/identity";
 import type { AssetPayload, CompiledResource } from "./assets";
 import { PublicCompileError } from "./public-errors";
@@ -28,6 +29,17 @@ export interface CompileResult {
 }
 
 export type LinkValidationPolicy = "error" | "warning" | "off";
+
+/** How a standalone compiler reads files; the same options as `compile`. */
+export interface CompileReadOptions {
+  /**
+   * How configuration and asset files are read where descriptor-anchored traversal is
+   * unavailable (every platform except Linux). Defaults to `DEFAULT_FILE_SAFETY`.
+   */
+  fileSafety?: FileSafety;
+  /** Absolute path of the Git executable used inside a Git checkout; see `CompileOptions`. */
+  gitExecutable?: string;
+}
 
 export interface CompileValidationOptions {
   /** How unresolved document targets and invalid destination fragments are handled. */
@@ -93,7 +105,8 @@ export function parseMarkdownFrontmatter(
   const bodyLineOffset = raw.slice(0, match.bodyStart).match(/\r\n|\r|\n/g)?.length ?? 0;
 
   try {
-    const frontmatter = parseSafeConfigurationYaml(match.frontmatter);
+    // The YAML parser does not end lines at a lone CR; the content parser does.
+    const frontmatter = parseSafeConfigurationYaml(match.frontmatter.replace(/\r\n?/gu, "\n"));
     if (frontmatter == null) {
       return { frontmatter: {}, content: match.content, bodyLineOffset };
     }

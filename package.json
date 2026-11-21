@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "changeset": "changeset",
-    "ready": "vp check --fix && vp run -r test && vp run -r build",
+    "ready": "vp check --fix && vp run -r build && vp run -r test",
     "dev": "vp run --parallel -F \"./packages/*\" dev",
     "prepare": "vp config",
     "verify:asset-packages": "node tools/verify-asset-packages.mjs",

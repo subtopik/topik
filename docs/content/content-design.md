@@ -180,8 +180,8 @@ backslash escapes the closing tag, and in a table cell write the pipe key as
 `\|`, since a bare `|` ends the cell.
 
 A `quiz` holds one or more `question` components. A question holds at least two
-`choice` components and an optional `explanation`, which the reader sees after
-answering. A single-choice question, the default, has exactly one choice with
+`choice` components and an optional `explanation` after the choices, which the
+reader sees after answering (`topik-question-explanation-placement`). A single-choice question, the default, has exactly one choice with
 `correct=true`; a question with `type="multiple-choice"` has at least one. A
 question has no prompt of its own, so write the prompt as text before the quiz:
 
@@ -383,7 +383,7 @@ admitted.
 
 | API                    | Result                                                            |
 | ---------------------- | ----------------------------------------------------------------- |
-| `validateTopikContent` | `valid` plus diagnostics in `errors`; no rendering/evaluation.    |
+| `validateTopikContent` | `ok` plus `diagnostics`; no rendering/evaluation.                 |
 | `formatTopikContent`   | `ok: true` with `formatted`, or `ok: false` with diagnostics.     |
 | `compileTopikContent`  | `ok: true` with a reader `tree`, or `ok: false` with diagnostics. |
 

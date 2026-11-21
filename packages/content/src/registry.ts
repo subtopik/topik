@@ -8,7 +8,6 @@ import { columnDefinition, columnsDefinition } from "./extensions/columns.js";
 import { figureDefinition } from "./extensions/figure.js";
 import { kbdDefinition } from "./extensions/kbd.js";
 import { mathDefinition, mathInlineDefinition } from "./extensions/math.js";
-import { nativeComponents } from "./extensions/native.js";
 import {
   choiceDefinition,
   explanationDefinition,
@@ -114,17 +113,6 @@ export interface ComponentDefinition extends ComponentSchema {
 }
 
 export type Registry = Record<string, ComponentDefinition>;
-export interface TopikComponentDefinition {
-  name: string;
-  kind: "block" | "inline";
-  render: string;
-  description: string;
-  attributes?: Record<string, AttributeDefinition>;
-  allowedChildren?: readonly string[];
-  requiredChildren?: readonly string[];
-}
-export type TopikComponentAttributeDefinition = AttributeDefinition;
-
 function deepFreeze<T>(value: T): T {
   if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
     for (const child of Object.values(value)) deepFreeze(child);
@@ -175,50 +163,6 @@ const authoredComponents = {
 
 /** Canonical schemas are immutable; callers add custom names in a separate registry. */
 export const components: Registry = deepFreeze({ ...authoredComponents, u: underlineDefinition });
-
-function metadata(name: string, definition: ComponentDefinition): TopikComponentDefinition {
-  const constraint = definition.children;
-  const allowedChildren =
-    typeof constraint === "object"
-      ? "components" in constraint
-        ? constraint.components
-        : constraint.nodes.map((node) => (node === "code" ? "fence" : node))
-      : undefined;
-  // A minimum over alternatives, such as a card or a column, requires no one kind.
-  const requiredChildren =
-    name === "question"
-      ? ["choice"]
-      : typeof constraint === "object" &&
-          constraint.min &&
-          ("nodes" in constraint || constraint.components.length === 1)
-        ? allowedChildren?.slice(0, 1)
-        : undefined;
-  return {
-    name,
-    kind: definition.kind,
-    render: String(definition.render),
-    description: definition.description ?? "",
-    ...(Object.keys(definition.attributes).length ? { attributes: definition.attributes } : {}),
-    ...(allowedChildren ? { allowedChildren } : {}),
-    ...(requiredChildren ? { requiredChildren } : {}),
-  };
-}
-
-/** Legacy catalog metadata, derived from authored definitions plus native mdast nodes. */
-export const topikComponents = deepFreeze({
-  ...Object.fromEntries(
-    Object.entries(authoredComponents).map(([name, definition]) => [
-      name,
-      metadata(name, definition),
-    ]),
-  ),
-  ...nativeComponents,
-}) as unknown as Record<
-  keyof typeof authoredComponents | keyof typeof nativeComponents,
-  TopikComponentDefinition
->;
-
-export type TopikComponentName = keyof typeof topikComponents;
 
 /** Defaults are for reading/rendering; authored absence stays unchanged. */
 export function getEffectiveProps(

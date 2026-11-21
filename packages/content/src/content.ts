@@ -5,10 +5,6 @@ import { mergeTopikContentConfig, type TopikContentConfig } from "./config.js";
 export type TopikContentNode = ContentDocument;
 
 export interface ParseTopikContentOptions {
-  /** @deprecated Compatibility-only; use validation/analysis options for diagnostic labels. */
-  file?: string;
-  /** @deprecated Compatibility-only; parsing always retains available source positions. */
-  location?: boolean;
   config?: TopikContentConfig;
   /**
    * @internal Parse results shared with other calls given the same cache. The returned tree

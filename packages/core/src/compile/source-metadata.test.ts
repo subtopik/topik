@@ -129,8 +129,8 @@ test("Wiki source ambiguity is rejected instead of selecting an extension", asyn
   await file("intro.mdx", "# Two\n");
   await expect(compileManifest({ dir })).rejects.toMatchObject({
     id: "wiki-page-ambiguous",
-    location: "intro.md",
-    relatedLocation: "intro.mdx",
+    location: "intro.mdx",
+    relatedLocation: "intro.md",
   });
 });
 

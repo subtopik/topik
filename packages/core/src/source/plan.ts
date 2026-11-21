@@ -7,6 +7,7 @@ import {
   parseTopikResourceReference,
   type TopikNavigationReference,
 } from "@topik/content";
+import type { Person } from "@topik/schema/person/v1";
 import type { Wiki, WikiNavNode } from "@topik/schema/wiki/v1";
 import type { WikiPage } from "@topik/schema/wiki-page/v1";
 import type { Course } from "@topik/schema/course/v1";
@@ -50,6 +51,8 @@ import {
   sourceMediaPath,
   type SourcePathCollisionPolicy,
   resourceKey,
+  isWritableDocument,
+  sourcePersonRecord,
   writeMarkdown,
   type WritableDocument,
 } from "./plan-markdown";
@@ -563,8 +566,6 @@ interface ReferenceScope {
   ): boolean;
 }
 
-const isWritableDocument = (resource: Resource): resource is WritableDocument =>
-  resource.type === "Guide" || resource.type === "WikiPage" || resource.type === "CoursePage";
 const documentOf = (project: SourceProject, key: string): SourceDocument | undefined =>
   project.documents.find((document) => document.resource === key);
 const provenanceOf = (project: SourceProject, config: string | undefined) =>
@@ -1215,14 +1216,11 @@ function planPersonOperation(
   if (op.kind === "delete")
     state.personDeletions.set(config, [...(state.personDeletions.get(config) ?? []), selector]);
   else if (op.kind === "create") {
-    const person = next!;
+    // Person operations act only on desired Person resources.
+    const person = next as Person;
     state.personAdditions.set(config, [
       ...(state.personAdditions.get(config) ?? []),
-      {
-        id: person.name,
-        ...(person.labels !== undefined ? { labels: person.labels } : {}),
-        spec: person.spec,
-      },
+      sourcePersonRecord(person),
     ]);
   } else {
     collectMetadataEdits(updates, `${selector}/labels`, previous!.labels, next!.labels);

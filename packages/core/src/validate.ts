@@ -9,6 +9,7 @@ import wikiV1Schema from "@topik/schema/wiki/v1.json" with { type: "json" };
 import wikiPageV1Schema from "@topik/schema/wiki-page/v1.json" with { type: "json" };
 import { validateTopikContent } from "@topik/content";
 import { validateAssetValue } from "./assets/asset";
+import { isResourceName } from "./resource-names";
 import type { TopikAssetDiagnosticId } from "./assets/diagnostics";
 
 // Report every schema violation in a resource, not only the first one.
@@ -160,12 +161,6 @@ export function validateResources(resources: readonly unknown[]): ValidationResu
   }
 
   return { valid: errors.length === 0, errors };
-}
-
-const RESOURCE_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
-
-function isResourceName(value: string): boolean {
-  return value.length <= 63 && RESOURCE_NAME.test(value);
 }
 
 function ownValue(record: Record<string, unknown>, key: string): unknown {

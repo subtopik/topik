@@ -197,27 +197,58 @@ function pretty(value: unknown, depth: number): string {
     .join(",\n")}\n${"  ".repeat(depth)}}`;
 }
 
-function assertSerializable(value: unknown, seen = new Set<object>()): void {
+/** A value topik-json-v1 cannot serialize, located by a JSON Pointer such as `/spec/size`. */
+export class TopikJsonValueError extends TypeError {
+  constructor(
+    message: string,
+    readonly pointer: string,
+  ) {
+    super(message);
+    this.name = "TopikJsonValueError";
+  }
+}
+
+/** Where and why `value` is not topik-json-v1 data, or `undefined` when it is. */
+export function topikJsonDataProblem(
+  value: unknown,
+): { pointer: string; message: string } | undefined {
+  try {
+    assertSerializable(value);
+    return undefined;
+  } catch (error) {
+    if (error instanceof TopikJsonValueError)
+      return { pointer: error.pointer, message: error.message };
+    throw error;
+  }
+}
+
+const pointerToken = (key: string) => key.replaceAll("~", "~0").replaceAll("/", "~1");
+
+function assertSerializable(value: unknown, seen = new Set<object>(), pointer = ""): void {
+  // An explicit type lets each call narrow `value` like a throw statement.
+  const fail: (message: string) => never = (message) => {
+    throw new TopikJsonValueError(message, pointer || "/");
+  };
   if (value === null || typeof value === "boolean") return;
   if (typeof value === "string") {
-    if (hasLoneSurrogate(value)) throw new TypeError("topik-json-v1 rejects lone surrogates");
+    if (hasLoneSurrogate(value)) fail("topik-json-v1 rejects lone surrogates");
     return;
   }
   if (typeof value === "number") {
     if (!Number.isSafeInteger(value) || value < 0 || Object.is(value, -0)) {
-      throw new TypeError("topik-json-v1 permits only nonnegative safe integers");
+      fail("topik-json-v1 permits only nonnegative safe integers");
     }
     return;
   }
   if (typeof value !== "object" || value === undefined) {
-    throw new TypeError("Value is not serializable by topik-json-v1");
+    fail("Value is not serializable by topik-json-v1");
   }
-  if (seen.has(value)) throw new TypeError("Cyclic value is not serializable");
+  if (seen.has(value)) fail("Cyclic value is not serializable");
   seen.add(value);
 
   if (Array.isArray(value)) {
     if (Object.getPrototypeOf(value) !== Array.prototype) {
-      throw new TypeError("topik-json-v1 rejects nonstandard array prototypes");
+      fail("topik-json-v1 rejects nonstandard array prototypes");
     }
     const names = Object.getOwnPropertyNames(value);
     const symbols = Object.getOwnPropertySymbols(value);
@@ -226,22 +257,22 @@ function assertSerializable(value: unknown, seen = new Set<object>()): void {
       names.length !== value.length + 1 ||
       names.some((name) => name !== "length" && !isArrayIndex(name, value.length))
     ) {
-      throw new TypeError("topik-json-v1 requires dense arrays without extra properties");
+      fail("topik-json-v1 requires dense arrays without extra properties");
     }
     for (let index = 0; index < value.length; index++) {
       const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
       if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
-        throw new TypeError("topik-json-v1 requires own array data properties");
+        fail("topik-json-v1 requires own array data properties");
       }
-      assertSerializable(descriptor.value, seen);
+      assertSerializable(descriptor.value, seen, `${pointer}/${index}`);
     }
   } else {
     const prototype = Object.getPrototypeOf(value);
     if (prototype !== Object.prototype && prototype !== null) {
-      throw new TypeError("topik-json-v1 rejects inherited or custom object prototypes");
+      fail("topik-json-v1 rejects inherited or custom object prototypes");
     }
     if (Object.getOwnPropertySymbols(value).length !== 0) {
-      throw new TypeError("topik-json-v1 rejects symbol properties");
+      fail("topik-json-v1 rejects symbol properties");
     }
     for (const key of Object.getOwnPropertyNames(value)) {
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
@@ -252,11 +283,9 @@ function assertSerializable(value: unknown, seen = new Set<object>()): void {
         !descriptor.enumerable ||
         descriptor.value === undefined
       ) {
-        throw new TypeError(
-          "topik-json-v1 requires enumerable own data properties with defined values",
-        );
+        fail("topik-json-v1 requires enumerable own data properties with defined values");
       }
-      assertSerializable(descriptor.value, seen);
+      assertSerializable(descriptor.value, seen, `${pointer}/${pointerToken(key)}`);
     }
   }
   seen.delete(value);

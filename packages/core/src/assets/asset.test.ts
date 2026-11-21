@@ -331,3 +331,22 @@ describe("active-content sniff boundary", () => {
     );
   });
 });
+
+test.each([-1, 1.5])("locates an Asset size of %s that is not a non-negative integer", (size) => {
+  const asset = {
+    apiVersion: "v1",
+    type: "Asset",
+    name: `auto-v1-${"a".repeat(52)}`,
+    spec: { uri: "https://example.com/a.png", size },
+  };
+  expect(validateAssetValue(asset)).toMatchObject({
+    ok: false,
+    diagnostics: [
+      {
+        id: "TOPIK_ASSET_SCHEMA_INVALID",
+        message: "topik-json-v1 permits only nonnegative safe integers",
+        location: { jsonPointer: "/spec/size" },
+      },
+    ],
+  });
+});

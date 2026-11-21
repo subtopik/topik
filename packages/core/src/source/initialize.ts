@@ -3,6 +3,7 @@ import { rewriteTopikAssetOccurrences } from "@topik/content";
 import type { Resource } from "../resource";
 import type { Wiki } from "@topik/schema/wiki/v1";
 import type { Guide } from "@topik/schema/guide/v1";
+import type { Person } from "@topik/schema/person/v1";
 import type { WikiPage } from "@topik/schema/wiki-page/v1";
 import type { Course } from "@topik/schema/course/v1";
 import type { CourseModule } from "@topik/schema/course-module/v1";
@@ -70,8 +71,10 @@ import {
 import {
   authoredBody,
   initialSourceDocumentPath,
+  isWritableDocument,
   sourceDocumentPathCandidates,
   sourceMediaPath,
+  sourcePersonRecord,
   type SourcePathCollisionPolicy,
 } from "./plan-markdown";
 import { sourceNavigation } from "./plan-navigation";
@@ -254,12 +257,7 @@ function checkInitializationInputs(
       "source-mapping-invalid",
       "Explicit document paths must identify new Guides or Course pages.",
     );
-  if (
-    !existing &&
-    occupied.some(
-      (file) => posix.basename(file.path) === ".topik.yaml" || file.path.endsWith(".topik.json"),
-    )
-  )
+  if (!existing && occupied.some((file) => posix.basename(file.path) === ".topik.yaml"))
     failure(
       "initialization-unproven",
       "An existing project or resource source requires inspection and an explicit source-add decision.",
@@ -395,12 +393,8 @@ function planInitialMedia(draft: InitializationDraft): void {
 
 const personRecords = (resources: readonly Resource[]) =>
   resources
-    .filter((resource) => resource.type === "Person")
-    .map((person) => ({
-      id: person.name,
-      ...(person.labels !== undefined ? { labels: person.labels } : {}),
-      spec: person.spec,
-    }));
+    .filter((resource): resource is Person => resource.type === "Person")
+    .map(sourcePersonRecord);
 
 /** A collection declares its Persons and places each Guide beside the configuration. */
 function planCollectionSource(draft: InitializationDraft): Record<string, unknown> {
@@ -653,12 +647,9 @@ function planCourseSource(draft: InitializationDraft): Record<string, unknown> {
   return config;
 }
 
-const isDocument = (resource: Resource): resource is Guide | WikiPage | CoursePage =>
-  resource.type === "Guide" || resource.type === "WikiPage" || resource.type === "CoursePage";
-
 /** Write every new Markdown document with complete frontmatter. */
 function writeInitialDocuments(draft: InitializationDraft): void {
-  for (const resource of draft.expected.filter(isDocument)) {
+  for (const resource of draft.expected.filter(isWritableDocument)) {
     const path = draft.paths.get(`${resource.type}/${resource.name}`)!;
     const metadata = {
       id: resource.name,
@@ -766,11 +757,11 @@ async function verifyInitialRoundTrip(
   const { expected, existing } = draft;
   // Compiler remaps local media identities; supplied byte metadata must still match exactly.
   for (const resource of expected) {
-    if (!isDocument(resource)) continue;
+    if (!isWritableDocument(resource)) continue;
     const original = candidate.compilation.resources.find(
       (other) => other.type === resource.type && other.name === resource.name,
     );
-    if (!original || !isDocument(original))
+    if (!original || !isWritableDocument(original))
       failure("round-trip-mismatch", "A created document did not compile to its stable identity.");
     const normalized = {
       ...original,

@@ -11,7 +11,7 @@ import {
 } from "../config/collection";
 import { parseGuideMetadata } from "../config/source-metadata";
 import { compileAssetResourcesInSession, type AssetCompilationOptions } from "./assets";
-import { createPortableReadSession } from "../assets/files";
+import { createPortableReadSession, type PortableReadSession } from "../assets/files";
 import { createContentMemo, type ContentMemo } from "./content-memo";
 import {
   readOptionalConfigFileWithPath,
@@ -32,13 +32,15 @@ import {
   parseMarkdownFrontmatter,
   withFileLines,
   throwOnCompileErrors,
+  type CompileReadOptions,
   type CompileValidationOptions,
   type CompileResult,
 } from "./shared";
 import { compileResourceLinksInSession, type CompileResourceReferenceTarget } from "./links";
 import { assertValidDocumentResource } from "./wiki";
+import { RESOURCE_NAME_MAX_LENGTH, SLUG_PATTERN } from "../resource-names";
 
-export interface CompileGuidesOptions {
+export interface CompileGuidesOptions extends CompileReadOptions {
   dir: string;
   /** Exact config path relative to dir; content is relative to the config directory. */
   configFile?: string;
@@ -71,10 +73,12 @@ export async function compileGuides(options: CompileGuidesOptions): Promise<Comp
 
 export async function inspectGuides(options: CompileGuidesOptions): Promise<CompileResult> {
   const memo = createContentMemo();
-  const discovered = await discoverGuides(options, undefined, memo);
+  // One session shares Git repository evidence across every read of this call.
+  const session = createPortableReadSession(options.fileSafety, options.gitExecutable);
+  const discovered = await discoverGuides(options, undefined, memo, session);
   validateGuideAuthors(discovered.resources, discovered.sourcePathsByResource);
   const linked = await compileResourceLinksInSession(
-    createPortableReadSession(),
+    session,
     {
       rootDir: configurationDirectory(options.dir, options.configFile),
       resources: discovered.resources,
@@ -87,7 +91,7 @@ export async function inspectGuides(options: CompileGuidesOptions): Promise<Comp
   );
   throwOnCompileErrors(linked.diagnostics);
   const compiled = await compileAssetResourcesInSession(
-    createPortableReadSession(),
+    session,
     {
       rootDir: configurationDirectory(options.dir, options.configFile),
       resources: linked.resources,
@@ -109,18 +113,22 @@ export async function discoverGuides(
   options: CompileGuidesOptions,
   selectedConfig?: LoadedConfig,
   memo: ContentMemo = createContentMemo(),
+  session: PortableReadSession = createPortableReadSession(
+    options.fileSafety,
+    options.gitExecutable,
+  ),
 ): Promise<CompileResourceDiscovery> {
   const dir = configurationDirectory(options.dir, options.configFile);
 
   const loadedConfig =
     selectedConfig ??
     (options.configFile !== undefined
-      ? await readExactConfigFile(options.dir, options.configFile)
-      : await readOptionalConfigFileWithPath(dir, [
-          "collection.yaml",
-          "collection.yml",
-          "collection.json",
-        ]));
+      ? await readExactConfigFile(options.dir, options.configFile, session)
+      : await readOptionalConfigFileWithPath(
+          dir,
+          ["collection.yaml", "collection.yml", "collection.json"],
+          session,
+        ));
   if (loadedConfig == null) {
     return { diagnostics: [], resources: [], sourcePathsByResource: {}, consumedSourcePaths: [] };
   }
@@ -198,8 +206,8 @@ export async function discoverGuides(
     // Filename-derived identities must already be valid resource names and slugs.
     if (
       (explicitSlug === undefined || explicitName === undefined) &&
-      (!GUIDE_SLUG_PATTERN.test(fileToSlug(file)) ||
-        (explicitName === undefined && name.length > GUIDE_NAME_MAX_LENGTH))
+      (!SLUG_PATTERN.test(fileToSlug(file)) ||
+        (explicitName === undefined && name.length > RESOURCE_NAME_MAX_LENGTH))
     )
       throw new PublicCompileError("guide-name-invalid", file);
     const duplicate = claimedNames.get(name);
@@ -351,9 +359,6 @@ function fileToSlug(path: string): string {
   const folder = posix.dirname(path);
   return folder !== "." && LANDING_STEM.test(stem) ? posix.basename(folder) : stem;
 }
-
-const GUIDE_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const GUIDE_NAME_MAX_LENGTH = 63;
 
 export { extractMarkdownTitle as extractTitle } from "./shared";
 

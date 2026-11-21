@@ -2,13 +2,23 @@ import { z } from "zod";
 import type { Person } from "@topik/schema/person/v1";
 import { validateResources } from "../validate";
 import { validateTopikPath } from "../assets/path";
+import {
+  RESOURCE_NAME_MAX_LENGTH,
+  RESOURCE_NAME_PATTERN,
+  SLUG_MAX_LENGTH,
+  SLUG_PATTERN,
+} from "../resource-names";
 
 export const sourceLabelsSchema = z.record(z.string(), z.string());
-const name = z
+/** A resource name, as every resource schema spells it. */
+export const resourceNameSchema = z
   .string()
   .min(1)
-  .max(63)
-  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+  .max(RESOURCE_NAME_MAX_LENGTH)
+  .regex(RESOURCE_NAME_PATTERN);
+/** A public slug, as every resource schema spells it. */
+export const slugSchema = z.string().min(1).max(SLUG_MAX_LENGTH).regex(SLUG_PATTERN);
+const name = resourceNameSchema;
 
 export const pageSourcePathSchema = z
   .string()
@@ -26,12 +36,7 @@ const pageMetadataSchema = z.object({
   labels: sourceLabelsSchema.optional(),
 });
 const guideMetadataSchema = pageMetadataSchema.extend({
-  slug: z
-    .string()
-    .min(1)
-    .max(256)
-    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
-    .optional(),
+  slug: slugSchema.optional(),
   description: z.string().max(512).nullable().optional(),
   authors: z.array(name).optional(),
   tags: z.array(z.string().min(1).max(63)).optional(),

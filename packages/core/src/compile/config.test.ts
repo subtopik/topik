@@ -107,7 +107,7 @@ describe("compile config helpers", () => {
   );
 
   test.skipIf(process.platform !== "linux")(
-    "preserves unavailable procfs errors through config helpers and standalone compilers",
+    "reports unavailable procfs through config reads and standalone compilers as compile does",
     async () => {
       await writeFile(join(dir, "wiki.yaml"), "id: docs\ntitle: Docs\nnavigation: [intro]\n");
       await writeFile(join(dir, "wiki.json"), JSON.stringify({ id: "other", title: "Other" }));
@@ -130,15 +130,26 @@ describe("compile config helpers", () => {
     },
   );
 
+  test("standalone compilers take the same read options as compile", async () => {
+    await writeFile(join(dir, "wiki.yaml"), "id: docs\ntitle: Docs\nnavigation: [intro]\n");
+    await writeFile(join(dir, "collection.yaml"), "id: guides\ntitle: Guides\n");
+    await writeFile(join(dir, "intro.md"), "# Intro\n");
+    // A malformed Git executable is refused before any read, proving the option is used.
+    for (const compileSource of [compileWiki, compileGuides])
+      await expect(compileSource({ dir, gitExecutable: "relative/git" })).rejects.toThrow(
+        TypeError,
+      );
+    await expect(compileWiki({ dir, fileSafety: "portable" })).resolves.toMatchObject({
+      diagnostics: [],
+    });
+  });
+
   async function expectUnsupported(action: () => Promise<unknown>, location: string) {
     const error: unknown = await action().catch((error: unknown) => error);
     expect(error).toBeInstanceOf(PublicCompileError);
-    expect(error).toMatchObject({
-      id: "file-safe-read-unsupported",
-      location,
-      message: "This platform cannot safely open compilation inputs.",
-    });
-    expect(error).not.toHaveProperty("cause");
+    expect(error).toMatchObject({ id: "config-read-failed", location });
+    // The reader's diagnostics stay a non-enumerable debugging aid.
+    expect(Object.keys(error as object)).not.toContain("cause");
     expect(`${String(error)}\n${JSON.stringify(error)}`).not.toContain(dir);
   }
 

@@ -1,4 +1,4 @@
-import { join, posix, resolve } from "node:path";
+import { posix, resolve } from "node:path";
 import { parseDocument, isAlias, isNode, isMap, isSeq, isScalar } from "yaml";
 import {
   createPortableReadSession,
@@ -8,40 +8,23 @@ import {
 } from "../assets/files";
 import { parseStrictTopikJson } from "../assets/json";
 import { isConfigurationPath, TOPIK_MANIFEST_LIMITS } from "../config/manifest";
-import { readRegularFileWithinRoot } from "./files";
 import { PublicCompileError } from "./public-errors";
 
 /**
- * Load the first conventional config file that exists, such as `wiki.yaml` then `wiki.json`.
- * It is parsed like an explicitly selected configuration: the same size limit, byte order
- * mark handling, strict JSON and safe YAML.
+ * Load the first conventional config file that exists, such as `wiki.yaml` then `wiki.json`,
+ * with the same reader, limits and parser as an explicitly selected configuration.
  */
 export async function readOptionalConfigFileWithPath(
   dir: string,
   candidates: readonly string[],
+  session?: PortableReadSession,
 ): Promise<LoadedConfig | undefined> {
   for (const name of candidates) {
-    const filePath = join(dir, name);
-    let raw: string;
-
     try {
-      raw = await readRegularFileWithinRoot(filePath, dir, "utf-8");
+      return await readExactConfigFile(dir, name, session);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        continue;
-      }
-      if (error instanceof PublicCompileError && error.id === "file-safe-read-unsupported") {
-        throw error;
-      }
-      throw new PublicCompileError("config-read-failed", name, { cause: error });
-    }
-    if (Buffer.byteLength(raw, "utf8") > TOPIK_MANIFEST_LIMITS.maxBytes)
-      throw new PublicCompileError("config-read-failed", name);
-
-    try {
-      return { path: name, value: parseConfigurationText(name, raw) };
-    } catch {
-      throw new PublicCompileError("config-parse-failed", name);
+      if (error instanceof PublicCompileError && error.id === "config-not-found") continue;
+      throw error;
     }
   }
   return undefined;

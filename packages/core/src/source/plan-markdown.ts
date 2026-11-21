@@ -3,6 +3,7 @@ import { formatTopikContent, rewriteTopikAssetOccurrences } from "@topik/content
 import type { Guide } from "@topik/schema/guide/v1";
 import type { WikiPage } from "@topik/schema/wiki-page/v1";
 import type { CoursePage } from "@topik/schema/course-page/v1";
+import type { Person } from "@topik/schema/person/v1";
 import type { Resource } from "../resource";
 import { serializeTopikJson } from "../assets/json";
 import { validateTopikPathSet } from "../assets/path";
@@ -14,6 +15,16 @@ import { encodeSource, patchFrontmatterFields, sourceHash } from "./syntax";
 
 /** A resource with a Markdown source document. */
 export type WritableDocument = Guide | WikiPage | CoursePage;
+
+export const isWritableDocument = (resource: Resource): resource is WritableDocument =>
+  resource.type === "Guide" || resource.type === "WikiPage" || resource.type === "CoursePage";
+
+/** A Person as a collection or Course configuration declares it. */
+export const sourcePersonRecord = (person: Person) => ({
+  id: person.name,
+  ...(person.labels !== undefined ? { labels: person.labels } : {}),
+  spec: person.spec,
+});
 export const resourceKey = (resource: Resource): string => `${resource.type}/${resource.name}`;
 
 /** How a planner treats a derived document path that is occupied. */

@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { join } from "node:path";
 import type {
   Wiki,
   WikiDropdownNavNode,
@@ -13,7 +12,7 @@ import { parseWikiConfig, WIKI_PAGE_NAME_HASH_LENGTH, type WikiNavNode } from ".
 import { parsePageMetadata } from "../config/source-metadata";
 import { validateResources } from "../validate";
 import { compileAssetResourcesInSession, type AssetCompilationOptions } from "./assets";
-import { createPortableReadSession } from "../assets/files";
+import { createPortableReadSession, type PortableReadSession } from "../assets/files";
 import { createContentMemo, type ContentMemo } from "./content-memo";
 import type { CompileResourceDiscovery } from "./guide";
 import {
@@ -22,25 +21,21 @@ import {
   configurationDirectory,
   type LoadedConfig,
 } from "./config";
-import {
-  decodeUtf8Document,
-  existingDocuments,
-  mapWithConcurrency,
-  readRegularFileWithinRoot,
-} from "./files";
+import { existingDocuments, mapWithConcurrency, readMarkdownSource } from "./files";
 import { PublicCompileError, publicSchemaError } from "./public-errors";
 import {
   extractMarkdownTitle,
   parseMarkdownFrontmatter,
   withFileLines,
   throwOnCompileErrors,
+  type CompileReadOptions,
   type CompileValidationOptions,
   type CompileResult,
 } from "./shared";
 import { compileResourceLinksInSession, type CompileResourceReferenceTarget } from "./links";
 import { joinWikiPath } from "../wiki-navigation";
 
-export interface CompileWikiOptions {
+export interface CompileWikiOptions extends CompileReadOptions {
   dir: string;
   /** Exact config path relative to dir; content is relative to the config directory. */
   configFile?: string;
@@ -60,9 +55,11 @@ export async function compileWiki(options: CompileWikiOptions): Promise<CompileR
 
 export async function inspectWiki(options: CompileWikiOptions): Promise<CompileResult> {
   const memo = createContentMemo();
-  const discovered = await discoverWiki(options, undefined, memo);
+  // One session shares Git repository evidence across every read of this call.
+  const session = createPortableReadSession(options.fileSafety, options.gitExecutable);
+  const discovered = await discoverWiki(options, undefined, memo, session);
   const linked = await compileResourceLinksInSession(
-    createPortableReadSession(),
+    session,
     {
       rootDir: configurationDirectory(options.dir, options.configFile),
       resources: discovered.resources,
@@ -75,7 +72,7 @@ export async function inspectWiki(options: CompileWikiOptions): Promise<CompileR
   );
   throwOnCompileErrors(linked.diagnostics);
   const compiled = await compileAssetResourcesInSession(
-    createPortableReadSession(),
+    session,
     {
       rootDir: configurationDirectory(options.dir, options.configFile),
       resources: linked.resources,
@@ -97,14 +94,18 @@ export async function discoverWiki(
   options: CompileWikiOptions,
   selectedConfig?: LoadedConfig,
   memo: ContentMemo = createContentMemo(),
+  session: PortableReadSession = createPortableReadSession(
+    options.fileSafety,
+    options.gitExecutable,
+  ),
 ): Promise<CompileResourceDiscovery> {
   const dir = configurationDirectory(options.dir, options.configFile);
 
   const loadedConfig =
     selectedConfig ??
     (options.configFile !== undefined
-      ? await readExactConfigFile(options.dir, options.configFile)
-      : await readOptionalConfigFileWithPath(dir, ["wiki.yaml", "wiki.yml", "wiki.json"]));
+      ? await readExactConfigFile(options.dir, options.configFile, session)
+      : await readOptionalConfigFileWithPath(dir, ["wiki.yaml", "wiki.yml", "wiki.json"], session));
   if (loadedConfig == null) {
     return { diagnostics: [], resources: [], sourcePathsByResource: {}, consumedSourcePaths: [] };
   }
@@ -120,7 +121,10 @@ export async function discoverWiki(
   if (pagePaths.length !== pages.length)
     throw new PublicCompileError("config-invalid", loadedConfig.path);
   const resolvedFiles = await mapWithConcurrency(pagePaths, PAGE_READ_CONCURRENCY, (pagePath) =>
-    readPageFile(dir, pagePath),
+    readMarkdownSource(dir, pagePath, {
+      ambiguous: "wiki-page-ambiguous",
+      notFound: "wiki-page-not-found",
+    }),
   );
 
   const resources: SourceResource[] = [];
@@ -132,8 +136,7 @@ export async function discoverWiki(
 
   for (let i = 0; i < pagePaths.length; i++) {
     const pagePath = pagePaths[i];
-    const { filePath, raw } = resolvedFiles[i];
-    const sourcePath = `${pagePath}${filePath.endsWith(".mdx") ? ".mdx" : ".md"}`;
+    const { path: sourcePath, raw } = resolvedFiles[i];
     const parsed = parseMarkdownFrontmatter(raw, sourcePath);
     const { content } = parsed;
     let frontmatter;
@@ -285,33 +288,6 @@ export async function listWikiDocuments(dir: string, loaded: LoadedConfig): Prom
       `${path}.md`,
     ]),
   );
-}
-
-async function readPageFile(
-  dir: string,
-  pagePath: string,
-): Promise<{ filePath: string; raw: string }> {
-  let found: { filePath: string; raw: string } | undefined;
-  for (const ext of [".mdx", ".md"]) {
-    const filePath = join(dir, pagePath + ext);
-    let bytes: Buffer;
-    try {
-      bytes = await readRegularFileWithinRoot(filePath, dir);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        continue;
-      }
-      throw error;
-    }
-    const raw = decodeUtf8Document(bytes, pagePath + ext);
-    if (found)
-      throw new PublicCompileError("wiki-page-ambiguous", pagePath + ext, {
-        relatedLocation: `${pagePath}${found.filePath.endsWith(".mdx") ? ".mdx" : ".md"}`,
-      });
-    found = { filePath, raw };
-  }
-  if (found) return found;
-  throw new PublicCompileError("wiki-page-not-found", pagePath);
 }
 
 function pagePathToSlug(pagePath: string): string {

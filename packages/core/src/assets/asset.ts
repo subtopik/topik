@@ -20,7 +20,7 @@ import {
   type TopikAssetResult,
 } from "./diagnostics";
 import {
-  isTopikJsonDataValue,
+  topikJsonDataProblem,
   parseStrictTopikJson,
   serializeTopikJson,
   TopikJsonSyntaxError,
@@ -142,11 +142,9 @@ export function parseAsset(input: string | Uint8Array): TopikAssetResult<ParsedA
 }
 
 export function validateAssetValue(value: unknown): TopikAssetResult<Asset> {
-  if (!isTopikJsonDataValue(value)) {
-    return failure(
-      "TOPIK_ASSET_SCHEMA_INVALID",
-      "Asset must contain only own JSON data properties",
-    );
+  const dataProblem = topikJsonDataProblem(value);
+  if (dataProblem !== undefined) {
+    return failure("TOPIK_ASSET_SCHEMA_INVALID", dataProblem.message, dataProblem.pointer);
   }
   if (isRecord(value)) {
     const type = Object.hasOwn(value, "type") ? value.type : undefined;

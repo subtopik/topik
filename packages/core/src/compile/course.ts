@@ -1,4 +1,3 @@
-import { join } from "node:path";
 import type { Course } from "@topik/schema/course/v1";
 import type { CourseModule } from "@topik/schema/course-module/v1";
 import type { CoursePage } from "@topik/schema/course-page/v1";
@@ -6,22 +5,28 @@ import { parseCourseConfig, parseCoursePageMetadata } from "../config/course";
 import { resolveCourseNavigation, type CourseReferenceContext } from "../course-navigation";
 import type { SourceResource } from "../resource";
 import { compileAssetResourcesInSession, type AssetCompilationOptions } from "./assets";
-import { createPortableReadSession } from "../assets/files";
+import { createPortableReadSession, type PortableReadSession } from "../assets/files";
 import { createContentMemo, type ContentMemo } from "./content-memo";
-import { configurationDirectory, readExactConfigFile, type LoadedConfig } from "./config";
+import {
+  configurationDirectory,
+  readExactConfigFile,
+  readOptionalConfigFileWithPath,
+  type LoadedConfig,
+} from "./config";
 import type { CompileResourceDiscovery } from "./guide";
-import { decodeUtf8Document, existingDocuments, readRegularFileWithinRoot } from "./files";
+import { existingDocuments, readMarkdownSource } from "./files";
 import { PublicCompileError, publicSchemaError } from "./public-errors";
 import {
   parseMarkdownFrontmatter,
   withFileLines,
   throwOnCompileErrors,
   type CompileResult,
+  type CompileReadOptions,
   type CompileValidationOptions,
 } from "./shared";
 import { compileResourceLinksInSession, type CompileResourceReferenceTarget } from "./links";
 
-export interface CompileCourseOptions {
+export interface CompileCourseOptions extends CompileReadOptions {
   dir: string;
   /** Exact configuration path relative to dir; page sources are relative to its directory. */
   configFile?: string;
@@ -38,10 +43,12 @@ export async function compileCourse(options: CompileCourseOptions): Promise<Comp
 
 export async function inspectCourse(options: CompileCourseOptions): Promise<CompileResult> {
   const memo = createContentMemo();
-  const discovered = await discoverCourse(options, undefined, memo);
+  // One session shares Git repository evidence across every read of this call.
+  const session = createPortableReadSession(options.fileSafety, options.gitExecutable);
+  const discovered = await discoverCourse(options, undefined, memo, session);
   validateCourseAuthors(discovered.resources, discovered.sourcePathsByResource);
   const linked = await compileResourceLinksInSession(
-    createPortableReadSession(),
+    session,
     {
       rootDir: configurationDirectory(options.dir, options.configFile),
       resources: discovered.resources,
@@ -54,7 +61,7 @@ export async function inspectCourse(options: CompileCourseOptions): Promise<Comp
   );
   throwOnCompileErrors(linked.diagnostics);
   const compiled = await compileAssetResourcesInSession(
-    createPortableReadSession(),
+    session,
     {
       rootDir: configurationDirectory(options.dir, options.configFile),
       resources: linked.resources,
@@ -76,9 +83,14 @@ export async function discoverCourse(
   options: CompileCourseOptions,
   selectedConfig?: LoadedConfig,
   memo: ContentMemo = createContentMemo(),
+  session: PortableReadSession = createPortableReadSession(
+    options.fileSafety,
+    options.gitExecutable,
+  ),
 ): Promise<CompileResourceDiscovery> {
   const dir = configurationDirectory(options.dir, options.configFile);
-  const loaded = selectedConfig ?? (await loadCourseConfig(options.dir, options.configFile));
+  const loaded =
+    selectedConfig ?? (await loadCourseConfig(options.dir, options.configFile, session));
   rejectCourseOrder(loaded.value, options.configFile ?? loaded.path);
   let config;
   try {
@@ -122,7 +134,10 @@ export async function discoverCourse(
     };
     resources.push(resource);
     for (const sourcePath of module.pages) {
-      const file = await readCoursePage(dir, sourcePath);
+      const file = await readMarkdownSource(dir, sourcePath, {
+        ambiguous: "course-page-ambiguous",
+        notFound: "course-page-not-found",
+      });
       const parsed = parseMarkdownFrontmatter(file.raw, file.path);
       if (isRecord(parsed.frontmatter) && Object.hasOwn(parsed.frontmatter, "order"))
         throw new PublicCompileError("course-order-removed", file.path, { field: "order" });
@@ -210,16 +225,19 @@ function rejectCourseOrder(raw: unknown, location: string): void {
       });
 }
 
-async function loadCourseConfig(dir: string, configFile?: string): Promise<LoadedConfig> {
-  if (configFile !== undefined) return readExactConfigFile(dir, configFile);
-  for (const path of ["course.yaml", "course.yml", "course.json"]) {
-    try {
-      return await readExactConfigFile(dir, path);
-    } catch (error) {
-      if (!(error instanceof PublicCompileError) || error.id !== "config-not-found") throw error;
-    }
-  }
-  throw new PublicCompileError("config-not-found");
+async function loadCourseConfig(
+  dir: string,
+  configFile: string | undefined,
+  session: PortableReadSession,
+): Promise<LoadedConfig> {
+  if (configFile !== undefined) return readExactConfigFile(dir, configFile, session);
+  const found = await readOptionalConfigFileWithPath(
+    dir,
+    ["course.yaml", "course.yml", "course.json"],
+    session,
+  );
+  if (found === undefined) throw new PublicCompileError("config-not-found");
+  return found;
 }
 
 /**
@@ -239,27 +257,6 @@ export async function listCourseDocuments(dir: string, loaded: LoadedConfig): Pr
       module.pages.flatMap((page) => [`${page}.md`, `${page}.mdx`]),
     ),
   );
-}
-
-async function readCoursePage(
-  root: string,
-  source: string,
-): Promise<{ path: string; raw: string }> {
-  let found: { path: string; raw: string } | undefined;
-  for (const extension of [".md", ".mdx"]) {
-    const path = `${source}${extension}`;
-    let bytes: Buffer;
-    try {
-      bytes = await readRegularFileWithinRoot(join(root, path), root);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
-      throw error;
-    }
-    if (found) throw new PublicCompileError("course-page-ambiguous", path);
-    found = { path, raw: decodeUtf8Document(bytes, path) };
-  }
-  if (!found) throw new PublicCompileError("course-page-not-found", source);
-  return found;
 }
 
 export function validateCourseAuthors(

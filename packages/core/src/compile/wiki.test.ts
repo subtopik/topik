@@ -967,7 +967,7 @@ navigation:
     await expect(compileWiki({ dir })).rejects.toMatchObject({
       name: "FileNotRegularError",
       id: "file-not-regular",
-      location: "guide/start.mdx",
+      location: "guide/start.md",
     });
   });
 

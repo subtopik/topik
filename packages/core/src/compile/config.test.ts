@@ -12,6 +12,11 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   return { ...actual, open: vi.fn(actual.open) };
 });
 
+// Emulate other platforms only from Linux: another host's filesystem would fail the emulated
+// platform's file checks (NTFS keeps small files in the MFT with no allocated blocks).
+const PLATFORMS =
+  process.platform === "linux" ? (["native", "darwin", "win32"] as const) : (["native"] as const);
+
 describe("compile config helpers", () => {
   let dir: string;
 
@@ -57,7 +62,7 @@ describe("compile config helpers", () => {
     });
   });
 
-  test.each(["native", "darwin", "win32"] as const)(
+  test.each(PLATFORMS)(
     "reads configs and preserves missing-candidate fallback on %s",
     async (platform) => {
       await writeFile(join(dir, "wiki.yml"), "id: docs\ntitle: Docs\n");
@@ -73,7 +78,7 @@ describe("compile config helpers", () => {
     },
   );
 
-  test.each(["native", "darwin", "win32"] as const)(
+  test.each(PLATFORMS)(
     "standalone Wiki and Guide compilers read ordinary sources on %s",
     async (platform) => {
       await writeFile(join(dir, "wiki.yaml"), "id: docs\ntitle: Docs\nnavigation: [intro]\n");
@@ -217,22 +222,19 @@ describe("compile config helpers", () => {
     ).resolves.toMatchObject({ path: "wiki.json" });
   });
 
-  test.each(["native", "darwin", "win32"] as const)(
-    "sanitizes outside config symlink errors on %s",
-    async (platform) => {
-      if (platform !== "native") vi.spyOn(process, "platform", "get").mockReturnValue(platform);
-      const external = await mkdtemp(join(tmpdir(), "topik-config-secret-"));
-      try {
-        await writeFile(join(external, "secret.yaml"), "id: secret\ntitle: Secret\n");
-        await symlink(join(external, "secret.yaml"), join(dir, "wiki.yaml"));
+  test.each(PLATFORMS)("sanitizes outside config symlink errors on %s", async (platform) => {
+    if (platform !== "native") vi.spyOn(process, "platform", "get").mockReturnValue(platform);
+    const external = await mkdtemp(join(tmpdir(), "topik-config-secret-"));
+    try {
+      await writeFile(join(external, "secret.yaml"), "id: secret\ntitle: Secret\n");
+      await symlink(join(external, "secret.yaml"), join(dir, "wiki.yaml"));
 
-        await expect(readOptionalConfigFileWithPath(dir, ["wiki.yaml"])).rejects.toMatchObject({
-          id: "config-read-failed",
-          location: "wiki.yaml",
-        });
-      } finally {
-        await rm(external, { recursive: true, force: true });
-      }
-    },
-  );
+      await expect(readOptionalConfigFileWithPath(dir, ["wiki.yaml"])).rejects.toMatchObject({
+        id: "config-read-failed",
+        location: "wiki.yaml",
+      });
+    } finally {
+      await rm(external, { recursive: true, force: true });
+    }
+  });
 });

@@ -85,6 +85,7 @@ const tree = (text: string) => {
  * a control character such as U+000B as U+FFFD, so the formatter refuses the document
  * (`topik-write-failed`) rather than change its text.
  */
+// eslint-disable-next-line no-control-regex -- the gap is about U+000B itself
 const KNOWN_WRITE_FAILURES = [/[*_~]\u000b|\u000b[*_~]/u];
 
 /** Whether a formatting failure is a known gap rather than a new one. */

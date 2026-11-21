@@ -399,3 +399,22 @@ describe("portable read diagnostics", () => {
     },
   );
 });
+
+test("a read session reads each file once and gives every stage the same bytes", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "topik-session-reads-"));
+  try {
+    await writeFile(join(dir, "manual.pdf"), "%PDF-1.7\n");
+    const session = createPortableReadSession();
+    const first = await readPortableAssetFileInSession(session, { root: dir, path: "manual.pdf" });
+    await writeFile(join(dir, "manual.pdf"), "%PDF-1.7\nchanged\n");
+    const second = await readPortableAssetFileInSession(session, { root: dir, path: "manual.pdf" });
+    expect(second).toBe(first);
+    const fresh = await readPortableAssetFileInSession(createPortableReadSession(), {
+      root: dir,
+      path: "manual.pdf",
+    });
+    expect(fresh).not.toBe(first);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

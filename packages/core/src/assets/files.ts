@@ -198,6 +198,12 @@ export function usesPortableFileReads(fileSafety: FileSafety = DEFAULT_FILE_SAFE
  */
 export interface PortableReadSession {
   readonly repositories: Map<string, RepositoryEvidence>;
+  /**
+   * Completed and in-flight file reads of this session, so one compilation reads each file
+   * once (a download link is proved by the link check and then compiled as an Asset) and
+   * every stage sees the same bytes.
+   */
+  readonly reads: Map<string, Promise<TopikAssetResult<PortableAssetFileDescriptor>>>;
   readonly fileSafety: FileSafety;
   /** Caller-configured Git executable; undefined searches the trusted locations. */
   readonly gitExecutable?: string;
@@ -210,6 +216,7 @@ export function createPortableReadSession(
 ): PortableReadSession {
   return {
     repositories: new Map(),
+    reads: new Map(),
     fileSafety,
     gitExecutable: validateGitExecutableOption(gitExecutable),
   };
@@ -324,7 +331,16 @@ export async function readPortableAssetFileInSession(
   session: PortableReadSession,
   options: ReadPortableAssetFileOptions,
 ): Promise<TopikAssetResult<PortableAssetFileDescriptor>> {
-  return readPortableAssetFileAnchored(options, session);
+  // Key on the canonical root, so a retargeted symlinked ancestor is a new read, and on every
+  // option that changes the result.
+  const root = await realpath(options.root).catch(() => resolve(options.root));
+  const key = [root, options.path, options.maxBytes ?? "", options.gitExecutable ?? ""].join("\0");
+  let read = session.reads.get(key);
+  if (read === undefined) {
+    read = readPortableAssetFileAnchored(options, session);
+    session.reads.set(key, read);
+  }
+  return read;
 }
 
 /** @internal Deterministic race seam; not re-exported from the package root. */

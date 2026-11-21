@@ -50,4 +50,12 @@ describe("init rollback", () => {
       expect(await readdir(dir)).toEqual([]);
     },
   );
+
+  test("removes the directories it created when writing fails", async () => {
+    failing.name = "index.md";
+    await expect(initProject(join(dir, "new", "project"))).rejects.toMatchObject({
+      id: "init-write-failed",
+    });
+    expect(await readdir(dir)).toEqual([]);
+  });
 });

@@ -1,4 +1,4 @@
-import { lstat, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { lstat, open, readdir, readFile, stat, unlink } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { rewriteTopikNavigationReferences } from "@topik/content";
 import { unifiedDiff } from "./diff";
@@ -206,8 +206,7 @@ export async function runMintlify(options: RunOptions): Promise<RunSummary> {
       result.error = "Not written because the page migration failed";
     } else if (write) {
       try {
-        // Exclusive creation: an existing wiki.yaml is never replaced.
-        await writeFile(join(root, result.output), navigation.yaml, { flag: "wx" });
+        await writeNewFile(join(root, result.output), navigation.yaml);
       } catch (error) {
         result.changed = false;
         result.error =
@@ -239,6 +238,23 @@ export async function runMintlify(options: RunOptions): Promise<RunSummary> {
   };
 }
 
+/**
+ * Create `path` exclusively, so an existing file is never replaced, and remove it again when
+ * the write fails, so no partial file is left behind.
+ */
+async function writeNewFile(path: string, content: string): Promise<void> {
+  const handle = await open(path, "wx");
+  try {
+    await handle.writeFile(content);
+    // A filesystem can report a failed write only when the file is closed.
+    await handle.close();
+  } catch (error) {
+    await handle.close().catch(() => undefined);
+    await unlink(path).catch(() => undefined);
+    throw error;
+  }
+}
+
 /** Plan a `wiki.yaml` from the directory's Mintlify navigation, never replacing a wiki configuration. */
 async function planNavigation(
   root: string,
@@ -259,7 +275,8 @@ async function planNavigation(
   const result: NavigationResult = { source, output: "wiki.yaml", changed: false, warnings: [] };
   let config: unknown;
   try {
-    config = JSON.parse(await readFile(join(root, source), "utf8"));
+    // Editors on Windows may save a byte order mark, which JSON.parse refuses.
+    config = JSON.parse((await readFile(join(root, source), "utf8")).replace(/^\uFEFF/u, ""));
   } catch {
     result.error = `Unable to read ${source} as JSON`;
     return { result };
@@ -313,12 +330,21 @@ async function* selectFile(
  * replaces the path itself.
  */
 export async function isMigrationInput(path: string): Promise<boolean> {
+  return (await migrationInputProblem(path)) === undefined;
+}
+
+/** Why a path cannot be migrated, as the CLI prints it, or `undefined` when it can. */
+export async function migrationInputProblem(path: string): Promise<string | undefined> {
   try {
-    if (await isDirectory(path)) return true;
+    if (await isDirectory(path)) return undefined;
     const info = await lstat(path);
-    return info.isFile() && (isMdx(path) || isMarkdown(path));
+    if (info.isSymbolicLink())
+      return "A file argument must not be a symbolic link; pass the file it points to";
+    return info.isFile() && (isMdx(path) || isMarkdown(path))
+      ? undefined
+      : "Not a directory or a .md or .mdx file";
   } catch {
-    return false;
+    return "Not a directory or a .md or .mdx file";
   }
 }
 

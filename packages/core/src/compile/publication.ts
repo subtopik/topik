@@ -75,6 +75,15 @@ function refused(reason: OutputPublicationErrorReason, options?: ErrorOptions) {
   return new OutputPublicationError(OUTPUT_PUBLICATION_REASON_MESSAGES[reason], reason, options);
 }
 
+/** @internal Outcome of a publication that replaced the output. */
+export interface OutputPublicationResult {
+  /**
+   * The previous output was moved aside but could not be removed; it remains in a sibling
+   * directory named with `priorPrefix`. The new output is complete either way.
+   */
+  priorRetained: boolean;
+}
+
 /** @internal One file of a staged output generation, at a `/`-separated relative path. */
 export interface OutputPublicationFile {
   path: string;
@@ -137,14 +146,13 @@ export async function publishOutputDirectory(
   absolutePath: string,
   files: readonly OutputPublicationFile[],
   options: OutputPublicationOptions,
-): Promise<void> {
+): Promise<OutputPublicationResult> {
   // Linux always publishes through anchored descriptors. Elsewhere the portable path is used
   // only when permitted; otherwise openAnchoredOutputDirectory refuses the platform.
   const located = locateOutputPath(absolutePath, options.projectDirectory);
   absolutePath = located.path;
   if (process.platform !== "linux" && (options.fileSafety ?? DEFAULT_FILE_SAFETY) === "portable") {
-    publishOutputDirectoryByPath(absolutePath, files, options, located.projectRoot);
-    return;
+    return publishOutputDirectoryByPath(absolutePath, files, options, located.projectRoot);
   }
   const stagedFiles = snapshotOutputFiles(files);
   const target = basename(absolutePath);
@@ -192,11 +200,6 @@ export async function publishOutputDirectory(
     generation.path = targetPath;
     generation.name = target;
     published = true;
-
-    if (existing !== undefined) {
-      cleanupOutputDirectory(parent, existing);
-      existingRemoved = true;
-    }
   } catch (error) {
     operationError = error;
   }
@@ -222,17 +225,20 @@ export async function publishOutputDirectory(
       operationError ??= error;
     }
   }
+  // The new output is live: a previous output that cannot be removed stays beside it.
+  let priorRetained = false;
   if (published && existing !== undefined && !existingRemoved && existing.name !== target) {
     try {
       cleanupOutputDirectory(parent, existing);
-    } catch (error) {
-      operationError ??= error;
+    } catch {
+      priorRetained = true;
     }
   }
   await generation?.handle.close().catch(() => undefined);
   await existing?.handle.close().catch(() => undefined);
   await parent.close().catch(() => undefined);
   if (operationError !== undefined) throw operationError;
+  return { priorRetained };
 }
 
 /**
@@ -349,7 +355,7 @@ async function openOwnedOutput(
     if (actual.dev !== stat.dev || actual.ino !== stat.ino) {
       throw new OutputPublicationError("output target identity is inconsistent");
     }
-    const tree = bindCompleteOutputTreeSync(directory);
+    const tree = existingOutputTree(() => bindCompleteOutputTreeSync(directory));
     if (tree.entries.length === 1 && tree.entries[0]?.path === "") {
       // An empty directory (for example a pre-created CI cache or volume path) holds
       // nothing to preserve. Publication renames over it, and rename(2) refuses
@@ -361,6 +367,20 @@ async function openOwnedOutput(
     return { handle: directory, name: target, path: targetPath, tree };
   } catch (error) {
     await directory.close().catch(() => undefined);
+    throw error;
+  }
+}
+
+/**
+ * Bind an existing output with the staging-tree inspector. A link, special file or hard link
+ * in it means it is not a recognized previous publication.
+ */
+function existingOutputTree<Tree>(bind: () => Tree): Tree {
+  try {
+    return bind();
+  } catch (error) {
+    if (error instanceof OutputPublicationError && error.reason === undefined)
+      throw refused("not-owned", { cause: error });
     throw error;
   }
 }
@@ -887,7 +907,7 @@ function publishOutputDirectoryByPath(
   files: readonly OutputPublicationFile[],
   options: OutputPublicationOptions,
   projectRoot?: string,
-): void {
+): OutputPublicationResult {
   const stagedFiles = snapshotOutputFiles(files);
   const target = basename(absolutePath);
   if (target.length === 0 || target === "." || target === "..") {
@@ -930,11 +950,6 @@ function publishOutputDirectoryByPath(
     renameSync(generation.path, targetPath);
     generation.path = targetPath;
     published = true;
-
-    if (existing !== undefined) {
-      cleanupPortableTree(existing);
-      existingRemoved = true;
-    }
   } catch (error) {
     operationError = error;
   }
@@ -958,14 +973,17 @@ function publishOutputDirectoryByPath(
       operationError ??= error;
     }
   }
+  // The new output is live: a previous output that cannot be removed stays beside it.
+  let priorRetained = false;
   if (published && existing !== undefined && !existingRemoved && existing.path !== targetPath) {
     try {
       cleanupPortableTree(existing);
-    } catch (error) {
-      operationError ??= error;
+    } catch {
+      priorRetained = true;
     }
   }
   if (operationError !== undefined) throw operationError;
+  return { priorRetained };
 }
 
 function removeOutputDirectoryByPath(
@@ -1162,7 +1180,7 @@ function inspectPortableOutputTarget(
   if (stat.isSymbolicLink() || !stat.isDirectory()) {
     throw refused("target-collision");
   }
-  const tree = bindPortableOutputTreeSync(targetPath);
+  const tree = existingOutputTree(() => bindPortableOutputTreeSync(targetPath));
   if (tree.entries.length === 1 && tree.entries[0]?.path === "") return { empty: true };
   assertOwnedOutputTree(isOwned, (path) => readPortableBoundFileSync(targetPath, tree, path), tree);
   return { existing: { path: targetPath, tree }, empty: false };

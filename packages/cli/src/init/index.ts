@@ -1,5 +1,5 @@
-import { lstat, mkdir, open, stat, unlink } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { lstat, mkdir, open, rmdir, stat, unlink } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { command, positional, string } from "@drizzle-team/brocli";
 import { parseTopikManifest, TOPIK_MANIFEST_FILENAME } from "@topik/core";
 import { stringify } from "yaml";
@@ -66,7 +66,8 @@ export async function initProject(
   options: InitProjectOptions = {},
 ): Promise<{ created: string[]; agentInstructions: AgentInstructionsOutcome }> {
   const files = initProjectFiles(options);
-  await mkdir(dir, { recursive: true }).catch(() => {
+  // The first directory this call created, if any; rollback removes what it created.
+  const firstCreated = await mkdir(dir, { recursive: true }).catch(() => {
     throw new PublicCliError("init-target-access-failed");
   });
   const info = await stat(dir).catch(() => undefined);
@@ -93,14 +94,27 @@ export async function initProject(
     agentInstructions = await writeAgentInstructions(dir);
     if (agentInstructions === "created") created.push(AGENT_INSTRUCTIONS_FILENAME);
   } catch (error) {
-    // Leave the directory as it was: remove only files this run created.
+    // Leave the directory as it was: remove only files and directories this run created.
     for (const name of created) await unlink(join(dir, name)).catch(() => undefined);
+    if (firstCreated !== undefined) await removeCreatedDirectories(dir, firstCreated);
     throw new PublicCliError(
       (error as NodeJS.ErrnoException).code === "EEXIST" ? "init-file-exists" : "init-write-failed",
       { cause: error },
     );
   }
   return { created, agentInstructions };
+}
+
+/** Remove `dir` and its parents up to `first`, each only while it is empty. */
+async function removeCreatedDirectories(dir: string, first: string): Promise<void> {
+  for (let current = dir; ; current = dirname(current)) {
+    try {
+      await rmdir(current);
+    } catch {
+      return;
+    }
+    if (current === first || dirname(current) === current) return;
+  }
 }
 
 async function exists(path: string): Promise<boolean> {

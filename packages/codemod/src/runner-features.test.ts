@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compileWiki } from "@topik/core";
 import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
-import { isMigrationInput, runMintlify } from "./runner";
+import { isMigrationInput, migrationInputProblem, runMintlify } from "./runner";
 
 let dir: string;
 
@@ -90,6 +90,10 @@ describe("single-file input", () => {
     expect(await isMigrationInput(join(dir, "page.MDX"))).toBe(true);
     expect(await isMigrationInput(join(dir, "notes.txt"))).toBe(false);
     expect(await isMigrationInput(join(dir, "link.mdx"))).toBe(false);
+    expect(await migrationInputProblem(join(dir, "link.mdx"))).toMatch(/symbolic link/u);
+    expect(await migrationInputProblem(join(dir, "notes.txt"))).toBe(
+      "Not a directory or a .md or .mdx file",
+    );
     expect(await isMigrationInput(join(dir, "missing.mdx"))).toBe(false);
   });
 
@@ -190,6 +194,16 @@ describe("navigation", () => {
       /^diff --git a\/wiki\.yaml b\/wiki\.yaml\nnew file mode 100644\n--- \/dev\/null\n\+\+\+ b\/wiki\.yaml\n@@ -0,0 \+1,\d+ @@\n\+id: acme-docs\n/,
     );
     expect(await readdir(dir)).not.toContain("wiki.yaml");
+  });
+
+  test("reads a docs.json saved with a byte order mark", async () => {
+    await writeMintlifySite();
+    const config = await readFile(join(dir, "docs.json"), "utf8");
+    await writeFile(join(dir, "docs.json"), `\uFEFF${config}`);
+    const summary = await runMintlify({ dir, dryRun: false, keepExtension: false });
+    expect(summary.navigation).toMatchObject({ source: "docs.json", changed: true });
+    expect(summary.navigation?.error).toBeUndefined();
+    expect(await readFile(join(dir, "wiki.yaml"), "utf8")).toContain("id: acme-docs\n");
   });
 
   test.each(["wiki.yaml", "wiki.yml", "wiki.json"])(

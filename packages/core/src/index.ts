@@ -86,6 +86,7 @@ export {
   type OutputPublicationErrorReason,
   type OutputPublicationFile,
   type OutputPublicationOptions,
+  type OutputPublicationResult,
   type OwnedOutputEntry,
 } from "./compile/publication";
 export type { Resource, ResourceType, SourceResource } from "./resource";

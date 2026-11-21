@@ -9,6 +9,7 @@ import {
   isErrorDiagnostic,
   parseStrictTopikJson,
   publishOutputDirectory,
+  type OutputPublicationResult,
   serializeTopikJson,
   validateTopikMaterializationRecord,
   validateResources,
@@ -111,11 +112,15 @@ export const compile = command({
       { path: "materialization.json", bytes: serializeTopikJson(materialization) },
       { path: "semantic.json", bytes: serializeTopikJson(semantic) },
     );
-    await replaceCompilationTree(outDir, files, fileSafety, dir);
+    const { priorRetained } = await replaceCompilationTree(outDir, files, fileSafety, dir);
 
     console.log(
       `Compiled ${resources.length} resources and ${payloads.length} payloads to ${outDir}`,
     );
+    if (priorRetained)
+      console.error(
+        `Warning: the previous output could not be removed; it remains beside the output in a directory starting with ${COMPILATION_PRIOR_PREFIX}`,
+      );
   },
 });
 
@@ -124,9 +129,9 @@ export async function replaceCompilationTree(
   files: readonly { path: string; bytes: string | Uint8Array }[],
   fileSafety: FileSafety = DEFAULT_FILE_SAFETY,
   projectDirectory?: string,
-): Promise<void> {
+): Promise<OutputPublicationResult> {
   try {
-    await publishOutputDirectory(absolutePath, files, {
+    return await publishOutputDirectory(absolutePath, files, {
       fileSafety,
       projectDirectory,
       generationPrefix: COMPILATION_GENERATION_PREFIX,
@@ -152,7 +157,8 @@ const COMPILATION_OUTPUT_ERRORS = {
 /** Present core's fixed publication failures with the CLI's catalog wording. */
 function toCompilationOutputError(error: unknown): unknown {
   if (!(error instanceof OutputPublicationError)) return error;
-  if (error.reason === undefined) return new CliError(`Compilation ${error.message}`);
+  if (error.reason === undefined)
+    return new PublicCliError("compilation-output-unsafe", { cause: error });
   // A failed publication keeps the original failure as its cause, as before extraction.
   const cause = error.reason === "publication-failed" ? error.cause : undefined;
   return new PublicCliError(COMPILATION_OUTPUT_ERRORS[error.reason], { cause });
@@ -164,7 +170,7 @@ async function assertCompilationOutputScope(sourceDir: string, outDir: string): 
     canonicalOutput = await realpath(outDir);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-      throw new CliError("Compilation output scope could not be proven safely");
+      throw new PublicCliError("compilation-output-scope-unproven", { cause: error });
     }
   }
   let canonicalSource: string;

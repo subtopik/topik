@@ -93,12 +93,12 @@ describe.skipIf(!existsSync(builtCli))("built topik binary", () => {
     expect(result.stderr).not.toContain(SENTINEL);
     expect(result.stderr).not.toContain(tmpdir());
     // POSIX reports ENOTDIR for a path below a regular file, which stops the output scope
-    // check with the generic failure. Windows reports ENOENT, the same as an output directory
+    // check with its fixed message. Windows reports ENOENT, the same as an output directory
     // that does not exist yet, so the command goes on to read the project and fails there.
     expect(result.stderr).toBe(
       process.platform === "win32"
         ? `${NATIVE_NOTICE}.topik.yaml: Project compilation requires .topik.yaml in the selected directory. Add a manifest such as: {"version":1,"namespace":"owner/project","sources":[{"kind":"wiki","config":"wiki.yaml"}]}\n`
-        : "Topik command failed.\n",
+        : "Compilation output path could not be resolved to prove it is outside the source directory.\n",
     );
   });
 

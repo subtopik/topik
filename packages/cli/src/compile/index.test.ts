@@ -492,8 +492,24 @@ describe("compile command", () => {
         validate: true,
         links: "error",
       }),
-    ).rejects.toThrow(/hard link/u);
+    ).rejects.toMatchObject({ id: "compilation-output-not-owned" });
     expect(await readFile(outside, "utf8")).toBe("outside");
+  });
+
+  test("names an output path that cannot be resolved", async () => {
+    await writeFile(join(dir, "plain.txt"), "file");
+    const failure = await (compile as CompileCommand)
+      .handler?.({
+        dir,
+        outDir: join(dir, "plain.txt", "compiled"),
+        format: "json",
+        dryRun: false,
+        validate: true,
+        links: "error",
+      })
+      .catch((error: unknown) => error);
+    expect(failure).toMatchObject({ id: "compilation-output-scope-unproven" });
+    expect(formatPublicCliError(failure)).toMatch(/could not be resolved/u);
   });
 
   test("rejects source and source-ancestor output roots without mutation", async () => {
@@ -746,9 +762,9 @@ describe("compile command", () => {
     const linkPath = join(outDir, "resources", "linked.txt");
     await symlink(outside, linkPath);
 
-    await expect(replaceCompilationTree(outDir, ownedFiles("replacement"))).rejects.toThrow(
-      /link or special-node/u,
-    );
+    await expect(replaceCompilationTree(outDir, ownedFiles("replacement"))).rejects.toMatchObject({
+      id: "compilation-output-not-owned",
+    });
     expect((await lstat(linkPath)).isSymbolicLink()).toBe(true);
     expect(await readFile(outside, "utf8")).toBe("unchanged");
     await expectOwnedGeneration(outDir, "existing");
@@ -761,7 +777,10 @@ describe("compile command", () => {
         { path: "duplicate.txt", bytes: "first" },
         { path: "duplicate.txt", bytes: "second" },
       ]),
-    ).rejects.toThrow(/repeats a staged file path/u);
+    ).rejects.toMatchObject({
+      id: "compilation-output-unsafe",
+      cause: { message: expect.stringMatching(/repeats a staged file path/u) },
+    });
     await expect(lstat(outDir)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
@@ -1257,7 +1276,9 @@ describe.each(PORTABLE_PLATFORMS)("portable publication on %s", (platform) => {
     await writeOwnedTree(linked, "existing");
     await link(join(linked, "semantic.json"), join(root, "semantic-copy.json"));
     const before = await snapshotTree(linked);
-    await expect(replaceCompilationTree(linked, ownedFiles("x"))).rejects.toThrow(/hard link/u);
+    await expect(replaceCompilationTree(linked, ownedFiles("x"))).rejects.toMatchObject({
+      id: "compilation-output-not-owned",
+    });
     expect(await snapshotTree(linked)).toEqual(before);
     expect((await readdir(root)).filter((name) => name.startsWith(".topik-compilation"))).toEqual(
       [],

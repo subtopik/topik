@@ -166,6 +166,27 @@ describe("lint command", () => {
     expect(lines).toContain("2 lint error(s)");
   });
 
+  test("counts a missing image once per page that uses it, in text and --json", async () => {
+    await writeFile(
+      join(dir, "wiki.yaml"),
+      "id: docs\ntitle: Docs\nnavigation:\n  - intro\n  - other\n",
+    );
+    await writeFile(join(dir, "intro.md"), "# Intro\n\n![Diagram](diagram.png)\n");
+    await writeFile(join(dir, "other.md"), "# Other\n\n![Diagram](diagram.png)\n");
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect((lint as LintCommand).handler?.({ dir, links: "error" })).rejects.toMatchObject({
+      id: "lint-failed",
+    });
+    expect(error.mock.calls.map(([line]) => String(line))).toContain("2 lint error(s)");
+
+    await expect(
+      (lint as LintCommand).handler?.({ dir, links: "error", json: true }),
+    ).rejects.toMatchObject({ id: "lint-failed" });
+    expect(JSON.parse(String(log.mock.calls.at(-1)?.[0]))).toMatchObject({ errors: 2 });
+  });
+
   test("--json reports warnings and passes", async () => {
     await writeFile(join(dir, "intro.md"), "# Intro\n\n[Missing](/missing)\n");
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);

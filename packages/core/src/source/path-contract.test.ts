@@ -440,3 +440,38 @@ test("every planner code has a category, and compiler IDs follow the stated rule
   expect(sourcePlanDiagnosticCategory("node-undefined")).toBe("validation");
   expect(sourcePlanDiagnosticCategory("toString")).toBe("validation");
 });
+
+test.each(["docs/Post.md", "docs/poſt.md"])(
+  "an explicit path that aliases an occupied one, such as %s, is a named collision",
+  async (path) => {
+    const project = await readSourceProject({ tree });
+    const guide = newGuide("install-guide", "install");
+    const result = await planSourceUpdates({
+      project,
+      expectedTreeDigest: project.treeDigest,
+      packageCohort: cohort,
+      desiredResources: [...structuredClone(project.compilation.resources), guide],
+      operations: [
+        { kind: "create", resource: "Guide/install-guide", config: "docs/collection.yaml", path },
+      ],
+      authority: authority(project, [path], ["Guide/install-guide"]),
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      diagnostics: [{ code: "source-path-collision", resource: "Guide/install-guide", path }],
+    });
+  },
+);
+
+test("a move may change only the case of its own path", async () => {
+  const project = await readSourceProject({ tree });
+  const result = await planSourceUpdates({
+    project,
+    expectedTreeDigest: project.treeDigest,
+    packageCohort: cohort,
+    desiredResources: structuredClone(project.compilation.resources),
+    operations: [{ kind: "move", resource: "Guide/p", path: "docs/Post.md" }],
+    authority: authority(project, ["docs/Post.md"], []),
+  });
+  expect(result.ok, JSON.stringify(result)).toBe(true);
+});

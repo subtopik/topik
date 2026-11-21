@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
-import { readConfigFile } from "./config";
+import { readExactConfigFile } from "./config";
 import { compileWiki } from "./wiki";
 import { PublicCompileError, publicSchemaError } from "./public-errors";
 
@@ -25,7 +25,12 @@ describe("public compiler error safety", () => {
   });
 
   test("sanitizes missing and invalid configuration failures at creation", async () => {
-    await expectSafeFailure(() => readConfigFile(root, [`${SENTINEL}.yaml`]), "config-not-found");
+    // The root's path holds the sentinel; only the relative file name may be named.
+    await expectSafeFailure(
+      () => readExactConfigFile(root, "missing.yaml"),
+      "config-not-found",
+      "missing.yaml",
+    );
 
     await writeFile(join(root, "wiki.yaml"), `id: docs\ntitle: [${SENTINEL}\n`);
     await expectSafeFailure(() => compileWiki({ dir: root }), "config-parse-failed", "wiki.yaml");

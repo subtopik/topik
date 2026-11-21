@@ -1007,12 +1007,42 @@ async function canonicalRootIdentity(
   }
 }
 
+/** Canonical roots of private scratch trees that no ancestor repository describes. */
+const ISOLATED_ROOTS = new Set<string>();
+
+function isIsolatedRoot(canonicalRoot: string): boolean {
+  for (const root of ISOLATED_ROOTS) if (isPathAtOrBelow(canonicalRoot, root)) return true;
+  return false;
+}
+
+/**
+ * @internal Read `root` as a tree outside any Git repository while `action` runs. For private
+ * scratch directories written from a complete source snapshot: the snapshot is the evidence, so
+ * a repository above the temporary directory, and its attributes, must not apply. Attribute
+ * files inside the tree still do.
+ */
+export async function withIsolatedSourceRoot<T>(
+  root: string,
+  action: () => Promise<T>,
+): Promise<T> {
+  // As canonicalRootIdentity does, a root that cannot be resolved stands for itself.
+  const canonical = await realpath(root).catch(() => resolve(root));
+  ISOLATED_ROOTS.add(canonical);
+  try {
+    return await action();
+  } finally {
+    ISOLATED_ROOTS.delete(canonical);
+  }
+}
+
 async function computeRepositoryEvidence(
   root: string,
   git: string | undefined,
 ): Promise<RepositoryEvidence> {
   // Git discovers repositories from the canonical directory, so evaluate the same one.
   const { canonicalRoot, rootIdentity } = await canonicalRootIdentity(root);
+  if (isIsolatedRoot(canonicalRoot))
+    return { ok: true, kind: "none", canonicalRoot, rootIdentity, stamp: "isolated" };
   const boundary = await gitBoundaryEvidence(canonicalRoot);
   if (!boundary.present)
     return { ok: true, kind: "none", canonicalRoot, rootIdentity, stamp: boundary.stamp };
@@ -1102,6 +1132,7 @@ async function computeRepositoryEvidence(
 }
 
 async function repositoryStamp(evidence: ProvenRepositoryEvidence): Promise<string> {
+  if (isIsolatedRoot(evidence.canonicalRoot)) return "isolated";
   const boundary = await gitBoundaryEvidence(evidence.canonicalRoot);
   return evidence.kind === "none"
     ? boundary.stamp

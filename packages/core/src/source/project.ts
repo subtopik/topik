@@ -10,6 +10,7 @@ import { loadTopikManifest } from "../compile/manifest";
 import type { TopikManifest } from "../config/manifest";
 import { validateTopikPathSet } from "../assets/path";
 import { serializeTopikJson } from "../assets/json";
+import { withIsolatedSourceRoot } from "../assets/files";
 import {
   FORMAT_VERSION,
   TOPIK_CONTENT_SCHEMA_VERSION,
@@ -214,7 +215,8 @@ export async function withSourceScratch<T>(
         mode: file.mode === "100755" ? 0o755 : 0o644,
       });
     }
-    return await action(dir);
+    // The tree is the whole source: a repository above the temporary directory does not apply.
+    return await withIsolatedSourceRoot(dir, () => action(dir));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

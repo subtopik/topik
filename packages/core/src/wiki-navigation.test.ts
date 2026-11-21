@@ -396,3 +396,21 @@ test("compiled references reject fragments that do not decode", () => {
     "h%C3%A9llo",
   );
 });
+
+test("a query-only link stays on its page beside a same-named folder", () => {
+  const resolved = resolveWikiNavigation([
+    { type: "page", page: "home", slug: "" },
+    { type: "page", page: "foo", slug: "foo" },
+    {
+      type: "group",
+      title: "Foo",
+      slug: "foo",
+      children: [{ type: "page", page: "bar", slug: "bar" }],
+    },
+  ]);
+  for (const href of ["?tab=1", ""])
+    expect(resolveWikiContentHref(href, "foo", resolved)).toMatchObject({
+      page: { page: "foo" },
+      search: href,
+    });
+});

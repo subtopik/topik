@@ -144,3 +144,18 @@ test("Course fragments use one encoded spelling for same-page and source-relativ
   expect(relative?.hash).toBe(local?.hash);
   expect(resolveCourseContentHref("#", "target", resolved)?.hash).toBe("");
 });
+
+test("a query-only link stays on its page beside a same-named folder", () => {
+  const resolved = resolveCourseNavigation({
+    ...context,
+    pages: [
+      { name: "intro", module: "module", slug: "intro", sourcePath: "basics/intro" },
+      { name: "more", module: "module", slug: "more", sourcePath: "basics/intro/more" },
+    ],
+  });
+  for (const href of ["?x=1", ""])
+    expect(resolveCourseContentHref(href, "intro", resolved)).toMatchObject({
+      page: { page: "intro" },
+      search: href,
+    });
+});

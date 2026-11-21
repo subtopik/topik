@@ -2,13 +2,7 @@ import { link, mkdir, mkdtemp, open, realpath, rm, symlink, writeFile } from "no
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
-import {
-  findConfigFile,
-  readConfigFile,
-  readExactConfigFile,
-  readOptionalConfigFile,
-  readOptionalConfigFileWithPath,
-} from "./config";
+import { readExactConfigFile, readOptionalConfigFileWithPath } from "./config";
 import { compileGuides } from "./guide";
 import { PublicCompileError } from "./public-errors";
 import { compileWiki } from "./wiki";
@@ -36,22 +30,31 @@ describe("compile config helpers", () => {
   test("reads the first available config file", async () => {
     await writeFile(join(dir, "wiki.yml"), "id: docs\ntitle: Docs\n");
 
-    await expect(readConfigFile(dir, ["wiki.yaml", "wiki.yml"])).resolves.toEqual({
-      id: "docs",
-      title: "Docs",
-    });
     await expect(readOptionalConfigFileWithPath(dir, ["wiki.yaml", "wiki.yml"])).resolves.toEqual({
       path: "wiki.yml",
       value: { id: "docs", title: "Docs" },
     });
   });
 
-  test("preserves optional and required behavior when all candidates are missing", async () => {
+  test("returns nothing when all candidates are missing", async () => {
     const candidates = ["wiki.yaml", "wiki.yml", "wiki.json"];
     await expect(readOptionalConfigFileWithPath(dir, candidates)).resolves.toBeUndefined();
-    await expect(readOptionalConfigFile(dir, candidates)).resolves.toBeUndefined();
-    await expect(findConfigFile(dir, candidates)).resolves.toBeNull();
-    await expect(readConfigFile(dir, candidates)).rejects.toMatchObject({ id: "config-not-found" });
+  });
+
+  test("parses conventional configs as selected ones are parsed", async () => {
+    await writeFile(join(dir, "wiki.yaml"), "base: &t Docs\nid: docs\ntitle: *t\n");
+    await expect(readOptionalConfigFileWithPath(dir, ["wiki.yaml"])).rejects.toMatchObject({
+      id: "config-parse-failed",
+      location: "wiki.yaml",
+    });
+    await writeFile(
+      join(dir, "wiki.json"),
+      `\uFEFF${JSON.stringify({ id: "docs", title: "Docs" })}`,
+    );
+    await expect(readOptionalConfigFileWithPath(dir, ["wiki.json"])).resolves.toEqual({
+      path: "wiki.json",
+      value: { id: "docs", title: "Docs" },
+    });
   });
 
   test.each(["native", "darwin", "win32"] as const)(
@@ -62,20 +65,11 @@ describe("compile config helpers", () => {
       if (platform !== "native") vi.spyOn(process, "platform", "get").mockReturnValue(platform);
       const candidates = ["wiki.yaml", "wiki.yml", "wiki.json"];
 
-      for (const read of [readConfigFile, readOptionalConfigFile]) {
-        await expect(read(dir, candidates)).resolves.toEqual({ id: "docs", title: "Docs" });
-      }
       await expect(readOptionalConfigFileWithPath(dir, candidates)).resolves.toEqual({
         path: "wiki.yml",
         value: { id: "docs", title: "Docs" },
       });
-      await expect(findConfigFile(dir, candidates)).resolves.toBe("wiki.yml");
       await expect(readOptionalConfigFileWithPath(dir, ["missing.yaml"])).resolves.toBeUndefined();
-      await expect(readOptionalConfigFile(dir, ["missing.yaml"])).resolves.toBeUndefined();
-      await expect(findConfigFile(dir, ["missing.yaml"])).resolves.toBeNull();
-      await expect(readConfigFile(dir, ["missing.yaml"])).rejects.toMatchObject({
-        id: "config-not-found",
-      });
     },
   );
 
@@ -127,14 +121,10 @@ describe("compile config helpers", () => {
             close: async () => {},
           }) as Awaited<ReturnType<typeof open>>,
       );
-      for (const read of [
-        readConfigFile,
-        readOptionalConfigFile,
-        readOptionalConfigFileWithPath,
-        findConfigFile,
-      ]) {
-        await expectUnsupported(() => read(dir, ["wiki.yaml", "wiki.json"]), "wiki.yaml");
-      }
+      await expectUnsupported(
+        () => readOptionalConfigFileWithPath(dir, ["wiki.yaml", "wiki.json"]),
+        "wiki.yaml",
+      );
       await expectUnsupported(() => compileWiki({ dir }), "wiki.yaml");
       await expectUnsupported(() => compileGuides({ dir }), "collection.yaml");
     },
@@ -198,7 +188,7 @@ describe("compile config helpers", () => {
   test("surfaces parse failures with file context", async () => {
     await writeFile(join(dir, "wiki.yaml"), "id: docs\ntitle: [broken\n");
 
-    await expect(readConfigFile(dir, ["wiki.yaml"])).rejects.toMatchObject({
+    await expect(readOptionalConfigFileWithPath(dir, ["wiki.yaml"])).rejects.toMatchObject({
       id: "config-parse-failed",
       location: "wiki.yaml",
     });
@@ -211,9 +201,9 @@ describe("compile config helpers", () => {
       JSON.stringify({ id: "docs", title: "Docs" }),
     );
 
-    await expect(findConfigFile(join(dir, "nested"), ["wiki.yaml", "wiki.json"])).resolves.toBe(
-      "wiki.json",
-    );
+    await expect(
+      readOptionalConfigFileWithPath(join(dir, "nested"), ["wiki.yaml", "wiki.json"]),
+    ).resolves.toMatchObject({ path: "wiki.json" });
   });
 
   test.each(["native", "darwin", "win32"] as const)(
@@ -225,12 +215,8 @@ describe("compile config helpers", () => {
         await writeFile(join(external, "secret.yaml"), "id: secret\ntitle: Secret\n");
         await symlink(join(external, "secret.yaml"), join(dir, "wiki.yaml"));
 
-        await expect(readConfigFile(dir, ["wiki.yaml"])).rejects.toMatchObject({
+        await expect(readOptionalConfigFileWithPath(dir, ["wiki.yaml"])).rejects.toMatchObject({
           id: "config-read-failed",
-          location: "wiki.yaml",
-        });
-        await expect(findConfigFile(dir, ["wiki.yaml"])).rejects.toMatchObject({
-          id: "config-access-failed",
           location: "wiki.yaml",
         });
       } finally {

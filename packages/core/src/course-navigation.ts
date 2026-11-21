@@ -152,6 +152,14 @@ export function resolveCourseContentHref(
     return null;
   }
   if (url.origin !== INTERNAL_COURSE_ORIGIN) return null;
+  // A link with only a query or fragment stays on this page, even beside a same-named folder.
+  if (href.split(/[?#]/, 1)[0] === "")
+    return {
+      page: current,
+      route: current.route,
+      hash: url.hash.replace(/^#/, ""),
+      search: url.search,
+    };
   const pathname = resolveNavigationPath(href, current.sourcePath);
   if (pathname === undefined) return null;
   const markdown =

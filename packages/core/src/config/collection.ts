@@ -190,6 +190,8 @@ export function collectionGuideFilter(config: {
     const filename = segments.pop()!;
     return (
       /\.mdx?$/u.test(filename) &&
+      // Hidden files, such as an editor's `.draft.md`, are skipped like hidden directories.
+      !filename.startsWith(".") &&
       !segments.some(isSkippedCollectionDirectory) &&
       include.some((matches) => matches(path)) &&
       !exclude.some((matches) => matches(path))

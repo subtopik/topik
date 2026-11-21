@@ -75,6 +75,11 @@ export type CourseModuleConfig = z.infer<typeof moduleSchema>;
 
 export function parseCourseConfig(raw: unknown): CourseConfig {
   rejectMisspelledKeys(raw, Object.keys(courseConfigSchema.shape));
+  const modules = (raw as { modules?: unknown } | null)?.modules;
+  if (Array.isArray(modules))
+    modules.forEach((module, index) =>
+      rejectMisspelledKeys(module, Object.keys(moduleSchema.shape), ["modules", index]),
+    );
   const config = courseConfigSchema.parse(raw);
   const { persons, ...rest } = config;
   return { ...rest, ...(persons !== undefined ? { persons: parseSourcePersons(persons) } : {}) };

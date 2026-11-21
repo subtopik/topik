@@ -93,7 +93,8 @@ export function parseMarkdownFrontmatter(
   const bodyLineOffset = raw.slice(0, match.bodyStart).match(/\r\n|\r|\n/g)?.length ?? 0;
 
   try {
-    const frontmatter = parseSafeConfigurationYaml(match.frontmatter);
+    // The YAML parser does not end lines at a lone CR; the content parser does.
+    const frontmatter = parseSafeConfigurationYaml(match.frontmatter.replace(/\r\n?/gu, "\n"));
     if (frontmatter == null) {
       return { frontmatter: {}, content: match.content, bodyLineOffset };
     }

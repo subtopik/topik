@@ -237,6 +237,14 @@ export function resolveWikiContentHref(
     return null;
   }
   if (url.origin !== INTERNAL_WIKI_ORIGIN) return null;
+  // A link with only a query or fragment stays on this page, even beside a same-named folder.
+  if (href.split(/[?#]/, 1)[0] === "")
+    return {
+      page: currentPage,
+      route: currentPage.route,
+      hash: url.hash.replace(/^#/, ""),
+      search: url.search,
+    };
 
   const pathname = resolveNavigationPath(href, currentPage.sourcePath);
   if (pathname === undefined) return null;

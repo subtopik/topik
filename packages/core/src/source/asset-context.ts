@@ -1,5 +1,6 @@
 import { rewriteTopikAssetOccurrences } from "@topik/content";
 import type { Resource } from "../resource";
+import { failSourcePlan } from "./diagnostics";
 
 export type SourceAssetReferenceContexts = Readonly<
   Record<string, Readonly<Record<string, string>>>
@@ -18,10 +19,18 @@ export function applySourceAssetReferenceContexts(
       !resource ||
       (resource.type !== "Guide" && resource.type !== "WikiPage" && resource.type !== "CoursePage")
     )
-      throw new TypeError("Asset reference context exceeds the admitted document scope");
+      failSourcePlan(
+        "resource-scope-denied",
+        "Asset reference context exceeds the admitted document scope.",
+        key,
+      );
     for (const target of Object.values(mappings))
       if (!resources.some((resource) => resource.type === "Asset" && resource.name === target))
-        throw new TypeError("Asset reference context has no pinned target resource");
+        failSourcePlan(
+          "reference-context-invalid",
+          "Asset reference context has no pinned target resource.",
+          key,
+        );
     const rewritten = rewriteTopikAssetOccurrences(
       resource.spec.content.value,
       (occurrence) => {
@@ -32,7 +41,11 @@ export function applySourceAssetReferenceContexts(
       { allowCompiledAssetReferences: true, includeGenericLinkCandidates: true },
     );
     if (!rewritten.ok)
-      throw new TypeError("Saved Asset references cannot be transported faithfully");
+      failSourcePlan(
+        "asset-reference-unrepresentable",
+        "Saved Asset references cannot be transported faithfully.",
+        key,
+      );
     resource.spec.content.value = rewritten.content;
   }
 }

@@ -1,5 +1,6 @@
 import { expect, test } from "vite-plus/test";
 import { parseCollectionConfig } from "./collection";
+import { parseCourseConfig } from "./course";
 import { parseWikiConfig } from "./wiki";
 
 const wiki = { id: "docs", title: "Docs" };
@@ -26,4 +27,25 @@ test("checks collection keys against the collection schema", () => {
   expect(() => parseCollectionConfig({ ...wiki, tag: ["a"] })).toThrow();
   expect(() => parseCollectionConfig({ ...wiki, persns: [] })).toThrow();
   expect(parseCollectionConfig({ ...wiki, navigation: [] })).toMatchObject(wiki);
+});
+
+test.each(["descripton", "lables", "Pages"])(
+  "rejects a likely misspelling of a Course module key: %s",
+  (key) => {
+    const module = { id: "basics", title: "Basics", slug: "basics", pages: [], [key]: "x" };
+    expect(() => parseCourseConfig({ id: "c", title: "C", slug: "c", modules: [module] })).toThrow(
+      expect.objectContaining({
+        issues: [
+          expect.objectContaining({ code: "unrecognized_keys", keys: [key], path: ["modules", 0] }),
+        ],
+      }),
+    );
+  },
+);
+
+test("keeps unrelated unknown Course module keys accepted", () => {
+  const module = { id: "basics", title: "Basics", slug: "basics", pages: [], custom: "kept" };
+  expect(
+    parseCourseConfig({ id: "c", title: "C", slug: "c", modules: [module] }).modules,
+  ).toHaveLength(1);
 });

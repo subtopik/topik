@@ -34,7 +34,7 @@ import {
   type TopikManifestSource,
 } from "../config/manifest";
 import { parseWikiConfig } from "../config/wiki";
-import { parseCollectionConfig } from "../config/collection";
+import { collectionGuideFilter, parseCollectionConfig } from "../config/collection";
 import { parseCourseConfig } from "../config/course";
 import { parseSafeConfigurationYaml } from "../compile/config";
 import { validateResources } from "../validate";
@@ -410,9 +410,14 @@ function planCollectionSource(draft: InitializationDraft): Record<string, unknow
       "resource-unrepresentable",
       "A collection initializes Guides, Persons and their media only.",
     );
+  // Files the new collection would read as Guides; convention files such as AGENTS.md or
+  // CHANGELOG.md are left out by the compiler and may sit beside it. A README may be a Guide.
+  const guides = collectionGuideFilter({});
   if (
     draft.occupied.some(
-      (file) => /\.mdx?$/.test(file.path) && posix.dirname(file.path) === (directory || "."),
+      (file) =>
+        posix.dirname(file.path) === (directory || ".") &&
+        guides.matches(posix.basename(file.path)),
     )
   )
     failure(
@@ -518,8 +523,7 @@ function planWikiSource(draft: InitializationDraft): Record<string, unknown> {
             paths.get(key)!,
             key,
           ),
-        // Removed and unprovable targets stay unexpected writer failures here, unlike the
-        // coded diagnostics of Course initialization and of source updates.
+        // The same coded diagnostics as Course initialization and source updates.
         fail: (reason) => {
           switch (reason) {
             case "unresolved":
@@ -529,9 +533,17 @@ function planWikiSource(draft: InitializationDraft): Record<string, unknown> {
                 key,
               );
             case "removed":
-              throw new TypeError("Saved link target is missing from the new Wiki");
+              return failSourcePlan(
+                "reference-target-removed",
+                "An authored link targets a page that the new Wiki removes.",
+                key,
+              );
             case "unrepresentable":
-              throw new TypeError("Link target cannot be preserved");
+              return failSourcePlan(
+                "reference-unrepresentable",
+                "An authored link target cannot be preserved in the new Wiki.",
+                key,
+              );
             case "rewrite":
               return failure(
                 "source-reference-unrepresentable",

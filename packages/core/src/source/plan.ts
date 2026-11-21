@@ -62,7 +62,7 @@ import { validateResourceGraph, validateResources } from "../validate";
 import { isSourceNonPageReference, sourcePathInventory } from "../reference-paths";
 import { serializeTopikJson } from "../assets/json";
 import { generateAutomaticAssetName } from "../assets/asset";
-import { validateTopikPathSet } from "../assets/path";
+import { computeTopikPathCollisionKey, validateTopikPathSet } from "../assets/path";
 import { resolveWikiNavigation, resolveWikiContentHref } from "../wiki-navigation";
 import {
   readSourceProject,
@@ -665,6 +665,13 @@ function requireExplicitIntent(
 /** Reserve the Markdown path of every created or moved document. */
 function allocateOperationPaths(state: PlanState): void {
   const { input, project, desired, paths, reserved } = state;
+  // Case and Unicode aliases of occupied paths collide too: `Start.md` beside `start.md`.
+  const aliases = new Map<string, string>();
+  const alias = (path: string) => {
+    const key = computeTopikPathCollisionKey(path);
+    return key.ok ? key.value : path;
+  };
+  for (const path of reserved) aliases.set(alias(path), path);
   for (const op of input.operations) {
     if (op.kind !== "create" && op.kind !== "move") continue;
     const next = desired.get(op.resource)!;
@@ -691,7 +698,10 @@ function allocateOperationPaths(state: PlanState): void {
         next,
         input.pathCollisions,
       );
-    if (reserved.has(path))
+    const occupant = aliases.get(alias(path));
+    // A move may change only the case of its own path.
+    const own = op.kind === "move" ? documentOf(project, op.resource)?.path : undefined;
+    if (reserved.has(path) || (occupant !== undefined && occupant !== own))
       block(
         "source-path-collision",
         "New paths cannot overwrite occupied paths.",
@@ -699,6 +709,7 @@ function allocateOperationPaths(state: PlanState): void {
         path,
       );
     reserved.add(path);
+    aliases.set(alias(path), path);
     paths.set(op.resource, path);
     if (op.kind === "move") state.createdModes.set(path, documentOf(project, op.resource)!.mode);
   }

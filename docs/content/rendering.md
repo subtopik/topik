@@ -636,36 +636,6 @@ validated. The caller owns validation of the tree. The renderer checks only its
 browser-facing asset and navigation fields. `TopikContent` accepts source
 strings, not trusted trees.
 
-## Migrate from Mermaid.js
-
-Replace the optional `mermaid` installation with `pele@1.13.0`. Authored
-`mermaid` fences and the public `TopikMermaid` and `RichTopikMermaid` components
-need no change.
-
-Expect these differences:
-
-- Layouts and colors differ, because Pele uses its own.
-- Mermaid `themeVariables`, arbitrary HTML labels, plugins, and click callbacks
-  have no equivalent; see [Diagrams](#diagrams).
-- The loading indicator has the same 300 ms minimum as before. The smaller
-  renderer does not remove this visible delay.
-
-## Migrate from content-schema
-
-1. Replace `@topik/content-schema` imports with `@topik/content`.
-2. Rewrite the configuration to use `components` and `variables`, with
-   declarative attribute types such as `"string"` and `"boolean"`. The former
-   Markdoc `tags`, `nodes`, `functions`, and `partials` configuration has no
-   compatibility runtime.
-3. Use `compileTopikContent` to get a reader tree for a React renderer. Parse
-   results contain an mdast authoring tree with Topik nodes, which a renderer
-   does not accept.
-4. Recompile resources and asset inventories together after a content-format
-   upgrade. Do not reuse old occurrence mappings with newly compiled documents.
-
-A caller that already owns a validated reader tree can use
-[`renderTrustedTopikTree`](#render-a-validated-reader-tree).
-
 ## Migrate from 0.1.0-alpha.7
 
 1. A hand-written complete `TopikComponentMap` must add `TopikColumns`,

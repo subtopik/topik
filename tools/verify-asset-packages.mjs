@@ -103,7 +103,7 @@ const expected = new Map([
         `dist/${resource}/${version}.mjs`,
       ]),
       "package.json",
-    ].sort(),
+    ].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0)),
   ],
   [
     coreRoot,

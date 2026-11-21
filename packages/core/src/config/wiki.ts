@@ -3,7 +3,7 @@ import { z } from "zod";
 import { DEFAULT_ASSET_DIRECTORY, sourceAssetsConfigSchema } from "./assets";
 import { rejectMisspelledKeys } from "./misspelled-keys";
 import wikiV1Schema from "@topik/schema/wiki/v1.json" with { type: "json" };
-import { sourceVersionSchema, sourceLabelsSchema, pageSourcePathSchema } from "./source-version";
+import { sourceLabelsSchema, pageSourcePathSchema } from "./source-metadata";
 
 const wikiNavIconPattern = new RegExp(wikiV1Schema.$defs.groupNode.properties.icon.pattern);
 const wikiExternalHrefPattern = new RegExp(
@@ -300,8 +300,7 @@ const wikiConfigSchema = z
       )
       .regex(nameRegex),
     title: z.string().min(1).max(256),
-    sourceVersion: sourceVersionSchema,
-    labels: z.unknown().optional(),
+    labels: sourceLabelsSchema.optional(),
     assets: sourceAssetsConfigSchema.default({ directory: DEFAULT_ASSET_DIRECTORY }),
     description: z.union([z.string().max(1024), z.null()]).optional(),
     navigation: z.array(navNodeSchema).optional(),
@@ -313,11 +312,11 @@ const wikiConfigSchema = z
       for (const node of nodes) {
         if (typeof node === "string") continue;
         if (node.type === "page" && node.source !== undefined) {
-          if (config.sourceVersion !== 1 || sources.has(node.source))
+          if (sources.has(node.source))
             context.addIssue({
               code: "custom",
               path: ["navigation"],
-              message: "Page source needs sourceVersion 1 and a unique source path",
+              message: "Page sources must be unique",
             });
           sources.add(node.source);
         } else if ("children" in node) visit(node.children);
@@ -335,18 +334,9 @@ const wikiConfigSchema = z
     }
   });
 
-export type WikiConfig = Omit<z.infer<typeof wikiConfigSchema>, "labels"> & {
-  labels?: Record<string, string>;
-};
+export type WikiConfig = z.infer<typeof wikiConfigSchema>;
 
 export function parseWikiConfig(raw: unknown): WikiConfig {
   rejectMisspelledKeys(raw, Object.keys(wikiConfigSchema.shape));
-  const config = wikiConfigSchema.parse(raw);
-  const { labels, ...rest } = config;
-  return {
-    ...rest,
-    ...(config.sourceVersion === 1 && labels !== undefined
-      ? { labels: sourceLabelsSchema.parse(labels) }
-      : {}),
-  };
+  return wikiConfigSchema.parse(raw);
 }

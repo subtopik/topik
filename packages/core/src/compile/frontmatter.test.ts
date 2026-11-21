@@ -26,7 +26,7 @@ test.each(["\n", "\r\n"])(
                 bodyStart: raw.length - content.length,
               });
               expect(raw.slice(result.start, result.end)).toBe(metadata);
-              expect(parseMarkdownFrontmatter(raw, "intro.md", 1).content).toBe(content);
+              expect(parseMarkdownFrontmatter(raw, "intro.md").content).toBe(content);
             }
           }
         }

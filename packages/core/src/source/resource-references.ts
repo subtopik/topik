@@ -40,9 +40,7 @@ function sourcePublicRouteTarget(
   if (resource.type === "WikiPage") {
     const wiki = resources.get(`Wiki/${resource.spec.wiki}`);
     if (wiki?.type !== "Wiki") return undefined;
-    const navigation = resolveWikiNavigation(wiki.spec.navigation ?? [], {
-      sourceVersion: wiki.spec.sourceVersion,
-    });
+    const navigation = resolveWikiNavigation(wiki.spec.navigation ?? []);
     const page = resolveDeclaredPublicRoute(href, navigation.pageByRoute, true);
     const target = page && resources.get(`WikiPage/${page.page}`);
     return target?.type === "WikiPage" ? target : undefined;
@@ -348,9 +346,7 @@ export function restoreSourceResourceReferences(
       ) {
         const wiki = desired.get(`Wiki/${resource.spec.wiki}`);
         if (wiki?.type === "Wiki") {
-          const navigation = resolveWikiNavigation(wiki.spec.navigation ?? [], {
-            sourceVersion: wiki.spec.sourceVersion,
-          });
+          const navigation = resolveWikiNavigation(wiki.spec.navigation ?? []);
           const current = resolveWikiContentHref(saved.href, resource.name, navigation);
           unchangedContext =
             !shadowed() &&

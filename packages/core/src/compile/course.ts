@@ -122,7 +122,7 @@ export async function discoverCourse(
     resources.push(resource);
     for (const sourcePath of module.pages) {
       const file = await readCoursePage(dir, sourcePath);
-      const parsed = parseMarkdownFrontmatter(file.raw, file.path, 1);
+      const parsed = parseMarkdownFrontmatter(file.raw, file.path);
       if (isRecord(parsed.frontmatter) && Object.hasOwn(parsed.frontmatter, "order"))
         throw new PublicCompileError("course-order-removed", file.path, { field: "order" });
       let metadata;
@@ -188,7 +188,6 @@ export async function discoverCourse(
     bodyLinesByResource,
     consumedSourcePaths: [loaded.path],
     assetDirectory: config.assets.directory,
-    sourceVersion: 1,
   };
 }
 

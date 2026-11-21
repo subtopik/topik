@@ -73,7 +73,7 @@ async function plan(
 }
 const guide = (desired: Resource[]) =>
   desired.find((resource): resource is Guide => resource.type === "Guide")!;
-const collection = "id: blog\ntitle: Blog\nsourceVersion: 1\n";
+const collection = "id: blog\ntitle: Blog\n";
 
 test("block sequences at their key's column take an indented flow replacement", () => {
   for (const eol of ["\n", "\r\n"]) {
@@ -193,7 +193,7 @@ test("deleting the last record of a zero-indented list keeps valid configuration
       manifest("course", "course.yaml"),
       file(
         "course.yaml",
-        "id: c\ntitle: C\nslug: c\nsourceVersion: 1\nmodules:\n- id: m\n  title: M\n  slug: m\n  pages:\n  - a\n",
+        "id: c\ntitle: C\nslug: c\nmodules:\n- id: m\n  title: M\n  slug: m\n  pages:\n  - a\n",
       ),
       file("a.md", "---\nid: a\ntitle: A\nslug: a\n---\n# A\n"),
     ],
@@ -212,13 +212,13 @@ test("deleting the last record of a zero-indented list keeps valid configuration
   );
   expect(course.result.ok, JSON.stringify(course.result)).toBe(true);
   expect(course.written("course.yaml")).toBe(
-    "id: c\ntitle: C\nslug: c\nsourceVersion: 1\nmodules:\n- id: m\n  title: M\n  slug: m\n  pages:\n    []\n",
+    "id: c\ntitle: C\nslug: c\nmodules:\n- id: m\n  title: M\n  slug: m\n  pages:\n    []\n",
   );
 });
 
 test("moving a Course page file keeps its declaration position and comment", async () => {
   const config =
-    "id: c\ntitle: C\nslug: c\nsourceVersion: 1\nmodules:\n  - id: m1\n    title: M1\n    slug: m1\n    pages:\n      - a # first\n      - b\n";
+    "id: c\ntitle: C\nslug: c\nmodules:\n  - id: m1\n    title: M1\n    slug: m1\n    pages:\n      - a # first\n      - b\n";
   const { project, result, written } = await plan(
     [
       manifest("course", "course.yaml"),
@@ -244,7 +244,7 @@ test("moving a Course page file keeps its declaration position and comment", asy
 
 const wiki = (navigation: string) => [
   manifest("wiki", "wiki.yaml"),
-  file("wiki.yaml", `id: docs\ntitle: Docs\nsourceVersion: 1\n${navigation}`),
+  file("wiki.yaml", `id: docs\ntitle: Docs\n${navigation}`),
   file("home.md", "---\nid: home\n---\n# Home\n"),
   file("other.md", "---\nid: other\n---\n# Other\n"),
   file("third.md", "---\nid: third\n---\n# Third\n"),
@@ -298,7 +298,7 @@ test.each([
         }));
     const { result, written } = await plan(wiki(before), deleteThird, narrow ? { shared } : {});
     expect(result.ok, JSON.stringify(result)).toBe(true);
-    expect(written("wiki.yaml")).toBe(`id: docs\ntitle: Docs\nsourceVersion: 1\n${after}`);
+    expect(written("wiki.yaml")).toBe(`id: docs\ntitle: Docs\n${after}`);
   }
 });
 
@@ -330,7 +330,7 @@ test("creating a Wiki page appends one navigation item and keeps existing entrie
   );
   expect(result.ok, JSON.stringify(result)).toBe(true);
   expect(written("wiki.yaml")).toBe(
-    'id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation:\n  - home\n  - other # keep\n  - third\n  - {"type":"page","slug":"fourth"}\n',
+    'id: docs\ntitle: Docs\nnavigation:\n  - home\n  - other # keep\n  - third\n  - {"type":"page","slug":"fourth"}\n',
   );
 });
 
@@ -436,14 +436,14 @@ test.each(["wiki", "course"] as const)(
         kind === "wiki"
           ? [
               manifest("wiki", "wiki.yaml"),
-              file("wiki.yaml", "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation: [home]\n"),
+              file("wiki.yaml", "id: docs\ntitle: Docs\nnavigation: [home]\n"),
               file("home.md", "---\nid: home\n---\n# Home\n"),
             ]
           : [
               manifest("course", "course.yaml"),
               file(
                 "course.yaml",
-                "id: docs\ntitle: Docs\nslug: docs\nsourceVersion: 1\nmodules:\n  - {id: m, title: M, slug: m, pages: [m/home]}\n",
+                "id: docs\ntitle: Docs\nslug: docs\nmodules:\n  - {id: m, title: M, slug: m, pages: [m/home]}\n",
               ),
               file("m/home.md", "---\nid: home\ntitle: Home\nslug: home\n---\n# Home\n"),
             ],

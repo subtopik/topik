@@ -4,7 +4,6 @@ import {
   type TopikContentDiagnostic,
   type TopikHeading,
 } from "@topik/content";
-import { parse as parseYaml } from "yaml";
 import type { TopikAssetSemanticRecordV1, TopikMaterializationRecordV1 } from "../assets/identity";
 import type { AssetPayload, CompiledResource } from "./assets";
 import { PublicCompileError } from "./public-errors";
@@ -63,8 +62,6 @@ export function throwOnCompileErrors(diagnostics: TopikContentDiagnostic[]): voi
   if (errors.length > 0) throw new CompileError(errors);
 }
 
-const DNS_LABEL_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-
 /**
  * Shift content diagnostic lines, which count from the start of the body, so they count from the
  * start of the file. `offset` is the number of lines before the body, such as frontmatter.
@@ -83,7 +80,6 @@ export function withFileLines<T extends { lines: readonly number[] }>(
 export function parseMarkdownFrontmatter(
   raw: string,
   filePath: string,
-  sourceVersion?: 1,
 ): {
   frontmatter: Record<string, unknown>;
   content: string;
@@ -97,10 +93,7 @@ export function parseMarkdownFrontmatter(
   const bodyLineOffset = raw.slice(0, match.bodyStart).match(/\r\n|\r|\n/g)?.length ?? 0;
 
   try {
-    const frontmatter =
-      sourceVersion === 1
-        ? parseSafeConfigurationYaml(match.frontmatter)
-        : parseYaml(match.frontmatter);
+    const frontmatter = parseSafeConfigurationYaml(match.frontmatter);
     if (frontmatter == null) {
       return { frontmatter: {}, content: match.content, bodyLineOffset };
     }
@@ -114,7 +107,11 @@ export function parseMarkdownFrontmatter(
     ) {
       throw new PublicCompileError("frontmatter-invalid", filePath, { field: "title" });
     }
-    return { frontmatter, content: match.content, bodyLineOffset };
+    return {
+      frontmatter: frontmatter as Record<string, unknown>,
+      content: match.content,
+      bodyLineOffset,
+    };
   } catch (error) {
     // YAML parser messages can quote authored text, so only the structural field survives.
     if (error instanceof PublicCompileError) throw error;
@@ -147,29 +144,4 @@ export function formatContentDiagnostics(diagnostics: TopikContentDiagnostic[]):
       return `${file}${location} ${sanitized.level} ${sanitized.id}: ${sanitized.message}`;
     })
     .join("\n");
-}
-
-export function parseReferenceList(
-  value: unknown,
-  _fieldName: string,
-  filePath: string,
-): string[] | undefined {
-  if (value == null) {
-    return undefined;
-  }
-  if (!Array.isArray(value)) {
-    throw new PublicCompileError("reference-list-invalid", filePath);
-  }
-
-  const references = value.map((entry) => {
-    if (typeof entry !== "string") {
-      throw new PublicCompileError("reference-list-invalid", filePath);
-    }
-    if (entry.length > 63 || !DNS_LABEL_PATTERN.test(entry)) {
-      throw new PublicCompileError("reference-list-invalid", filePath);
-    }
-    return entry;
-  });
-
-  return references.length > 0 ? references : undefined;
 }

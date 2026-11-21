@@ -2,3 +2,6 @@ id: guides
 title: Guides
 tags:
   - tutorial
+persons:
+  - id: lukasnehrke
+    spec: { name: Lukas Nehrke }

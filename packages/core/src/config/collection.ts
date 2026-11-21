@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { DEFAULT_ASSET_DIRECTORY, sourceAssetsConfigSchema } from "./assets";
 import { rejectMisspelledKeys } from "./misspelled-keys";
-import { sourceVersionSchema, parseSourcePersons } from "./source-version";
+import { parseSourcePersons } from "./source-metadata";
 
 const nameRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -35,7 +35,6 @@ function isCollectionPattern(pattern: string): boolean {
 const collectionConfigSchema = z.object({
   id: z.string().min(1).max(63).regex(nameRegex),
   title: z.string().min(1).max(256),
-  sourceVersion: sourceVersionSchema,
   persons: z.unknown().optional(),
   assets: sourceAssetsConfigSchema.default({ directory: DEFAULT_ASSET_DIRECTORY }),
   tags: z.array(z.string().min(1).max(63)).optional(),
@@ -52,9 +51,7 @@ export function parseCollectionConfig(raw: unknown): CollectionConfig {
   const { persons, ...config } = collectionConfigSchema.parse(raw);
   return {
     ...config,
-    ...(config.sourceVersion === 1 && persons !== undefined
-      ? { persons: parseSourcePersons(persons) }
-      : {}),
+    ...(persons !== undefined ? { persons: parseSourcePersons(persons) } : {}),
   };
 }
 

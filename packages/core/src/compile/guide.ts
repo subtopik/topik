@@ -9,7 +9,7 @@ import {
   parseCollectionConfig,
   type CollectionGuideFilter,
 } from "../config/collection";
-import { parseGuideMetadata } from "../config/source-version";
+import { parseGuideMetadata } from "../config/source-metadata";
 import { compileAssetResourcesInSession, type AssetCompilationOptions } from "./assets";
 import { createPortableReadSession } from "../assets/files";
 import { createContentMemo, type ContentMemo } from "./content-memo";
@@ -31,7 +31,6 @@ import {
   extractMarkdownTitle,
   parseMarkdownFrontmatter,
   withFileLines,
-  parseReferenceList,
   throwOnCompileErrors,
   type CompileValidationOptions,
   type CompileResult,
@@ -49,7 +48,6 @@ export interface CompileGuidesOptions {
 }
 
 export interface CompileResourceDiscovery {
-  sourceVersion?: 1;
   /** Destination relative to the selected configuration directory, if a config was loaded. */
   assetDirectory?: string;
   diagnostics: CompileResult["diagnostics"];
@@ -69,8 +67,7 @@ export async function compileGuides(options: CompileGuidesOptions): Promise<Comp
 export async function inspectGuides(options: CompileGuidesOptions): Promise<CompileResult> {
   const memo = createContentMemo();
   const discovered = await discoverGuides(options, undefined, memo);
-  if (discovered.sourceVersion === 1)
-    validateGuideAuthors(discovered.resources, discovered.sourcePathsByResource);
+  validateGuideAuthors(discovered.resources, discovered.sourcePathsByResource);
   const linked = await compileResourceLinksInSession(
     createPortableReadSession(),
     {
@@ -180,22 +177,16 @@ export async function discoverGuides(
       }
       throw error;
     }
-    const parsed = parseMarkdownFrontmatter(rawContent, file, config.sourceVersion);
+    const parsed = parseMarkdownFrontmatter(rawContent, file);
     const { content } = parsed;
-    let frontmatter = parsed.frontmatter;
-    if (config.sourceVersion === 1) {
-      try {
-        frontmatter = parseGuideMetadata(frontmatter);
-      } catch (error) {
-        throw publicSchemaError("frontmatter-invalid", file, error);
-      }
+    let frontmatter;
+    try {
+      frontmatter = parseGuideMetadata(parsed.frontmatter);
+    } catch (error) {
+      throw publicSchemaError("frontmatter-invalid", file, error);
     }
-    const explicitSlug =
-      config.sourceVersion === 1 && typeof frontmatter.slug === "string"
-        ? frontmatter.slug
-        : undefined;
-    const explicitName =
-      config.sourceVersion === 1 && typeof frontmatter.id === "string" ? frontmatter.id : undefined;
+    const explicitSlug = frontmatter.slug;
+    const explicitName = frontmatter.id;
     const slug = explicitSlug ?? fileToSlug(file);
     const name = explicitName ?? `${config.id}-${fileToSlug(file)}`;
     // Filename-derived identities must already be valid resource names and slugs.
@@ -220,33 +211,21 @@ export async function discoverGuides(
         : extractMarkdownTitle(content, slug, analysis.headings);
 
     const tags =
-      config.sourceVersion === 1 && frontmatter.inheritTags === false
-        ? ((frontmatter.tags as string[] | undefined) ?? [])
+      frontmatter.inheritTags === false
+        ? (frontmatter.tags ?? [])
         : mergeTags(config.tags, frontmatter.tags);
-    const authors =
-      config.sourceVersion === 1
-        ? (frontmatter.authors as string[] | undefined)
-        : parseReferenceList(frontmatter.authors, "authors", file);
-    const description =
-      typeof frontmatter.description === "string" ||
-      (config.sourceVersion === 1 && frontmatter.description === null)
-        ? frontmatter.description
-        : undefined;
+    const { authors, description } = frontmatter;
     const guide: Guide = {
       apiVersion: "v1",
       type: "Guide",
       name,
-      ...(config.sourceVersion === 1 && frontmatter.labels !== undefined
-        ? { labels: frontmatter.labels as Record<string, string> }
-        : {}),
+      ...(frontmatter.labels !== undefined ? { labels: frontmatter.labels } : {}),
       spec: {
         title,
         slug,
         ...(description !== undefined ? { description } : {}),
         ...(authors !== undefined ? { authors } : {}),
-        ...(tags.length > 0 || (config.sourceVersion === 1 && frontmatter.tags !== undefined)
-          ? { tags }
-          : {}),
+        ...(tags.length > 0 || frontmatter.tags !== undefined ? { tags } : {}),
         content: {
           format: "topik",
           value: content,
@@ -267,7 +246,6 @@ export async function discoverGuides(
     bodyLinesByResource,
     consumedSourcePaths: [loadedConfig.path],
     assetDirectory: config.assets.directory,
-    sourceVersion: config.sourceVersion,
   };
 }
 
@@ -280,11 +258,7 @@ async function collectionDocumentPaths(
   const leftOut: string[] = [];
   const filter = collectionGuideFilter(config);
   for (const file of (await listGuideFiles(dir, "", filter, leftOut)).sort())
-    if (
-      !isReadmeFilename(file) ||
-      (config.sourceVersion === 1 && (await readmeDeclaresGuide(dir, file)))
-    )
-      paths.push(file);
+    if (!isReadmeFilename(file) || (await readmeDeclaresGuide(dir, file))) paths.push(file);
   return { paths, leftOut: leftOut.sort() };
 }
 
@@ -340,7 +314,7 @@ async function listGuideFiles(
 async function readmeDeclaresGuide(dir: string, file: string): Promise<boolean> {
   try {
     const raw = decodeUtf8Document(await readRegularFileWithinRoot(join(dir, file), dir), file);
-    const { frontmatter } = parseMarkdownFrontmatter(raw, file, 1);
+    const { frontmatter } = parseMarkdownFrontmatter(raw, file);
     return typeof frontmatter.id === "string" && typeof frontmatter.slug === "string";
   } catch {
     return false;
@@ -368,33 +342,15 @@ export { extractMarkdownTitle as extractTitle } from "./shared";
 export function validateGuideAuthors(
   resources: readonly SourceResource[],
   paths: Readonly<Record<string, string>>,
-  guideNames?: ReadonlySet<string>,
 ): void {
   const persons = new Set(
     resources.filter((resource) => resource.type === "Person").map((resource) => resource.name),
   );
   for (const resource of resources)
-    if (
-      resource.type === "Guide" &&
-      (!guideNames || guideNames.has(resource.name)) &&
-      resource.spec.authors?.some((author) => !persons.has(author))
-    )
+    if (resource.type === "Guide" && resource.spec.authors?.some((author) => !persons.has(author)))
       throw new PublicCompileError("author-not-found", paths[`Guide/${resource.name}`]);
 }
 
-function mergeTags(collectionTags: string[] | undefined, frontmatterTags: unknown): string[] {
-  const tags = new Set<string>();
-  if (collectionTags) {
-    for (const tag of collectionTags) {
-      tags.add(tag);
-    }
-  }
-  if (Array.isArray(frontmatterTags)) {
-    for (const tag of frontmatterTags) {
-      if (typeof tag === "string") {
-        tags.add(tag);
-      }
-    }
-  }
-  return [...tags];
+function mergeTags(collectionTags: readonly string[] = [], guideTags: readonly string[] = []) {
+  return [...new Set([...collectionTags, ...guideTags])];
 }

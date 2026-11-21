@@ -10,7 +10,7 @@ import type {
 import type { WikiPage } from "@topik/schema/wiki-page/v1";
 import type { SourceResource } from "../resource";
 import { parseWikiConfig, WIKI_PAGE_NAME_HASH_LENGTH, type WikiNavNode } from "../config/wiki";
-import { parsePageMetadata } from "../config/source-version";
+import { parsePageMetadata } from "../config/source-metadata";
 import { validateResources } from "../validate";
 import { compileAssetResourcesInSession, type AssetCompilationOptions } from "./assets";
 import { createPortableReadSession } from "../assets/files";
@@ -117,10 +117,10 @@ export async function discoverWiki(
   }
   const pages = config.navigation ? collectPages(config.navigation) : [];
   const pagePaths = [...new Set(pages.map((page) => page.sourcePath))];
-  if (config.sourceVersion === 1 && pagePaths.length !== pages.length)
+  if (pagePaths.length !== pages.length)
     throw new PublicCompileError("config-invalid", loadedConfig.path);
   const resolvedFiles = await mapWithConcurrency(pagePaths, PAGE_READ_CONCURRENCY, (pagePath) =>
-    readPageFile(dir, pagePath, config.sourceVersion === 1),
+    readPageFile(dir, pagePath),
   );
 
   const resources: SourceResource[] = [];
@@ -133,23 +133,18 @@ export async function discoverWiki(
     const pagePath = pagePaths[i];
     const { filePath, raw } = resolvedFiles[i];
     const sourcePath = `${pagePath}${filePath.endsWith(".mdx") ? ".mdx" : ".md"}`;
-    const parsed = parseMarkdownFrontmatter(raw, sourcePath, config.sourceVersion);
+    const parsed = parseMarkdownFrontmatter(raw, sourcePath);
     const { content } = parsed;
-    let frontmatter = parsed.frontmatter;
-    if (config.sourceVersion === 1) {
-      try {
-        frontmatter = parsePageMetadata(frontmatter);
-      } catch (error) {
-        throw publicSchemaError("frontmatter-invalid", sourcePath, error);
-      }
+    let frontmatter;
+    try {
+      frontmatter = parsePageMetadata(parsed.frontmatter);
+    } catch (error) {
+      throw publicSchemaError("frontmatter-invalid", sourcePath, error);
     }
     const validation = memo.validate(content, sourcePath);
     diagnostics.push(...withFileLines(validation.errors, parsed.bodyLineOffset));
     if (!validation.valid) continue;
-    const name =
-      config.sourceVersion === 1 && typeof frontmatter.id === "string"
-        ? frontmatter.id
-        : pagePathToName(config.id, pagePath);
+    const name = frontmatter.id ?? pagePathToName(config.id, pagePath);
     // Page paths are already unique, so a repeated name comes from two frontmatter IDs.
     if (Object.hasOwn(sourcePathsByResource, `WikiPage/${name}`))
       throw new PublicCompileError("frontmatter-invalid", sourcePath, {
@@ -163,17 +158,12 @@ export async function discoverWiki(
       typeof frontmatter.title === "string"
         ? frontmatter.title
         : extractMarkdownTitle(content, pagePathToTitleFallback(pagePath), analysis.headings);
-    const description =
-      config.sourceVersion === 1
-        ? (frontmatter.description as string | null | undefined)
-        : normalizeWikiPageDescription(frontmatter.description);
+    const description = frontmatter.description;
     const pageResource: WikiPage = {
       apiVersion: "v1",
       type: "WikiPage",
       name,
-      ...(config.sourceVersion === 1 && frontmatter.labels !== undefined
-        ? { labels: frontmatter.labels as Record<string, string> }
-        : {}),
+      ...(frontmatter.labels !== undefined ? { labels: frontmatter.labels } : {}),
       spec: {
         wiki: config.id,
         title,
@@ -198,12 +188,8 @@ export async function discoverWiki(
     name: config.id,
     ...(config.labels !== undefined ? { labels: config.labels } : {}),
     spec: {
-      ...(config.sourceVersion === 1 ? { sourceVersion: 1 } : {}),
       title: config.title,
-      ...(config.description !== undefined &&
-      (config.sourceVersion === 1 || config.description !== null)
-        ? { description: config.description }
-        : {}),
+      ...(config.description !== undefined ? { description: config.description } : {}),
       ...(config.navigation
         ? {
             navigation: resolveNavigation(
@@ -211,7 +197,6 @@ export async function discoverWiki(
               config.id,
               "",
               pageNamesBySource,
-              config.sourceVersion,
             ) as WikiNavigation,
           }
         : {}),
@@ -228,25 +213,7 @@ export async function discoverWiki(
     bodyLinesByResource,
     consumedSourcePaths: [loadedConfig.path],
     assetDirectory: config.assets.directory,
-    sourceVersion: config.sourceVersion,
   };
-}
-
-const WIKI_PAGE_DESCRIPTION_MAX_LENGTH = 1024;
-
-/**
- * Keep an unversioned WikiPage spec.description within the WikiPage/v1 schema's 1024-character
- * limit. The cut never splits a surrogate pair, so the result stays well-formed text.
- */
-function normalizeWikiPageDescription(description: unknown): string | undefined {
-  if (typeof description !== "string") return undefined;
-  if (description.length <= WIKI_PAGE_DESCRIPTION_MAX_LENGTH) return description;
-  const last = description.charCodeAt(WIKI_PAGE_DESCRIPTION_MAX_LENGTH - 1);
-  const end =
-    last >= 0xd800 && last <= 0xdbff
-      ? WIKI_PAGE_DESCRIPTION_MAX_LENGTH - 1
-      : WIKI_PAGE_DESCRIPTION_MAX_LENGTH;
-  return description.slice(0, end);
 }
 
 /**
@@ -303,7 +270,6 @@ export async function listWikiDocuments(dir: string, loaded: LoadedConfig): Prom
 async function readPageFile(
   dir: string,
   pagePath: string,
-  requireUnique = false,
 ): Promise<{ filePath: string; raw: string }> {
   let found: { filePath: string; raw: string } | undefined;
   for (const ext of [".mdx", ".md"]) {
@@ -318,7 +284,6 @@ async function readPageFile(
       throw error;
     }
     const raw = decodeUtf8Document(bytes, pagePath + ext);
-    if (!requireUnique) return { filePath, raw };
     if (found)
       throw new PublicCompileError("wiki-page-ambiguous", pagePath + ext, {
         relatedLocation: `${pagePath}${found.filePath.endsWith(".mdx") ? ".mdx" : ".md"}`,
@@ -348,7 +313,6 @@ function resolveNavigation(
   wikiId: string,
   prefix = "",
   pageNamesBySource = new Map<string, string>(),
-  sourceVersion?: 1,
 ): CompiledWikiNavNode[] {
   return nodes.map((node) => {
     if (typeof node === "string" || node.type === "page") {
@@ -364,11 +328,7 @@ function resolveNavigation(
         slug: pagePathToSlug(localPath),
         sourcePath: pagePath,
         ...(typeof node !== "string" && node.icon ? { icon: node.icon } : {}),
-        ...(typeof node !== "string" &&
-        node.hidden !== undefined &&
-        (sourceVersion === 1 || node.hidden)
-          ? { hidden: node.hidden }
-          : {}),
+        ...(typeof node !== "string" && node.hidden !== undefined ? { hidden: node.hidden } : {}),
       };
     }
 
@@ -378,7 +338,6 @@ function resolveNavigation(
         wikiId,
         joinWikiPath(prefix, node.slug),
         pageNamesBySource,
-        sourceVersion,
       );
       if (node.type === "group") {
         return {
@@ -386,12 +345,8 @@ function resolveNavigation(
           title: node.title,
           ...(node.slug ? { slug: node.slug } : {}),
           ...(node.icon ? { icon: node.icon } : {}),
-          ...(node.hidden !== undefined && (sourceVersion === 1 || node.hidden)
-            ? { hidden: node.hidden }
-            : {}),
-          ...(node.expanded !== undefined && (sourceVersion === 1 || node.expanded)
-            ? { expanded: node.expanded }
-            : {}),
+          ...(node.hidden !== undefined ? { hidden: node.hidden } : {}),
+          ...(node.expanded !== undefined ? { expanded: node.expanded } : {}),
           children: children as WikiSidebarNavNode[],
         };
       }
@@ -401,9 +356,7 @@ function resolveNavigation(
           title: node.title,
           ...(node.slug ? { slug: node.slug } : {}),
           ...(node.icon ? { icon: node.icon } : {}),
-          ...(node.hidden !== undefined && (sourceVersion === 1 || node.hidden)
-            ? { hidden: node.hidden }
-            : {}),
+          ...(node.hidden !== undefined ? { hidden: node.hidden } : {}),
           children: children as WikiDropdownNavNode[] | WikiSidebarNavNode[],
         };
       }
@@ -412,9 +365,7 @@ function resolveNavigation(
         title: node.title,
         ...(node.slug ? { slug: node.slug } : {}),
         ...(node.icon ? { icon: node.icon } : {}),
-        ...(node.hidden !== undefined && (sourceVersion === 1 || node.hidden)
-          ? { hidden: node.hidden }
-          : {}),
+        ...(node.hidden !== undefined ? { hidden: node.hidden } : {}),
         children: children as WikiSidebarNavNode[],
       };
     }
@@ -425,9 +376,7 @@ function resolveNavigation(
         title: node.title,
         href: node.href,
         ...(node.icon ? { icon: node.icon } : {}),
-        ...(node.hidden !== undefined && (sourceVersion === 1 || node.hidden)
-          ? { hidden: node.hidden }
-          : {}),
+        ...(node.hidden !== undefined ? { hidden: node.hidden } : {}),
       };
     }
     if (node.type === "dropdown") {
@@ -436,9 +385,7 @@ function resolveNavigation(
         title: node.title,
         href: node.href,
         ...(node.icon ? { icon: node.icon } : {}),
-        ...(node.hidden !== undefined && (sourceVersion === 1 || node.hidden)
-          ? { hidden: node.hidden }
-          : {}),
+        ...(node.hidden !== undefined ? { hidden: node.hidden } : {}),
       };
     }
     return {
@@ -446,9 +393,7 @@ function resolveNavigation(
       title: node.title,
       href: node.href,
       ...(node.icon ? { icon: node.icon } : {}),
-      ...(node.hidden !== undefined && (sourceVersion === 1 || node.hidden)
-        ? { hidden: node.hidden }
-        : {}),
+      ...(node.hidden !== undefined ? { hidden: node.hidden } : {}),
     };
   });
 }

@@ -42,7 +42,6 @@ async function fixture(kind: Kind, value = body) {
   const config = {
     id: "docs",
     title: "Docs",
-    sourceVersion: 1,
     ...(kind === "wiki"
       ? {
           navigation: sources.map((source, index) => ({
@@ -73,7 +72,7 @@ async function fixture(kind: Kind, value = body) {
       ),
       file("docs/config.yaml", JSON.stringify(config)),
       ...(kind === "collection"
-        ? [file("docs/files/collection.yaml", "id: landings\ntitle: Landings\nsourceVersion: 1\n")]
+        ? [file("docs/files/collection.yaml", "id: landings\ntitle: Landings\n")]
         : []),
       file("docs/home.md", frontmatter("home", value)),
       file("docs/other.md", frontmatter("other", "# Other\n")),
@@ -90,7 +89,6 @@ test.each(["wiki", "course"] as const)(
     const config = {
       id: "docs",
       title: "Docs",
-      sourceVersion: 1,
       ...(kind === "wiki"
         ? {
             navigation: [{ type: "page", slug: "files", source: "home" }],
@@ -115,7 +113,7 @@ test.each(["wiki", "course"] as const)(
         ),
         file("docs/config.yaml", JSON.stringify(config)),
         file("docs/home.md", frontmatter("home", value)),
-        file(`docs${route}/collection.yaml`, "id: landings\ntitle: Landings\nsourceVersion: 1\n"),
+        file(`docs${route}/collection.yaml`, "id: landings\ntitle: Landings\n"),
         file(`docs${route}/README.md`, frontmatter("landing", "# Landing\n")),
       ],
     });

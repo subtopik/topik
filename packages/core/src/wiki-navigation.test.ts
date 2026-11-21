@@ -63,10 +63,9 @@ const typeParityFixture = [
 ] satisfies WikiNavigation;
 
 test("compiled WikiPage references resolve by name independently of source or public slug", () => {
-  const resolved = resolveWikiNavigation(
-    [{ type: "page", page: "installation", slug: "getting-started", sourcePath: "moved/install" }],
-    { sourceVersion: 1 },
-  );
+  const resolved = resolveWikiNavigation([
+    { type: "page", page: "installation", slug: "getting-started", sourcePath: "moved/install" },
+  ]);
   expect(
     resolveWikiContentHref("ref://wiki-page/installation?view=full#setup", "missing", resolved),
   ).toMatchObject({
@@ -80,13 +79,10 @@ test("compiled WikiPage references resolve by name independently of source or pu
 });
 
 test("compiled-reference classification distinguishes missing context from external and Asset links", () => {
-  const resolved = resolveWikiNavigation(
-    [
-      { type: "page", page: "home", slug: "", sourcePath: "pages/home" },
-      { type: "page", page: "next", slug: "next", sourcePath: "pages/next" },
-    ],
-    { sourceVersion: 1 },
-  );
+  const resolved = resolveWikiNavigation([
+    { type: "page", page: "home", slug: "", sourcePath: "pages/home" },
+    { type: "page", page: "next", slug: "next", sourcePath: "pages/next" },
+  ]);
   expect(resolveWikiContentReference("next.md?view=a#part", "home", resolved)).toMatchObject({
     kind: "page",
     target: { page: { page: "next" }, search: "?view=a", hash: "part" },
@@ -205,15 +201,15 @@ describe("resolveWikiNavigation", () => {
       { type: "page" as const, page: "sibling", slug: "sibling", sourcePath: "files" },
       { type: "page" as const, page: "landing", slug: "landing", sourcePath: "files/index" },
     ];
-    const navigation = resolveWikiNavigation(pages, { sourceVersion: 1 });
+    const navigation = resolveWikiNavigation(pages);
     for (const href of ["./files", "./files/", "/files/", "./files?view=%FF#heading"])
       expect(resolveWikiContentHref(href, "home", navigation)?.page.page).toBe("landing");
     for (const href of ["./files.md", "/files.md/", "/sibling"])
       expect(resolveWikiContentHref(href, "home", navigation)?.page.page).toBe("sibling");
-    const ambiguous = resolveWikiNavigation(
-      [...pages, { type: "page", page: "readme", slug: "readme", sourcePath: "files/README" }],
-      { sourceVersion: 1 },
-    );
+    const ambiguous = resolveWikiNavigation([
+      ...pages,
+      { type: "page", page: "readme", slug: "readme", sourcePath: "files/README" },
+    ]);
     expect(resolveWikiContentHref("./files/", "home", ambiguous)).toBeNull();
     expect(resolveWikiContentHref("./files/index.md", "home", ambiguous)?.page.page).toBe(
       "landing",
@@ -261,38 +257,29 @@ describe("resolveWikiNavigation", () => {
   });
 });
 
-test.each([undefined, 1] as const)(
-  "exact index routes precede aliases (sourceVersion=%s)",
-  (sourceVersion) => {
-    const navigation = resolveWikiNavigation(
-      [
-        { type: "page", page: "home", slug: "", sourcePath: "home" },
-        { type: "page", page: "special", slug: "index", sourcePath: "special" },
-        { type: "page", page: "section", slug: "section", sourcePath: "section-home" },
-        { type: "page", page: "nested", slug: "section/index", sourcePath: "nested" },
-      ],
-      { sourceVersion },
-    );
-    for (const [href, target] of [
-      ["/", "home"],
-      ["/index", "special"],
-      ["/section", "section"],
-      ["/section/index", "nested"],
-      ["/section/index/index", "nested"],
-    ]) {
-      expect(resolveWikiContentHref(href, "home", navigation)?.page.page).toBe(target);
-    }
-  },
-);
+test("exact index routes precede aliases", () => {
+  const navigation = resolveWikiNavigation([
+    { type: "page", page: "home", slug: "", sourcePath: "home" },
+    { type: "page", page: "special", slug: "index", sourcePath: "special" },
+    { type: "page", page: "section", slug: "section", sourcePath: "section-home" },
+    { type: "page", page: "nested", slug: "section/index", sourcePath: "nested" },
+  ]);
+  for (const [href, target] of [
+    ["/", "home"],
+    ["/index", "special"],
+    ["/section", "section"],
+    ["/section/index", "nested"],
+    ["/section/index/index", "nested"],
+  ]) {
+    expect(resolveWikiContentHref(href, "home", navigation)?.page.page).toBe(target);
+  }
+});
 
 test("Wiki fragments use one encoded spelling for same-page and source-relative links", () => {
-  const resolved = resolveWikiNavigation(
-    [
-      { type: "page", page: "a", slug: "a", sourcePath: "a" },
-      { type: "page", page: "b", slug: "b", sourcePath: "b" },
-    ],
-    { sourceVersion: 1 },
-  );
+  const resolved = resolveWikiNavigation([
+    { type: "page", page: "a", slug: "a", sourcePath: "a" },
+    { type: "page", page: "b", slug: "b", sourcePath: "b" },
+  ]);
   const local = resolveWikiContentHref("#héllo wörld", "b", resolved);
   const relative = resolveWikiContentHref("./b.md#héllo wörld", "a", resolved);
   expect(local).toMatchObject({ page: { page: "b" }, hash: "h%C3%A9llo%20w%C3%B6rld" });
@@ -325,7 +312,7 @@ describe("opaque queries", () => {
   ];
 
   test.each(queries)("keeps %s byte-for-byte in every href form", (query) => {
-    const resolved = resolveWikiNavigation(pages, { sourceVersion: 1 });
+    const resolved = resolveWikiNavigation(pages);
     for (const [href, page] of [
       [`ref://wiki-page/b${query}#h`, "b"],
       [`./b.md${query}#h`, "b"],
@@ -350,7 +337,7 @@ describe("opaque queries", () => {
   });
 
   test("encodes raw characters and drops an empty query", () => {
-    const resolved = resolveWikiNavigation(pages, { sourceVersion: 1 });
+    const resolved = resolveWikiNavigation(pages);
     expect(resolveWikiContentHref("./b.md?a=é#é", "a", resolved)).toMatchObject({
       search: "?a=%C3%A9",
       hash: "%C3%A9",
@@ -363,29 +350,21 @@ describe("opaque queries", () => {
   });
 });
 
-test("source-relative links follow the source version", () => {
-  const pages = [
-    { type: "page" as const, page: "a", slug: "a", sourcePath: "dir/a" },
-    { type: "page" as const, page: "b", slug: "b", sourcePath: "dir/b" },
-  ];
-  const versioned = resolveWikiNavigation(pages, { sourceVersion: 1 });
-  const legacy = resolveWikiNavigation(pages);
-  // Version 1 matches the source path; without it, the derived route `dir/b` is not declared.
-  expect(resolveWikiContentHref("./b.md", "a", versioned)?.page.page).toBe("b");
-  expect(resolveWikiContentHref("./b.md", "a", legacy)).toBeNull();
-  for (const navigation of [versioned, legacy])
-    expect(resolveWikiContentHref("/b", "a", navigation)?.page.page).toBe("b");
+test("source-relative links match source paths and root links match routes", () => {
+  const navigation = resolveWikiNavigation([
+    { type: "page", page: "a", slug: "a", sourcePath: "dir/a" },
+    { type: "page", page: "b", slug: "b", sourcePath: "dir/b" },
+  ]);
+  expect(resolveWikiContentHref("./b.md", "a", navigation)?.page.page).toBe("b");
+  expect(resolveWikiContentHref("/b", "a", navigation)?.page.page).toBe("b");
 });
 
 test("an extensionless root link prefers an exact public route over a folder landing", () => {
-  const resolved = resolveWikiNavigation(
-    [
-      { type: "page", page: "start", slug: "start", sourcePath: "start" },
-      { type: "page", page: "landing", slug: "folder", sourcePath: "folder/index" },
-      { type: "page", page: "readme", slug: "readme", sourcePath: "folder/README" },
-    ],
-    { sourceVersion: 1 },
-  );
+  const resolved = resolveWikiNavigation([
+    { type: "page", page: "start", slug: "start", sourcePath: "start" },
+    { type: "page", page: "landing", slug: "folder", sourcePath: "folder/index" },
+    { type: "page", page: "readme", slug: "readme", sourcePath: "folder/README" },
+  ]);
   expect(resolveWikiContentHref("/folder", "start", resolved)?.page.page).toBe("landing");
   // The explicit folder spellings still see two landing candidates.
   expect(resolveWikiContentHref("/folder/", "start", resolved)).toBeNull();
@@ -393,14 +372,11 @@ test("an extensionless root link prefers an exact public route over a folder lan
 });
 
 test("source paths may contain reserved characters and href paths decode once", () => {
-  const resolved = resolveWikiNavigation(
-    [
-      { type: "page", page: "a", slug: "a", sourcePath: "100% sure/a#b?c" },
-      { type: "page", page: "b", slug: "b", sourcePath: "100% sure/next page" },
-      { type: "page", page: "c", slug: "c", sourcePath: "café" },
-    ],
-    { sourceVersion: 1 },
-  );
+  const resolved = resolveWikiNavigation([
+    { type: "page", page: "a", slug: "a", sourcePath: "100% sure/a#b?c" },
+    { type: "page", page: "b", slug: "b", sourcePath: "100% sure/next page" },
+    { type: "page", page: "c", slug: "c", sourcePath: "café" },
+  ]);
   for (const [href, page] of [
     ["./next page.md", "b"],
     ["next%20page.md?x=1#y", "b"],

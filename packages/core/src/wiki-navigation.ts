@@ -39,7 +39,6 @@ export type ResolvedWikiNavigation = {
   pageByName: ReadonlyMap<string, ResolvedWikiPage>;
   pageByRoute: ReadonlyMap<string, ResolvedWikiPage>;
   pageBySourcePath: ReadonlyMap<string, ResolvedWikiPage>;
-  sourceVersion?: 1;
 };
 
 export type ResolvedWikiContentLink = {
@@ -115,13 +114,9 @@ export function isExternalWikiDropdown(node: WikiNavNode): node is WikiExternalD
  * exactly one page so that a reference, a public URL and a source-relative link each identify
  * one target. This is stricter than checking names and routes alone: pages with distinct names
  * and routes can still be rejected for sharing a source path.
- *
- * `options.sourceVersion` is the Wiki's `spec.sourceVersion`. It is returned unchanged and
- * selects how {@link resolveWikiContentHref} reads source-relative links.
  */
 export function resolveWikiNavigation(
   navigation: WikiNavigation | readonly WikiNavNode[],
-  options: { sourceVersion?: 1 } = {},
 ): ResolvedWikiNavigation {
   const pages: ResolvedWikiPage[] = [];
   const pageByName = new Map<string, ResolvedWikiPage>();
@@ -162,13 +157,7 @@ export function resolveWikiNavigation(
   };
 
   visit(navigation, "", []);
-  return {
-    pages,
-    pageByName,
-    pageByRoute,
-    pageBySourcePath,
-    ...(options.sourceVersion !== undefined ? { sourceVersion: options.sourceVersion } : {}),
-  };
+  return { pages, pageByName, pageByRoute, pageBySourcePath };
 }
 
 /** Finds the first page node in navigation order, ignoring external destinations. */
@@ -194,22 +183,22 @@ export function findWikiPageAncestors(
 }
 
 /**
- * Resolves compiled WikiPage references by name, or legacy links against their source context.
+ * Resolves compiled WikiPage references by name, and authored links against the current
+ * page's source path.
  *
- * - `ref://wiki-page/<name>` resolves by page name, whatever `currentPageName` and
- *   `sourceVersion` are. Other `ref://` types, unknown names and references whose fragment
- *   does not decode as UTF-8 return `null`.
+ * - `ref://wiki-page/<name>` resolves by page name, whatever `currentPageName` is. Other
+ *   `ref://` types, unknown names and references whose fragment does not decode as UTF-8
+ *   return `null`.
  * - `#fragment` targets the current page.
  * - Other hrefs resolve from the current page's source path; an unknown current page, an
  *   `asset:` href, another origin and a path that escapes the Wiki or holds a malformed escape
  *   return `null`.
  *
- * With `sourceVersion: 1`, relative links and links ending in `.md`, `.mdx` or `.markdown`
- * address source paths; extensionless root-relative links address public routes, an exact route
- * first and then the `index` alias. Without it, those links are matched against public routes
- * derived from the source-relative path, with the extension and a trailing `index` removed.
+ * Relative links and links ending in `.md`, `.mdx` or `.markdown` address source paths;
+ * extensionless root-relative links address public routes, an exact route first and then the
+ * `index` alias.
  *
- * In both, a folder link (a path ending in `/`, `.` or `..`, or naming a declared folder) selects
+ * A folder link (a path ending in `/`, `.` or `..`, or naming a declared folder) selects
  * that folder's single `index` or `README` page and returns `null` when there is none or more
  * than one. An extensionless root-relative link such as `/folder` is a public-route link first:
  * a page with exactly that route wins, and the folder rule applies only when no route matches.
@@ -255,21 +244,15 @@ export function resolveWikiContentHref(
     /\.(?:mdx?|markdown)$/i.test(pathname) &&
     !hasDeclaredFolder(pathname, resolved.pageBySourcePath);
   const normalizedPath = markdown ? pathname.replace(/\.(?:mdx?|markdown)$/i, "") : pathname;
-  const route = normalizedPath === "index" ? "" : normalizedPath.replace(/\/index$/, "");
   const folder = isFolderHref(href);
   const sourceLink = !href.startsWith("/") || markdown || folder;
-  const page =
-    sourceLink &&
-    (resolved.sourceVersion === 1 ||
-      folder ||
-      hasDeclaredFolder(normalizedPath, resolved.pageBySourcePath))
-      ? markdown
-        ? resolved.pageBySourcePath.get(normalizedPath)
-        : resolveDeclaredSourcePage(normalizedPath, resolved.pageBySourcePath, folder)
-      : ((!sourceLink && href.startsWith("/")
-          ? resolveDeclaredPublicRoute(href, resolved.pageByRoute, true)
-          : resolved.pageByRoute.get(route)) ??
-        resolveDeclaredSourcePage(normalizedPath, resolved.pageBySourcePath, true));
+  // Source links resolve by source path; extensionless root links by public route.
+  const page = sourceLink
+    ? markdown
+      ? resolved.pageBySourcePath.get(normalizedPath)
+      : resolveDeclaredSourcePage(normalizedPath, resolved.pageBySourcePath, folder)
+    : (resolveDeclaredPublicRoute(href, resolved.pageByRoute, true) ??
+      resolveDeclaredSourcePage(normalizedPath, resolved.pageBySourcePath, true));
   return page
     ? { page, route: page.route, hash: url.hash.replace(/^#/, ""), search: url.search }
     : null;

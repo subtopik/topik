@@ -4,7 +4,7 @@ import { parseWikiConfig } from "./wiki";
 
 const wiki = { id: "docs", title: "Docs" };
 
-test.each(["navigaton", "Navigation", "titel", "descripton", "sourceversion", "Id", "lables"])(
+test.each(["navigaton", "Navigation", "titel", "descripton", "Id", "lables"])(
   "rejects a likely misspelling of a known Wiki key: %s",
   (key) => {
     expect(() => parseWikiConfig({ ...wiki, [key]: [] })).toThrow(

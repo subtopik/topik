@@ -55,7 +55,6 @@ const KIND_BY_ID: Record<PublicCompileErrorId, CompileFailureKind> = {
   "document-encoding-invalid": "content",
   "guide-name-invalid": "content",
   "guide-duplicate": "content",
-  "reference-list-invalid": "content",
   // The catalogue of reference targets is supplied by the calling program, not the author.
   "reference-targets-invalid": "tool",
   "wiki-page-not-found": "content",

@@ -276,7 +276,7 @@ describe("root manifest compilation", () => {
   test("source failures keep their own root-relative location, field and cause", async () => {
     const dir = await fixture({
       ".topik.yaml": sources([{ kind: "wiki", config: "docs/wiki.yaml" }]),
-      "docs/wiki.yaml": "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation: [index]\n",
+      "docs/wiki.yaml": "id: docs\ntitle: Docs\nnavigation: [index]\n",
       "docs/index.md": "---\nid: Not_Valid\n---\n# Docs\n",
     });
     const error = await compile({ dir }).catch((failure: unknown) => failure);

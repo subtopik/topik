@@ -58,7 +58,7 @@ Configuration files can use `.yaml`, `.yml` or `.json`. Markdown inputs can use
 
 Versioned collections and Courses can declare Person records and author
 references in their configuration. See [Source writing](./source-writing.md)
-for Course source layout, versioned metadata and reviewed project edits.
+for Course source layout, source metadata and reviewed project edits.
 
 ## Compile a wiki
 
@@ -145,7 +145,7 @@ Guide:
 Filename-derived slugs must use lowercase letters, digits and single hyphens,
 such as `getting-started.md`, and the collection ID, a hyphen and the slug must
 fit in 63 characters. Other filenames fail with `guide-name-invalid` at that
-file, unless `sourceVersion: 1` frontmatter supplies both `id` and `slug`, or
+file, unless its frontmatter supplies both `id` and `slug`, or
 the file is [never a guide by name](#choose-the-guide-files). Two
 files that produce the same Guide identity, such as `intro.md` and `intro.mdx`,
 fail with `guide-duplicate`, which names both files.
@@ -201,8 +201,7 @@ Some Markdown files are never guides by name:
   wrong name. Rename it in lowercase, or add it to `exclude` to silence the
   warning. The warning does not fail `topik compile` or `topik lint`.
 - `README.md` and `README.mdx` beside `collection.yaml` are left out too,
-  unless the collection uses `sourceVersion: 1` and the file's frontmatter sets
-  both `id` and `slug`. A repository readme can therefore sit beside the
+  unless the file's frontmatter sets both `id` and `slug`. A repository readme can therefore sit beside the
   guides. In a folder below, `README.md` is that folder's landing page; exclude
   it if it is not Topik Markdown.
 

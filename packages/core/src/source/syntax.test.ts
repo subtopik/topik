@@ -18,13 +18,12 @@ test("JSON patches preserve existing spelling while inserting and removing field
     '{\n  "title": "Old",\n  "description": null,\n  "labels": {},\n  "custom": [ 1, 2 ]\n}\n';
   const patched = patchSourceFields(
     base,
-    { title: "New", description: undefined, labels: undefined, sourceVersion: 1 },
+    { title: "New", description: undefined, labels: undefined },
     true,
   );
   expect(JSON.parse(decodeSource(patched.bytes))).toEqual({
     title: "New",
     custom: [1, 2],
-    sourceVersion: 1,
   });
   expect(decodeSource(patched.bytes)).toContain('"custom": [ 1, 2 ]');
   expect(
@@ -61,9 +60,8 @@ test("BOM stays outside first-entry edits and does not count as indentation", ()
   const raw = "\uFEFFdescription: remove\ncustom: exact\n";
   const result = patchSourceFields(decodeSource(encodeSource(raw)), {
     description: undefined,
-    sourceVersion: 1,
   });
-  expect(result.bytes).toEqual(encodeSource("\uFEFFcustom: exact\nsourceVersion: 1\n"));
+  expect(result.bytes).toEqual(encodeSource("\uFEFFcustom: exact\n"));
   expect(replaySourceByteEdits(encodeSource(raw), result.edits)).toEqual(result.bytes);
 });
 

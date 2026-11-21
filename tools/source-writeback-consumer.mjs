@@ -58,7 +58,7 @@ export async function verifySourceWritebackConsumer(packageCohort = "c".repeat(6
         ".topik.yaml",
         "version: 1\nnamespace: packed/example\nsources: [{kind: collection, config: guides/custom.yml}]\n",
       ),
-      file("guides/custom.yml", "id: blog\ntitle: Blog\nsourceVersion: 1\n"),
+      file("guides/custom.yml", "id: blog\ntitle: Blog\n"),
       file("guides/page.md", authored, "100755"),
       file("README.md", "Unowned exact bytes\r\n", "100755"),
     ],
@@ -206,7 +206,7 @@ export async function verifyCourseSourceConsumer(packageCohort = "c".repeat(64))
       ),
       file(
         "course/course.yaml",
-        "# Keep course configuration\nid: training\ntitle: Training\nslug: training\nsourceVersion: 1\nauthors: [ada]\npersons: [{id: ada, spec: {name: Ada, email: null, bio: Teacher}}]\ncustom: exact\nmodules:\n  - id: foundations\n    title: Foundations\n    slug: foundations\n    pages: [lessons/intro, lessons/next]\n",
+        "# Keep course configuration\nid: training\ntitle: Training\nslug: training\nauthors: [ada]\npersons: [{id: ada, spec: {name: Ada, email: null, bio: Teacher}}]\ncustom: exact\nmodules:\n  - id: foundations\n    title: Foundations\n    slug: foundations\n    pages: [lessons/intro, lessons/next]\n",
       ),
       file(
         "course/lessons/intro.md",
@@ -409,7 +409,7 @@ export async function verifyPresentationSourceConsumer(packageCohort = "c".repea
         ),
         file(
           config,
-          `id: examples\ntitle: Examples\nsourceVersion: 1\n${kind === "wiki" ? "navigation: [page, sibling]\n" : ""}`,
+          `id: examples\ntitle: Examples\n${kind === "wiki" ? "navigation: [page, sibling]\n" : ""}`,
         ),
         file(path, authored, "100755"),
         file(`${directory}/sibling.md`, "---\nid: sibling\n---\n# Sibling\n"),

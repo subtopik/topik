@@ -21,8 +21,7 @@ async function fixture(files: Record<string, string | Buffer>) {
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
-const configuration = `sourceVersion: 1
-id: learning
+const configuration = `id: learning
 title: Learning
 slug: public-course
 description: null
@@ -135,7 +134,7 @@ test("manifest Course sources use exact configuration, full project author closu
     }),
     "docs/custom.yaml": configuration,
     "docs/course.yaml": "invalid fallback",
-    "docs/collection.yaml": "sourceVersion: 1\nid: shared\ntitle: Shared\n" + persons,
+    "docs/collection.yaml": "id: shared\ntitle: Shared\n" + persons,
     "docs/pages/welcome.md": welcome + "\n![Shared](../logo.png)\n[Download](../download.pdf)\n",
     "docs/separate/next.md": next,
     "docs/guide.md": "# Guide\n![Shared](logo.png)\n",
@@ -274,7 +273,6 @@ test("explicit Course page sources refuse ambiguous extensions and symlink trave
 test("Course configurations reject unsafe aliases, repeated memberships, traversal and invalid stable metadata", async () => {
   const dir = await fixture(sourceFiles());
   for (const raw of [
-    configuration.replace("sourceVersion: 1", "sourceVersion: 2"),
     configuration.replace("pages/welcome, separate/next", "pages/welcome, pages/welcome"),
     configuration.replace("pages/welcome, separate/next", "Pages/welcome, pages/other"),
     configuration.replace("pages/welcome, separate/next", "../outside"),
@@ -293,7 +291,6 @@ test("Course configurations reject unsafe aliases, repeated memberships, travers
 
 test("Course lists keep declaration order in every compilation path", async () => {
   const config = {
-    sourceVersion: 1,
     id: "learning",
     title: "Learning",
     slug: "learning",
@@ -427,7 +424,6 @@ test("a Course page description compiles as written, including an explicit null,
   const page = (id: string, extra: string) =>
     `---\nid: ${id}\ntitle: ${id}\nslug: ${id}\n${extra}---\n# ${id}\n`;
   const config = JSON.stringify({
-    sourceVersion: 1,
     id: "learning",
     title: "Learning",
     slug: "learning",

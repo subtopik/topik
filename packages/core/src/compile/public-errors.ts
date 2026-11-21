@@ -22,8 +22,7 @@ const PUBLIC_COMPILE_ERROR_MESSAGES = {
   "guide-name-invalid":
     "Guide filenames must use lowercase letters, digits and single hyphens before .md or .mdx, such as getting-started.md, and the collection ID plus a hyphen and the filename stem must fit in 63 characters.",
   "guide-duplicate":
-    "More than one Guide file produces the same Guide identity. Rename one file or, with sourceVersion 1, give it a distinct frontmatter id.",
-  "reference-list-invalid": "Document resource references are invalid.",
+    "More than one Guide file produces the same Guide identity. Rename one file or give it a distinct frontmatter id.",
   "reference-targets-invalid": "Resource reference target catalogue is invalid.",
   "wiki-page-not-found": "A configured Wiki page file was not found.",
   "wiki-page-ambiguous":

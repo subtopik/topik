@@ -20,7 +20,7 @@ const file = (path: string, text: string): SourceTreeFile => ({
   mode: "100644",
   bytes: encodeSource(text),
 });
-const rawConfig = `# Course configuration\nsourceVersion: 1\nid: fundamentals\ntitle: Fundamentals # retain\nslug: fundamentals\ndescription: null\nlabels: { audience: beginner }\nauthors: [alice]\npersons:\n  - id: alice\n    labels: { role: author }\n    spec: { name: Alice, email: alice@example.test, bio: "A teacher" }\nmodules:\n  - id: basics\n    title: Basics # retain module comment\n    slug: basics\n    description: null\n    labels: { level: introductory }\n    pages:\n      - pages/intro # retain membership comment\n      - pages/target\n    customModule: retain\n  - id: advanced\n    title: Advanced\n    slug: advanced\n    pages: []\n    customModule: exact\ncustom: { exact: unchanged }\n`;
+const rawConfig = `# Course configuration\nid: fundamentals\ntitle: Fundamentals # retain\nslug: fundamentals\ndescription: null\nlabels: { audience: beginner }\nauthors: [alice]\npersons:\n  - id: alice\n    labels: { role: author }\n    spec: { name: Alice, email: alice@example.test, bio: "A teacher" }\nmodules:\n  - id: basics\n    title: Basics # retain module comment\n    slug: basics\n    description: null\n    labels: { level: introductory }\n    pages:\n      - pages/intro # retain membership comment\n      - pages/target\n    customModule: retain\n  - id: advanced\n    title: Advanced\n    slug: advanced\n    pages: []\n    customModule: exact\ncustom: { exact: unchanged }\n`;
 
 async function courseProject(): Promise<SourceProject> {
   return readSourceProject({
@@ -711,7 +711,7 @@ test("adding a Course preserves existing namespace, source order and all unrelat
         ".topik.yaml",
         "# Keep root\nversion: 1\nnamespace: example/existing\nsources:\n  - kind: collection\n    config: guides/collection.yaml # existing source\n",
       ),
-      file("guides/collection.yaml", "id: guides\ntitle: Guides\nsourceVersion: 1\n"),
+      file("guides/collection.yaml", "id: guides\ntitle: Guides\n"),
       file("guides/first.md", "---\nid: existing-guide\nslug: existing\n---\n# Existing\n"),
     ],
   });

@@ -48,8 +48,6 @@ export type SourcePlanDiagnosticCode =
   | "source-tree-invalid"
   | "source-tree-too-large"
   | "source-validation-failed"
-  | "source-version-collision"
-  | "source-version-required"
   | "source-writer-incompatible";
 
 /**
@@ -59,7 +57,6 @@ export type SourcePlanDiagnosticCode =
  *
  * - `request`: the operations, intent or desired resources contradict each other or are incomplete.
  * - `mapping`: a resource has no declared source to write to, or its source record is unusable.
- * - `version`: the source must opt in to `sourceVersion: 1`, or cannot.
  * - `authority`: the caller did not show the current bytes of a file the plan changes or creates.
  * - `scope`: the plan would change a resource or shared file the caller did not admit.
  * - `stale`: the pinned tree is not the tree the project was read from.
@@ -75,7 +72,6 @@ export type SourcePlanDiagnosticCode =
 export type SourcePlanDiagnosticCategory =
   | "request"
   | "mapping"
-  | "version"
   | "authority"
   | "scope"
   | "stale"
@@ -135,8 +131,6 @@ const SOURCE_PLAN_DIAGNOSTIC_CATEGORIES: Readonly<
   "source-tree-invalid": "tree",
   "source-tree-too-large": "tree",
   "source-validation-failed": "validation",
-  "source-version-collision": "version",
-  "source-version-required": "version",
   "source-writer-incompatible": "incompatible",
 };
 

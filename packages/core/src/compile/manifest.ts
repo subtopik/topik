@@ -233,7 +233,6 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
   const sourceDirectoriesByResource: Record<string, string> = {};
   const protectedSourcePaths = [TOPIK_MANIFEST_FILENAME, ...sources.map((source) => source.config)];
   const authoredKeys = new Set<string>();
-  const versionedGuideNames = new Set<string>();
 
   for (const source of sources) {
     let discovered: CompileResourceDiscovery;
@@ -286,9 +285,6 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
       })),
     );
     resources.push(...discovered.resources);
-    if (discovered.sourceVersion === 1)
-      for (const resource of discovered.resources)
-        if (resource.type === "Guide") versionedGuideNames.add(resource.name);
     Object.assign(bodyLinesByResource, discovered.bodyLinesByResource);
     for (const [key, path] of Object.entries(discovered.sourcePathsByResource)) {
       sourcePathsByResource[key] = posix.join(source.directory, path);
@@ -299,7 +295,7 @@ export async function compileManifest(options: CompileOptions): Promise<Manifest
     );
   }
   throwOnCompileErrors(diagnostics);
-  validateGuideAuthors(resources, sourcePathsByResource, versionedGuideNames);
+  validateGuideAuthors(resources, sourcePathsByResource);
   validateCourseAuthors(
     resources,
     Object.assign({}, ...provenance.map((source) => source.sourcePathsByResource)),

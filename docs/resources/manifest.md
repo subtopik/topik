@@ -28,7 +28,7 @@ The manifest only points to configurations; it holds no content settings:
 - Markdown, frontmatter and ordinary media are the source files.
 - Generated JSON resources belong in compiler output.
 
-`version: 1` versions only the manifest syntax. It does not enable the extended content metadata, which each source selects separately with `sourceVersion: 1`. [Source writing](./source-writing.md) describes that grammar and the project-writing APIs.
+`version: 1` versions only the manifest syntax. [Source writing](./source-writing.md) describes the source metadata and the project-writing APIs.
 
 A Git checkout is not required. [Inside a Git checkout](#inside-a-git-checkout) describes what applies when there is one.
 

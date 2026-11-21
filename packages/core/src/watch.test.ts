@@ -298,7 +298,6 @@ describe("authoritative preview state", () => {
   });
   const configuration = (pages = ["z", "a"]) =>
     JSON.stringify({
-      sourceVersion: 1,
       id: "course",
       title: "Course",
       slug: "course",

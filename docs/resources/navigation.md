@@ -137,8 +137,8 @@ Authors can also write `ref://` destinations directly, including in card `href`
 properties and reference-style Markdown links. An explicit reference identifies a
 resource without depending on its file location. Changing a resource name
 requires updating its incoming references; changing only its public route does
-not. Use persistent names in versioned source metadata
-([Source writing](./source-writing.md#opt-into-source-metadata)) when references
+not. Use persistent names in [source metadata](./source-writing.md#source-metadata)
+when references
 must survive source moves.
 
 ### Link diagnostics
@@ -246,9 +246,7 @@ import { findFirstWikiPage, resolveWikiContentHref, resolveWikiNavigation } from
 import type { Wiki } from "@topik/schema/wiki/v1";
 
 export function resolvePageLink(wiki: Wiki, currentPageName: string, href: string) {
-  const navigation = resolveWikiNavigation(wiki.spec.navigation ?? [], {
-    sourceVersion: wiki.spec.sourceVersion,
-  });
+  const navigation = resolveWikiNavigation(wiki.spec.navigation ?? []);
   return {
     firstPage: findFirstWikiPage(wiki.spec.navigation ?? []),
     target: resolveWikiContentHref(href, currentPageName, navigation),
@@ -301,15 +299,8 @@ are percent-encoded as the WHATWG URL parser encodes them, so `./page.md?a=é`
 gives `?a=%C3%A9`. A `ref://` link whose fragment does not decode as UTF-8, such
 as `#%FF`, is rejected.
 
-Pass the Wiki's `spec.sourceVersion` to `resolveWikiNavigation`; it changes how
-links match:
-
-- With `sourceVersion: 1`, relative links and links ending in `.md`, `.mdx` or
-  `.markdown` match source paths, and extensionless root links match public
-  routes.
-- Without a source version, the same source-relative links match the public route
-  derived from their path, with the extension and a trailing `index` removed, so
-  they resolve only where routes mirror the source layout.
+Relative links and links ending in `.md`, `.mdx` or `.markdown` match source
+paths, and extensionless root links match public routes.
 
 A folder link, ending in `/`, `.` or `..` or naming a declared folder, selects the
 folder's single `index` or `README` page by the [folder landing

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { sourceAssetsConfigSchema, DEFAULT_ASSET_DIRECTORY } from "./assets";
 import { rejectMisspelledKeys } from "./misspelled-keys";
-import { pageSourcePathSchema, parseSourcePersons, sourceLabelsSchema } from "./source-version";
+import { pageSourcePathSchema, parseSourcePersons, sourceLabelsSchema } from "./source-metadata";
 import { validateCoursePageSources } from "../course-navigation";
 
 const name = z
@@ -32,7 +32,6 @@ const moduleSchema = z.object({
 
 const courseConfigSchema = z
   .object({
-    sourceVersion: z.literal(1),
     id: name,
     title,
     slug,

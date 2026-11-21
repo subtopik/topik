@@ -36,7 +36,7 @@ const tree = [
     ".topik.yaml",
     "version: 1\nnamespace: contract\nsources: [{kind: collection, config: docs/collection.yaml}]\n",
   ),
-  file("docs/collection.yaml", "id: blog\ntitle: Blog\nsourceVersion: 1\n"),
+  file("docs/collection.yaml", "id: blog\ntitle: Blog\n"),
   file("docs/post.md", "---\nid: p\n---\n# Post\n"),
   // Occupies the path a new Guide with the slug `install` would get.
   file("docs/install.md", "---\nid: taken\nslug: taken\n---\n# Taken\n"),
@@ -418,8 +418,6 @@ test("a tree over a limit reports which limit and by how much", async () => {
 test("every planner code has a category, and compiler IDs follow the stated rule", () => {
   const expected: Partial<Record<SourcePlanDiagnosticCode, string>> = {
     "source-mapping-missing": "mapping",
-    "source-version-required": "version",
-    "source-version-collision": "version",
     "shared-authority-required": "authority",
     "shared-authority-stale": "authority",
     "create-authority-required": "authority",

@@ -54,7 +54,6 @@ test("initialization preserves saved link identities after routes and source pat
     name: "docs",
     spec: {
       title: "Docs",
-      sourceVersion: 1,
       navigation: [
         { type: "page", page: "home", slug: "home", sourcePath: "old/index" },
         { type: "page", page: "target", slug: "old-route", sourcePath: "old/target" },
@@ -133,7 +132,7 @@ test("adding sources resolves authored cross-kind links and retains saved local 
       {
         path: "guides/collection.yaml",
         mode: "100644",
-        bytes: encodeSource("sourceVersion: 1\nid: guides\ntitle: Guides\n"),
+        bytes: encodeSource("id: guides\ntitle: Guides\n"),
       },
       {
         path: "guides/install.md",
@@ -153,7 +152,6 @@ test("adding sources resolves authored cross-kind links and retains saved local 
     name: "docs",
     spec: {
       title: "Docs",
-      sourceVersion: 1,
       navigation: [
         { type: "page", page: "home", slug: "home", sourcePath: "old/home" },
         { type: "page", page: "target", slug: "old-target", sourcePath: "old/target" },
@@ -359,11 +357,6 @@ test("explicit Guide initialization returns a complete deterministic source proj
   ]);
   expect(first.plan.candidate.compilation.resources).toEqual([guide]);
   expect(first.plan.candidate.tree.find((file) => file.path === "README.md")).toEqual(occupied[0]);
-  expect(
-    decodeSource(
-      first.plan.candidate.tree.find((file) => file.path === "content/custom.yml")!.bytes,
-    ),
-  ).toContain("sourceVersion: 1\n");
 });
 
 test("existing empty/invalid projects, source configurations and path collisions block initialization", async () => {
@@ -432,7 +425,6 @@ test("new Wiki source/route context compiles from its files alone with stable ID
     result.plan.candidate.compilation.resources.find((resource) => resource.type === "Wiki"),
   ).toMatchObject({
     spec: {
-      sourceVersion: 1,
       navigation: [{ page: "intro-page", sourcePath: "pages/start", slug: "intro", hidden: true }],
     },
   });
@@ -490,7 +482,6 @@ test.each([
   ["collection.json", '{ // legacy\n "id": "blog", "title": "Blog" }\n'],
   ["lessons/course.yml", "id: !custom lessons\n"],
   ["old/custom.yaml", "id: existing\ntitle: Existing\n"],
-  ["old/versioned.json", '{"sourceVersion": 1}\n'],
 ])("possible Topik configuration %s blocks initialization and is named", async (path, text) => {
   const tree = [...occupied, { path, mode: "100644" as const, bytes: encodeSource(text) }];
   const result = await initializeSourceProject({
@@ -580,52 +571,4 @@ const file = (path: string, text: string): SourceTreeFile => ({
   path,
   mode: "100644",
   bytes: encodeSource(text),
-});
-
-test("Wiki initialization preserves resolved targets when enabling source link semantics", async () => {
-  const wiki: Wiki = {
-    apiVersion: "v1",
-    type: "Wiki",
-    name: "docs",
-    spec: {
-      title: "Docs",
-      navigation: [
-        { type: "page", page: "start", slug: "start", sourcePath: "pages/start" },
-        { type: "page", page: "source-target", slug: "other-route", sourcePath: "pages/next" },
-        { type: "page", page: "route-target", slug: "pages/next", sourcePath: "other/file" },
-      ],
-    },
-  };
-  const pages: WikiPage[] = ["start", "source-target", "route-target"].map((name) => ({
-    apiVersion: "v1",
-    type: "WikiPage",
-    name,
-    spec: {
-      wiki: "docs",
-      title: name,
-      content: {
-        format: "topik",
-        value: name === "start" ? "[Target](next?x=a%20b#heading)\n" : "# Heading\n",
-      },
-    },
-  }));
-  const result = await initializeSourceProject({
-    tree: [],
-    expectedTreeDigest: digestSourceTree([]),
-    packageCohort: cohort,
-    intent: {
-      namespace: "examples/wiki",
-      source: { kind: "wiki", config: "wiki.yaml", id: "docs", title: "Docs" },
-    },
-    resources: [wiki, ...pages],
-    createPaths: [".topik.yaml", "wiki.yaml", "pages/start.md", "pages/next.md", "other/file.md"],
-  });
-  expect(result.ok).toBe(true);
-  if (!result.ok) return;
-  const candidatePage = result.plan.candidate.compilation.resources.find(
-    (resource) => resource.type === "WikiPage" && resource.name === "start",
-  ) as WikiPage;
-  expect(candidatePage.spec.content.value).toContain(
-    "ref://wiki-page/route-target?x=a%20b#heading",
-  );
 });

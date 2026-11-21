@@ -44,12 +44,12 @@ async function projectFor(
       file(
         "lessons/config.yaml",
         (kind === "wiki"
-          ? `id: lessons\ntitle: Lessons\nsourceVersion: 1\nnavigation: [home, next${includeOther ? ", other" : ""}]\n`
-          : `id: lessons\ntitle: Lessons\nslug: lessons\nsourceVersion: 1\nmodules: [{id: basics, title: Basics, slug: basics, pages: [${kind === "guide-course" ? "" : "home, "}next${includeOther ? ", other" : ""}]}]\n`) +
+          ? `id: lessons\ntitle: Lessons\nnavigation: [home, next${includeOther ? ", other" : ""}]\n`
+          : `id: lessons\ntitle: Lessons\nslug: lessons\nmodules: [{id: basics, title: Basics, slug: basics, pages: [${kind === "guide-course" ? "" : "home, "}next${includeOther ? ", other" : ""}]}]\n`) +
           (assetDirectory ? `assets: {directory: ${assetDirectory}}\n` : ""),
       ),
       ...(kind === "guide-course"
-        ? [file("guides/collection.yaml", "id: guides\ntitle: Guides\nsourceVersion: 1\n")]
+        ? [file("guides/collection.yaml", "id: guides\ntitle: Guides\n")]
         : []),
       file(`${kind === "guide-course" ? "guides" : "lessons"}/home.md`, page("home", body)),
       file("lessons/next.md", page("target", "# Next\n")),

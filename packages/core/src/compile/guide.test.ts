@@ -64,7 +64,7 @@ describe("compileGuides", () => {
   });
 
   test("leaves out AGENTS.md even when its frontmatter names a guide", async () => {
-    await writeCollectionConfig("sourceVersion: 1\nid: blog\ntitle: Blog\n");
+    await writeCollectionConfig("id: blog\ntitle: Blog\n");
     await writeGuide("hello-world", "# Hello World\n\nWelcome!");
     await writeFile(
       join(dir, "AGENTS.md"),
@@ -200,7 +200,7 @@ describe("compileGuides", () => {
   });
 
   test("README.md is a guide only when its frontmatter sets id and slug", async () => {
-    await writeCollectionConfig('sourceVersion: 1\nid: blog\ntitle: Blog\ninclude: ["**/*.md"]\n');
+    await writeCollectionConfig('id: blog\ntitle: Blog\ninclude: ["**/*.md"]\n');
     await writeGuide("top", "# Top\n");
     await mkdir(join(dir, "basics"));
     await writeFile(join(dir, "README.md"), "<p align=center>Repository readme</p>\n");
@@ -239,13 +239,19 @@ describe("compileGuides", () => {
     expect(result.references.map((entry) => entry.reference.name)).toEqual(["blog-basics"]);
   });
 
-  test("an unversioned collection leaves out every README.md", async () => {
+  test("a README.md is a guide only when its frontmatter declares one", async () => {
     await writeCollectionConfig("id: blog\ntitle: Blog\n");
     await writeGuide("top", "# Top\n");
-    await writeFile(join(dir, "README.md"), "---\nid: blog-readme\nslug: readme\n---\n# R\n");
+    await writeFile(join(dir, "README.md"), "# R\n");
+    expect((await compileGuides({ dir })).resources.map((resource) => resource.name)).toEqual([
+      "blog-top",
+    ]);
 
-    const result = await compileGuides({ dir });
-    expect(result.resources.map((resource) => resource.name)).toEqual(["blog-top"]);
+    await writeFile(join(dir, "README.md"), "---\nid: blog-readme\nslug: readme\n---\n# R\n");
+    expect((await compileGuides({ dir })).resources.map((resource) => resource.name)).toEqual([
+      "blog-readme",
+      "blog-top",
+    ]);
   });
 
   test("does not follow a link to a directory", async () => {
@@ -411,7 +417,9 @@ describe("compileGuides", () => {
   });
 
   test("extracts authors from frontmatter", async () => {
-    await writeCollectionConfig("id: blog\ntitle: Blog\n");
+    await writeCollectionConfig(
+      "id: blog\ntitle: Blog\npersons:\n  - { id: john-doe, spec: { name: John } }\n  - { id: jane-smith, spec: { name: Jane } }\n",
+    );
     await writeFile(
       join(dir, "post.md"),
       "---\ntitle: Post\nauthors:\n  - john-doe\n  - jane-smith\n---\n\nContent.",
@@ -429,8 +437,9 @@ describe("compileGuides", () => {
     );
 
     await expect(compileGuides({ dir })).rejects.toMatchObject({
-      id: "reference-list-invalid",
+      id: "frontmatter-invalid",
       location: "post.md",
+      field: "authors[0]",
     });
   });
 
@@ -640,14 +649,16 @@ describe("compileGuides", () => {
   });
 
   test("compiled Guide resources validate against schema", async () => {
-    await writeCollectionConfig("id: blog\ntitle: Blog\ntags:\n  - official\n");
+    await writeCollectionConfig(
+      "id: blog\ntitle: Blog\ntags:\n  - official\npersons:\n  - { id: john-doe, spec: { name: John } }\n  - { id: jane-smith, spec: { name: Jane } }\n",
+    );
     await writeFile(
       join(dir, "getting-started.md"),
       "---\ntitle: Getting Started\ntags:\n  - beginner\nauthors:\n  - john-doe\n---\n\n# Getting Started\n\nWelcome!",
     );
 
     const { resources } = await compileGuides({ dir });
-    for (const resource of resources) {
+    for (const resource of resources.filter((entry) => entry.type === "Guide")) {
       const valid = validateGuide(resource);
       if (!valid) {
         console.error(validateGuide.errors);
@@ -669,8 +680,8 @@ describe("compileGuides", () => {
     });
   });
 
-  test("rejects versioned Guides that declare the same frontmatter id", async () => {
-    await writeCollectionConfig("id: blog\ntitle: Blog\nsourceVersion: 1\n");
+  test("rejects Guides that declare the same frontmatter id", async () => {
+    await writeCollectionConfig("id: blog\ntitle: Blog\n");
     await writeGuide("a", "---\nid: shared\n---\n# A\n");
     await writeGuide("b", "---\nid: shared\nslug: other\n---\n# B\n");
 
@@ -706,8 +717,8 @@ describe("compileGuides", () => {
     });
   });
 
-  test("accepts any filename when versioned frontmatter supplies both id and slug", async () => {
-    await writeCollectionConfig("id: blog\ntitle: Blog\nsourceVersion: 1\n");
+  test("accepts any filename when frontmatter supplies both id and slug", async () => {
+    await writeCollectionConfig("id: blog\ntitle: Blog\n");
     await writeGuide("My Guide", "---\nid: my-guide\nslug: my-guide\n---\n# Guide\n");
 
     const result = await compileGuides({ dir });
@@ -749,7 +760,7 @@ describe("compileGuides", () => {
     ["description", `---\ndescription: ${"x".repeat(5000)}\n---\n# Post\n`],
     ["title", `---\ntitle: ${"x".repeat(5000)}\n---\n# Post\n`],
     ["title", `# ${"x".repeat(5000)}\n`],
-  ])("refuses a schema-invalid unversioned %s at the Guide file", async (field, source) => {
+  ])("refuses a schema-invalid %s at the Guide file", async (field, source) => {
     await writeCollectionConfig("id: blog\ntitle: Blog\n");
     await writeGuide("post", source);
 
@@ -760,8 +771,8 @@ describe("compileGuides", () => {
     });
   });
 
-  test("names the invalid versioned frontmatter field", async () => {
-    await writeCollectionConfig("id: blog\ntitle: Blog\nsourceVersion: 1\n");
+  test("names the invalid frontmatter field", async () => {
+    await writeCollectionConfig("id: blog\ntitle: Blog\n");
     await writeGuide("post", "---\nslug: Not A Slug\n---\n# Post\n");
 
     await expect(compileGuides({ dir })).rejects.toMatchObject({

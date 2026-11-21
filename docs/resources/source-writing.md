@@ -12,15 +12,14 @@ APIs return candidate files; they do not edit a checkout, create a Git commit,
 publish content or authorize a write. Applications decide when and how to apply a
 plan.
 
-## Opt into source metadata
+## Source metadata
 
-Add `sourceVersion: 1` to a declared collection or Wiki configuration to interpret
-the extended source metadata described here. For example:
+Collections, Wikis and Courses read stable identities, routes and metadata from
+their configuration and frontmatter. For example:
 
 ```yaml
 id: handbook
 title: Handbook
-sourceVersion: 1
 navigation:
   - type: page
     slug: getting-started
@@ -33,26 +32,19 @@ represent the page identity, public route and config-relative Markdown location,
 respectively. Source paths omit the extension and are portable; they are not
 absolute filesystem paths. Moving the file need not change its identity or URL.
 
-`sourceVersion` versions the interpretation of authored files, not a Wiki's
-revision or its resource `apiVersion`. The root manifest's `version: 1` controls
-discovery only. Unsupported source versions fail compilation. Without
-`sourceVersion: 1`, Topik does not interpret `id`, `slug`, `labels`, `inheritTags`
-or collection `persons`; they are opaque fields.
-
 ### Guide and WikiPage frontmatter
 
-Versioned Guide and WikiPage frontmatter supports a stable `id`, `title`,
+Guide and WikiPage frontmatter supports a stable `id`, `title`,
 `description` and string-valued `labels`. Guides also support `slug`, ordered
 `authors`, `tags` and `inheritTags: false` to replace inherited collection tags.
 Absent, null and empty metadata values have the same meanings as in the resource
-schema.
+schema. Other frontmatter keys are kept in the file and not interpreted.
 
 ### Persons and Wiki configuration
 
 A collection's `persons` contains records with `id`, optional `labels` and the
 complete Person `spec` (`name`, optional `email` and `bio`). Guide authors must
-resolve to declared Persons. A Wiki configuration supports `labels`, and its
-compiled resource carries `spec.sourceVersion: 1`.
+resolve to declared Persons. A Wiki configuration supports `labels`.
 
 ### Wiki page sources and links
 
@@ -71,14 +63,12 @@ Readers must pass the Wiki's source version to `resolveWikiNavigation`.
 
 ## Course sources
 
-A manifest declaration with `kind: course` selects a Course configuration.
-Course configurations require `sourceVersion: 1`:
+A manifest declaration with `kind: course` selects a Course configuration:
 
 ```yaml
 id: learning
 title: Learning
 slug: learning
-sourceVersion: 1
 modules:
   - id: foundations
     title: Foundations
@@ -164,7 +154,7 @@ async function prepareTitleChange(verifiedPackageCohortSha256: string) {
         ".topik.yaml",
         "version: 1\nnamespace: example/docs\nsources: [{kind: collection, config: guides/collection.yaml}]\n",
       ),
-      file("guides/collection.yaml", "id: guides\ntitle: Guides\nsourceVersion: 1\n"),
+      file("guides/collection.yaml", "id: guides\ntitle: Guides\n"),
       file(
         "guides/start.md",
         "---\nid: getting-started\ntitle: Original\ncustom: retain\n---\n# Original\n",
@@ -308,8 +298,7 @@ are part of reviewable output.
 ### Code presentation
 
 [Code presentation](../content/code-presentation.md) is enabled by attributes on
-each fenced code block and by the content grammar capability; `sourceVersion: 1`
-does not enable it. The writer stores its unevaluated source, template identity
+each fenced code block and by the content grammar capability. The writer stores its unevaluated source, template identity
 and all conditional branches. Preview values and fold/wrap state create no saved
 changes. A metadata-only presentation edit preserves the code payload and the
 surrounding source bytes. Filename and title labels never create Asset references
@@ -436,7 +425,6 @@ consumer can map diagnostics by category and stay correct when codes are added:
 | ----------------- | ---------------------------------------------------------------------------------------- |
 | `request`         | The operations, intent or desired resources contradict each other or are incomplete.     |
 | `mapping`         | A resource has no declared source to write to, or its source record is unusable.         |
-| `version`         | The source must opt in to `sourceVersion: 1`, or cannot.                                 |
 | `authority`       | The caller did not show the current bytes of a file the plan changes or creates.         |
 | `scope`           | The plan would change a resource or shared file the caller did not admit.                |
 | `stale`           | The pinned tree is not the tree the project was read from.                               |
@@ -502,14 +490,13 @@ names that file in `path`; otherwise it has no `path`.
 - An existing empty manifest is a project. An invalid manifest or an unresolved
   source configuration cannot be treated as absence.
 - Any YAML or JSON file that parses with the strict configuration parsers and has
-  `sourceVersion`, or string `id` and `title` values, blocks initialization as a
-  possible existing configuration.
+  string `id` and `title` values blocks initialization as a possible existing
+  configuration.
 - Files those parsers reject, such as JSON with comments, YAML with anchors or
   files over 1 MiB, cannot be declared as configuration and do not block.
 - The conventional discovery names `wiki`, `collection` and `course` with a
   `.yaml`, `.yml` or `.json` extension are the exception: such a file blocks when
-  the parsers reject it, and when it has `sourceVersion` or both `id` and `title`
-  in any form.
+  the parsers reject it, and when it has both `id` and `title` in any form.
 
 Unrelated files are preserved and every generated path uses no-overwrite rules.
 Optional `documentPaths` assigns explicitly admitted Guide and CoursePage

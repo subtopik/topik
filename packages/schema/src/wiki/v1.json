@@ -26,7 +26,6 @@
     "spec": {
       "type": "object",
       "properties": {
-        "sourceVersion": { "type": "integer", "const": 1 },
         "title": {
           "type": "string",
           "minLength": 1,
@@ -342,7 +341,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 512,
-          "pattern": "^(?!/)(?!.*//)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*\\/$)[^\\\\?#%:\u0000-\u001f\u007f]+$"
+          "pattern": "^(?!/)(?!.*//)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*\\/$)[^\\\\?#%:\u0000-\u001f]+$"
         },
         "icon": {
           "type": "string",

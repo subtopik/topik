@@ -277,7 +277,6 @@ async function runManifest(
   const sourceDirectoriesByResource: Record<string, string> = {};
   const protectedSourcePaths = [TOPIK_MANIFEST_FILENAME, ...sources.map((source) => source.config)];
   const authoredKeys = new Set<string>();
-  const versionedGuideNames = new Set<string>();
   const unvalidatedDocuments: NonNullable<CompileResourceDiscovery["unvalidatedDocuments"]> = [];
 
   for (const source of sources) {
@@ -340,9 +339,6 @@ async function runManifest(
       })),
     );
     resources.push(...discovered.resources);
-    if (discovered.sourceVersion === 1)
-      for (const resource of discovered.resources)
-        if (resource.type === "Guide") versionedGuideNames.add(resource.name);
     Object.assign(bodyLinesByResource, discovered.bodyLinesByResource);
     for (const document of discovered.unvalidatedDocuments ?? []) {
       const key = `${document.resource.type}/${document.resource.name}`;
@@ -363,7 +359,7 @@ async function runManifest(
   }
   if (failures === undefined) throwOnCompileErrors(diagnostics);
   try {
-    validateGuideAuthors(resources, sourcePathsByResource, versionedGuideNames);
+    validateGuideAuthors(resources, sourcePathsByResource);
   } catch (error) {
     collect(error);
   }

@@ -45,7 +45,6 @@ export interface Wiki {
     [k: string]: string;
   };
   spec: {
-    sourceVersion?: 1;
     title: string;
     description?: string | null;
     navigation?: WikiNavigation;

@@ -68,7 +68,6 @@ import {
   readSourceProject,
   digestSourceTree,
   digestSourceResourceGraph,
-  sourceMarkdownSections,
   SOURCE_WRITER_DESCRIPTOR,
   type SourceProject,
   type SourceTreeFile,
@@ -78,7 +77,6 @@ import {
   decodeSource,
   encodeSource,
   inspectSourceSyntax,
-  inspectFrontmatterSyntax,
   patchSourceFields,
   patchSourceSequence,
   replaySourceByteEdits,
@@ -145,8 +143,6 @@ export interface PlanSourceUpdatesInput {
   desiredResources: readonly Resource[];
   operations: readonly SourceResourceOperation[];
   authority: SourceWriteAuthority;
-  /** Explicit reviewed opt-in; reserved legacy keys still block it. */
-  optInConfigs?: readonly string[];
   /** Retained portable context of saved authoring content, before previous source repairs. */
   referenceContexts?: Readonly<Record<string, Wiki>>;
   /** Retained Course route/source snapshots keyed by CoursePage identity. */
@@ -269,7 +265,6 @@ function sameAuthoredResource(
   if (a.type === "Wiki" && b.type === "Wiki") {
     const portable = (wiki: Wiki) => {
       const value = structuredClone(wiki);
-      delete value.spec.sourceVersion;
       const visit = (nodes: WikiNavNode[]): void => {
         for (const node of nodes) {
           if (node.type === "page") delete node.sourcePath;
@@ -284,9 +279,7 @@ function sameAuthoredResource(
   if (a.type === "WikiPage" && b.type === "WikiPage" && a.spec.wiki === b.spec.wiki) {
     const wiki = base.get(`Wiki/${a.spec.wiki}`) as Wiki;
     const portable = (page: WikiPage, context: Wiki) => {
-      const navigation = resolveWikiNavigation(context.spec.navigation ?? [], {
-        sourceVersion: context.spec.sourceVersion,
-      });
+      const navigation = resolveWikiNavigation(context.spec.navigation ?? []);
       const rewritten = rewriteTopikNavigationReferences(
         page.spec.content.value,
         (reference) => {
@@ -576,8 +569,6 @@ const documentOf = (project: SourceProject, key: string): SourceDocument | undef
   project.documents.find((document) => document.resource === key);
 const provenanceOf = (project: SourceProject, config: string | undefined) =>
   project.compilation.provenance.find((source) => source.config === config);
-const configVersion = (state: PlanState, config: string): unknown =>
-  state.configUpdates.get(config)?.sourceVersion ?? state.configs.get(config)!.sourceVersion;
 
 /** Reject a plan whose cohort, writer or pinned base tree does not match. */
 function checkPlanPins(input: PlanSourceUpdatesInput): void {
@@ -710,56 +701,6 @@ function allocateOperationPaths(state: PlanState): void {
     reserved.add(path);
     paths.set(op.resource, path);
     if (op.kind === "move") state.createdModes.set(path, documentOf(project, op.resource)!.mode);
-  }
-}
-
-/** A reviewed `sourceVersion: 1` opt-in is admitted only when no reserved legacy key collides. */
-function planOptIns(state: PlanState): void {
-  const { project, files, configs } = state;
-  for (const config of state.input.optInConfigs ?? []) {
-    const value = configs.get(config);
-    if (!value)
-      block(
-        "source-mapping-missing",
-        "Opt-in must name a declared configuration.",
-        undefined,
-        config,
-      );
-    if (value.sourceVersion === 1) continue;
-    if (value.persons !== undefined || value.labels !== undefined)
-      block(
-        "source-version-collision",
-        "Resolve opaque reserved configuration fields in Git before opting in.",
-        undefined,
-        config,
-      );
-    for (const document of project.documents.filter(
-      (document) => document.config === config && document.path !== config,
-    )) {
-      const frontmatter = sourceMarkdownSections(files.get(document.path)!.bytes).frontmatter;
-      if (frontmatter) {
-        let values: Record<string, unknown>;
-        try {
-          values = inspectFrontmatterSyntax(frontmatter).value;
-        } catch {
-          // Inspection tolerates opaque legacy frontmatter; opt-in cannot prove it.
-          block(
-            "source-version-collision",
-            "Resolve opaque legacy frontmatter in Git before opting in.",
-            document.resource,
-            document.path,
-          );
-        }
-        if (["id", "slug", "labels", "inheritTags"].some((field) => Object.hasOwn(values, field)))
-          block(
-            "source-version-collision",
-            "Resolve opaque reserved frontmatter fields in Git before opting in.",
-            document.resource,
-            document.path,
-          );
-      }
-    }
-    state.configUpdates.set(config, { sourceVersion: 1 });
   }
 }
 
@@ -987,7 +928,6 @@ function planWikiRepairs(state: PlanState, scope: ReferenceScope): void {
       );
     const config = document.config;
     const source = provenanceOf(project, config)!;
-    if (configVersion(state, config) === 1) resource.spec.sourceVersion = 1;
     const visit = (nodes: WikiNavNode[]): void => {
       for (const node of nodes) {
         if (node.type === "page") {
@@ -1008,9 +948,7 @@ function planWikiRepairs(state: PlanState, scope: ReferenceScope): void {
       if (!state.operationKeys.has(resourceKey(resource)))
         state.derivedRepairs.push({ resource: resourceKey(resource), kind: "navigation" });
     }
-    const currentNavigation = resolveWikiNavigation(resource.spec.navigation ?? [], {
-      sourceVersion: resource.spec.sourceVersion,
-    });
+    const currentNavigation = resolveWikiNavigation(resource.spec.navigation ?? []);
     for (const page of desired.values()) {
       if (page.type !== "WikiPage" || page.spec.wiki !== resource.name) continue;
       const key = resourceKey(page);
@@ -1037,14 +975,8 @@ function planWikiRepairs(state: PlanState, scope: ReferenceScope): void {
             ...priorPage,
             spec: { ...priorPage.spec, content: page.spec.content },
           }) &&
-        serializeTopikJson({
-          navigation: previous.spec.navigation,
-          version: previous.spec.sourceVersion,
-        }) !==
-          serializeTopikJson({
-            navigation: resource.spec.navigation,
-            version: resource.spec.sourceVersion,
-          })
+        serializeTopikJson(previous.spec.navigation ?? null) !==
+          serializeTopikJson(resource.spec.navigation ?? null)
       )
         block(
           "reference-context-required",
@@ -1267,8 +1199,6 @@ function planPersonOperation(
       "A Person needs its exact declared collection or Course source.",
       op.resource,
     );
-  if (configVersion(state, config) !== 1)
-    block("source-version-required", "Persons need sourceVersion: 1.", op.resource);
   const updates = state.configUpdates.get(config) ?? {};
   const selector = `persons/${encodeURIComponent(op.resource.slice(7))}`;
   if (op.kind === "delete")
@@ -1487,7 +1417,6 @@ function planDocumentOperation(
       document ? files.get(document.path) : undefined,
       previous as WritableDocument | undefined,
       next,
-      configVersion(state, config),
       op.kind === "move",
       path,
       state.assets,
@@ -1674,7 +1603,6 @@ function planDigest(
     candidateTreeDigest: plan.candidateTreeDigest,
     authority: input.authority,
     operations: input.operations,
-    optInConfigs: input.optInConfigs ?? [],
     referenceContexts: input.referenceContexts ?? {},
     courseReferenceContexts: input.courseReferenceContexts ?? {},
     assetReferenceContexts: input.assetReferenceContexts ?? {},
@@ -1755,7 +1683,6 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
     };
     allocateOperationPaths(state);
     state.configs = inspectConfigurations(project);
-    planOptIns(state);
     const plannedMedia = planMediaDestinations(state);
     const scope = createReferenceScope(state, plannedMedia);
     prepareReferenceDocuments(state, scope);

@@ -103,8 +103,8 @@ test.each(["person", "module"] as const)(
           const selector = kind === "person" ? "persons/ada/labels" : "modules/basics/description";
           const head =
             kind === "person"
-              ? "\uFEFFid: docs\ntitle: Docs\nsourceVersion: 1\npersons:\n  - "
-              : "\uFEFFid: docs\ntitle: Docs\nslug: docs\nsourceVersion: 1\nmodules:\n  - ";
+              ? "\uFEFFid: docs\ntitle: Docs\npersons:\n  - "
+              : "\uFEFFid: docs\ntitle: Docs\nslug: docs\nmodules:\n  - ";
           const entry = `${firstField(prefix, kind === "person" ? "labels" : "description", kind === "person" ? "{role: author} # selected" : "Remove # selected")}\n`;
           const tail =
             (siblingComment ? "    # keep Café\n" : "") +

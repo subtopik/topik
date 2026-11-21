@@ -112,8 +112,8 @@ export interface InitializeSourceProjectInput {
   pathCollisions?: SourcePathCollisionPolicy;
 }
 
-/** Configuration names a source compiler discovers without an explicit manifest path. */
-const LEGACY_CONFIGURATION_NAMES = new Set(
+/** Configuration names the standalone source compilers discover without a manifest. */
+const DISCOVERED_CONFIGURATION_NAMES = new Set(
   ["wiki", "collection", "course"].flatMap((name) =>
     ["yaml", "yml", "json"].map((extension) => `${name}.${extension}`),
   ),
@@ -280,12 +280,12 @@ function checkInitializationInputs(
  * A config-like file cannot be silently ignored when proving project absence.
  * Any such path may be declared as configuration, but a declared configuration
  * must pass the compiler's strict bounded parsers. A file they reject cannot be
- * one, except at a legacy discovery name, which is read leniently and stays unproven.
+ * one, except at a discovered configuration name, which stays unproven.
  */
 function checkUndeclaredConfiguration(file: SourceTreeFile): void {
   if (!/\.(?:ya?ml|json)$/.test(file.path)) return;
-  const legacy = LEGACY_CONFIGURATION_NAMES.has(posix.basename(file.path));
-  if (!legacy && file.bytes.length > TOPIK_MANIFEST_LIMITS.maxBytes) return;
+  const discovered = DISCOVERED_CONFIGURATION_NAMES.has(posix.basename(file.path));
+  if (!discovered && file.bytes.length > TOPIK_MANIFEST_LIMITS.maxBytes) return;
   let parsed: unknown;
   try {
     const raw = decodeSource(file.bytes);
@@ -293,7 +293,7 @@ function checkUndeclaredConfiguration(file: SourceTreeFile): void {
       ? parseStrictTopikJson(raw.replace(/^﻿/u, ""), TOPIK_MANIFEST_LIMITS.maxDepth)
       : parseSafeConfigurationYaml(raw);
   } catch {
-    if (!legacy) return;
+    if (!discovered) return;
     failure(
       "initialization-unproven",
       `Resolve the existing configuration ${file.path} before initializing a source project.`,
@@ -303,12 +303,11 @@ function checkUndeclaredConfiguration(file: SourceTreeFile): void {
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return;
   const value = parsed as Record<string, unknown>;
   // Every source configuration schema requires string `id` and `title` values; a
-  // legacy discovery name stays unproven with either field present in any form.
+  // discovered configuration name stays unproven with both fields present in any form.
   if (
-    Object.hasOwn(value, "sourceVersion") ||
-    (legacy
+    discovered
       ? Object.hasOwn(value, "id") && Object.hasOwn(value, "title")
-      : typeof value.id === "string" && typeof value.title === "string")
+      : typeof value.id === "string" && typeof value.title === "string"
   )
     failure(
       "initialization-unproven",
@@ -423,7 +422,6 @@ function planCollectionSource(draft: InitializationDraft): Record<string, unknow
   const config = {
     id: source.id,
     title: source.title,
-    sourceVersion: 1,
     ...(source.assetDirectory !== undefined ? { assets: { directory: draft.assetDirectory } } : {}),
     ...(input.resources.some((resource) => resource.type === "Person")
       ? { persons: personRecords(input.resources) }
@@ -471,8 +469,7 @@ function planWikiSource(draft: InitializationDraft): Record<string, unknown> {
       "The initialization intent title differs from the selected Wiki title.",
     );
   const originalWiki = structuredClone(wiki);
-  wiki.spec.sourceVersion = 1;
-  const navigation = resolveWikiNavigation(wiki.spec.navigation ?? [], { sourceVersion: 1 });
+  const navigation = resolveWikiNavigation(wiki.spec.navigation ?? []);
   const pages = expected.filter((resource): resource is WikiPage => resource.type === "WikiPage");
   if (
     pages.length !== navigation.pages.length ||
@@ -497,9 +494,7 @@ function planWikiSource(draft: InitializationDraft): Record<string, unknown> {
     }
   };
   if (wiki.spec.navigation) transportSources(wiki.spec.navigation);
-  const finalNavigation = resolveWikiNavigation(wiki.spec.navigation ?? [], {
-    sourceVersion: 1,
-  });
+  const finalNavigation = resolveWikiNavigation(wiki.spec.navigation ?? []);
   for (const page of pages) {
     const context = resolveSourceReferenceContext(
       input.referenceContexts?.[`WikiPage/${page.name}`] ?? originalWiki,
@@ -550,7 +545,6 @@ function planWikiSource(draft: InitializationDraft): Record<string, unknown> {
   const config = {
     id: wiki.name,
     title: wiki.spec.title,
-    sourceVersion: 1,
     ...(wiki.labels !== undefined ? { labels: wiki.labels } : {}),
     ...(Object.hasOwn(wiki.spec, "description") ? { description: wiki.spec.description } : {}),
     ...(wiki.spec.theme !== undefined ? { theme: wiki.spec.theme } : {}),
@@ -634,7 +628,6 @@ function planCourseSource(draft: InitializationDraft): Record<string, unknown> {
     id: course.name,
     title: course.spec.title,
     slug: course.spec.slug,
-    sourceVersion: 1,
     ...(course.labels !== undefined ? { labels: course.labels } : {}),
     ...(Object.hasOwn(course.spec, "description") ? { description: course.spec.description } : {}),
     ...(course.spec.authors !== undefined ? { authors: course.spec.authors } : {}),

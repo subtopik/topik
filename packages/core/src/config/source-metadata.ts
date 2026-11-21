@@ -3,7 +3,6 @@ import type { Person } from "@topik/schema/person/v1";
 import { validateResources } from "../validate";
 import { validateTopikPath } from "../assets/path";
 
-export const sourceVersionSchema = z.literal(1).optional();
 export const sourceLabelsSchema = z.record(z.string(), z.string());
 const name = z
   .string()

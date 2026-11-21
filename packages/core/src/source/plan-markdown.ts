@@ -183,7 +183,6 @@ export function writeMarkdown(
   base: SourceTreeFile | undefined,
   prior: WritableDocument | undefined,
   desired: WritableDocument,
-  version: unknown,
   moved: boolean,
   path: string,
   assets: ReadonlyMap<string, string>,
@@ -257,17 +256,6 @@ export function writeMarkdown(
     )
       updates.authors = desired.spec.authors;
   }
-  if (
-    version !== 1 &&
-    Object.keys(updates).some((field) =>
-      ["id", "slug", "labels", "inheritTags"].includes(field.split("/")[0]),
-    )
-  )
-    block(
-      "source-version-required",
-      "This change needs an explicitly reviewed sourceVersion: 1 opt-in.",
-      resourceKey(desired),
-    );
   const eol = sections?.raw.includes("\r\n") ? "\r\n" : "\n";
   const writtenBody = bodyChanged && eol === "\r\n" ? body.replace(/(?<!\r)\n/g, eol) : body;
   if (!Object.keys(updates).length)

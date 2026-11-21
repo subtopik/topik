@@ -58,9 +58,7 @@ export function topikWikiLoader(options: TopikWikiOptions): TopikAssetLoader & {
               (resource): resource is Wiki => resource.type === "Wiki",
             );
             const navigation = wiki?.spec.navigation ?? [];
-            const resolvedNavigation = resolveWikiNavigation(navigation, {
-              sourceVersion: wiki?.spec.sourceVersion,
-            });
+            const resolvedNavigation = resolveWikiNavigation(navigation);
 
             context.store.clear();
             for (const page of pageResources) {

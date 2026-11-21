@@ -127,6 +127,7 @@
         "spec": {
           "title": "Alpha",
           "slug": "alpha",
+          "authors": [],
           "tags": ["a", "b"],
           "content": {
             "format": "topik",
@@ -162,8 +163,8 @@
         {
           "resource": "Guide/notes-alpha",
           "path": "resources/Guide/notes-alpha.json",
-          "size": 280,
-          "sha256": "4f3020aa4cab54d65d4564ed31074435159dd0aa9eeeed663bae7af6884b9d43"
+          "size": 299,
+          "sha256": "65d69e823559e496c2ca2ca4000c2d3cb01980e1fd04447ce2baa506e0c99d62"
         },
         {
           "resource": "Guide/notes-beta",

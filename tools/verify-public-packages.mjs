@@ -340,7 +340,7 @@ for (const specifier of ["@topik/remark-tags", "@topik/content", "@topik/core", 
 assert.ok(import.meta.resolve("react-dom/server").startsWith(modulePrefix), "react-dom resolved outside the clean consumer");
 assert.equal(guideSchema.properties.type.const, "Guide");
 assert.ok(resourceSchema.properties.type.enum.includes("Guide"));
-const wikiLinks = resolveWikiNavigation([{type: "page", page: "home", slug: "", title: "Home", sourcePath: "index"}, {type: "page", page: "setup", slug: "install", title: "Setup", sourcePath: "setup"}], {sourceVersion: 1});
+const wikiLinks = resolveWikiNavigation([{type: "page", page: "home", slug: "", title: "Home", sourcePath: "index"}, {type: "page", page: "setup", slug: "install", title: "Setup", sourcePath: "setup"}]);
 assert.equal(resolveWikiContentHref("./setup.md?mode=full#start", "home", wikiLinks)?.page.page, "setup");
 assert.equal(resolveWikiContentReference("./missing.md", "home", wikiLinks).kind, "unresolved");
 const courseLinks = resolveCourseNavigation({course: "training", modules: [{name: "foundations", slug: "foundations"}], pages: [{name: "intro", module: "foundations", slug: "introduction", sourcePath: "lessons/intro"}, {name: "next", module: "foundations", slug: "next", sourcePath: "lessons/next"}]});

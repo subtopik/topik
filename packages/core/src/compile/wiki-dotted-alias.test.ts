@@ -16,7 +16,6 @@ async function fixture(body: string, extra: Record<string, string> = {}) {
     "wiki.yaml": JSON.stringify({
       id: "docs",
       title: "Docs",
-      sourceVersion: 1,
       navigation: [
         { type: "page", slug: "index", source: "home" },
         { type: "page", slug: "next", source: "next.json" },

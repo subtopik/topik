@@ -32,8 +32,8 @@ const manifest = JSON.stringify({
   ],
 });
 const wikiConfig =
-  "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation:\n  - type: page\n    slug: overview\n    source: pages/start\n";
-const guideConfig = "id: training\ntitle: Training\nsourceVersion: 1\n";
+  "id: docs\ntitle: Docs\nnavigation:\n  - type: page\n    slug: overview\n    source: pages/start\n";
+const guideConfig = "id: training\ntitle: Training\n";
 
 test("compiles links across declared Wiki and Guide sources using names rather than routes", async () => {
   const authoredWiki =
@@ -117,7 +117,7 @@ test("declared Course pages participate in cross-kind links, cards and portable 
     "guides/install.md":
       '---\nid: installation-guide\nslug: install\n---\n# Install\n\n{% card title="Lesson" href="../lessons/next.md#setup" /%}\n',
     "lessons/course.yaml":
-      "sourceVersion: 1\nid: lessons\ntitle: Lessons\nslug: learn\nmodules: [{id: basics, title: Basics, slug: basics, pages: [intro, next]}]\n",
+      "id: lessons\ntitle: Lessons\nslug: learn\nmodules: [{id: basics, title: Basics, slug: basics, pages: [intro, next]}]\n",
     "lessons/intro.md":
       "---\nid: introduction\ntitle: Intro\nslug: intro\n---\n# Intro\n\n[Next](./next.md#setup)\n\n[Route](/basics/next#setup)\n\n[Guide](../guides/install.md#install)\n",
     "lessons/next.md":
@@ -151,7 +151,7 @@ test("Course links and cards resolve dotted logical source aliases with query an
   const href = "./next.v1?view=full#next";
   const dir = await fixture({
     "course.yaml":
-      "sourceVersion: 1\nid: lessons\ntitle: Lessons\nslug: lessons\nmodules: [{id: basics, title: Basics, slug: basics, pages: [home, next.v1]}]\n",
+      "id: lessons\ntitle: Lessons\nslug: lessons\nmodules: [{id: basics, title: Basics, slug: basics, pages: [home, next.v1]}]\n",
     "home.md": `---\nid: home\ntitle: Home\nslug: home\n---\n# Home\n\n[Next](${href})\n\n{% card title="Next" href="${href}" /%}\n`,
     "next.v1.md": "---\nid: next-page\ntitle: Next\nslug: next\n---\n# Next\n",
   });
@@ -190,7 +190,7 @@ test.each(["error", "warning", "off"] as const)(
       .join("\n\n");
     const dir = await fixture({
       "course.yaml":
-        "sourceVersion: 1\nid: lessons\ntitle: Lessons\nslug: lessons\nmodules: [{id: basics, title: Basics, slug: basics, pages: [home, next]}]\n",
+        "id: lessons\ntitle: Lessons\nslug: lessons\nmodules: [{id: basics, title: Basics, slug: basics, pages: [home, next]}]\n",
       "home.md": `---\nid: home\ntitle: Home\nslug: home\n---\n# Home\n\n${body}\n`,
       "next.md": "---\nid: target\ntitle: Next\nslug: next\n---\n# Next\n",
     });
@@ -212,7 +212,7 @@ test("Course dotted folders select their landing while explicit Markdown selects
   const href = "./next.v1?view=full#next";
   const dir = await fixture({
     "course.yaml":
-      "sourceVersion: 1\nid: lessons\ntitle: Lessons\nslug: lessons\nmodules: [{id: basics, title: Basics, slug: basics, pages: [home, next.v1, next.v1/index]}]\n",
+      "id: lessons\ntitle: Lessons\nslug: lessons\nmodules: [{id: basics, title: Basics, slug: basics, pages: [home, next.v1, next.v1/index]}]\n",
     "home.md": `---\nid: home\ntitle: Home\nslug: home\n---\n# Home\n\n[Directory](${href})\n\n{% card title="Next" href="${href}" /%}\n\n[Page](./next.v1.md#next)\n`,
     "next.v1.md": "---\nid: next-page\ntitle: Next\nslug: next\n---\n# Next\n",
     "next.v1/index.md": "---\nid: landing\ntitle: Landing\nslug: landing\n---\n# Next\n",
@@ -407,7 +407,7 @@ test("supplied duplicate targets are ambiguous and actual local resources remain
 
 test("rejects undeclared source-file links instead of packaging their Markdown as Assets", async () => {
   const dir = await fixture({
-    "wiki.yaml": "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation: [start]\n",
+    "wiki.yaml": "id: docs\ntitle: Docs\nnavigation: [start]\n",
     "start.md": "---\nid: start-page\n---\n# Start\n\n[Undeclared](./private.md)\n",
     "private.md": "# Private source\n",
   });
@@ -519,7 +519,7 @@ test("a non-Markdown download and app route do not resolve to a similarly named 
 test("a Wiki file download does not fall back to a dotted source alias", async () => {
   const dir = await fixture({
     "wiki.yaml":
-      "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation:\n  - start\n  - type: page\n    slug: api-reference\n    source: api.json\n",
+      "id: docs\ntitle: Docs\nnavigation:\n  - start\n  - type: page\n    slug: api-reference\n    source: api.json\n",
     "start.md": "# Start\n\n[Download](./api.json)\n",
     "api.json.md": "# API reference\n",
     "api.json": "{}\n",
@@ -543,7 +543,7 @@ test.each(["wiki", "guide"] as const)(
     const dir = await fixture({
       ...(kind === "wiki"
         ? {
-            "wiki.yaml": "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation: [home, manual]\n",
+            "wiki.yaml": "id: docs\ntitle: Docs\nnavigation: [home, manual]\n",
           }
         : { "collection.yaml": guideConfig }),
       "home.md": "---\nid: home\n---\n# Home\n\n[Download](./manual)\n[Page](./manual.md)\n",
@@ -593,58 +593,55 @@ test.each(["wiki", "guide"] as const)(
   },
 );
 
-test.each([undefined, 1] as const)(
-  "Wiki source version %s resolves the root route without admitting escaping paths",
-  async (sourceVersion) => {
-    const dir = await fixture({
-      "wiki.yaml": `id: docs\ntitle: Docs\n${sourceVersion === 1 ? "sourceVersion: 1\n" : ""}navigation: [index, intro]\n`,
-      "index.md": "---\nid: home-page\n---\n# Home\n",
-      "intro.md":
-        '# Intro\n\n[Home](/)\n[Heading][home]\n\n[home]: /?view=a%20b&view=c#home\n\n{% card title="Home" href="/#home" /%}\n',
-    });
-    const result = await compileWiki({ dir });
-    const home = result.resources.find(
-      (resource) => resource.type === "WikiPage" && resource.spec.title === "Home",
-    )!;
-    expect(result.diagnostics).toEqual([]);
-    expect(result.references).toMatchObject([
-      { href: "/", reference: { name: home.name, search: "", hash: "" }, status: "verified" },
-      {
-        href: "/?view=a%20b&view=c#home",
-        reference: { name: home.name, search: "?view=a%20b&view=c", hash: "home" },
-        status: "verified",
-      },
-      {
-        href: "/#home",
-        kind: "card",
-        reference: { name: home.name, hash: "home" },
-        status: "verified",
-      },
-    ]);
-    const intro = result.resources.find(
-      (resource) => resource.type === "WikiPage" && resource.spec.title === "Intro",
-    );
-    if (intro?.type !== "WikiPage") throw new Error("Expected intro");
-    expect(intro.spec.content.value).toContain(`[Home](ref://wiki-page/${home.name})`);
+test("Wiki resolves the root route without admitting escaping paths", async () => {
+  const dir = await fixture({
+    "wiki.yaml": "id: docs\ntitle: Docs\nnavigation: [index, intro]\n",
+    "index.md": "---\nid: home-page\n---\n# Home\n",
+    "intro.md":
+      '# Intro\n\n[Home](/)\n[Heading][home]\n\n[home]: /?view=a%20b&view=c#home\n\n{% card title="Home" href="/#home" /%}\n',
+  });
+  const result = await compileWiki({ dir });
+  const home = result.resources.find(
+    (resource) => resource.type === "WikiPage" && resource.spec.title === "Home",
+  )!;
+  expect(result.diagnostics).toEqual([]);
+  expect(result.references).toMatchObject([
+    { href: "/", reference: { name: home.name, search: "", hash: "" }, status: "verified" },
+    {
+      href: "/?view=a%20b&view=c#home",
+      reference: { name: home.name, search: "?view=a%20b&view=c", hash: "home" },
+      status: "verified",
+    },
+    {
+      href: "/#home",
+      kind: "card",
+      reference: { name: home.name, hash: "home" },
+      status: "verified",
+    },
+  ]);
+  const intro = result.resources.find(
+    (resource) => resource.type === "WikiPage" && resource.spec.title === "Intro",
+  );
+  if (intro?.type !== "WikiPage") throw new Error("Expected intro");
+  expect(intro.spec.content.value).toContain(`[Home](ref://wiki-page/${home.name})`);
 
-    await writeFile(join(dir, "intro.md"), "# Intro\n\n[Missing](/#missing)\n");
-    await expect(compileWiki({ dir })).rejects.toMatchObject({
-      diagnostics: [expect.objectContaining({ id: "link-fragment-not-found" })],
-    });
+  await writeFile(join(dir, "intro.md"), "# Intro\n\n[Missing](/#missing)\n");
+  await expect(compileWiki({ dir })).rejects.toMatchObject({
+    diagnostics: [expect.objectContaining({ id: "link-fragment-not-found" })],
+  });
 
-    await writeFile(
-      join(dir, "intro.md"),
-      "# Intro\n\n[Escape](../../)\n[Encoded](%2E%2E/%2E%2E/)\n[Absolute](/../)\n",
-    );
-    await expect(compileWiki({ dir })).rejects.toMatchObject({
-      diagnostics: [
-        expect.objectContaining({ id: "link-page-not-found" }),
-        expect.objectContaining({ id: "link-page-not-found" }),
-        expect.objectContaining({ id: "link-page-not-found" }),
-      ],
-    });
-  },
-);
+  await writeFile(
+    join(dir, "intro.md"),
+    "# Intro\n\n[Escape](../../)\n[Encoded](%2E%2E/%2E%2E/)\n[Absolute](/../)\n",
+  );
+  await expect(compileWiki({ dir })).rejects.toMatchObject({
+    diagnostics: [
+      expect.objectContaining({ id: "link-page-not-found" }),
+      expect.objectContaining({ id: "link-page-not-found" }),
+      expect.objectContaining({ id: "link-page-not-found" }),
+    ],
+  });
+});
 
 const sharedHrefCases = (["wiki", "guide"] as const).flatMap((kind) =>
   (["link-first", "card-first"] as const).flatMap((order) =>
@@ -670,7 +667,7 @@ test.each(sharedHrefCases)(
     const dir = await fixture({
       ...(kind === "wiki"
         ? {
-            "wiki.yaml": "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation: [home, manual]\n",
+            "wiki.yaml": "id: docs\ntitle: Docs\nnavigation: [home, manual]\n",
           }
         : { "collection.yaml": guideConfig }),
       "home.md": source(download),

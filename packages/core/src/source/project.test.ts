@@ -11,10 +11,10 @@ const file = (path: string, value: string) => ({
 });
 
 test.each(["wiki", "course"] as const)(
-  "%s source provenance excludes compiled downloads from legacy page lookup",
+  "%s source provenance excludes compiled downloads from page lookup",
   async (kind) => {
     const configuration =
-      "id: docs\ntitle: Docs\nsourceVersion: 1\n" +
+      "id: docs\ntitle: Docs\n" +
       (kind === "wiki"
         ? "navigation: [home, manual, other]\n"
         : "slug: docs\nmodules: [{id: basics, title: Basics, slug: basics, pages: [home, manual, other]}]\n");
@@ -86,12 +86,12 @@ test("source provenance retains authored links and records cross-kind and deferr
         ".topik.yaml",
         "version: 1\nnamespace: refs\nsources: [{kind: wiki, config: docs/wiki.yaml}, {kind: collection, config: guides/collection.yaml}]\n",
       ),
-      file("docs/wiki.yaml", "sourceVersion: 1\nid: docs\ntitle: Docs\nnavigation: [index]\n"),
+      file("docs/wiki.yaml", "id: docs\ntitle: Docs\nnavigation: [index]\n"),
       file(
         "docs/index.md",
         "---\nid: home\n---\n# Home\n\n[Install](../guides/install.md#setup)\n",
       ),
-      file("guides/collection.yaml", "sourceVersion: 1\nid: guides\ntitle: Guides\n"),
+      file("guides/collection.yaml", "id: guides\ntitle: Guides\n"),
       file(
         "guides/install.md",
         "---\nid: install\n---\n# Setup\n\n[Home](ref://wiki-page/home)\n\n[Elsewhere](ref://guide/external-guide?view=full#details)\n",
@@ -145,38 +145,6 @@ test("aggregate source-tree limits reject reused buffers before any byte copy", 
   }
 });
 
-test("legacy metadata losses are visible without reinterpreting or rewriting source bytes", async () => {
-  const markdown = "---\ndescription: null\n---\n# Home\n";
-  const tree = [
-    file(
-      ".topik.yaml",
-      "version: 1\nnamespace: legacy\nsources: [{kind: wiki, config: wiki.yaml}]\n",
-    ),
-    file("wiki.yaml", "id: docs\ntitle: Docs\nnavigation: [index]\n"),
-    file("index.md", markdown),
-  ];
-  const legacy = await readSourceProject({ tree });
-  expect(legacy.documents.find((document) => document.type === "WikiPage")?.lossyMetadata).toEqual([
-    "description",
-  ]);
-  expect(legacy.tree.find((entry) => entry.path === "index.md")?.bytes).toEqual(
-    encodeSource(markdown),
-  );
-  const versioned = await readSourceProject({
-    tree: tree.map((entry) =>
-      entry.path === "wiki.yaml"
-        ? file(entry.path, "sourceVersion: 1\nid: docs\ntitle: Docs\nnavigation: [index]\n")
-        : entry,
-    ),
-  });
-  expect(
-    versioned.compilation.resources.find((resource) => resource.type === "WikiPage"),
-  ).toMatchObject({ spec: { description: null } });
-  expect(
-    versioned.documents.find((document) => document.type === "WikiPage")?.lossyMetadata,
-  ).toBeUndefined();
-});
-
 test("desired graph seals exact authored content while resource ordering is irrelevant", async () => {
   const project = await readSourceProject({
     tree: [
@@ -198,45 +166,6 @@ test("desired graph seals exact authored content while resource ordering is irre
   expect(digestSourceResourceGraph(changed)).not.toBe(digestSourceResourceGraph(resources));
 });
 
-test("opaque legacy Wiki labels do not acquire interpreted field evidence", async () => {
-  const project = await readSourceProject({
-    tree: [
-      file(
-        ".topik.yaml",
-        "version: 1\nnamespace: example/legacy\nsources: [{kind: wiki, config: wiki.yaml}]\n",
-      ),
-      file("wiki.yaml", "id: docs\ntitle: Docs\nlabels: {opaque: 123}\nnavigation: [index]\n"),
-      file("index.md", "# Home\n"),
-    ],
-  });
-  expect(
-    project.documents
-      .find((document) => document.resource === "Wiki/docs")!
-      .fieldOrigins.find((field) => field.field === "labels"),
-  ).toEqual({ field: "labels", origin: "default" });
-});
-
-test("legacy YAML aliases retain explicit semantic origins without unsupported byte evidence", async () => {
-  const project = await readSourceProject({
-    tree: [
-      file(
-        ".topik.yaml",
-        "version: 1\nnamespace: example/legacy\nsources: [{kind: collection, config: collection.yaml}]\n",
-      ),
-      file("collection.yaml", "id: blog\ntitle: Blog\n"),
-      file("post.md", "---\ntitle: &title Explicit\ncustom: *title\n---\n# Body\n"),
-    ],
-  });
-  const document = project.documents.find((document) => document.type === "Guide")!;
-  expect(document.fieldOrigins.find((field) => field.field === "spec/title")).toEqual({
-    field: "spec/title",
-    origin: "explicit",
-    path: "post.md",
-    selector: "title",
-  });
-  expect(document.fields).toEqual([]);
-});
-
 test("field origins distinguish explicit and inherited tags, overrides, derived titles and absent defaults", async () => {
   const project = await readSourceProject({
     tree: [
@@ -246,7 +175,7 @@ test("field origins distinguish explicit and inherited tags, overrides, derived 
       ),
       file(
         "blog/source.yml",
-        "id: blog\ntitle: Blog\nsourceVersion: 1\ntags: [shared]\npersons: [{id: ada, spec: {name: Ada, email: null}}]\n",
+        "id: blog\ntitle: Blog\ntags: [shared]\npersons: [{id: ada, spec: {name: Ada, email: null}}]\n",
       ),
       file(
         "blog/first.md",
@@ -295,7 +224,7 @@ test("retained source context resolves saved links after candidate source moves"
       ),
       file(
         "docs/custom.yaml",
-        "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation: [{type: page, slug: start, source: pages/start}, {type: page, slug: target, source: pages/target, hidden: true}]\n",
+        "id: docs\ntitle: Docs\nnavigation: [{type: page, slug: start, source: pages/start}, {type: page, slug: target, source: pages/target, hidden: true}]\n",
       ),
       file("docs/pages/start.md", "---\nid: start\n---\n[Target](target.md?view=full#section)\n"),
       file("docs/pages/target.md", "---\nid: target\n---\n# Section\n"),
@@ -332,9 +261,7 @@ test("retained source context resolves saved links after candidate source moves"
     resolveWikiContentHref(
       document.references[0].href,
       "start",
-      resolveWikiNavigation(originalWiki.spec.navigation ?? [], {
-        sourceVersion: originalWiki.spec.sourceVersion,
-      }),
+      resolveWikiNavigation(originalWiki.spec.navigation ?? []),
     )?.page.page,
   ).toBe("target");
   expect(

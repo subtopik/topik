@@ -145,7 +145,7 @@ test("Course links to a page whose content is invalid are not reported as missin
     ".topik.yaml":
       "version: 1\nnamespace: example/lint\nsources:\n  - kind: course\n    config: course.yaml\n",
     "course.yaml":
-      "sourceVersion: 1\nid: learning\ntitle: Learning\nslug: learning\nmodules:\n  - id: basics\n    title: Basics\n    slug: basics\n    pages: [one, two]\n",
+      "id: learning\ntitle: Learning\nslug: learning\nmodules:\n  - id: basics\n    title: Basics\n    slug: basics\n    pages: [one, two]\n",
     "one.md": page("one", "first", `# One\n\n${badCallout}`),
     "two.md": page(
       "two",
@@ -167,7 +167,7 @@ test("an undeclared author is reported, and links are still checked", async () =
   const dir = await fixture({
     ".topik.yaml":
       "version: 1\nnamespace: example/lint\nsources:\n  - kind: collection\n    config: collection.yaml\n",
-    "collection.yaml": "sourceVersion: 1\nid: guides\ntitle: Guides\n",
+    "collection.yaml": "id: guides\ntitle: Guides\n",
     "intro.md":
       "---\nid: guides-intro\nslug: intro\nauthors: [nobody]\n---\n# Intro\n\n[Gone](./nope.md)\n",
   });

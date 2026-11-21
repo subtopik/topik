@@ -496,28 +496,17 @@ navigation:
     expect(page!.spec.description).toBe("A concise overview of the page.");
   });
 
-  test("truncates overlong page frontmatter descriptions", async () => {
+  test("refuses an overlong page description instead of truncating it", async () => {
     await writeWikiConfig("id: test\ntitle: Wiki\nnavigation:\n  - page\n");
     await writeFile(join(dir, "page.md"), `---\ndescription: ${"a".repeat(1025)}\n---\n\n# Page\n`);
-
-    const result = await compileWiki({ dir });
-    const page = result.resources.find((r) => r.type === "WikiPage");
-    expect(page!.spec.description).toBe("a".repeat(1024));
+    await expect(compileWiki({ dir })).rejects.toMatchObject({
+      id: "frontmatter-invalid",
+      location: "page.md",
+      field: "description",
+    });
   });
 
-  test("truncates overlong descriptions without splitting a surrogate pair", async () => {
-    await writeWikiConfig("id: test\ntitle: Wiki\nnavigation:\n  - page\n");
-    await writeFile(
-      join(dir, "page.md"),
-      `---\ndescription: ${"a".repeat(1023)}\u{1f600}b\n---\n\n# Page\n`,
-    );
-
-    const result = await compileWiki({ dir });
-    const page = result.resources.find((r) => r.type === "WikiPage");
-    expect(page!.spec.description).toBe("a".repeat(1023));
-  });
-
-  test("refuses schema-invalid unversioned page titles at the page file", async () => {
+  test("refuses schema-invalid page titles at the page file", async () => {
     await writeWikiConfig("id: test\ntitle: Wiki\nnavigation:\n  - guides/page\n");
     await mkdir(join(dir, "guides"), { recursive: true });
     await writeFile(join(dir, "guides/page.md"), '---\ntitle: ""\n---\n\n# Page\n');
@@ -880,7 +869,7 @@ navigation:
   });
 
   test("content diagnostics count lines from the top of the file, frontmatter included", async () => {
-    await writeWikiConfig("id: tw\ntitle: Wiki\nsourceVersion: 1\nnavigation:\n  - intro\n");
+    await writeWikiConfig("id: tw\ntitle: Wiki\nnavigation:\n  - intro\n");
     await writePage(
       "intro",
       '---\nid: intro\ntitle: Intro\n---\n# Intro\n\n{% callout variant="bad" %}\nHi\n{% /callout %}\n',
@@ -900,7 +889,7 @@ navigation:
   });
 
   test("names the page whose frontmatter id repeats another page's", async () => {
-    await writeWikiConfig("id: tw\ntitle: Wiki\nsourceVersion: 1\nnavigation:\n  - a\n  - b\n");
+    await writeWikiConfig("id: tw\ntitle: Wiki\nnavigation:\n  - a\n  - b\n");
     await writePage("a", "---\nid: same\n---\n# A\n");
     await writePage("b", "---\nid: same\n---\n# B\n");
 
@@ -924,7 +913,7 @@ navigation:
       "navigation[1].href",
     ],
   ])("reports %s as configuration", async (_case, navigation, field) => {
-    await writeWikiConfig(`id: tw\ntitle: Wiki\nsourceVersion: 1\nnavigation:\n${navigation}`);
+    await writeWikiConfig(`id: tw\ntitle: Wiki\nnavigation:\n${navigation}`);
     await writePage("intro", "# Intro\n");
     await writePage("c#-basics", "# C#\n");
 
@@ -945,7 +934,7 @@ navigation:
       field: "navigation[1]",
     });
 
-    await writeWikiConfig("id: tw\ntitle: Wiki\nsourceVersion: 1\nnavigation:\n  - intro\n");
+    await writeWikiConfig("id: tw\ntitle: Wiki\nnavigation:\n  - intro\n");
     await writePage("intro", "---\nid: Not_Valid\n---\n# Intro\n");
     await expect(compileWiki({ dir })).rejects.toMatchObject({
       id: "frontmatter-invalid",

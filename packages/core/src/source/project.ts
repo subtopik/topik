@@ -58,7 +58,6 @@ export const SOURCE_PROJECT_LIMITS = {
 export const SOURCE_WRITER_DESCRIPTOR = {
   writer: SOURCE_WRITER_VERSION,
   manifest: 1,
-  sourceVersions: [0, 1],
   formatter: FORMAT_VERSION,
   contentSchema: TOPIK_CONTENT_SCHEMA_VERSION,
   resourceSchema: "v1",
@@ -82,15 +81,12 @@ export interface SourceDocumentProvenance {
   config: string;
   kind: ManifestSourceProvenance["kind"];
   directory: string;
-  sourceVersion?: 1;
   sha256: string;
   mode: SourceTreeFile["mode"];
   body?: SourceByteRange;
   frontmatter?: SourceByteRange;
   fields: readonly SourceFieldEvidence[];
   fieldOrigins: readonly SourceFieldOrigin[];
-  /** Recognized legacy metadata whose compiled value would lose authored meaning. */
-  lossyMetadata?: readonly string[];
   /** Context travels with immutable saved source; a later source move must not reinterpret it. */
   sourceContext: {
     path: string;
@@ -265,7 +261,6 @@ export async function readSourceProject(input: {
     const fields = [...syntax.fields.values()];
     if (path !== ".topik.yaml")
       for (const selector of [
-        "sourceVersion",
         "title",
         "description",
         "labels",
@@ -364,9 +359,6 @@ export async function readSourceProject(input: {
         config: source.config,
         kind: source.kind,
         directory: source.directory,
-        ...(configValues.get(source.config)?.sourceVersion === 1
-          ? { sourceVersion: 1 as const }
-          : {}),
         sha256: sourceHash(file.bytes),
         mode: file.mode,
         sourceContext: {
@@ -392,9 +384,7 @@ export async function readSourceProject(input: {
       const courseContext = course ? courseContexts[`Course/${course.name}`] : undefined;
       let resolvedWiki = wiki ? wikiNavigation.get(wiki) : undefined;
       if (wiki && !resolvedWiki) {
-        resolvedWiki = resolveWikiNavigation(wiki.spec.navigation ?? [], {
-          sourceVersion: wiki.spec.sourceVersion,
-        });
+        resolvedWiki = resolveWikiNavigation(wiki.spec.navigation ?? []);
         wikiNavigation.set(wiki, resolvedWiki);
       }
       let resolvedCourse = courseContext ? courseNavigation.get(courseContext) : undefined;
@@ -430,27 +420,17 @@ export async function readSourceProject(input: {
               : {}),
           }));
         } catch {
-          /* Opaque legacy frontmatter stays intact; metadata edits must admit it separately. */
-          metadata = parseMarkdownFrontmatter(markdown.raw, path, base.sourceVersion).frontmatter;
+          /* Frontmatter the syntax inspector cannot map stays intact; edits must admit it. */
+          metadata = parseMarkdownFrontmatter(markdown.raw, path).frontmatter;
         }
       }
       documents.push({
         ...base,
         body: markdown.bodyRange,
-        ...(base.sourceVersion !== 1 && (portable.type === "Guide" || portable.type === "WikiPage")
-          ? {
-              lossyMetadata: ["title", "description"].filter(
-                (key) =>
-                  Object.hasOwn(metadata, key) &&
-                  metadata[key] !== (portable.spec as unknown as Record<string, unknown>)[key],
-              ),
-            }
-          : {}),
         ...(markdown.frontmatterRange ? { frontmatter: markdown.frontmatterRange } : {}),
         fields,
         fieldOrigins: markdownOrigins(
           portable,
-          base.sourceVersion,
           path,
           fields,
           metadata,
@@ -531,7 +511,7 @@ function configurationOrigins(
     resource.type === "Person" ||
     resource.type === "Course" ||
     resource.type === "CourseModule" ||
-    (resource.type === "Wiki" && resource.spec.sourceVersion === 1)
+    resource.type === "Wiki"
       ? explicit("labels", `${prefix}labels`)
       : origin("labels", "default"),
   ];
@@ -541,7 +521,7 @@ function configurationOrigins(
       ? ["title", "slug", "description", "authors", "modules"]
       : resource.type === "CourseModule"
         ? ["title", "slug", "pages", "description"]
-        : ["title", "description", "navigation", "theme", "sourceVersion"])
+        : ["title", "description", "navigation", "theme"])
     result.push(
       explicit(
         `spec/${field}`,
@@ -555,7 +535,6 @@ function configurationOrigins(
 
 function markdownOrigins(
   resource: Resource,
-  sourceVersion: 1 | undefined,
   path: string,
   fields: readonly SourceFieldEvidence[],
   metadata: Record<string, unknown>,
@@ -574,22 +553,15 @@ function markdownOrigins(
       fields,
     );
   const result = [
-    origin(
-      "name",
-      sourceVersion === 1 && has("id") ? "explicit" : "derived",
-      path,
-      sourceVersion === 1 && has("id") ? "id" : undefined,
-      fields,
-    ),
-    sourceVersion === 1 ? explicit("labels", "labels") : origin("labels", "default"),
+    origin("name", has("id") ? "explicit" : "derived", path, has("id") ? "id" : undefined, fields),
+    explicit("labels", "labels"),
     typeof metadata.title === "string"
       ? explicit("spec/title", "title")
       : origin("spec/title", "derived", path, undefined, [], body),
     explicit(
       "spec/description",
       "description",
-      typeof metadata.description === "string" ||
-        (sourceVersion === 1 && metadata.description === null),
+      typeof metadata.description === "string" || metadata.description === null,
     ),
     origin("spec/content", "explicit", path, undefined, [], body),
   ];
@@ -597,13 +569,10 @@ function markdownOrigins(
     result.push(origin("spec/wiki", "inherited", configuration.path, "id", configuration.fields));
   if (resource.type === "Guide") {
     result.push(
-      sourceVersion === 1 && has("slug")
-        ? explicit("spec/slug", "slug")
-        : origin("spec/slug", "derived", path),
+      has("slug") ? explicit("spec/slug", "slug") : origin("spec/slug", "derived", path),
       explicit("spec/authors", "authors", resource.spec.authors !== undefined),
     );
-    const inherited =
-      Array.isArray(config.tags) && !(sourceVersion === 1 && metadata.inheritTags === false);
+    const inherited = Array.isArray(config.tags) && metadata.inheritTags !== false;
     if (inherited)
       result.push(
         origin("spec/tags", "inherited", configuration.path, "tags", configuration.fields),
@@ -643,8 +612,8 @@ function sourceReferences(
     TopikNavigationReference & { target?: string; search?: string; hash?: string }
   > = [];
   const inspected = rewriteTopikNavigationReferences(source, (reference) => {
-    // Preserve the compiler's per-occurrence download identity. A legacy route lookup
-    // must not turn its authored file path into provenance for a different page link.
+    // Preserve the compiler's per-occurrence download identity. A route lookup must not
+    // turn its authored file path into provenance for a different page link.
     if (
       (reference.kind === "link" && assetPositions.has(reference.position)) ||
       isSourceNonPageReference(

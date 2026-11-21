@@ -27,7 +27,6 @@ async function fixture(
   const config = {
     id: "docs",
     title: "Docs",
-    sourceVersion: 1,
     ...(kind === "wiki"
       ? {
           navigation: paths.map((source, index) => ({
@@ -56,7 +55,7 @@ async function fixture(
     }),
     "content/config.yaml": JSON.stringify(config),
     ...(kind === "collection" && landings.length
-      ? { "content/files/collection.yaml": "id: landings\ntitle: Landings\nsourceVersion: 1\n" }
+      ? { "content/files/collection.yaml": "id: landings\ntitle: Landings\n" }
       : {}),
     "content/home.md": page("home", body),
     "content/files.md": page("sibling", "# Sibling\n"),
@@ -183,7 +182,6 @@ test("the canonical Wiki root route need not use a root index source file", asyn
     JSON.stringify({
       id: "docs",
       title: "Docs",
-      sourceVersion: 1,
       navigation: [{ type: "page", slug: "index", source: "home" }],
     }),
   );

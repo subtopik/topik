@@ -93,8 +93,7 @@ const value = 1;
 };
 
 const guideFiles = {
-  "guides/collection.yaml": `sourceVersion: 1
-id: guides
+  "guides/collection.yaml": `id: guides
 title: Guides
 tags: [shared]
 persons:
@@ -120,8 +119,7 @@ Read the [second](second.md#details) guide or [docs](../docs/guide/setup.md).
 };
 
 const courseFiles = {
-  "course/course.yaml": `sourceVersion: 1
-id: learning
+  "course/course.yaml": `id: learning
 title: Learning
 slug: public-course
 modules:

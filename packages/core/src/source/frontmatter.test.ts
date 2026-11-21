@@ -30,7 +30,7 @@ const projectFor = (raw: string) =>
         ".topik.yaml",
         "version: 1\nnamespace: test\nsources: [{kind: collection, config: collection.yaml}]\n",
       ),
-      file("collection.yaml", "id: docs\ntitle: Docs\nsourceVersion: 1\n"),
+      file("collection.yaml", "id: docs\ntitle: Docs\n"),
       file("post.md", raw),
     ],
   });
@@ -229,11 +229,11 @@ test.each(["\n", "\r\n"])(
 );
 
 test.each(["title: 42", "- invalid", "title: A\ntitle: B", "title: &a A\ncustom: *a"])(
-  "BOM cannot hide invalid versioned metadata: %s",
+  "BOM cannot hide invalid metadata: %s",
   async (metadata) => {
     for (const eol of ["\n", "\r\n"]) {
       const raw = `\uFEFF---\n${metadata}\n---\n# Body\n`.replaceAll("\n", eol);
-      expect(() => parseMarkdownFrontmatter(raw, "post.md", 1)).toThrow(
+      expect(() => parseMarkdownFrontmatter(raw, "post.md")).toThrow(
         "Document frontmatter is invalid.",
       );
       await expect(projectFor(raw)).rejects.toThrow("Document frontmatter is invalid.");
@@ -241,35 +241,29 @@ test.each(["title: 42", "- invalid", "title: A\ntitle: B", "title: &a A\ncustom:
   },
 );
 
-test.each([undefined, 1] as const)(
-  "BOM header parsing is consistent for source version %j",
-  (version) => {
-    for (const eol of ["\n", "\r\n"]) {
-      for (const metadata of ["", "# Café", "title: Original"]) {
-        const raw = `\uFEFF---${eol}${metadata}${metadata ? eol : ""}---${eol}Body${eol}`;
-        const parsed = parseMarkdownFrontmatter(raw, "post.md", version);
-        expect(parsed).toEqual({
-          frontmatter: metadata.startsWith("title:") ? { title: "Original" } : {},
-          content: `Body${eol}`,
-          bodyLineOffset: metadata ? 3 : 2,
-        });
-        const sections = sourceMarkdownSections(encodeSource(raw));
-        expect(sections.body).toBe(parsed.content);
-        expect(
-          decodeSource(
-            encodeSource(raw).slice(
-              sections.frontmatterRange!.start,
-              sections.frontmatterRange!.end,
-            ),
-          ),
-        ).toBe(metadata);
-      }
-      expect(() =>
-        parseMarkdownFrontmatter(`\uFEFF---${eol}title: 42${eol}---`, "post.md", version),
-      ).toThrow();
+test("BOM header parsing is consistent", () => {
+  for (const eol of ["\n", "\r\n"]) {
+    for (const metadata of ["", "# Café", "title: Original"]) {
+      const raw = `\uFEFF---${eol}${metadata}${metadata ? eol : ""}---${eol}Body${eol}`;
+      const parsed = parseMarkdownFrontmatter(raw, "post.md");
+      expect(parsed).toEqual({
+        frontmatter: metadata.startsWith("title:") ? { title: "Original" } : {},
+        content: `Body${eol}`,
+        bodyLineOffset: metadata ? 3 : 2,
+      });
+      const sections = sourceMarkdownSections(encodeSource(raw));
+      expect(sections.body).toBe(parsed.content);
+      expect(
+        decodeSource(
+          encodeSource(raw).slice(sections.frontmatterRange!.start, sections.frontmatterRange!.end),
+        ),
+      ).toBe(metadata);
     }
-  },
-);
+    expect(() =>
+      parseMarkdownFrontmatter(`\uFEFF---${eol}title: 42${eol}---`, "post.md"),
+    ).toThrow();
+  }
+});
 
 test.each(
   ["", "\uFEFF"].flatMap((prefix) => ["insert", "delete"].map((change) => ({ prefix, change }))),

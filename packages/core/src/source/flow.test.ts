@@ -213,7 +213,7 @@ test("flow entry authority cannot authorize sibling bytes or a missing insertion
   ).toThrow();
 });
 
-test("unidentified legacy flow records stay inspectable but cannot acquire guessed record authority", () => {
+test("unidentified flow records stay inspectable but cannot acquire guessed record authority", () => {
   const raw = "persons: [{name: Legacy},]\ntitle: Original\n";
   expect(decodeSource(patchSourceFields(raw, { title: "Edited" }).bytes)).toBe(
     'persons: [{name: Legacy},]\ntitle: "Edited"\n',
@@ -312,7 +312,7 @@ const projectFor = (metadata: string, config = "") =>
         ".topik.yaml",
         "version: 1\nnamespace: flow\nsources: [{kind: collection, config: docs/collection.yaml}, # tail ,\n]\n",
       ),
-      file("docs/collection.yaml", `id: docs\ntitle: Docs\nsourceVersion: 1\n${config}`),
+      file("docs/collection.yaml", `id: docs\ntitle: Docs\n${config}`),
       file("docs/home.md", `---\n${metadata}\n---\n# Home\n\nExact body.\n`),
     ],
   });
@@ -523,8 +523,7 @@ function sharedScope(raw: string, selected: string[]) {
   return { base, provenance, authority, replace };
 }
 
-const wikiConfig =
-  "id: kb\ntitle: Knowledge base\nsourceVersion: 1\nnavigation:\n  - home\n  - install\n";
+const wikiConfig = "id: kb\ntitle: Knowledge base\nnavigation:\n  - home\n  - install\n";
 
 test("shared edits refuse bytes that differ from the inspected base", () => {
   const { base, provenance, authority, replace } = sharedScope(wikiConfig, ["title"]);
@@ -557,12 +556,12 @@ test.each([
 });
 
 test("an admitted item may be removed although later items move up", () => {
-  const raw = "id: kb\ntitle: KB\nsourceVersion: 1\nnavigation:\n  - home\n  - install\n  - faq\n";
+  const raw = "id: kb\ntitle: KB\nnavigation:\n  - home\n  - install\n  - faq\n";
   const { base, provenance, authority, replace } = sharedScope(raw, ["navigation/1"]);
   const edits = [replace("navigation/1", "", "entry")];
   expect(() => verifySharedEdits(base, provenance, authority, edits)).not.toThrow();
   expect(decodeSource(replaySourceByteEdits(base.bytes, edits))).toBe(
-    "id: kb\ntitle: KB\nsourceVersion: 1\nnavigation:\n  - home\n  - faq\n",
+    "id: kb\ntitle: KB\nnavigation:\n  - home\n  - faq\n",
   );
   // Removing the other item is not admitted.
   expect(() =>

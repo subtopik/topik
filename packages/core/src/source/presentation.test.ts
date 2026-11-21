@@ -110,8 +110,8 @@ async function fixture(kind: "collection" | "wiki") {
       file(
         config,
         kind === "collection"
-          ? "id: examples\ntitle: Examples\nsourceVersion: 1\n"
-          : "id: handbook\ntitle: Handbook\nsourceVersion: 1\nnavigation: [page, sibling]\n",
+          ? "id: examples\ntitle: Examples\n"
+          : "id: handbook\ntitle: Handbook\nnavigation: [page, sibling]\n",
       ),
       file(`${directory}/page.md`, original, "100755"),
       file(`${directory}/sibling.md`, "---\nid: sibling\n---\n# Sibling\n"),

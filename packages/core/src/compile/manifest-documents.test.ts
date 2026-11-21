@@ -46,7 +46,6 @@ test("lists the files every kind of source reads, valid or not, and nothing else
     "guides/README.md": "<p>Not a guide</p>\n",
     "guides/FAQ.md": "# Left out\n",
     "course/course.yaml": JSON.stringify({
-      sourceVersion: 1,
       id: "learning",
       title: "Learning",
       slug: "learning",
@@ -100,7 +99,6 @@ test("leaves out linked files, files below a linked directory and entries that a
       "guides/hello.md": "# Hello\n",
       "guides/folder.md/inner.txt": "A directory with a Markdown name.\n",
       "course/course.yaml": JSON.stringify({
-        sourceVersion: 1,
         id: "learning",
         title: "Learning",
         slug: "learning",
@@ -142,7 +140,6 @@ test("a configuration cannot name a page outside its directory", async () => {
   await write({
     ".topik.yaml": manifest([["course", "docs/course.yaml"]]),
     "docs/course.yaml": JSON.stringify({
-      sourceVersion: 1,
       id: "learning",
       title: "Learning",
       slug: "learning",
@@ -154,10 +151,10 @@ test("a configuration cannot name a page outside its directory", async () => {
   else expect(pages).toMatchObject({ id: "config-invalid" });
 });
 
-test("a README beside a versioned collection is listed only when it names a guide", async () => {
+test("a README beside a collection is listed only when it names a guide", async () => {
   await write({
     ".topik.yaml": manifest([["collection", "collection.yaml"]]),
-    "collection.yaml": "sourceVersion: 1\nid: blog\ntitle: Blog\n",
+    "collection.yaml": "id: blog\ntitle: Blog\n",
     "hello.md": "# Hello\n",
     "README.md": "# Readme\n",
   });

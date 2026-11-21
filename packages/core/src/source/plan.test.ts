@@ -42,7 +42,7 @@ test.each(downloadPageEditCases)(
         ),
         file(
           "config.yaml",
-          "id: docs\ntitle: Docs\nsourceVersion: 1\n" +
+          "id: docs\ntitle: Docs\n" +
             (kind === "wiki"
               ? `navigation: [home, {type: page, slug: manual, source: ${filename}}]\n`
               : ""),
@@ -107,7 +107,7 @@ test("editing compiled content preserves each authored relative or explicit refe
         ".topik.yaml",
         "version: 1\nnamespace: refs\nsources: [{kind: wiki, config: wiki.yaml}]\n",
       ),
-      file("wiki.yaml", "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation: [home, install]\n"),
+      file("wiki.yaml", "id: docs\ntitle: Docs\nnavigation: [home, install]\n"),
       file("home.md", raw),
       file("install.md", "---\nid: install\n---\n# Setup\n"),
     ],
@@ -170,9 +170,9 @@ test("cross-kind relative links are repaired on moves and stale locally owned re
         ".topik.yaml",
         "version: 1\nnamespace: refs\nsources: [{kind: wiki, config: docs/wiki.yaml}, {kind: collection, config: guides/collection.yaml}]\n",
       ),
-      file("docs/wiki.yaml", "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation: [home]\n"),
+      file("docs/wiki.yaml", "id: docs\ntitle: Docs\nnavigation: [home]\n"),
       file("docs/home.md", "---\nid: home\n---\n# Home\n\n[Install](../guides/install.md#setup)\n"),
-      file("guides/collection.yaml", "id: guides\ntitle: Guides\nsourceVersion: 1\n"),
+      file("guides/collection.yaml", "id: guides\ntitle: Guides\n"),
       file("guides/install.md", "---\nid: install\n---\n# Setup\n\n[Home](../docs/home.md)\n"),
     ],
   });
@@ -239,14 +239,14 @@ test("fresh relative links across resource kinds preserve authored spelling and 
         ".topik.yaml",
         "version: 1\nnamespace: refs\nsources: [{kind: wiki, config: docs/wiki.yaml}, {kind: collection, config: guides/collection.yaml}, {kind: course, config: lessons/course.yaml}]\n",
       ),
-      file("docs/wiki.yaml", "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation: [home]\n"),
+      file("docs/wiki.yaml", "id: docs\ntitle: Docs\nnavigation: [home]\n"),
       file("docs/home.md", "---\nid: home\n---\n# Home\n"),
-      file("guides/collection.yaml", "id: guides\ntitle: Guides\nsourceVersion: 1\n"),
+      file("guides/collection.yaml", "id: guides\ntitle: Guides\n"),
       file("guides/install.md", "---\nid: install-md\nslug: install-markdown\n---\n# Setup\n"),
       file("guides/install.mdx", "---\nid: install-mdx\nslug: install-mdx\n---\n# Other\n"),
       file(
         "lessons/course.yaml",
-        "sourceVersion: 1\nid: lessons\ntitle: Lessons\nslug: lessons\nmodules: [{id: basics, title: Basics, slug: basics, pages: [intro]}]\n",
+        "id: lessons\ntitle: Lessons\nslug: lessons\nmodules: [{id: basics, title: Basics, slug: basics, pages: [intro]}]\n",
       ),
       file("lessons/intro.md", "---\nid: tutorial\ntitle: Intro\nslug: intro\n---\n# Intro\n"),
     ],
@@ -355,7 +355,7 @@ test("fresh non-Markdown application links remain distinct from dotted Guide sou
         ".topik.yaml",
         "version: 1\nnamespace: refs\nsources: [{kind: collection, config: guides/collection.yaml}]\n",
       ),
-      file("guides/collection.yaml", "id: guides\ntitle: Guides\nsourceVersion: 1\n"),
+      file("guides/collection.yaml", "id: guides\ntitle: Guides\n"),
       file("guides/intro.md", "---\nid: intro\n---\n# Intro\n"),
       file("guides/api.json.md", "---\nid: api-guide\nslug: api-reference\n---\n# API\n"),
     ],
@@ -396,7 +396,7 @@ test.each(["./install.md///?view=full#setup", "/install.md///?view=full#setup"])
           ".topik.yaml",
           "version: 1\nnamespace: refs\nsources: [{kind: collection, config: collection.yaml}]\n",
         ),
-        file("collection.yaml", "id: docs\ntitle: Docs\nsourceVersion: 1\n"),
+        file("collection.yaml", "id: docs\ntitle: Docs\n"),
         file("home.md", "---\nid: home\n---\n# Home\n"),
         file("install.md", "---\nid: installation\n---\n# Setup\n"),
       ],
@@ -472,11 +472,11 @@ test.each(["guide-course", "wiki", "course", "course-dotted"] as const)(
       file(
         config,
         kind === "wiki"
-          ? "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation: [home, {type: page, slug: next-file, source: next}, {type: page, slug: landing, source: next/index}]\n"
-          : `id: lessons\ntitle: Lessons\nslug: lessons\nsourceVersion: 1\nmodules: [{id: basics, title: Basics, slug: basics, pages: [${kind === "guide-course" ? "" : "home, "}${stem}, ${stem}/index]}]\n`,
+          ? "id: docs\ntitle: Docs\nnavigation: [home, {type: page, slug: next-file, source: next}, {type: page, slug: landing, source: next/index}]\n"
+          : `id: lessons\ntitle: Lessons\nslug: lessons\nmodules: [{id: basics, title: Basics, slug: basics, pages: [${kind === "guide-course" ? "" : "home, "}${stem}, ${stem}/index]}]\n`,
       ),
       ...(kind === "guide-course"
-        ? [file("guides/collection.yaml", "id: guides\ntitle: Guides\nsourceVersion: 1\n")]
+        ? [file("guides/collection.yaml", "id: guides\ntitle: Guides\n")]
         : []),
       file(homePath, home),
       file(`${directory}/${stem}.md`, target),
@@ -558,8 +558,8 @@ test.each(["yaml", "json"])(
     const path = `wiki.${format}`;
     const raw =
       format === "yaml"
-        ? "\uFEFFid: docs\r\ntitle: Docs # keep\r\nsourceVersion: 1\r\nnavigation: []\r\ncustom: exact\r\n"
-        : '\uFEFF{\r\n  "id": "docs",\r\n  "title": "Docs",\r\n  "sourceVersion": 1,\r\n  "navigation": [],\r\n  "custom": "exact"\r\n}\r\n';
+        ? "\uFEFFid: docs\r\ntitle: Docs # keep\r\nnavigation: []\r\ncustom: exact\r\n"
+        : '\uFEFF{\r\n  "id": "docs",\r\n  "title": "Docs",\r\n  \r\n  "navigation": [],\r\n  "custom": "exact"\r\n}\r\n';
     const project = await readSourceProject({
       tree: [
         file(
@@ -608,7 +608,7 @@ test("an unresolved saved link cannot acquire a target from changed navigation",
         ".topik.yaml",
         "version: 1\nnamespace: example/wiki\nsources: [{kind: wiki, config: wiki.yaml}]\n",
       ),
-      file("wiki.yaml", "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation: [a, b]\n"),
+      file("wiki.yaml", "id: docs\ntitle: Docs\nnavigation: [a, b]\n"),
       file("a.md", "---\nid: a\n---\n# A\n"),
       file("b.md", "---\nid: b\n---\n# B\n"),
     ],
@@ -646,7 +646,7 @@ test("a removed heading reports the unchanged referring page and link diagnostic
         ".topik.yaml",
         "version: 1\nnamespace: example/wiki\nsources: [{kind: wiki, config: wiki.yaml}]\n",
       ),
-      file("wiki.yaml", "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation: [a, b]\n"),
+      file("wiki.yaml", "id: docs\ntitle: Docs\nnavigation: [a, b]\n"),
       file("a.md", "---\nid: a\n---\n# A\n\n[Details](b.md#details)\n"),
       file("b.md", "---\nid: b\n---\n# B\n\n## Details\n"),
     ],
@@ -709,7 +709,7 @@ test("a Guide source move preserves its filename-derived identity and route", as
         ".topik.yaml",
         "version: 1\nnamespace: example/guide\nsources: [{kind: collection, config: blog/collection.yaml}]\n",
       ),
-      file("blog/collection.yaml", "id: blog\ntitle: Blog\nsourceVersion: 1\n"),
+      file("blog/collection.yaml", "id: blog\ntitle: Blog\n"),
       file("blog/old.md", "# A guide\n"),
     ],
   });
@@ -736,7 +736,7 @@ test("an incomplete saved Wiki context cannot silently retarget an edited link",
         ".topik.yaml",
         "version: 1\nnamespace: example/wiki\nsources: [{kind: wiki, config: wiki.yaml}]\n",
       ),
-      file("wiki.yaml", "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation: [a, b, c]\n"),
+      file("wiki.yaml", "id: docs\ntitle: Docs\nnavigation: [a, b, c]\n"),
       file("a.md", "---\nid: a\n---\n# A\n\n[Target](/b)\n"),
       file("b.md", "---\nid: b\n---\n# B\n"),
       file("c.md", "---\nid: c\n---\n# C\n"),
@@ -785,7 +785,7 @@ test("a saved media revision creates a new local path while an untouched sibling
       {
         path: "docs/collection.yaml",
         mode: "100644",
-        bytes: encodeSource("id: docs\ntitle: Docs\nsourceVersion: 1\n"),
+        bytes: encodeSource("id: docs\ntitle: Docs\n"),
       },
       {
         path: "docs/first.md",
@@ -857,7 +857,7 @@ test("a saved media revision creates a new local path while an untouched sibling
 });
 test("deleting the last block-list Person keeps a valid empty list within its admitted entry", async () => {
   const project = await guideProject(
-    "id: blog\ntitle: Blog\nsourceVersion: 1\npersons:\n  - id: alice\n    spec: {name: Alice}\ncustom: exact\n",
+    "id: blog\ntitle: Blog\npersons:\n  - id: alice\n    spec: {name: Alice}\ncustom: exact\n",
   );
   const admitted = authority(project);
   const result = await planSourceUpdates({
@@ -879,7 +879,7 @@ test("deleting the last block-list Person keeps a valid empty list within its ad
   expect(result.ok, JSON.stringify(result)).toBe(true);
   if (!result.ok) return;
   expect(decodeSource(result.plan.changes[0].candidate!.bytes)).toBe(
-    "id: blog\ntitle: Blog\nsourceVersion: 1\npersons:\n  []\ncustom: exact\n",
+    "id: blog\ntitle: Blog\npersons:\n  []\ncustom: exact\n",
   );
 });
 test("edited links require saved context when routes are reassigned", async () => {
@@ -889,7 +889,7 @@ test("edited links require saved context when routes are reassigned", async () =
         ".topik.yaml",
         "version: 1\nnamespace: example/wiki\nsources: [{kind: wiki, config: wiki.yaml}]\n",
       ),
-      file("wiki.yaml", "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation: [old, new]\n"),
+      file("wiki.yaml", "id: docs\ntitle: Docs\nnavigation: [old, new]\n"),
       file("old.md", "---\nid: old\n---\n[Target](/old)\n"),
       file("new.md", "---\nid: other\n---\n# Other\n"),
     ],
@@ -930,7 +930,7 @@ test("edited links require saved context when routes are reassigned", async () =
 
 test("shared Person edits require permission for every referencing Guide", async () => {
   const source = await guideProject(
-    "id: blog\ntitle: Blog\nsourceVersion: 1\npersons: [{id: alice, spec: {name: Alice, bio: old}}]\n",
+    "id: blog\ntitle: Blog\npersons: [{id: alice, spec: {name: Alice, bio: old}}]\n",
   );
   const project = await readSourceProject({
     tree: [
@@ -964,9 +964,7 @@ test("shared Person edits require permission for every referencing Guide", async
   if (allowed.ok) expect(allowed.plan.affectedResources).toContain("Guide/sibling");
 });
 test("supplied media uses the configuration-local destination and returns the identity repair", async () => {
-  const project = await guideProject(
-    "id: blog\ntitle: Blog\nsourceVersion: 1\nassets: {directory: uploads}\n",
-  );
+  const project = await guideProject("id: blog\ntitle: Blog\nassets: {directory: uploads}\n");
   const bytes = encodeSource("Download these exact bytes.\n");
   const digest = sourceHash(bytes);
   const generated = generateAutomaticAssetName({
@@ -1031,7 +1029,7 @@ test("a Wiki page move preserves identity, incoming targets and untouched naviga
       ),
       file(
         "docs/wiki.yaml",
-        "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation:\n  - type: page\n    slug: start # keep route\n    source: pages/start\n  - type: page\n    slug: next # keep target route\n    source: pages/next\n",
+        "id: docs\ntitle: Docs\nnavigation:\n  - type: page\n    slug: start # keep route\n    source: pages/start\n  - type: page\n    slug: next # keep target route\n    source: pages/next\n",
       ),
       file("docs/pages/start.md", "---\nid: start\n---\n[Next](next.md?q=a%20b#heading)\n"),
       file("docs/pages/next.md", "---\nid: target\ncustom: exact\n---\n# Heading\n", "100755"),
@@ -1099,7 +1097,7 @@ test("a Wiki page move preserves identity, incoming targets and untouched naviga
 });
 test("Person edits preserve unselected records and configuration syntax", async () => {
   const project = await guideProject(
-    "id: blog\ntitle: Blog\nsourceVersion: 1\npersons:\n  - id: alice\n    spec:\n      name: Alice # keep name\n      bio: old\n  - id: bob\n    spec: {name: Bob}\n  - id: carol\n    spec: {name: Carol} # untouched\ncustom: exact\n",
+    "id: blog\ntitle: Blog\npersons:\n  - id: alice\n    spec:\n      name: Alice # keep name\n      bio: old\n  - id: bob\n    spec: {name: Bob}\n  - id: carol\n    spec: {name: Carol} # untouched\ncustom: exact\n",
   );
   const desired = structuredClone(project.compilation.resources).filter(
     (resource) => resource.type !== "Person" || resource.name !== "bob",
@@ -1144,7 +1142,7 @@ const file = (
   text: string,
   mode: SourceTreeFile["mode"] = "100644",
 ): SourceTreeFile => ({ path, bytes: encodeSource(text), mode });
-async function guideProject(config = "id: blog\ntitle: Blog\nsourceVersion: 1\n") {
+async function guideProject(config = "id: blog\ntitle: Blog\n") {
   return readSourceProject({
     tree: [
       file(
@@ -1233,7 +1231,7 @@ test("Wiki config edits require independently admitted byte ranges and preserve 
       ),
       file(
         "docs/custom.json",
-        '{ "id": "docs", "title": "Original", "sourceVersion": 1, "navigation": ["intro"], "custom": [ 1, 2 ] }\n',
+        '{ "id": "docs", "title": "Original", "navigation": ["intro"], "custom": [ 1, 2 ] }\n',
       ),
       file("docs/intro.md", "# Intro\n"),
     ],
@@ -1267,19 +1265,8 @@ test("Wiki config edits require independently admitted byte ranges and preserve 
   expect(result.plan.changes[0].sharedEdits).toHaveLength(1);
 });
 
-test("reserved legacy fields block reviewed opt-in and stale trees never yield a partial plan", async () => {
+test("a stale tree never yields a partial plan", async () => {
   const project = await guideProject("id: blog\ntitle: Blog\n");
-  expect(
-    await planSourceUpdates({
-      project,
-      expectedTreeDigest: project.treeDigest,
-      packageCohort: cohort,
-      desiredResources: project.compilation.resources,
-      operations: [],
-      authority: authority(project),
-      optInConfigs: ["blog/custom.yaml"],
-    }),
-  ).toMatchObject({ ok: false, diagnostics: [{ code: "source-version-collision" }] });
   project.tree[0].bytes[0]++;
   expect(
     await planSourceUpdates({
@@ -1302,7 +1289,7 @@ test("editing one Wiki theme field preserves unknown entries and unchanged field
       ),
       file(
         "wiki.yaml",
-        "id: docs\ntitle: Docs\nsourceVersion: 1\ntheme:\n  colors:\n    primary: '#ff0000'\n    dark: '#000000' # keep\ncustom: untouched\n",
+        "id: docs\ntitle: Docs\ntheme:\n  colors:\n    primary: '#ff0000'\n    dark: '#000000' # keep\ncustom: untouched\n",
       ),
     ],
   });
@@ -1320,7 +1307,7 @@ test("editing one Wiki theme field preserves unknown entries and unchanged field
   expect(result.ok).toBe(true);
   if (!result.ok) return;
   expect(decodeSource(result.plan.changes[0].candidate!.bytes)).toBe(
-    "id: docs\ntitle: Docs\nsourceVersion: 1\ntheme:\n  colors:\n    primary: \"#00ff00\"\n    dark: '#000000' # keep\ncustom: untouched\n",
+    "id: docs\ntitle: Docs\ntheme:\n  colors:\n    primary: \"#00ff00\"\n    dark: '#000000' # keep\ncustom: untouched\n",
   );
 });
 
@@ -1333,7 +1320,7 @@ test("nested theme addition uses independently inspected insertion evidence", as
       ),
       file(
         "wiki.yaml",
-        "id: docs\ntitle: Docs\nsourceVersion: 1\ntheme:\n  colors:\n    primary: '#ff0000' # keep\n",
+        "id: docs\ntitle: Docs\ntheme:\n  colors:\n    primary: '#ff0000' # keep\n",
       ),
     ],
   });
@@ -1362,7 +1349,7 @@ test("a new Wiki in an update plan reports that source initialization is require
         ".topik.yaml",
         "version: 1\nnamespace: example/wiki\nsources: [{kind: wiki, config: docs/wiki.yaml}]\n",
       ),
-      file("docs/wiki.yaml", "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation: [intro]\n"),
+      file("docs/wiki.yaml", "id: docs\ntitle: Docs\nnavigation: [intro]\n"),
       file("docs/intro.md", "# Intro\n"),
     ],
   });
@@ -1380,36 +1367,5 @@ test("a new Wiki in an update plan reports that source initialization is require
   ).toMatchObject({
     ok: false,
     diagnostics: [{ code: "source-creation-required", resource: "Wiki/other" }],
-  });
-});
-
-test("opaque legacy frontmatter blocks reviewed opt-in with a coded page diagnostic", async () => {
-  const project = await readSourceProject({
-    tree: [
-      file(
-        ".topik.yaml",
-        "version: 1\nnamespace: example/legacy\nsources: [{kind: collection, config: blog/custom.yaml}]\n",
-      ),
-      file("blog/custom.yaml", "id: blog\ntitle: Blog\n"),
-      file("blog/post.md", "---\ntitle: &title Original\nsubtitle: *title\n---\n# Original\n"),
-    ],
-  });
-  const post = project.documents.find((document) => document.path === "blog/post.md");
-  expect(post).toBeDefined();
-  expect(
-    await planSourceUpdates({
-      project,
-      expectedTreeDigest: project.treeDigest,
-      packageCohort: cohort,
-      desiredResources: project.compilation.resources,
-      operations: [],
-      authority: authority(project),
-      optInConfigs: ["blog/custom.yaml"],
-    }),
-  ).toMatchObject({
-    ok: false,
-    diagnostics: [
-      { code: "source-version-collision", resource: post!.resource, path: "blog/post.md" },
-    ],
   });
 });

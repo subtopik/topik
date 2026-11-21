@@ -136,12 +136,7 @@ export async function compileResourceLinksInSession(
 
   for (const resource of input.resources) {
     if (resource.type === "Wiki")
-      navigation.set(
-        resource.name,
-        resolveWikiNavigation(resource.spec.navigation ?? [], {
-          sourceVersion: resource.spec.sourceVersion,
-        }),
-      );
+      navigation.set(resource.name, resolveWikiNavigation(resource.spec.navigation ?? []));
   }
   for (const resource of linkTargets) {
     const key = resourceKey(resource);

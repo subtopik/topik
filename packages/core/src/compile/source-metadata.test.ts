@@ -9,7 +9,7 @@ import type { Wiki } from "@topik/schema/wiki/v1";
 
 let dir: string;
 beforeEach(async () => {
-  dir = await mkdtemp(join(tmpdir(), "topik-source-version-"));
+  dir = await mkdtemp(join(tmpdir(), "topik-source-metadata-"));
 });
 afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
@@ -25,11 +25,11 @@ async function manifest(kind: "wiki" | "collection", config: string) {
   );
 }
 
-test("versioned Guide metadata preserves identity, explicit empty tags/authors, null description and full Person facts", async () => {
+test("Guide metadata preserves identity, explicit empty tags/authors, null description and full Person facts", async () => {
   await manifest("collection", "blog/posts.yml");
   await file(
     "blog/posts.yml",
-    "id: blog\ntitle: Blog\nsourceVersion: 1\ntags: [inherited]\npersons:\n  - id: ada\n    labels: { role: author }\n    spec: { name: Ada, email: null, bio: '' }\n",
+    "id: blog\ntitle: Blog\ntags: [inherited]\npersons:\n  - id: ada\n    labels: { role: author }\n    spec: { name: Ada, email: null, bio: '' }\n",
   );
   await file(
     "blog/original.md",
@@ -59,26 +59,21 @@ test("versioned Guide metadata preserves identity, explicit empty tags/authors, 
   });
 });
 
-test("unversioned frontmatter IDs and routes remain opaque", async () => {
+test("a configuration that still names sourceVersion compiles as before", async () => {
   await manifest("collection", "collection.yaml");
-  await file("collection.yaml", "id: blog\ntitle: Blog\n");
-  await file(
-    "post.md",
-    "---\nid: opaque-author-value\nslug: opaque-route\nlabels: { custom: value }\n---\n# Post\n",
-  );
+  await file("collection.yaml", "id: blog\ntitle: Blog\nsourceVersion: 1\n");
+  await file("post.md", "---\nid: post-id\nslug: post-route\n---\n# Post\n");
   const result = await compileManifest({ dir });
-  expect(result.resources[0]).toMatchObject({ name: "blog-post", spec: { slug: "post" } });
-  expect(result.resources[0]).not.toHaveProperty("labels");
+  expect(result.resources[0]).toMatchObject({ name: "post-id", spec: { slug: "post-route" } });
 });
 
-test("versioned Wiki routes and relative source links share one resolver inside the local config root", async () => {
+test("Wiki routes and relative source links share one resolver inside the local config root", async () => {
   await manifest("wiki", "docs/custom.json");
   await file(
     "docs/custom.json",
     JSON.stringify({
       id: "docs",
       title: "Docs",
-      sourceVersion: 1,
       description: null,
       labels: {},
       navigation: [
@@ -97,7 +92,6 @@ test("versioned Wiki routes and relative source links share one resolver inside 
   expect(wiki).toMatchObject({
     labels: {},
     spec: {
-      sourceVersion: 1,
       description: null,
       navigation: [
         { page: "intro-page", sourcePath: "pages/start", slug: "intro", hidden: true },
@@ -108,9 +102,7 @@ test("versioned Wiki routes and relative source links share one resolver inside 
   expect(result.provenance[0].sourcePathsByResource["WikiPage/intro-page"]).toBe(
     "docs/pages/start.md",
   );
-  const resolved = resolveWikiNavigation(wiki.spec.navigation!, {
-    sourceVersion: wiki.spec.sourceVersion,
-  });
+  const resolved = resolveWikiNavigation(wiki.spec.navigation!);
   expect(
     resolveWikiContentHref("next.md?view=a%20b&view=c#next", "intro-page", resolved),
   ).toMatchObject({
@@ -130,9 +122,9 @@ test("versioned Wiki routes and relative source links share one resolver inside 
   expect(resolveWikiContentHref("reference.md", "intro-page", resolved)).toBeNull();
 });
 
-test("versioned Wiki source ambiguity is rejected instead of selecting an extension", async () => {
+test("Wiki source ambiguity is rejected instead of selecting an extension", async () => {
   await manifest("wiki", "wiki.yaml");
-  await file("wiki.yaml", "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation: [intro]\n");
+  await file("wiki.yaml", "id: docs\ntitle: Docs\nnavigation: [intro]\n");
   await file("intro.md", "# One\n");
   await file("intro.mdx", "# Two\n");
   await expect(compileManifest({ dir })).rejects.toMatchObject({
@@ -142,25 +134,23 @@ test("versioned Wiki source ambiguity is rejected instead of selecting an extens
   });
 });
 
-test("versioned metadata refuses invalid types and oversized fields without truncation", async () => {
+test("page metadata refuses invalid types and oversized fields without truncation", async () => {
   await manifest("wiki", "wiki.yaml");
-  await file("wiki.yaml", "id: docs\ntitle: Docs\nsourceVersion: 1\nnavigation: [intro]\n");
+  await file("wiki.yaml", "id: docs\ntitle: Docs\nnavigation: [intro]\n");
   await file("intro.md", `---\ndescription: ${"x".repeat(1025)}\n---\n# Intro\n`);
   await expect(compileManifest({ dir })).rejects.toBeDefined();
 });
 
-test("versioned author references are checked against the whole declared project", async () => {
+test("Guide author references are checked against the whole declared project", async () => {
   await manifest("collection", "collection.yaml");
-  await file("collection.yaml", "id: blog\ntitle: Blog\nsourceVersion: 1\n");
+  await file("collection.yaml", "id: blog\ntitle: Blog\n");
   await file("post.md", "---\nauthors: [missing]\n---\n# Post\n");
   await expect(compileManifest({ dir })).rejects.toMatchObject({ id: "author-not-found" });
   await expect(compileGuides({ dir })).rejects.toMatchObject({ id: "author-not-found" });
 });
 
-test("unversioned Wiki labels remain opaque while versioned labels require the public shape", async () => {
+test("Wiki labels require the public shape", async () => {
   await manifest("wiki", "wiki.yaml");
   await file("wiki.yaml", "id: docs\ntitle: Docs\nlabels: [opaque]\n");
-  expect((await compileManifest({ dir })).resources[0]).not.toHaveProperty("labels");
-  await file("wiki.yaml", "id: docs\ntitle: Docs\nsourceVersion: 1\nlabels: [opaque]\n");
   await expect(compileManifest({ dir })).rejects.toMatchObject({ id: "config-invalid" });
 });

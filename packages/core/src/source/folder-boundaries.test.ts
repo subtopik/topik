@@ -15,10 +15,9 @@ type Declaration = { path: string; name: string; slug?: string; body?: string };
 const cohort = "a".repeat(64);
 
 test("public navigation routes retain their own slug grammar", () => {
-  const wiki = resolveWikiNavigation(
-    [{ type: "page", page: "home", slug: "con", sourcePath: "home" }],
-    { sourceVersion: 1 },
-  );
+  const wiki = resolveWikiNavigation([
+    { type: "page", page: "home", slug: "con", sourcePath: "home" },
+  ]);
   expect(resolveWikiContentHref("/con", "home", wiki)?.page.page).toBe("home");
   const course = resolveCourseNavigation({
     course: "docs",
@@ -43,7 +42,6 @@ function tree(kind: Kind, pages: Declaration[], guides: Declaration[] = []) {
   const config = {
     id: "docs",
     title: "Docs",
-    sourceVersion: 1,
     ...(kind === "wiki"
       ? {
           navigation: pages.map(({ path, name, slug }) => ({
@@ -79,9 +77,7 @@ function tree(kind: Kind, pages: Declaration[], guides: Declaration[] = []) {
   for (const [index, directory] of collections.entries()) {
     const path = posix.join(directory, "collection.yaml");
     sources.push({ kind: "collection", config: path });
-    configurations.push(
-      file(path, JSON.stringify({ id: `collection-${index}`, title: "Guides", sourceVersion: 1 })),
-    );
+    configurations.push(file(path, JSON.stringify({ id: `collection-${index}`, title: "Guides" })));
   }
   return [
     file(".topik.yaml", JSON.stringify({ version: 1, namespace: "folders", sources })),
@@ -116,11 +112,7 @@ function resolve(project: SourceProject, kind: "wiki" | "course", href: string) 
       resolveCourseNavigation(project.courseContexts["Course/docs"]),
     );
   const wiki = project.wikiContexts["Wiki/docs"];
-  return resolveWikiContentHref(
-    href,
-    "home",
-    resolveWikiNavigation(wiki.spec.navigation ?? [], { sourceVersion: wiki.spec.sourceVersion }),
-  );
+  return resolveWikiContentHref(href, "home", resolveWikiNavigation(wiki.spec.navigation ?? []));
 }
 async function noop(project: SourceProject, kind: Kind, body?: string, authoringUpdate = false) {
   const desired = structuredClone(project.compilation.resources);

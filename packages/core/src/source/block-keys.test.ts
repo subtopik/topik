@@ -81,8 +81,8 @@ test.each(["guide", "wiki"] as const)(
           file(
             config,
             kind === "guide"
-              ? "id: docs\ntitle: Docs\nsourceVersion: 1\n"
-              : `${first}\nid: docs\nsourceVersion: 1\nnavigation: [home]\ncustom: exact\n`,
+              ? "id: docs\ntitle: Docs\n"
+              : `${first}\nid: docs\nnavigation: [home]\ncustom: exact\n`,
           ),
           file("home.md", `---\n${first}\n? description\n: remove\ncustom: exact\n---\n# Home\n`),
         ],

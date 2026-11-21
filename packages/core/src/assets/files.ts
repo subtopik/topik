@@ -334,20 +334,32 @@ export async function readPortableAssetFileInSession(
   // Key on the canonical root, so a retargeted symlinked ancestor is a new read, and on every
   // option that changes the result.
   const root = await realpath(options.root).catch(() => resolve(options.root));
-  const key = [root, options.path, options.maxBytes ?? "", options.gitExecutable ?? ""].join("\0");
+  const key = [
+    root,
+    options.path,
+    options.maxBytes ?? "",
+    options.gitExecutable ?? "",
+    options.fileSafety ?? "",
+  ].join("\0");
   let read = session.reads.get(key);
   if (read === undefined) {
     read = readPortableAssetFileAnchored(options, session);
     session.reads.set(key, read);
     // A file that changed while it was read may read cleanly a moment later: retry next time.
-    void read.then((result) => {
-      if (
-        !result.ok &&
-        portableReadFailureReason(result.diagnostics) === "changed-during-read" &&
-        session.reads.get(key) === read
-      )
-        session.reads.delete(key);
-    });
+    void read.then(
+      (result) => {
+        if (
+          !result.ok &&
+          portableReadFailureReason(result.diagnostics) === "changed-during-read" &&
+          session.reads.get(key) === read
+        )
+          session.reads.delete(key);
+      },
+      // The caller receives the rejection; a read that threw is not cached either.
+      () => {
+        if (session.reads.get(key) === read) session.reads.delete(key);
+      },
+    );
   }
   return read;
 }

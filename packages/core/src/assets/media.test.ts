@@ -472,6 +472,11 @@ describe("active markup in other spellings", () => {
     ["a hexadecimal reference", text('Notes\n<a href="&#x6A;avascript:x">a</a>')],
     ["a tab inside the scheme", text('Notes\n<a href="java\tscript:x">a</a>')],
     ["an encoded colon", text('Notes\n<a href="javascript&colon;x">a</a>')],
+    ["a zero-padded reference", text('Notes\n<a href="&#0000000106;avascript:x">a</a>')],
+    ["a zero-padded hexadecimal reference", text('Notes\n<a href="&#x0000006a;avascript:x">a</a>')],
+    ["a leading control character", text('Notes\n<a href="\u0001javascript:x">a</a>')],
+    ["a referenced leading control", text('Notes\n<a href="&#1;javascript:x">a</a>')],
+    ["a form action", text('Notes\n<button formaction="javascript:x">a</button>')],
   ])("refuses %s as HTML or SVG", (_name, bytes) => {
     expect(["text/html", "image/svg+xml"]).toContain(sniffPortableMediaType(bytes));
   });

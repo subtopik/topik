@@ -43,6 +43,13 @@ function sourceLines(source: string) {
 
 const leadingSpaces = (text: string) => text.length - text.trimStart().length;
 
+function expandTabs(text: string): string {
+  let expanded = "";
+  for (const character of text)
+    expanded += character === "\t" ? " ".repeat(4 - (expanded.length % 4)) : character;
+  return expanded;
+}
+
 /**
  * Follow block quotes and list items line by line, as the CommonMark document parser opens
  * and continues them, to tell when micromark rewrites its event list. Columns count tabs as
@@ -71,14 +78,18 @@ function containerModel() {
         continue;
       }
       const item = startsItem(rest) ? ITEM_MARKER.exec(rest) : null;
-      if (!item || (BLANK_LINE.test(rest.slice(item[0].length)) && stack.length === 0)) return rest;
+      // An empty marker line opens an item too (`-` alone, its content on the next lines). A
+      // setext underline looks the same; modelling it as an item only over-approximates.
+      if (!item) return rest;
       column += item[0].length;
       stack.push({ quote: false, content: column });
       rest = rest.slice(item[0].length);
     }
   };
   return {
-    line(text: string, lazy: boolean): { rewrite: boolean; walk: number } {
+    line(authored: string, lazy: boolean): { rewrite: boolean; walk: number } {
+      // Tabs advance to the next multiple of four columns, as CommonMark counts indentation.
+      const text = authored.includes("\t") ? expandTabs(authored) : authored;
       const blank = BLANK_LINE.test(text);
       let rest = text;
       let column = 0;
@@ -102,7 +113,7 @@ function containerModel() {
           continue;
         }
         // A new item of the same list continues it, closing what was nested in the item.
-        sibling = startsItem(rest) && !BLANK_LINE.test(rest.replace(ITEM_MARKER, ""));
+        sibling = startsItem(rest);
         break;
       }
       const nested = stack.length - continued - 1;
@@ -261,6 +272,15 @@ function sourceIndex(source: string) {
   };
 }
 
+// Events between saved container depths: a rewrite rescans at most this many plus the rewritten tail.
+const CONTAINER_CHECKPOINT = 64;
+
+interface ContainerCheckpoint {
+  index: number;
+  last: unknown;
+  depth: number;
+}
+
 /**
  * Refuse expensive inline syntax before micromark resolves it.
  *
@@ -288,10 +308,7 @@ export function parserLimitSyntax(source: string): Extension {
   let work = 0;
   const index = sourceIndex(source);
   const texts = new WeakMap<TokenizeContext, TextState>();
-  const containers = new WeakMap<
-    TokenizeContext,
-    { index: number; last: unknown; depth: number }
-  >();
+  const containers = new WeakMap<TokenizeContext, ContainerCheckpoint[]>();
   // Text contexts are tokenized and resolved one at a time, in document order.
   let active: TextState | undefined;
   const cost = (state: TextState, to: number) => {
@@ -419,26 +436,31 @@ export function parserLimitSyntax(source: string): Extension {
   const containerGuard: Tokenizer = function (_effects, _ok, nok) {
     return (code) => {
       const events = this.events;
-      const previous = containers.get(this);
-      // Speculative constructs may rewind events. Reuse a count only when the
-      // last scanned event still occupies its original slot.
-      const state =
-        previous && previous.index <= events.length && events[previous.index - 1] === previous.last
-          ? previous
-          : { index: 0, last: undefined, depth: 0 };
-      for (; state.index < events.length; state.index++) {
-        const [action, token] = events[state.index];
+      let checkpoints = containers.get(this);
+      if (!checkpoints)
+        containers.set(this, (checkpoints = [{ index: 0, last: undefined, depth: 0 }]));
+      // micromark rewrites the tail of the event list as containers close, and speculative
+      // constructs rewind it. Resume from the newest checkpoint whose event still occupies its
+      // slot, so a rewrite costs a rescan of the tail rather than of the whole list.
+      while (checkpoints.length > 1) {
+        const { index, last } = checkpoints.at(-1)!;
+        if (index <= events.length && events[index - 1] === last) break;
+        checkpoints.pop();
+      }
+      let { index, depth } = checkpoints.at(-1)!;
+      for (; index < events.length; index++) {
+        const [action, token] = events[index];
         const weight =
           token.type === "blockQuote"
             ? 1
             : token.type === "listOrdered" || token.type === "listUnordered"
               ? 2
               : 0;
-        state.depth += action === "enter" ? weight : -weight;
+        depth += action === "enter" ? weight : -weight;
+        if ((index + 1) % CONTAINER_CHECKPOINT === 0)
+          checkpoints.push({ index: index + 1, last: events[index], depth });
       }
-      state.last = events.at(-1);
-      containers.set(this, state);
-      if (state.depth >= CONTENT_LIMITS.treeDepth)
+      if (depth >= CONTENT_LIMITS.treeDepth)
         throw new ContentLimitError(
           `Content exceeds the tree depth limit of ${CONTENT_LIMITS.treeDepth}`,
         );
@@ -466,7 +488,30 @@ export function parserLimitSyntax(source: string): Extension {
       return nok(code);
     };
   };
+  // A setext underline (`===` or `---` under a paragraph) makes micromark resolve over, and
+  // then copy, the flow's whole event list: charge that list when the line can underline.
+  const setextGuard: Tokenizer = function (_effects, _ok, nok) {
+    return (code) => {
+      const events = this.events;
+      let index = events.length;
+      let paragraph = false;
+      // The same test micromark's setext construct makes before it takes the line.
+      while (index--) {
+        const type = events[index][1].type;
+        if (type !== "lineEnding" && type !== "linePrefix" && type !== "content") {
+          paragraph = type === "paragraph";
+          break;
+        }
+      }
+      if (!this.parser.lazy[this.now().line] && (this.interrupt || paragraph)) spend(events.length);
+      return nok(code);
+    };
+  };
   return {
+    flow: {
+      45: { tokenize: setextGuard, add: "before" },
+      61: { tokenize: setextGuard, add: "before" },
+    },
     document: {
       ...Object.fromEntries(
         "*+->0123456789"

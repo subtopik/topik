@@ -182,9 +182,15 @@ function classifyMarkupText(text: string, truncated: boolean): string | undefine
   return undefined;
 }
 
-/** An attribute that runs script when its tag is parsed: an event handler or a `javascript:` URL. */
+/**
+ * An attribute that runs script when its tag is parsed or followed: an event handler, or a
+ * `javascript:` URL in a link, source, form action or SVG link.
+ */
 const EVENT_HANDLER_ATTRIBUTE = /[\s"'/]on[a-z][a-z0-9_-]*\s*=/u;
-const JAVASCRIPT_URL_ATTRIBUTE = /(?:href|src)\s*=\s*["']?\s*javascript:/u;
+// URL parsing strips leading C0 controls and spaces before the scheme, so they are matched.
+const JAVASCRIPT_URL_ATTRIBUTE =
+  // eslint-disable-next-line no-control-regex
+  /(?:href|src|action|formaction|xlink:href)\s*=\s*["']?[\u0000-\u0020]*javascript:/u;
 
 /**
  * A tag's text as an HTML parser reads its URLs: character references decoded, and the tabs
@@ -194,8 +200,11 @@ const JAVASCRIPT_URL_ATTRIBUTE = /(?:href|src)\s*=\s*["']?\s*javascript:/u;
 function urlText(tag: string): string {
   const decoded = tag.includes("&")
     ? tag
-        .replace(/&#x([0-9a-f]{1,6});?/gu, (_, hex: string) => codePoint(Number.parseInt(hex, 16)))
-        .replace(/&#([0-9]{1,7});?/gu, (_, decimal: string) => codePoint(Number(decimal)))
+        // HTML allows any number of leading zeros in a character reference.
+        .replace(/&#x0*([0-9a-f]{1,6});?/gu, (_, hex: string) =>
+          codePoint(Number.parseInt(hex, 16)),
+        )
+        .replace(/&#0*([0-9]{1,7});?/gu, (_, decimal: string) => codePoint(Number(decimal)))
         .replace(/&(?:colon|tab|newline);/gu, (entity) =>
           entity === "&colon;" ? ":" : entity === "&tab;" ? "\t" : "\n",
         )

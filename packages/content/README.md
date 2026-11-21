@@ -470,10 +470,14 @@ Markdown parser rebuild its event list for the whole document so far:
 - a list item that closes a block quote or list nested in the previous item
   costs the same
 - a lazy line that continues a paragraph costs the paragraph's lines so far
+- a setext heading underline (`===` or `---` under a paragraph) costs the same
+  as a closing block quote; ATX headings (`## Title`) cost nothing
 
-A document with a few hundred such closings is unaffected. Thousands of them,
-for example a very long changelog whose every entry nests a list and is followed
-by a paragraph, exhaust the budget: split such a document.
+About 1,500 such closings fit the budget in a document of ordinary size; a
+document of 3,000 nested list items, or a very long changelog whose every entry
+nests a list and is followed by a paragraph, exhausts it. The budget refuses such
+input after about a second of parser work, as it does for inline syntax: split
+the document.
 
 ## Edge cases
 

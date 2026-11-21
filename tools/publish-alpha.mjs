@@ -116,7 +116,8 @@ function validateWorkspace(cwd) {
 
 /**
  * A release runs from a tag that names the packages' version, such as `v0.1.0-alpha.8`, or by
- * hand from `main`, so a tag on an arbitrary commit cannot publish what that commit holds.
+ * hand from `main`. This catches a tag that disagrees with the packages; the publish workflow
+ * separately refuses a commit that is not on `main`, before it installs or builds anything.
  */
 function validateReleaseRef(ref, versions) {
   const version = versions.values().next().value;

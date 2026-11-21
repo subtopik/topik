@@ -71,6 +71,9 @@ export class OutputPublicationError extends Error {
   }
 }
 
+/** A link, special file, hard link or unsafe directory entry found while binding a tree. */
+class UnsafeOutputEntryError extends OutputPublicationError {}
+
 function refused(reason: OutputPublicationErrorReason, options?: ErrorOptions) {
   return new OutputPublicationError(OUTPUT_PUBLICATION_REASON_MESSAGES[reason], reason, options);
 }
@@ -379,8 +382,8 @@ function existingOutputTree<Tree>(bind: () => Tree): Tree {
   try {
     return bind();
   } catch (error) {
-    if (error instanceof OutputPublicationError && error.reason === undefined)
-      throw refused("not-owned", { cause: error });
+    // Only entries no publication writes; an unreadable or changing tree keeps its own error.
+    if (error instanceof UnsafeOutputEntryError) throw refused("not-owned", { cause: error });
     throw error;
   }
 }
@@ -647,7 +650,7 @@ function inspectBoundDirectorySync(
 ): void {
   const before = fstatSync(directoryFd, { bigint: true });
   if (!before.isDirectory()) {
-    throw new OutputPublicationError("generation contains an unsafe directory entry");
+    throw new UnsafeOutputEntryError("generation contains an unsafe directory entry");
   }
   const children = readdirSync(procFd(directoryFd), { withFileTypes: true }).sort((left, right) =>
     Buffer.compare(Buffer.from(left.name, "utf8"), Buffer.from(right.name, "utf8")),
@@ -671,7 +674,7 @@ function inspectBoundDirectorySync(
       continue;
     }
     if (!child.isFile()) {
-      throw new OutputPublicationError("generation contains a link or special-node entry");
+      throw new UnsafeOutputEntryError("generation contains a link or special-node entry");
     }
 
     let fileFd: number | undefined;
@@ -684,7 +687,7 @@ function inspectBoundDirectorySync(
       );
       const fileBefore = fstatSync(fileFd, { bigint: true });
       if (!fileBefore.isFile() || fileBefore.nlink !== 1n) {
-        throw new OutputPublicationError("generation contains a hard link or unsafe file entry");
+        throw new UnsafeOutputEntryError("generation contains a hard link or unsafe file entry");
       }
       const bytes = readFileSync(fileFd);
       const fileAfter = fstatSync(fileFd, { bigint: true });
@@ -1265,7 +1268,7 @@ function inspectPortableDirectorySync(
 ): void {
   const before = lstatSync(path, { bigint: true });
   if (!before.isDirectory() || before.isSymbolicLink()) {
-    throw new OutputPublicationError("generation contains an unsafe directory entry");
+    throw new UnsafeOutputEntryError("generation contains an unsafe directory entry");
   }
   const children = readdirSync(path, { withFileTypes: true }).sort((left, right) =>
     Buffer.compare(Buffer.from(left.name, "utf8"), Buffer.from(right.name, "utf8")),
@@ -1278,7 +1281,7 @@ function inspectPortableDirectorySync(
       continue;
     }
     if (!child.isFile()) {
-      throw new OutputPublicationError("generation contains a link or special-node entry");
+      throw new UnsafeOutputEntryError("generation contains a link or special-node entry");
     }
     const { bytes, identity } = readPortableEntrySync(childPath);
     entries.push({
@@ -1299,7 +1302,7 @@ function inspectPortableDirectorySync(
 function readPortableEntrySync(path: string): { bytes: Buffer; identity: BigIntStats } {
   const entry = lstatSync(path, { bigint: true });
   if (!entry.isFile() || entry.isSymbolicLink()) {
-    throw new OutputPublicationError("generation contains a link or special-node entry");
+    throw new UnsafeOutputEntryError("generation contains a link or special-node entry");
   }
   let fd: number | undefined;
   try {
@@ -1311,7 +1314,7 @@ function readPortableEntrySync(path: string): { bytes: Buffer; identity: BigIntS
       before.dev !== entry.dev ||
       before.ino !== entry.ino
     ) {
-      throw new OutputPublicationError("generation contains a hard link or unsafe file entry");
+      throw new UnsafeOutputEntryError("generation contains a hard link or unsafe file entry");
     }
     const bytes = readFileSync(fd);
     const after = fstatSync(fd, { bigint: true });

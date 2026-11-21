@@ -140,6 +140,9 @@ describe("content resource boundaries", () => {
     ["sibling items with nested lists", "- a\n  - b\n".repeat(12_000)],
     ["sibling items with nested quotes", "- > a\n".repeat(20_000)],
     ["lazy lines after quoted headings", "> # h\nb\n".repeat(12_000)],
+    ["tab-indented nested lists", "- a\n\t- b\n".repeat(20_000)],
+    ["setext headings", "Title\n=====\n\nBody.\n\n".repeat(20_000)],
+    ["nested lists under empty items", "-\n  - a\n".repeat(20_000)],
     [
       "footnote definitions ended by paragraphs",
       Array.from({ length: 8_000 }, (_, index) => `[^n${index}]: a\n\nb\n\n`).join(""),
@@ -203,6 +206,13 @@ describe("content resource boundaries", () => {
       ).join(""),
     ],
     ["quoted lines", "> A quoted line of ordinary prose.\n".repeat(5_000)],
+    ["setext headings near the budget", "Title\n=====\n\nBody.\n\n".repeat(1_000)],
+    ["thematic breaks between paragraphs", "Para.\n\n---\n\n".repeat(6_000)],
+    // Near the block budget: about 1,500 closings of nested containers are admitted.
+    ["steps with nested notes", "1. Step\n   - note\n".repeat(1_500)],
+    ["nested task lists", "- [ ] task\n  - [x] sub\n".repeat(1_500)],
+    ["terms with definition lists", "Term\n\n- def one\n- def two\n\n".repeat(1_500)],
+    ["quoted notes between paragraphs", "> **Note**\n> text here\n\nParagraph.\n\n".repeat(1_500)],
     ["thematic breaks that look like list items", "* * *\n\n- - -\n\n".repeat(5_000)],
     [
       "nested lists",

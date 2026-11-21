@@ -17,7 +17,7 @@ export function sniffPortableMediaType(bytes: Uint8Array): string {
   if (isoMediaType !== undefined) return isoMediaType;
   if (isBmp(bytes)) return "image/bmp";
   if (isTiff(bytes)) return "image/tiff";
-  if (has(0x00, 0x00, 0x01, 0x00)) return "image/x-icon";
+  if (isIco(bytes)) return "image/x-icon";
   if (ascii(bytes, 0, 5) === "%PDF-") return "application/pdf";
   if (has(0x50, 0x4b, 0x03, 0x04) || has(0x50, 0x4b, 0x05, 0x06)) return "application/zip";
   if (has(0x1f, 0x8b)) return "application/gzip";
@@ -321,7 +321,9 @@ function mpegAudioFrameLength(bytes: Uint8Array, offset: number): number | undef
 function isMpegAudioFrameSequence(bytes: Uint8Array): boolean {
   const length = mpegAudioFrameLength(bytes, 0);
   if (length === undefined) return false;
-  return length === bytes.byteLength || mpegAudioFrameLength(bytes, length) !== undefined;
+  if (mpegAudioFrameLength(bytes, length) !== undefined) return true;
+  // A lone frame is accepted only when it is not UTF-16LE text whose length happens to match.
+  return length === bytes.byteLength && !(bytes[0] === 0xff && bytes[1] === 0xfe);
 }
 
 /** Header bytes of the first ADTS frame, or undefined when they are not a valid header. */
@@ -528,12 +530,32 @@ function sniffIsoBaseMediaType(bytes: Uint8Array): string | undefined {
   if (bytes.byteLength < 16 || ascii(bytes, 4, 4) !== "ftyp") return undefined;
   const boxSize = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(0);
   if (boxSize < 16 || boxSize % 4 !== 0 || boxSize > bytes.byteLength) return undefined;
-  // Offset 8 holds the major brand, 12 the minor version, and compatible brands follow.
-  const brands = [ascii(bytes, 8, 4)];
-  for (let offset = 16; offset + 4 <= boxSize; offset += 4) brands.push(ascii(bytes, offset, 4));
-  const known = brands.filter((brand) => ISO_BMFF_BRANDS.has(brand));
-  const brand = known.find((value) => !GENERIC_ISO_BMFF_BRANDS.has(value)) ?? known[0];
-  return brand === undefined ? undefined : ISO_BMFF_BRANDS.get(brand);
+  // Offset 8 holds the major brand, 12 the minor version, and compatible brands follow. Only
+  // the first brands are read: a box may claim the whole file, and real files list a few.
+  const end = Math.min(boxSize, 16 + ISO_BMFF_MAX_COMPATIBLE_BRANDS * 4);
+  let generic: string | undefined;
+  for (let offset = 8; offset + 4 <= end; offset = offset === 8 ? 16 : offset + 4) {
+    const brand = ascii(bytes, offset, 4);
+    if (!ISO_BMFF_BRANDS.has(brand)) continue;
+    if (!GENERIC_ISO_BMFF_BRANDS.has(brand)) return ISO_BMFF_BRANDS.get(brand);
+    generic ??= brand;
+  }
+  return generic === undefined ? undefined : ISO_BMFF_BRANDS.get(generic);
+}
+
+/** Compatible brands read from an `ftyp` box; later brands are ignored. */
+const ISO_BMFF_MAX_COMPATIBLE_BRANDS = 64;
+
+/**
+ * An ICO header (reserved 0, type 1) with at least one image whose directory fits in the file.
+ * An ISO base media file whose `ftyp` box is 256 bytes long starts with the same four bytes.
+ */
+function isIco(bytes: Uint8Array): boolean {
+  if (bytes.byteLength < 6 || bytes[0] !== 0 || bytes[1] !== 0 || bytes[2] !== 1 || bytes[3] !== 0)
+    return false;
+  if (ascii(bytes, 4, 4) === "ftyp") return false;
+  const count = bytes[4] | (bytes[5] << 8);
+  return count > 0 && 6 + count * 16 <= bytes.byteLength;
 }
 
 function trailingUtf8Completion(bytes: Uint8Array): number {

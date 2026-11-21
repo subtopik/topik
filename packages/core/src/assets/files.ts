@@ -89,7 +89,7 @@ export function validatePortableAssetFile(
     !hasPortableMode(file) ||
     (file.source !== "git" && file.linkCount !== 1) ||
     file.hasAlternateDataStream === true ||
-    (file.contentFilter !== undefined && file.contentFilter !== "unspecified") ||
+    (file.contentFilter !== undefined && !isIneffectiveGitAttribute(file.contentFilter)) ||
     file.workingTreeEncoding !== undefined
   ) {
     diagnostics.push(
@@ -498,9 +498,7 @@ async function readPortableAssetFileAnchored(
 
     if (
       attributes !== undefined &&
-      ((attributes.filter !== undefined && attributes.filter !== "unspecified") ||
-        (attributes.workingTreeEncoding !== undefined &&
-          attributes.workingTreeEncoding !== "unspecified"))
+      (attributes.filter === "set" || attributes.workingTreeEncoding === "set")
     ) {
       return fail({
         message: "Effective Git content filters or working-tree encoding are not portable",
@@ -709,9 +707,7 @@ async function readPortableAssetFileByPath(
     }
     if (
       attributes !== undefined &&
-      ((attributes.filter !== undefined && attributes.filter !== "unspecified") ||
-        (attributes.workingTreeEncoding !== undefined &&
-          attributes.workingTreeEncoding !== "unspecified"))
+      (attributes.filter === "set" || attributes.workingTreeEncoding === "set")
     ) {
       return fail({
         message: "Effective Git content filters or working-tree encoding are not portable",
@@ -1430,7 +1426,13 @@ async function anchoredGitBoundaryFingerprint(
       };
     }
     const after = await handle.stat({ bigint: true });
-    if (!hasStableFileIdentity(before, after)) {
+    // Directory timestamps change with every lock file Git creates; identity suffices.
+    const boundaryIsDirectory = before.isDirectory();
+    if (
+      boundaryIsDirectory
+        ? identityStamp(before) !== identityStamp(after)
+        : !hasStableFileIdentity(before, after)
+    ) {
       return {
         ok: false,
         failure: {
@@ -1439,7 +1441,11 @@ async function anchoredGitBoundaryFingerprint(
         },
       };
     }
-    return { ok: true, present: true, fingerprint: `present:${statStamp(after)}` };
+    return {
+      ok: true,
+      present: true,
+      fingerprint: `present:${boundaryIsDirectory ? identityStamp(after) : statStamp(after)}`,
+    };
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     return code === "ENOENT"
@@ -1493,9 +1499,10 @@ async function effectiveGitAttributeFailure(
     }
     values.set(fields[index + 1], fields[index + 2]);
   }
+  // `-filter` (unset) and an unspecified attribute both leave the bytes as stored.
   if (
-    values.get("filter") !== "unspecified" ||
-    values.get("working-tree-encoding") !== "unspecified"
+    !isIneffectiveGitAttribute(values.get("filter")) ||
+    !isIneffectiveGitAttribute(values.get("working-tree-encoding"))
   ) {
     return {
       message: "Effective Git content filters or working-tree encoding are not portable",
@@ -1503,6 +1510,10 @@ async function effectiveGitAttributeFailure(
     };
   }
   return undefined;
+}
+
+function isIneffectiveGitAttribute(value: string | undefined): boolean {
+  return value === "unspecified" || value === "unset";
 }
 
 interface EffectiveGitAttributes {

@@ -111,7 +111,12 @@ export function validateTopikPath(
     ) {
       return pathFailure(path, "separator_alias", "Path component folds to an unsafe spelling");
     }
-    const stem = collision.replace(/[ .]+$/u, "").split(".", 1)[0];
+    // Win32 resolves `CON.txt`, `CON .txt` and `CON. ` alike: drop trailing dots and spaces
+    // from the component and the stem.
+    const stem = collision
+      .replace(/[ .]+$/u, "")
+      .split(".", 1)[0]
+      .replace(/ +$/u, "");
     if (
       DOS_STEM.test(stem) ||
       collision === ".git" ||

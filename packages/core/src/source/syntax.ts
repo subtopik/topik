@@ -72,6 +72,31 @@ function flowInsertionPadding(raw: string, offset: number, indent: number): stri
 export const sourceHash = (bytes: Uint8Array): string =>
   createHash("sha256").update(bytes).digest("hex");
 export const encodeSource = (text: string): Uint8Array => new TextEncoder().encode(text);
+
+/**
+ * Map UTF-16 offsets of `text` to UTF-8 byte offsets in one pass. Each result equals
+ * `encodeSource(text.slice(0, offset)).length`, including offsets that split a surrogate pair
+ * (the lone half encodes as U+FFFD), without re-encoding the prefix for every lookup.
+ */
+export function utf8Offsets(text: string): (offset: number) => number {
+  const offsets = new Uint32Array(text.length + 1);
+  let bytes = 0;
+  for (let index = 0; index < text.length; index++) {
+    offsets[index] = bytes;
+    const unit = text.charCodeAt(index);
+    const next = index + 1 < text.length ? text.charCodeAt(index + 1) : 0;
+    if (unit >= 0xd800 && unit <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) {
+      // A slice ending between the halves keeps a lone high surrogate: U+FFFD, three bytes.
+      offsets[index + 1] = bytes + 3;
+      bytes += 4;
+      index++;
+      continue;
+    }
+    bytes += unit < 0x80 ? 1 : unit < 0x800 ? 2 : 3;
+  }
+  offsets[text.length] = bytes;
+  return (offset) => offsets[Math.max(0, Math.min(text.length, offset))];
+}
 export const decodeSource = (bytes: Uint8Array): string =>
   // Keep the BOM so syntax ranges and replay refer to the exact original bytes.
   new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
@@ -167,7 +192,7 @@ export function inspectSourceSyntax(raw: string, json = false) {
   if (document.errors.length || document.warnings.length || !isMap(document.contents))
     throw new TypeError("Expected a safe mapping");
   const root = document.contents;
-  const byte = (offset: number) => encodeSource(raw.slice(0, offset)).length;
+  const byte = utf8Offsets(raw);
   const range = (start: number, end: number): SourceByteRange => ({
     start: byte(start),
     end: byte(end),

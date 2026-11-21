@@ -501,7 +501,7 @@ an explicit ID, such as `## Hello {% $name %} {% #hello %}`.
 - [Text and code templates](https://github.com/subtopik/topik/blob/main/docs/content/templates.md)
 - [Code presentation](https://github.com/subtopik/topik/blob/main/docs/content/code-presentation.md)
 - [Explicit links and plain URLs](https://github.com/subtopik/topik/blob/main/docs/content/autolinks.md)
-- [Rendering and migration from content-schema](https://github.com/subtopik/topik/blob/main/docs/content/rendering.md)
+- [Rendering](https://github.com/subtopik/topik/blob/main/docs/content/rendering.md)
 
 ## Versions and upgrading
 

@@ -70,6 +70,11 @@ export interface CompileResourceLinksInput {
   validation?: CompileValidationOptions;
   /** @internal Lines before each document's body, so diagnostics count file lines. */
   bodyLinesByResource?: Readonly<Record<string, number>>;
+  /**
+   * @internal Documents whose content failed validation, with their source paths. Links to them
+   * resolve, so lint reports no missing target, but their own links and anchors are not checked.
+   */
+  unvalidatedDocuments?: readonly { resource: SourceResource; sourcePath: string }[];
 }
 
 type DocumentResource = Extract<SourceResource, { type: "WikiPage" | "Guide" | "CoursePage" }>;
@@ -104,11 +109,30 @@ export async function compileResourceLinksInSession(
   const catalogues = new Map<string, CompileResourceReferenceTarget[]>();
   const navigation = new Map<string, ResolvedWikiNavigation>();
   const courseNavigationByPage = new Map<string, ResolvedCourseNavigation>();
-  const documents = input.resources.filter(isDocumentResource).sort((left, right) => {
+  const byKey = (left: DocumentResource, right: DocumentResource) => {
     const leftKey = resourceKey(left);
     const rightKey = resourceKey(right);
     return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
-  });
+  };
+  const documents = input.resources.filter(isDocumentResource).sort(byKey);
+  const sourcePathsByResource: Record<string, string> = { ...input.sourcePathsByResource };
+  const unvalidated = new Set<string>();
+  for (const { resource, sourcePath } of input.unvalidatedDocuments ?? []) {
+    const key = resourceKey(resource);
+    if (!isDocumentResource(resource) || sourcePathsByResource[key] !== undefined) continue;
+    sourcePathsByResource[key] = sourcePath;
+    unvalidated.add(key);
+  }
+  // Every document a link can name, including those that failed validation.
+  const linkTargets = [
+    ...documents,
+    ...(input.unvalidatedDocuments ?? [])
+      .map(({ resource }) => resource)
+      .filter(
+        (resource): resource is DocumentResource =>
+          isDocumentResource(resource) && unvalidated.has(resourceKey(resource)),
+      ),
+  ].sort(byKey);
 
   for (const resource of input.resources) {
     if (resource.type === "Wiki")
@@ -119,11 +143,12 @@ export async function compileResourceLinksInSession(
         }),
       );
   }
-  for (const resource of documents) {
+  for (const resource of linkTargets) {
     const key = resourceKey(resource);
-    const sourcePath = input.sourcePathsByResource[key];
+    const sourcePath = sourcePathsByResource[key];
     if (sourcePath === undefined || resource.spec.content.format !== "topik") continue;
-    analyses.set(key, memo.analyze(resource.spec.content.value, sourcePath));
+    if (!unvalidated.has(key))
+      analyses.set(key, memo.analyze(resource.spec.content.value, sourcePath));
     localTargets.set(key, resource);
     const targets = targetsByPath.get(sourcePath) ?? [];
     targets.push(resource);
@@ -145,12 +170,12 @@ export async function compileResourceLinksInSession(
         resource.type === "CourseModule" && resource.spec.course === course.name,
     );
     const moduleNames = new Set(modules.map((module) => module.name));
-    const pages = documents.filter(
+    const pages = linkTargets.filter(
       // Like the analysis loop above, pages without a source binding take no part in routing.
       (resource): resource is Extract<DocumentResource, { type: "CoursePage" }> =>
         resource.type === "CoursePage" &&
         moduleNames.has(resource.spec.module) &&
-        input.sourcePathsByResource[resourceKey(resource)] !== undefined,
+        sourcePathsByResource[resourceKey(resource)] !== undefined,
     );
     const resolved = resolveCourseNavigation({
       course: course.name,
@@ -158,7 +183,7 @@ export async function compileResourceLinksInSession(
       pages: pages.map((page) => {
         const key = resourceKey(page);
         const directory = input.sourceDirectoriesByResource?.[key] ?? "";
-        const path = stripMarkdownExtension(input.sourcePathsByResource[key]);
+        const path = stripMarkdownExtension(sourcePathsByResource[key]);
         return {
           name: page.name,
           module: page.spec.module,
@@ -202,7 +227,7 @@ export async function compileResourceLinksInSession(
   const compiledByKey = new Map<string, DocumentResource>();
   for (const resource of documents) {
     const key = resourceKey(resource);
-    const sourcePath = input.sourcePathsByResource[key];
+    const sourcePath = sourcePathsByResource[key];
     const analysis = analyses.get(key);
     if (!analysis || sourcePath === undefined) continue;
     // Diagnostics for this document count body lines until they are shifted to file lines.
@@ -227,7 +252,8 @@ export async function compileResourceLinksInSession(
         const target = localTargets.get(targetKey);
         const entries = catalogues.get(targetKey);
         let status: CompiledResourceReference["status"] = "deferred";
-        if (target) {
+        // A target whose content failed validation has no anchors to check yet.
+        if (target && !unvalidated.has(targetKey)) {
           status = validateFragment(
             explicit.hash,
             analyses.get(targetKey)?.anchors ?? [],
@@ -365,13 +391,15 @@ export async function compileResourceLinksInSession(
           search: url.search,
           hash: url.hash.slice(1),
         };
-        const status = validateFragment(
-          reference.hash,
-          analyses.get(resourceKey(target))?.anchors ?? [],
-          link,
-          policy,
-          diagnostics,
-        );
+        const status = unvalidated.has(resourceKey(target))
+          ? "deferred"
+          : validateFragment(
+              reference.hash,
+              analyses.get(resourceKey(target))?.anchors ?? [],
+              link,
+              policy,
+              diagnostics,
+            );
         replacements.set(navigationReferenceKey(link), { reference, status });
         continue;
       }

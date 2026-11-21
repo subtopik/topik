@@ -498,7 +498,10 @@ system paths such as `/var` and `/tmp` are links there.
      `document-encoding-invalid`.
 5. Tools that read diagnostics must stop adding the frontmatter length to
    `lines`: content diagnostics count lines from the top of the file.
-6. Courses are ordered by their lists, as Wikis are by their navigation:
+6. Code that calls `lint()` must treat every entry of its new `failures` list as
+   an error. A source that cannot be read, or an image or download that cannot
+   be compiled, is reported there instead of being thrown.
+7. Courses are ordered by their lists, as Wikis are by their navigation:
    - In each Course configuration, sort `modules` by their old `order`, then
      delete `order` from every module.
    - In each module, sort `pages` by the old `order` in the page frontmatter,

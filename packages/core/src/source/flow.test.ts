@@ -496,3 +496,76 @@ test("manifest append reuses a trailing comma with only sources/+ authority", as
     await addSourceToProject({ ...request, manifestAuthority: { ...manifest, fields: [] } }),
   ).toMatchObject({ ok: false, diagnostics: [{ code: "shared-scope-denied" }] });
 });
+
+function sharedScope(raw: string, selected: string[]) {
+  const syntax = inspectSourceSyntax(raw);
+  const base = file("wiki.yaml", raw);
+  const provenance = {
+    ...base,
+    sha256: sourceHash(base.bytes),
+    insertion: syntax.insertion,
+    fields: [...syntax.fields.values()],
+  };
+  const authority = {
+    ...provenance,
+    fields: provenance.fields.filter((field) => selected.includes(field.selector)),
+  };
+  const replace = (selector: string, replacement: string, range: "value" | "entry" = "value") => {
+    const { start, end } = syntax.fields.get(selector)![range]!;
+    return {
+      start,
+      end,
+      selector,
+      oldSha256: sourceHash(base.bytes.slice(start, end)),
+      replacement: encodeSource(replacement),
+    };
+  };
+  return { base, provenance, authority, replace };
+}
+
+const wikiConfig =
+  "id: kb\ntitle: Knowledge base\nsourceVersion: 1\nnavigation:\n  - home\n  - install\n";
+
+test("shared edits refuse bytes that differ from the inspected base", () => {
+  const { base, provenance, authority, replace } = sharedScope(wikiConfig, ["title"]);
+  const edits = [replace("title", "KB")];
+  expect(() => verifySharedEdits(base, provenance, authority, edits)).not.toThrow();
+  // A same-length concurrent change keeps every edited range intact, so only the base hash sees it.
+  const stale = { ...base, bytes: encodeSource(wikiConfig.replace("install", "instal2")) };
+  expect(() => verifySharedEdits(stale, provenance, authority, edits)).toThrow(
+    expect.objectContaining({
+      diagnostic: expect.objectContaining({ code: "source-base-changed" }),
+    }),
+  );
+});
+
+test.each([
+  ["adds a sibling key", "title", '"KB"\nlabels: {owner: mallory}'],
+  ["replaces a sibling key", "title", '"KB"\nid: other'],
+  ["swallows the following keys in an unclosed quote", "title", '"KB'],
+  ["adds an item beside an admitted item", "navigation/0", "home\n  - extra"],
+  ["adds a key after an admitted list item", "navigation/1", "install\nextra: 1"],
+])("an admitted field's replacement cannot reach outside it: %s", (_, selector, replacement) => {
+  const { base, provenance, authority, replace } = sharedScope(wikiConfig, [selector]);
+  expect(() =>
+    verifySharedEdits(base, provenance, authority, [replace(selector, replacement)]),
+  ).toThrow(
+    expect.objectContaining({
+      diagnostic: expect.objectContaining({ code: "shared-scope-denied" }),
+    }),
+  );
+});
+
+test("an admitted item may be removed although later items move up", () => {
+  const raw = "id: kb\ntitle: KB\nsourceVersion: 1\nnavigation:\n  - home\n  - install\n  - faq\n";
+  const { base, provenance, authority, replace } = sharedScope(raw, ["navigation/1"]);
+  const edits = [replace("navigation/1", "", "entry")];
+  expect(() => verifySharedEdits(base, provenance, authority, edits)).not.toThrow();
+  expect(decodeSource(replaySourceByteEdits(base.bytes, edits))).toBe(
+    "id: kb\ntitle: KB\nsourceVersion: 1\nnavigation:\n  - home\n  - faq\n",
+  );
+  // Removing the other item is not admitted.
+  expect(() =>
+    verifySharedEdits(base, provenance, authority, [replace("navigation/2", "", "entry")]),
+  ).toThrow();
+});

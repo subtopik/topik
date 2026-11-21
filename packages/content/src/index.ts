@@ -113,12 +113,8 @@ export {
   CALLOUT_VARIANTS,
   QUIZ_QUESTION_TYPES,
   TOPIK_CONTENT_SCHEMA_VERSION,
-  topikComponents,
   type TopikAssetReferenceDefinition,
   type TopikAssetReferenceRole,
-  type TopikComponentAttributeDefinition,
-  type TopikComponentDefinition,
-  type TopikComponentName,
 } from "./registry.js";
 export {
   sanitizeTopikDiagnosticFile,

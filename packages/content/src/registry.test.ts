@@ -1,6 +1,5 @@
 import { expect, test } from "vite-plus/test";
 import { components, getEffectiveProps, type Registry } from "./index.js";
-import { topikComponents } from "./registry.js";
 
 test("registry defaults are derived without changing authored values", () => {
   const registry: Registry = {
@@ -20,53 +19,10 @@ test("registry defaults are derived without changing authored values", () => {
   });
 });
 
-test("the complete legacy catalog maps authored tags and native Markdown nodes", () => {
-  expect(Object.keys(topikComponents).sort()).toEqual(
-    [
-      "accordion",
-      "badge",
-      "callout",
-      "card",
-      "column",
-      "columns",
-      "choice",
-      "codeBlock",
-      "codeGroup",
-      "codeTab",
-      "explanation",
-      "figure",
-      "image",
-      "inlineCode",
-      "kbd",
-      "link",
-      "math",
-      "mathInline",
-      "mermaid",
-      "question",
-      "quiz",
-      "step",
-      "steps",
-      "tab",
-      "table",
-      "tableCell",
-      "tableHeader",
-      "tableRow",
-      "tabs",
-      "underline",
-      "video",
-      "youtube",
-    ].sort(),
-  );
-  expect(topikComponents.codeGroup.requiredChildren).toEqual(["codeTab"]);
-  expect(topikComponents.codeTab.requiredChildren).toEqual(["fence"]);
-  expect(topikComponents.figure.attributes?.darkSrc?.assetReference).toEqual({
+test("the registry is frozen and declares asset reference slots", () => {
+  expect(components.figure.attributes.darkSrc?.assetReference).toEqual({
     slot: "figure.darkSrc",
     role: "image-dark",
-  });
-  expect(topikComponents.link.attributes?.href?.assetReference).toEqual({
-    slot: "link.href",
-    role: "download",
-    conditional: "proven-download",
   });
   expect(components.u).toBe(components.underline);
   expect(Object.isFrozen(components)).toBe(true);

@@ -351,8 +351,8 @@ const headingOne = parseDocument("# Heading {% #one %}");
 const headingTwo = parseDocument("# Heading {% #two %}");
 assert.ok(headingOne.ok && headingTwo.ok);
 assert.equal(sameDocumentMeaning(headingOne.document, headingTwo.document), false);
-assert.equal(validateTopikContent("# Packed").valid, true);
-assert.equal(validateTopikContent("{% unknown /%}").valid, false);
+assert.equal(validateTopikContent("# Packed").ok, true);
+assert.equal(validateTopikContent("{% unknown /%}").ok, false);
 // Verify declared text/link intent independently of round-trip stability.
 const markedUrl = parseDocument("https://example.test/a*b*c");
 assert.equal(markedUrl.ok, true);
@@ -371,8 +371,8 @@ const plainHtml = renderToStaticMarkup(renderTopikMarkdown(plainSource, linkRend
 assert.ok(!plainHtml.includes("<a "), "Bare addresses must render as text");
 const linkedHtml = renderToStaticMarkup(renderTopikMarkdown("<https://example.test>", linkRendering));
 assert.ok(linkedHtml.includes('<a href="https://example.test">'), "Explicit links must render as anchors");
-assert.equal(validateTopikContent("http://example.test").valid, true);
-assert.equal(validateTopikContent("<http://example.test>").valid, false);
+assert.equal(validateTopikContent("http://example.test").ok, true);
+assert.equal(validateTopikContent("<http://example.test>").ok, false);
 const linked = parseDocument("<https://example.test> <person@example.com>");
 assert.equal(linked.ok, true);
 assert.equal(linked.document.children[0].children[0].url, "https://example.test");

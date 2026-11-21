@@ -16,7 +16,8 @@ A consumer must negotiate the capability before it uses the protocol: request
 the presence of Course resources is not sufficient evidence.
 
 `topik-preview/2` replaces `topik-preview/1`. It drops the `courseNavigation`
-field: a client orders Courses by their [lists](#course-order) instead.
+field, so a client orders Courses by their [lists](#course-order), and the
+`sync` and `update` events, so `GET /events` sends only `preview-state`.
 
 ## Transport
 
@@ -166,10 +167,11 @@ you must still call `close()`.
   must be an integer from 0 to 2147483647, or `watch()` rejects with a
   `RangeError` before it watches anything.
 - **State.** `watcher.state` is frozen, and the watcher emits `preview-state` for
-  each published state. The `watcher.resources` and `watcher.payloads`
-  compatibility Maps are fully replaced before success notifications.
-- **Listeners.** Listener exceptions are isolated: a throwing `preview-state` or
-  `update` listener does not change compile state or skip other listeners. Its
+  each published state. `watcher.payloads` holds the bytes of each payload in
+  `state.payloads`, by path, and is replaced completely before a successful
+  state is published.
+- **Listeners.** Listener exceptions are isolated: a throwing `preview-state`
+  listener does not change compile state or skip other listeners. Its
   error is passed to `error` listeners. Exceptions thrown by `error` listeners
   are dropped.
 
@@ -353,26 +355,3 @@ This upstream verification does not prove a downstream application's end-to-end
 acceptance. A compatible published package cohort is a separate adoption
 requirement: package publication and downstream dependency and peer adoption are
 separate gates.
-
-## Legacy events
-
-`GET /events` also sends two events for clients that predate `preview-state`. They
-are frozen: they will not gain fields or new event types, and they do not provide
-the complete-state guarantees.
-
-| Event    | When                                                                 | Data                                                              |
-| -------- | -------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `sync`   | Once per connection, after the first `preview-state`                 | `resources` and `payloads` keyed inventories as of the connection |
-| `update` | After each successful generation, once per added or changed resource | `{ key, resource }`, with `key` as `<type>/<name>`                |
-
-Legacy events never signal a deletion. When a source file is deleted or a resource
-disappears from a generation, nothing is sent on the legacy stream, so a legacy
-client keeps showing the removed resource until it reconnects and receives a new
-`sync`. Failed generations send no legacy event either. Clients that need correct
-deletions must consume the complete `preview-state` snapshots, where a deletion is
-absence from `resources`.
-
-Select one protocol per connection. A client that uses `preview-state` must ignore
-legacy events, so that an individual update cannot overwrite a complete accepted
-generation. A consumer of the legacy events can keep its resource previews while
-explaining that Course previews need the `topik-preview/2` capability.

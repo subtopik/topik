@@ -52,28 +52,7 @@ function handleEvents(watcher: Watcher, res: ServerResponse, corsHeaders: Record
   sendSSE(res, "preview-state", watcher.state);
   const onState = (state: PreviewState) => sendSSE(res, "preview-state", state);
   watcher.on("preview-state", onState);
-
-  // Send initial sync with all current resources
-  sendSSE(res, "sync", {
-    resources: Object.fromEntries(watcher.resources),
-    payloads: Object.fromEntries(
-      [...watcher.payloads].map(([path, { bytes: _bytes, ...payload }]) => [path, payload]),
-    ),
-  });
-
-  // Forward updates
-  const onUpdate = (key: string, resource: unknown) => {
-    sendSSE(res, "update", {
-      key,
-      resource,
-    });
-  };
-  watcher.on("update", onUpdate);
-
-  res.on("close", () => {
-    watcher.off("update", onUpdate);
-    watcher.off("preview-state", onState);
-  });
+  res.on("close", () => watcher.off("preview-state", onState));
 }
 
 type ByteRange = { start: number; end: number } | "unsatisfiable" | undefined;
@@ -378,20 +357,16 @@ export async function startDevServer(options: {
     await watcher.close();
     throw platformFailure;
   }
-  if (watcher.state.status !== "error") console.log(`Compiled ${watcher.resources.size} resources`);
-  // Errors arrive through onError; warnings of a successful compile only in the preview state.
-  let warnedGeneration: number | null = null;
-  const reportWarnings = (state: PreviewState) => {
-    if (state.status !== "ready" || state.generation === warnedGeneration) return;
-    warnedGeneration = state.generation;
+  // Errors arrive through onError; each new generation, with its warnings, from the state.
+  let reportedGeneration: number | null = null;
+  const reportGeneration = (state: PreviewState) => {
+    if (state.status !== "ready" || state.generation === reportedGeneration) return;
+    reportedGeneration = state.generation;
+    console.log(`Compiled ${state.resources.length} resources`);
     printPreviewWarnings(state);
   };
-  reportWarnings(watcher.state);
-  watcher.on("preview-state", reportWarnings);
-
-  watcher.on("update", (key: string) => {
-    console.log(`Updated ${key}`);
-  });
+  reportGeneration(watcher.state);
+  watcher.on("preview-state", reportGeneration);
 
   let activePort = options.port;
   const server = createServer(createRequestHandler(watcher, () => activePort, allowedOrigin));

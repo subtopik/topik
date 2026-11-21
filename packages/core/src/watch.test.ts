@@ -6,6 +6,7 @@ import { CompileError } from "./compile";
 import { pagePathToName } from "./compile/wiki";
 import { DEFAULT_WATCH_DEBOUNCE_MS, watch } from "./watch";
 import type { Watcher } from "./watch";
+import type { PreviewState } from "./preview";
 
 const PNG_BYTES = Buffer.from(
   "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000000500010d0a2db40000000049454e44ae426082",
@@ -14,6 +15,24 @@ const PNG_BYTES = Buffer.from(
 
 function delay(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+const find = (state: PreviewState, key: string) =>
+  state.resources.find((resource) => `${resource.type}/${resource.name}` === key);
+const contentOf = (state: PreviewState, key: string) => {
+  const resource = find(state, key);
+  return resource && "content" in resource.spec ? resource.spec.content.value : undefined;
+};
+/** The next successful state that `accept` takes. */
+function nextReady(watcher: Watcher, accept: (state: PreviewState) => boolean | undefined) {
+  return new Promise<PreviewState>((resolve) => {
+    const listener = (state: PreviewState) => {
+      if (state.status !== "ready" || !accept(state)) return;
+      watcher.off("preview-state", listener);
+      resolve(state);
+    };
+    watcher.on("preview-state", listener);
+  });
 }
 
 describe("watch", () => {
@@ -43,82 +62,46 @@ describe("watch", () => {
   test("compiles initial resources", async () => {
     watcher = await watch({ dir });
 
-    expect(watcher.resources.size).toBe(1);
-    const resource = watcher.resources.get("Guide/guides-intro");
-    expect(resource).toBeDefined();
-    expect(resource?.type).toBe("Guide");
-    expect(resource?.name).toBe("guides-intro");
+    expect(watcher.state.resources).toHaveLength(1);
+    const resource = find(watcher.state, "Guide/guides-intro");
     if (resource?.type !== "Guide") throw new Error("expected Guide");
     expect(resource.spec.title).toBe("Intro");
   });
 
-  test("emits update when a file changes", async () => {
+  test("publishes a new generation when a file changes", async () => {
     watcher = await watch({ dir });
-
-    const updated = new Promise<{ key: string; resource: unknown }>((resolve) => {
-      watcher.on("update", (key, resource) => {
-        resolve({ key, resource });
-      });
-    });
+    const updated = nextReady(watcher, (state) =>
+      contentOf(state, "Guide/guides-intro")?.includes("Updated content."),
+    );
 
     // Wait for chokidar to fully initialize watchers
     await delay(500);
     await writeFile(join(dir, "intro.md"), "# Intro\n\nUpdated content.\n");
 
-    const { key, resource } = await updated;
-    expect(key).toBe("Guide/guides-intro");
-    expect(resource).toHaveProperty("spec.content.value", "# Intro\n\nUpdated content.\n");
+    expect(contentOf(await updated, "Guide/guides-intro")).toBe("# Intro\n\nUpdated content.\n");
   }, 10_000);
 
-  test("emits the automatic Asset update with a refreshed payload when bytes change", async () => {
+  test("refreshes an automatic Asset and its payload bytes when the bytes change", async () => {
     await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](hero.png)\n");
     await writeFile(join(dir, "hero.png"), PNG_BYTES);
     watcher = await watch({ dir });
-
-    const asset = [...watcher.resources.values()].find((resource) => resource.type === "Asset");
-    const key = `Asset/${asset?.name}`;
-    const before = [...watcher.payloads.values()][0];
+    const before = watcher.state.payloads[0];
     expect(before).toBeDefined();
 
     const changedBytes = Uint8Array.from(PNG_BYTES);
     changedBytes[changedBytes.length - 1] ^= 1;
-    const updated = new Promise<{ resource: unknown; payloadBytes: Uint8Array; integrity: string }>(
-      (resolve) => {
-        watcher.on("update", (updatedKey, resource) => {
-          if (updatedKey !== key) return;
-          const payload = [...watcher.payloads.values()][0];
-          if (payload !== undefined)
-            resolve({ resource, payloadBytes: payload.bytes, integrity: payload.integrity });
-        });
-      },
+    const updated = nextReady(
+      watcher,
+      (state) => state.payloads[0]?.integrity !== before.integrity,
     );
-
     await delay(500);
     await writeFile(join(dir, "hero.png"), changedBytes);
 
-    const result = await updated;
-    expect(result.resource).toBe(watcher.resources.get(key));
-    expect([...result.payloadBytes]).toEqual([...changedBytes]);
-    expect(result.integrity).not.toBe(before?.integrity);
-  }, 10_000);
-
-  test("editing a page updates only that page, not its unchanged Assets", async () => {
-    await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](hero.png)\n");
-    await writeFile(join(dir, "hero.png"), PNG_BYTES);
-    watcher = await watch({ dir });
-
-    const keys: string[] = [];
-    const settled = new Promise<void>((resolve) => {
-      watcher.on("update", (key) => {
-        keys.push(key);
-        if (key.startsWith("Guide/")) setTimeout(resolve, 50);
-      });
-    });
-    await delay(500);
-    await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](hero.png)\n\nMore.\n");
-
-    await settled;
-    expect(keys).toEqual(["Guide/guides-intro"]);
+    const state = await updated;
+    const asset = state.resources.find((resource) => resource.type === "Asset");
+    if (asset?.type !== "Asset") throw new Error("expected Asset");
+    expect(asset.spec.integrity).toBe(state.payloads[0].integrity);
+    expect([...watcher.payloads.get(state.payloads[0].path)!.bytes]).toEqual([...changedBytes]);
   }, 10_000);
 
   test("allows more preview clients than the default listener limit", async () => {
@@ -126,9 +109,9 @@ describe("watch", () => {
     watcher = await watch({ dir });
     const warning = vi.spyOn(process, "emitWarning");
     const listeners = Array.from({ length: 20 }, () => () => undefined);
-    for (const listener of listeners) watcher.on("update", listener);
+    for (const listener of listeners) watcher.on("preview-state", listener);
     expect(warning).not.toHaveBeenCalled();
-    for (const listener of listeners) watcher.off("update", listener);
+    for (const listener of listeners) watcher.off("preview-state", listener);
   });
 
   test("watches valid assets inside dot-prefixed directories", async () => {
@@ -136,44 +119,30 @@ describe("watch", () => {
     await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](.images/hero.png)\n");
     await writeFile(join(dir, ".images", "hero.png"), PNG_BYTES);
     watcher = await watch({ dir });
-
-    const asset = [...watcher.resources.values()].find((resource) => resource.type === "Asset");
-    const key = `Asset/${asset?.name}`;
-    const beforeEntry = [...watcher.payloads.values()][0];
+    const before = watcher.state.payloads[0];
     const changedBytes = Uint8Array.from(PNG_BYTES);
     changedBytes[changedBytes.length - 1] ^= 1;
-    const updated = new Promise<{ bytes: Uint8Array; digest: string }>((resolve) => {
-      watcher.on("update", (updatedKey) => {
-        if (updatedKey !== key) return;
-        const payload = [...watcher.payloads.values()][0];
-        if (payload !== undefined) resolve({ bytes: payload.bytes, digest: payload.integrity });
-      });
-    });
+    const updated = nextReady(
+      watcher,
+      (state) => state.payloads[0]?.integrity !== before.integrity,
+    );
 
     await delay(500);
     await writeFile(join(dir, ".images", "hero.png"), changedBytes);
 
-    const result = await updated;
-    expect([...result.bytes]).toEqual([...changedBytes]);
-    expect(result.digest).not.toBe(beforeEntry?.integrity);
+    const state = await updated;
+    expect([...watcher.payloads.get(state.payloads[0].path)!.bytes]).toEqual([...changedBytes]);
   }, 10_000);
 
   test("detects new files", async () => {
     watcher = await watch({ dir });
-    expect(watcher.resources.size).toBe(1);
-
-    const updated = new Promise<string>((resolve) => {
-      watcher.on("update", (key) => {
-        if (key === "Guide/guides-advanced") resolve(key);
-      });
-    });
+    expect(watcher.state.resources).toHaveLength(1);
+    const updated = nextReady(watcher, (state) => !!find(state, "Guide/guides-advanced"));
 
     await delay(500);
     await writeFile(join(dir, "advanced.md"), "# Advanced\n\nAdvanced guide.\n");
 
-    const key = await updated;
-    expect(key).toBe("Guide/guides-advanced");
-    expect(watcher.resources.size).toBe(2);
+    expect((await updated).resources).toHaveLength(2);
   }, 10_000);
 
   describe("wiki resources", () => {
@@ -196,29 +165,21 @@ describe("watch", () => {
     test("compiles initial wiki resources", async () => {
       watcher = await watch({ dir });
 
-      expect(watcher.resources.size).toBe(2);
-      expect(watcher.resources.get("Wiki/docs")).toBeDefined();
-      expect(watcher.resources.get("Wiki/docs")?.type).toBe("Wiki");
-      expect(watcher.resources.get(introPageKey)).toBeDefined();
-      expect(watcher.resources.get(introPageKey)?.type).toBe("WikiPage");
+      expect(watcher.state.resources).toHaveLength(2);
+      expect(find(watcher.state, "Wiki/docs")?.type).toBe("Wiki");
+      expect(find(watcher.state, introPageKey)?.type).toBe("WikiPage");
     });
 
-    test("emits update when a wiki page changes", async () => {
+    test("publishes a new generation when a wiki page changes", async () => {
       watcher = await watch({ dir });
-
-      const updates: string[] = [];
-      const done = new Promise<void>((resolve) => {
-        watcher.on("update", (key) => {
-          updates.push(key);
-          if (updates.includes(introPageKey)) resolve();
-        });
-      });
+      const updated = nextReady(watcher, (state) =>
+        contentOf(state, introPageKey)?.includes("Updated wiki content."),
+      );
 
       await delay(500);
       await writeFile(join(dir, "intro.md"), "# Intro\n\nUpdated wiki content.\n");
 
-      await done;
-      expect(updates).toContain(introPageKey);
+      expect(contentOf(await updated, introPageKey)).toContain("Updated wiki content.");
     }, 10_000);
   });
 
@@ -256,7 +217,7 @@ describe("watch", () => {
     watcher = await watch({ dir, validation: { links: "warning" } });
 
     expect(watcher.state.status).toBe("ready");
-    expect(watcher.resources.has("Guide/guides-intro")).toBe(true);
+    expect(find(watcher.state, "Guide/guides-intro")).toBeDefined();
   });
 
   test.each([-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 2 ** 31, "100"])(
@@ -285,9 +246,9 @@ describe("watch", () => {
     watcher.on("preview-state", (state) => {
       if (state.status === "compiling") compiling.push(performance.now());
     });
-    const updated = new Promise<unknown>((resolve) => {
-      watcher.on("update", (_key, resource) => resolve(resource));
-    });
+    const updated = nextReady(watcher, (state) =>
+      contentOf(state, "Guide/guides-intro")?.includes("Three."),
+    );
 
     await delay(500);
     let lastEdit = 0;
@@ -297,7 +258,7 @@ describe("watch", () => {
       await delay(200);
     }
 
-    expect(await updated).toHaveProperty("spec.content.value", "# Intro\n\nThree.\n");
+    expect(contentOf(await updated, "Guide/guides-intro")).toBe("# Intro\n\nThree.\n");
     expect(compiling).toHaveLength(1);
     // The timer restarts on each notification, so compilation starts a full interval after
     // the last edit, not after the first. Only a lower bound: a loaded machine may be slower.
@@ -306,14 +267,14 @@ describe("watch", () => {
 
   test("accepts a zero debounce interval", async () => {
     watcher = await watch({ dir, debounceMs: 0 });
-    const updated = new Promise<unknown>((resolve) => {
-      watcher.on("update", (_key, resource) => resolve(resource));
-    });
+    const updated = nextReady(watcher, (state) =>
+      contentOf(state, "Guide/guides-intro")?.includes("Immediate."),
+    );
 
     await delay(500);
     await writeFile(join(dir, "intro.md"), "# Intro\n\nImmediate.\n");
 
-    expect(await updated).toHaveProperty("spec.content.value", "# Intro\n\nImmediate.\n");
+    expect(contentOf(await updated, "Guide/guides-intro")).toBe("# Intro\n\nImmediate.\n");
   }, 10_000);
 });
 
@@ -396,7 +357,6 @@ describe("authoritative preview state", () => {
     const deleted = await done;
     expect(deleted.resources.filter((r) => r.type === "CoursePage")).toEqual([]);
     expect(pages(deleted)).toEqual([]);
-    expect([...watcher.resources.values()]).toEqual(deleted.resources);
     expect(states.map((s) => s.status)).toEqual([
       "compiling",
       "ready",

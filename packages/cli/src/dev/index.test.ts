@@ -293,7 +293,7 @@ describe("dev command", () => {
     }
   });
 
-  test("GET /events sends sync event on connection", async () => {
+  test("GET /events sends the current preview state on connection, and only that", async () => {
     const port = await start();
 
     const res = await fetch(`http://127.0.0.1:${port}/events`, {
@@ -314,8 +314,9 @@ describe("dev command", () => {
     }
     await reader.cancel();
 
-    expect(text).toContain("event: sync");
-    expect(text).toContain('"Guide/docs-intro"');
+    expect(text.startsWith("event: preview-state\n")).toBe(true);
+    expect(text).toContain('"name":"docs-intro"');
+    expect(text).not.toMatch(/event: (?:sync|update)\b/u);
   });
 
   test("GET /resources returns wiki resources", async () => {
@@ -462,7 +463,7 @@ describe("dev command", () => {
     );
     const port = await start();
 
-    const asset = [...runningServer!.watcher.resources.values()].find(
+    const asset = runningServer!.watcher.state.resources.find(
       (resource) => resource.type === "Asset",
     );
     expect(asset?.spec.mediaType).toBe("video/mp4");
@@ -532,7 +533,7 @@ describe("dev command", () => {
     await writeFile(join(dir, "intro.md"), "# Intro\n\n[Download](manual.bin)\n");
     const port = await start();
 
-    const asset = [...runningServer!.watcher.resources.values()].find(
+    const asset = runningServer!.watcher.state.resources.find(
       (resource) => resource.type === "Asset",
     );
     const response = await fetch(`http://127.0.0.1:${port}/${asset?.spec.uri}`);
@@ -549,18 +550,15 @@ describe("dev command", () => {
     await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](.images/hero.png)\n");
 
     const port = await start();
-    const initialAsset = [...runningServer!.watcher.resources.values()].find(
-      (resource) => resource.type === "Asset",
-    );
-    const key = `Asset/${initialAsset?.name}`;
-    const initialPayload = [...runningServer!.watcher.payloads.values()][0];
+    const initialPayload = runningServer!.watcher.state.payloads[0];
     expect(initialPayload).toBeDefined();
 
     const changedBytes = Uint8Array.from(PNG_BYTES);
     changedBytes[changedBytes.length - 1] ^= 1;
     const updated = new Promise<void>((resolve) => {
-      runningServer!.watcher.on("update", (updatedKey) => {
-        if (updatedKey === key) resolve();
+      runningServer!.watcher.on("preview-state", (state) => {
+        if (state.status === "ready" && state.payloads[0]?.integrity !== initialPayload.integrity)
+          resolve();
       });
     });
 
@@ -664,7 +662,7 @@ describe("dev command", () => {
     runningServer = await startDevServer({ dir, port: 0, links: "warning" });
 
     expect(runningServer.watcher.state.status).toBe("ready");
-    expect(runningServer.watcher.resources.size).toBe(1);
+    expect(runningServer.watcher.state.resources).toHaveLength(1);
     expect(warnings).toContainEqual(expect.stringMatching(/^intro\.md:3 warning [a-z-]+: /u));
   });
 

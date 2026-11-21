@@ -70,16 +70,23 @@ describe("watch exclusions", () => {
         await writeFile(join(dependencyDir, "index.js"), "initial");
       }
       const activeWatcher = await startWatching();
+      // One call per successful generation after the first.
       const updates = vi.fn();
-      activeWatcher.on("update", updates);
+      activeWatcher.on("preview-state", (state) => {
+        if (state.status === "ready") updates(state);
+      });
 
       await writeFile(join(dir, "intro.md"), "# Updated\n");
       await vi.waitFor(
         () =>
           expect(updates).toHaveBeenCalledWith(
-            "Guide/guides-intro",
             expect.objectContaining({
-              spec: expect.objectContaining({ title: "Updated" }),
+              resources: [
+                expect.objectContaining({
+                  name: "guides-intro",
+                  spec: expect.objectContaining({ title: "Updated" }),
+                }),
+              ],
             }),
           ),
         { timeout: 2_000 },
@@ -112,16 +119,23 @@ describe("watch exclusions", () => {
       await mkdir(ignoredDir);
       await writeFile(join(ignoredDir, "output.json"), "{}");
       const activeWatcher = await startWatching();
+      // One call per successful generation after the first.
       const updates = vi.fn();
-      activeWatcher.on("update", updates);
+      activeWatcher.on("preview-state", (state) => {
+        if (state.status === "ready") updates(state);
+      });
 
       await writeFile(join(dir, "intro.md"), "# Updated\n");
       await vi.waitFor(
         () =>
           expect(updates).toHaveBeenCalledWith(
-            "Guide/guides-intro",
             expect.objectContaining({
-              spec: expect.objectContaining({ title: "Updated" }),
+              resources: [
+                expect.objectContaining({
+                  name: "guides-intro",
+                  spec: expect.objectContaining({ title: "Updated" }),
+                }),
+              ],
             }),
           ),
         { timeout: 2_000 },

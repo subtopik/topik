@@ -197,25 +197,27 @@ async function recompile(result: CompileResult | Error) {
   await vi.waitFor(() => expect(watcher?.state.status).not.toBe("compiling"));
 }
 
-test("a throwing update listener cannot fail a published generation", async () => {
+test("a throwing state listener cannot fail a published generation", async () => {
   const fixtureData = await fixture();
   watcher = await watch({ dir: fixtureData.dir });
-  const listenerError = new Error("update listener failed");
+  const listenerError = new Error("state listener failed");
   const errors: Error[] = [];
-  const updates: string[] = [];
+  const ready: string[][] = [];
   watcher.on("error", (error) => errors.push(error));
-  watcher.on("update", () => {
-    throw listenerError;
+  watcher.on("preview-state", (state) => {
+    if (state.status === "ready") throw listenerError;
   });
-  watcher.on("update", (key) => updates.push(key));
+  watcher.on("preview-state", (state) => {
+    if (state.status === "ready") ready.push(state.resources.map((r) => `${r.type}/${r.name}`));
+  });
   const resource = {
     type: "Guide",
     name: "listener-guide",
   } as unknown as CompileResult["resources"][number];
   await recompile({ ...fixtureData.result, resources: [resource] });
   expect(watcher.state).toMatchObject({ status: "ready", generation: 2, diagnostics: [] });
-  expect(watcher.resources.get("Guide/listener-guide")).toBe(resource);
-  expect(updates).toEqual(["Guide/listener-guide"]);
+  expect(watcher.state.resources).toEqual([resource]);
+  expect(ready).toEqual([["Guide/listener-guide"]]);
   expect(errors).toEqual([listenerError]);
 });
 

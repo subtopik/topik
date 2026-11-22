@@ -1,3 +1,4 @@
+import type { Person } from "@topik/schema/person/v1";
 import { readdir } from "node:fs/promises";
 import { join, posix } from "node:path";
 import type { Guide } from "@topik/schema/guide/v1";
@@ -35,6 +36,8 @@ import {
   type CompileReadOptions,
   type CompileValidationOptions,
   type CompileResult,
+  standalonePersons,
+  validateAuthors,
 } from "./shared";
 import { compileResourceLinksInSession, type CompileResourceReferenceTarget } from "./links";
 import { assertValidDocumentResource } from "./wiki";
@@ -47,6 +50,11 @@ export interface CompileGuidesOptions extends CompileReadOptions {
   validation?: CompileValidationOptions;
   assets?: AssetCompilationOptions;
   referenceTargets?: readonly CompileResourceReferenceTarget[];
+  /**
+   * Persons the authors refer to. A project declares them in `.topik.yaml`, which a standalone
+   * compile does not read, so pass them here; they are part of the result.
+   */
+  persons?: readonly Person[];
 }
 
 export interface CompileResourceDiscovery {
@@ -76,12 +84,13 @@ export async function inspectGuides(options: CompileGuidesOptions): Promise<Comp
   // One session shares Git repository evidence across every read of this call.
   const session = createPortableReadSession(options.fileSafety, options.gitExecutable);
   const discovered = await discoverGuides(options, undefined, memo, session);
-  validateGuideAuthors(discovered.resources, discovered.sourcePathsByResource);
+  const resources = [...standalonePersons(options.persons), ...discovered.resources];
+  validateAuthors(resources, discovered.sourcePathsByResource);
   const linked = await compileResourceLinksInSession(
     session,
     {
       rootDir: configurationDirectory(options.dir, options.configFile),
-      resources: discovered.resources,
+      resources,
       sourcePathsByResource: discovered.sourcePathsByResource,
       bodyLinesByResource: discovered.bodyLinesByResource,
       validation: options.validation,
@@ -142,7 +151,7 @@ export async function discoverGuides(
 
   const { paths: markdownFiles, leftOut } = await collectionDocumentPaths(dir, config);
 
-  const resources: SourceResource[] = [...(config.persons ?? [])];
+  const resources: SourceResource[] = [];
   const diagnostics: CompileResult["diagnostics"] = leftOut.map((file) => ({
     id: "guide-left-out",
     type: "Guide",
@@ -361,18 +370,6 @@ function fileToSlug(path: string): string {
 }
 
 export { extractMarkdownTitle as extractTitle } from "./shared";
-
-export function validateGuideAuthors(
-  resources: readonly SourceResource[],
-  paths: Readonly<Record<string, string>>,
-): void {
-  const persons = new Set(
-    resources.filter((resource) => resource.type === "Person").map((resource) => resource.name),
-  );
-  for (const resource of resources)
-    if (resource.type === "Guide" && resource.spec.authors?.some((author) => !persons.has(author)))
-      throw new PublicCompileError("author-not-found", paths[`Guide/${resource.name}`]);
-}
 
 function mergeTags(collectionTags: readonly string[] = [], guideTags: readonly string[] = []) {
   return [...new Set([...collectionTags, ...guideTags])];

@@ -58,6 +58,7 @@ import {
   decodeSource,
   sourceHash,
   inspectSourceSyntax,
+  patchSourceFields,
   patchSourceSequence,
   replaySourceByteEdits,
   type SourceByteEdit,
@@ -73,6 +74,7 @@ import {
   authoredBody,
   initialSourceDocumentPath,
   isWritableDocument,
+  resourceKey,
   sourceDocumentPathCandidates,
   sourceMediaPath,
   sourcePersonRecord,
@@ -400,7 +402,7 @@ const personRecords = (resources: readonly Resource[]) =>
     .filter((resource): resource is Person => resource.type === "Person")
     .map(sourcePersonRecord);
 
-/** A collection declares its Persons and places each Guide beside the configuration. */
+/** A collection places each Guide beside its configuration; the manifest declares its Persons. */
 function planCollectionSource(draft: InitializationDraft): Record<string, unknown> {
   const { input, source, directory } = draft;
   if (input.resources.some((resource) => !["Guide", "Person", "Asset"].includes(resource.type)))
@@ -426,9 +428,6 @@ function planCollectionSource(draft: InitializationDraft): Record<string, unknow
     id: source.id,
     title: source.title,
     ...(source.assetDirectory !== undefined ? { assets: { directory: draft.assetDirectory } } : {}),
-    ...(input.resources.some((resource) => resource.type === "Person")
-      ? { persons: personRecords(input.resources) }
-      : {}),
   };
   parseCollectionConfig(config);
   const allocated = new Set<string>();
@@ -462,9 +461,14 @@ function planWikiSource(draft: InitializationDraft): Record<string, unknown> {
   if (
     wikis.length !== 1 ||
     wikis[0].name !== source.id ||
-    input.resources.some((resource) => !["Wiki", "WikiPage", "Asset"].includes(resource.type))
+    input.resources.some(
+      (resource) => !["Wiki", "WikiPage", "Person", "Asset"].includes(resource.type),
+    )
   )
-    failure("resource-unrepresentable", "A Wiki initializes exactly one Wiki and its pages/media.");
+    failure(
+      "resource-unrepresentable",
+      "A Wiki initializes exactly one Wiki, its pages/media and the project's Persons.",
+    );
   const wiki = wikis[0];
   if (wiki.spec.title !== source.title)
     failure(
@@ -642,9 +646,6 @@ function planCourseSource(draft: InitializationDraft): Record<string, unknown> {
     ...(Object.hasOwn(course.spec, "description") ? { description: course.spec.description } : {}),
     ...(course.spec.authors !== undefined ? { authors: course.spec.authors } : {}),
     ...(source.assetDirectory !== undefined ? { assets: { directory: draft.assetDirectory } } : {}),
-    ...(expected.some((resource) => resource.type === "Person")
-      ? { persons: personRecords(expected) }
-      : {}),
     modules: sourceCourseModules(expected, course, paths, directory),
   };
   parseCourseConfig(config);
@@ -693,25 +694,57 @@ function writeInitialDocuments(draft: InitializationDraft): void {
 /** Write the new manifest, or append the source to the existing one; returns its edits. */
 function writeManifest(draft: InitializationDraft): SourceByteEdit[] | undefined {
   const { existing, source } = draft;
+  const persons = draft.expected.filter(
+    (resource): resource is Person => resource.type === "Person",
+  );
   if (!existing) {
     addGeneratedFile(
       draft,
       ".topik.yaml",
-      `version: 1\nnamespace: ${JSON.stringify(draft.manifest.namespace)}\nsources:\n  - kind: ${source.kind}\n    config: ${JSON.stringify(source.config)}\n`,
+      `version: 1\nnamespace: ${JSON.stringify(draft.manifest.namespace)}\nsources:\n  - kind: ${source.kind}\n    config: ${JSON.stringify(source.config)}\n${
+        persons.length
+          ? `persons:\n${personRecords(persons)
+              .map((record) => `  - ${JSON.stringify(record)}\n`)
+              .join("")}`
+          : ""
+      }`,
     );
     return undefined;
+  }
+  // The project's Persons are shared: one the manifest already declares is reused as it is, and
+  // one it declares differently cannot be redeclared by a new source.
+  const declared = new Map(
+    existing.project.manifest.persons?.map((person) => [person.name, person]),
+  );
+  const added: Person[] = [];
+  for (const person of persons) {
+    const prior = declared.get(person.name);
+    if (!prior) added.push(person);
+    else if (canonicalResource(prior) !== canonicalResource(person))
+      failSourcePlan(
+        "person-conflict",
+        "The project manifest declares this Person differently.",
+        `Person/${person.name}`,
+        ".topik.yaml",
+      );
+    else draft.expected.splice(draft.expected.indexOf(person), 1);
   }
   parseTopikManifest({
     ...existing.project.manifest,
     sources: [...existing.project.manifest.sources, { kind: source.kind, config: source.config }],
+    persons: personRecords([...(existing.project.manifest.persons ?? []), ...added]),
   });
   const root = draft.occupied.find((file) => file.path === ".topik.yaml")!;
-  const rootEdits = patchSourceSequence(
-    decodeSource(root.bytes),
-    "sources",
-    [{ kind: source.kind, config: source.config }],
-    [],
-  );
+  const raw = decodeSource(root.bytes);
+  // The source entry comes first: when `sources` ends the file, both insert at its end.
+  const rootEdits = [
+    ...patchSourceSequence(raw, "sources", [{ kind: source.kind, config: source.config }], []),
+    ...(!added.length
+      ? []
+      : existing.project.manifest.persons === undefined
+        ? patchSourceFields(raw, { persons: personRecords(added) }).edits
+        : patchSourceSequence(raw, "persons", personRecords(added), [])),
+  ];
   verifySharedEdits(
     root,
     existing.project.configurations.find((config) => config.path === ".topik.yaml")!,
@@ -840,9 +873,12 @@ function initializationPlan(
       candidate: { mode: file.mode, sha256: sourceHash(file.bytes), bytes: file.bytes },
       ...(existing && file.path === ".topik.yaml" ? { sharedEdits: rootEdits } : {}),
     }));
+  // A supplied Person the manifest already declares is one resource of the desired graph.
+  const existingResources = existing?.project.compilation.resources ?? [];
+  const existingKeys = new Set(existingResources.map((resource) => resourceKey(resource)));
   const desiredGraphDigest = digestSourceResourceGraph([
-    ...(existing?.project.compilation.resources ?? []),
-    ...input.resources,
+    ...existingResources,
+    ...input.resources.filter((resource) => !existingKeys.has(resourceKey(resource))),
   ]);
   const evidence = {
     descriptor: SOURCE_WRITER_DESCRIPTOR,

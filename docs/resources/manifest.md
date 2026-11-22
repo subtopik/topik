@@ -1,6 +1,6 @@
 # Project manifest
 
-The project manifest, `.topik.yaml`, declares a project's namespace and lists the source configurations to compile. This page covers its fields, how its paths resolve, which files the compiler accepts, and the library functions that read it. Read it when you set up a project or compile one from your own code.
+The project manifest, `.topik.yaml`, declares a project's namespace, lists the source configurations to compile and declares the Persons that authors refer to. This page covers its fields, how its paths resolve, which files the compiler accepts, and the library functions that read it. Read it when you set up a project or compile one from your own code.
 
 `topik compile`, `topik dev`, and the library's `compile`, `lint`, and `watch` APIs require `.topik.yaml` in the selected project directory:
 
@@ -14,6 +14,9 @@ sources:
     config: guides/collection.yaml
   - kind: wiki
     config: handbook/reference/wiki.yaml
+persons:
+  - id: ada
+    spec: { name: Ada Lovelace, email: ada@example.com }
 ```
 
 | Field       | Meaning                                                                                                       |
@@ -21,8 +24,9 @@ sources:
 | `version`   | The manifest syntax version, `1`.                                                                             |
 | `namespace` | The [project namespace](#project-namespace). Required.                                                        |
 | `sources`   | The configurations to compile. Each entry has exactly `kind` (`wiki`, `collection` or `course`) and `config`. |
+| `persons`   | Optional. The project's [Persons](#persons), which Guide, Course and Course page authors refer to.            |
 
-The manifest only points to configurations; it holds no content settings:
+Apart from the Persons, the manifest only points to configurations; it holds no content settings:
 
 - Wiki identity, navigation and settings belong in each Wiki configuration, and collection settings in each collection configuration.
 - Markdown, frontmatter and ordinary media are the source files.
@@ -39,6 +43,12 @@ A Git checkout is not required. [Inside a Git checkout](#inside-a-git-checkout) 
 The namespace must be nonblank portable text without leading or trailing whitespace, normalized to Unicode NFC, of at most 1,024 UTF-8 bytes.
 
 Topik combines the namespace with each asset's **manifest-relative path** to generate the asset's identity. Changing the namespace changes every generated asset ID. Changing a Git remote or the checkout location does not. See [Assets](./assets.md#generated-identity) for the exact identity rules.
+
+## Persons
+
+`persons` lists the people who author the project's content. Each record has an `id`, optional string-valued `labels` and the complete Person `spec`: `name`, and optionally `email` and `bio`. Every source shares these records, so a Guide in one collection and a Course page can name the same author. Each `id` appears once. A compile emits each Person once, as a `Person` resource.
+
+Every `authors` entry of a Guide, Course or Course page must name one of these ids, or the compile fails with `author-not-found`. A collection or Course configuration cannot declare `persons`; one that still does is refused with `config-invalid` naming the `persons` field.
 
 ## Discovery and paths
 
@@ -191,6 +201,7 @@ const wiki = await compileWiki({
 });
 ```
 
+- `persons` gives `compileGuides` and `compileCourse` the Person resources their authors refer to, since they do not read the manifest that declares them. The Persons are part of the result. Without them, a source that names an author fails with `author-not-found`.
 - `configFile` is optional. Without it, they discover the conventional configuration file of the single source, such as `wiki.yaml`, `wiki.yml` or `wiki.json`, and read it with the same rules as a selected configuration.
 - `fileSafety` and `gitExecutable` work as they do for `compile`.
 - `assets.generateName` receives the resolved absolute asset path and owns the naming policy. It is required only when the compiler discovers local assets.

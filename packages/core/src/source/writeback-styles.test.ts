@@ -26,17 +26,17 @@ const file = (path: string, raw: string) => ({
   mode: "100644" as const,
   bytes: encodeSource(raw),
 });
-const manifest = (kind: string, config: string) =>
+const manifest = (kind: string, config: string, persons = "") =>
   file(
     ".topik.yaml",
-    `version: 1\nnamespace: styles\nsources: [{kind: ${kind}, config: ${config}}]\n`,
+    `version: 1\nnamespace: styles\nsources: [{kind: ${kind}, config: ${config}}]\n${persons}`,
   );
 const authority = (project: SourceProject, create: string[] = []) => ({
   resources: project.compilation.resources.map((resource) => `${resource.type}/${resource.name}`),
   exclusive: project.documents
     .filter((document) => /\.mdx?$/.test(document.path))
     .map(({ path, sha256, mode }) => ({ path, sha256, mode })),
-  shared: project.configurations.filter((config) => config.path !== ".topik.yaml"),
+  shared: project.configurations,
   create,
 });
 async function plan(
@@ -139,8 +139,8 @@ test("Guide metadata edits accept zero-indented sequences and empty values", asy
   const persons = "persons:\n- id: ann\n  spec: {name: Ann}\n- id: bob\n  spec: {name: Bob}\n";
   const tags = await plan(
     [
-      manifest("collection", "collection.yaml"),
-      file("collection.yaml", collection + persons),
+      manifest("collection", "collection.yaml", persons),
+      file("collection.yaml", collection),
       file(
         "post.md",
         "---\nid: p\nauthors:\n- ann\ntags:\n- a\n- b\ninheritTags: false\n---\n# Post\n",
@@ -174,8 +174,8 @@ test("Guide metadata edits accept zero-indented sequences and empty values", asy
 test("deleting the last record of a zero-indented list keeps valid configuration", async () => {
   const person = await plan(
     [
-      manifest("collection", "collection.yaml"),
-      file("collection.yaml", `${collection}persons:\n- id: ann\n  spec:\n    name: Ann\n`),
+      manifest("collection", "collection.yaml", "persons:\n- id: ann\n  spec:\n    name: Ann\n"),
+      file("collection.yaml", collection),
       file("post.md", "---\nid: p\n---\n# Post\n"),
     ],
     (desired) => {
@@ -187,7 +187,9 @@ test("deleting the last record of a zero-indented list keeps valid configuration
     },
   );
   expect(person.result.ok, JSON.stringify(person.result)).toBe(true);
-  expect(person.written("collection.yaml")).toBe(`${collection}persons:\n  []\n`);
+  expect(person.written(".topik.yaml")).toBe(
+    "version: 1\nnamespace: styles\nsources: [{kind: collection, config: collection.yaml}]\npersons:\n  []\n",
+  );
   const course = await plan(
     [
       manifest("course", "course.yaml"),

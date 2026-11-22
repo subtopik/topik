@@ -6,12 +6,19 @@ import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import Ajv2020 from "ajv/dist/2020";
 import addFormats from "ajv-formats";
 import type { Guide } from "@topik/schema/guide/v1";
+import type { Person } from "@topik/schema/person/v1";
 import guideV1Schema from "@topik/schema/guide/v1.json" with { type: "json" };
 import { compileGuides } from "./guide";
 
 const ajv = new Ajv2020({ strict: true, discriminator: true });
 addFormats(ajv);
 const validateGuide = ajv.compile(guideV1Schema);
+const person = (name: string): Person => ({
+  apiVersion: "v1",
+  type: "Person",
+  name,
+  spec: { name },
+});
 
 describe("compileGuides", () => {
   let dir: string;
@@ -417,16 +424,32 @@ describe("compileGuides", () => {
   });
 
   test("extracts authors from frontmatter", async () => {
-    await writeCollectionConfig(
-      "id: blog\ntitle: Blog\npersons:\n  - { id: john-doe, spec: { name: John } }\n  - { id: jane-smith, spec: { name: Jane } }\n",
-    );
+    await writeCollectionConfig("id: blog\ntitle: Blog\n");
     await writeFile(
       join(dir, "post.md"),
       "---\ntitle: Post\nauthors:\n  - john-doe\n  - jane-smith\n---\n\nContent.",
     );
 
-    const result = await compileGuides({ dir });
-    expect((result.resources[0] as Guide).spec.authors).toEqual(["john-doe", "jane-smith"]);
+    const result = await compileGuides({
+      dir,
+      persons: [person("john-doe"), person("jane-smith")],
+    });
+    const guide = result.resources.find((resource) => resource.type === "Guide") as Guide;
+    expect(guide.spec.authors).toEqual(["john-doe", "jane-smith"]);
+    expect(result.resources.filter((resource) => resource.type === "Person")).toHaveLength(2);
+    // Without the project's Persons, the authors resolve to nothing.
+    await expect(compileGuides({ dir })).rejects.toMatchObject({ id: "author-not-found" });
+  });
+
+  test("refuses Persons declared in a collection configuration", async () => {
+    await writeCollectionConfig(
+      "id: blog\ntitle: Blog\npersons:\n  - { id: john-doe, spec: { name: John } }\n",
+    );
+    await writeFile(join(dir, "post.md"), "---\ntitle: Post\n---\n\nContent.");
+    await expect(compileGuides({ dir })).rejects.toMatchObject({
+      id: "config-invalid",
+      field: "persons",
+    });
   });
 
   test("rejects invalid author references", async () => {
@@ -649,15 +672,13 @@ describe("compileGuides", () => {
   });
 
   test("compiled Guide resources validate against schema", async () => {
-    await writeCollectionConfig(
-      "id: blog\ntitle: Blog\ntags:\n  - official\npersons:\n  - { id: john-doe, spec: { name: John } }\n  - { id: jane-smith, spec: { name: Jane } }\n",
-    );
+    await writeCollectionConfig("id: blog\ntitle: Blog\ntags:\n  - official\n");
     await writeFile(
       join(dir, "getting-started.md"),
       "---\ntitle: Getting Started\ntags:\n  - beginner\nauthors:\n  - john-doe\n---\n\n# Getting Started\n\nWelcome!",
     );
 
-    const { resources } = await compileGuides({ dir });
+    const { resources } = await compileGuides({ dir, persons: [person("john-doe")] });
     for (const resource of resources.filter((entry) => entry.type === "Guide")) {
       const valid = validateGuide(resource);
       if (!valid) {

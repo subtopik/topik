@@ -42,13 +42,12 @@ schema. Other frontmatter keys are kept in the file and not interpreted.
 
 ### Persons and Wiki configuration
 
-A collection's or Course's `persons` contains records with `id`, optional
-`labels` and the complete Person `spec` (`name`, optional `email` and `bio`).
-Guide, Course and Course page authors must resolve to declared Persons. In a
-project, they resolve against the `persons` of every declared source, so each
-Person `id` must be declared once in the whole project. `compileGuides` and
-`compileCourse` see only their own source's list. A Wiki configuration supports
-`labels`.
+The project manifest's `persons` contains records with `id`, optional `labels`
+and the complete Person `spec` (`name`, optional `email` and `bio`); see
+[Persons](./manifest.md#persons). Every source shares them: Guide, Course and
+Course page authors must resolve to one of them. A Person's source is
+`.topik.yaml`, so its document provenance has `kind: "manifest"`. A Wiki
+configuration supports `labels`.
 
 ### Wiki page sources and links
 
@@ -242,6 +241,13 @@ not deletion. The plan admits a change only with matching authority:
 - Admitting a field's value also admits edits of its own items and nested fields
   inside that value, so admitting `navigation` covers page additions and removals
   in the list.
+- An absent field's insertion anchor admits adding that key, so the manifest's
+  `persons` anchor admits the first Person of a manifest without `persons`.
+
+Person operations edit the manifest's `persons`: a create names `.topik.yaml`
+as its `config`, and any other `config` is refused with `source-mapping-missing`.
+In the manifest a plan edits only the Persons; its `version`, `namespace` and
+`sources` stay as written, whatever its authority admits.
 
 In an isolated runner integration, the trusted coordinator must independently
 admit the scope and replay shared byte edits, checking that all bytes outside it
@@ -541,13 +547,20 @@ plus explicitly identified page Markdown and media.
 independently admitted `sources/+` root insertion evidence. The namespace,
 existing declaration order and untouched source bytes are kept exactly.
 
+Persons among the supplied resources are written to the manifest. A new project
+lists them under `persons`. When adding a source, a Person the manifest already
+declares identically is reused and written nothing. A Person it declares
+differently is refused with `person-conflict`. A new one is appended to `persons`,
+which needs authority over `persons/+`, or over the `persons` anchor when the
+manifest has none.
+
 Both operations generate configs, stable page IDs, Markdown and supplied media
 that compile without application-specific data.
 
 ## Migrate saved source projects
 
 `SOURCE_WRITER_DESCRIPTOR` uses reference descriptor `source-links-v5` and
-provenance version `7`. Saved projects and plans made with an earlier writer do
+provenance version `8`, which records Persons in the manifest. Saved projects and plans made with an earlier writer do
 not match, and planning and source addition refuse them with
 `source-writer-incompatible`: regenerate them from authored source before writing.
 See [Migrate

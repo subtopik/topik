@@ -1,3 +1,4 @@
+import type { Person } from "@topik/schema/person/v1";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -35,11 +36,15 @@ modules:
     labels: { kind: intro }
     pages: [pages/welcome, separate/next]
 `;
-const persons = `persons:
-  - id: alice
-    labels: { role: author }
-    spec: { name: Alice }
-`;
+/** The project's Persons: a standalone compile is given them, a manifest declares them. */
+const alice: Person = {
+  apiVersion: "v1",
+  type: "Person",
+  name: "alice",
+  labels: { role: "author" },
+  spec: { name: "Alice" },
+};
+const persons = [{ id: "alice", labels: { role: "author" }, spec: { name: "Alice" } }];
 const welcome = `---
 id: welcome
 title: Welcome
@@ -66,7 +71,7 @@ authors: []
 `;
 function sourceFiles() {
   return {
-    "course.yaml": configuration + persons,
+    "course.yaml": configuration,
     "pages/welcome.md": welcome,
     "separate/next.md": next,
   };
@@ -74,7 +79,7 @@ function sourceFiles() {
 
 test("compiles the complete Course graph with exact identities, ordering, nullable metadata and independent source routes", async () => {
   const dir = await fixture(sourceFiles());
-  const result = await compileCourse({ dir });
+  const result = await compileCourse({ dir, persons: [alice] });
   expect(validateResources(result.resources).valid).toBe(true);
   expect(result.diagnostics).toEqual([]);
   expect(result.resources.find((resource) => resource.type === "Course")).toMatchObject({
@@ -131,10 +136,11 @@ test("manifest Course sources use exact configuration, full project author closu
         { kind: "course", config: "docs/custom.yaml" },
         { kind: "collection", config: "docs/collection.yaml" },
       ],
+      persons,
     }),
     "docs/custom.yaml": configuration,
     "docs/course.yaml": "invalid fallback",
-    "docs/collection.yaml": "id: shared\ntitle: Shared\n" + persons,
+    "docs/collection.yaml": "id: shared\ntitle: Shared\n",
     "docs/pages/welcome.md": welcome + "\n![Shared](../logo.png)\n[Download](../download.pdf)\n",
     "docs/separate/next.md": next,
     "docs/guide.md": "# Guide\n![Shared](logo.png)\n",
@@ -161,14 +167,14 @@ test("manifest Course sources use exact configuration, full project author closu
 
 test("Course source files with literal hash characters compile relative links with separate query and fragment meaning", async () => {
   const dir = await fixture({
-    "course.yaml": (configuration + persons).replace(
+    "course.yaml": configuration.replace(
       "pages/welcome, separate/next",
       "part#1/welcome#file, part#1/next",
     ),
     "part#1/welcome#file.md": welcome.replace("../separate/next.md", "./next.md"),
     "part#1/next.md": next,
   });
-  const result = await compileCourse({ dir });
+  const result = await compileCourse({ dir, persons: [alice] });
   expect(result.diagnostics).toEqual([]);
   expect(
     result.resources.find(
@@ -187,15 +193,17 @@ test("unresolved page and fragment links retain strict, warning and disabled val
     "pages/welcome.md":
       welcome + "\n[Missing](missing.md)\n[Missing heading](../separate/next.md#absent)\n",
   });
-  await expect(compileCourse({ dir })).rejects.toMatchObject({
+  await expect(compileCourse({ dir, persons: [alice] })).rejects.toMatchObject({
     diagnostics: [
       expect.objectContaining({ id: "link-page-not-found", file: "pages/welcome.md" }),
       expect.objectContaining({ id: "link-fragment-not-found", file: "pages/welcome.md" }),
     ],
   });
-  const warned = await compileCourse({ dir, validation: { links: "warning" } });
+  const warned = await compileCourse({ dir, persons: [alice], validation: { links: "warning" } });
   expect(warned.diagnostics.map((diagnostic) => diagnostic.level)).toEqual(["warning", "warning"]);
-  expect((await compileCourse({ dir, validation: { links: "off" } })).diagnostics).toEqual([]);
+  expect(
+    (await compileCourse({ dir, persons: [alice], validation: { links: "off" } })).diagnostics,
+  ).toEqual([]);
 });
 
 test("same-page card fragments are checked like same-page link fragments", async () => {
@@ -207,7 +215,7 @@ test("same-page card fragments are checked like same-page link fragments", async
     "## Step",
   ].join("\n\n");
   const dir = await fixture({ ...sourceFiles(), "pages/welcome.md": `${welcome}\n${cards}\n` });
-  await expect(compileCourse({ dir })).rejects.toMatchObject({
+  await expect(compileCourse({ dir, persons: [alice] })).rejects.toMatchObject({
     diagnostics: [
       expect.objectContaining({
         id: "link-fragment-not-found",
@@ -216,12 +224,23 @@ test("same-page card fragments are checked like same-page link fragments", async
       }),
     ],
   });
-  const warned = await compileCourse({ dir, validation: { links: "warning" } });
+  const warned = await compileCourse({ dir, persons: [alice], validation: { links: "warning" } });
   expect(warned.diagnostics.map(({ id, lines }) => [id, lines])).toEqual([
     // Lines count from the top of the file, including the eight frontmatter lines.
     ["link-fragment-not-found", [17]],
     ["link-fragment-positional", [19]],
   ]);
+});
+
+test("a Course configuration that still declares Persons is refused", async () => {
+  const dir = await fixture({
+    ...sourceFiles(),
+    "course.yaml": `${configuration}persons:\n  - { id: alice, spec: { name: Alice } }\n`,
+  });
+  await expect(compileCourse({ dir, persons: [alice] })).rejects.toMatchObject({
+    id: "config-invalid",
+    field: "persons",
+  });
 });
 
 test("author references reject missing Persons for Course and CoursePage metadata", async () => {
@@ -243,7 +262,7 @@ test("rejects duplicate Course page identities and routes independently of their
     "separate/next.md": next.replace("id: next", "id: welcome"),
   });
   // The second page is named, with the field and the page it collides with.
-  await expect(compileCourse({ dir })).rejects.toMatchObject({
+  await expect(compileCourse({ dir, persons: [alice] })).rejects.toMatchObject({
     id: "frontmatter-invalid",
     location: "separate/next.md",
     field: "id",
@@ -253,7 +272,7 @@ test("rejects duplicate Course page identities and routes independently of their
     join(dir, "separate/next.md"),
     next.replace("slug: destination", "slug: introduction"),
   );
-  await expect(compileCourse({ dir })).rejects.toMatchObject({
+  await expect(compileCourse({ dir, persons: [alice] })).rejects.toMatchObject({
     id: "frontmatter-invalid",
     location: "separate/next.md",
     field: "slug",
@@ -263,7 +282,7 @@ test("rejects duplicate Course page identities and routes independently of their
 
 test("explicit Course page sources refuse ambiguous extensions and symlink traversal", async () => {
   const dir = await fixture({ ...sourceFiles(), "separate/next.mdx": next });
-  await expect(compileCourse({ dir })).rejects.toMatchObject({
+  await expect(compileCourse({ dir, persons: [alice] })).rejects.toMatchObject({
     id: "course-page-ambiguous",
     location: "separate/next.mdx",
     relatedLocation: "separate/next.md",
@@ -271,7 +290,9 @@ test("explicit Course page sources refuse ambiguous extensions and symlink trave
   await rm(join(dir, "separate/next.mdx"));
   await rm(join(dir, "separate/next.md"));
   await symlink("../pages/welcome.md", join(dir, "separate/next.md"));
-  await expect(compileCourse({ dir })).rejects.toMatchObject({ id: "file-not-regular" });
+  await expect(compileCourse({ dir, persons: [alice] })).rejects.toMatchObject({
+    id: "file-not-regular",
+  });
 });
 
 test("Course configurations reject unsafe aliases, repeated memberships, traversal and invalid stable metadata", async () => {
@@ -283,11 +304,11 @@ test("Course configurations reject unsafe aliases, repeated memberships, travers
     configuration.replace("pages/welcome, separate/next", "&p [pages/welcome, *p]"),
   ]) {
     await writeFile(join(dir, "course.yaml"), raw);
-    await expect(compileCourse({ dir })).rejects.toBeDefined();
+    await expect(compileCourse({ dir, persons: [alice] })).rejects.toBeDefined();
   }
-  await writeFile(join(dir, "course.yaml"), configuration + persons);
+  await writeFile(join(dir, "course.yaml"), configuration);
   await writeFile(join(dir, "pages/welcome.md"), welcome.replace("slug: introduction", "slug: -"));
-  await expect(compileCourse({ dir })).rejects.toMatchObject({
+  await expect(compileCourse({ dir, persons: [alice] })).rejects.toMatchObject({
     id: "frontmatter-invalid",
     location: "pages/welcome.md",
   });
@@ -326,7 +347,9 @@ test("Course lists keep declaration order in every compilation path", async () =
   expect(lists((await discoverCourseResources({ dir })).resources)).toEqual(
     lists(before.resources),
   );
-  expect(lists((await compileCourse({ dir })).resources)).toEqual(lists(before.resources));
+  expect(lists((await compileCourse({ dir, persons: [alice] })).resources)).toEqual(
+    lists(before.resources),
+  );
   expect(lists(before.resources)).toEqual(
     expect.arrayContaining([
       ["learning", ["z-module", "a-module"]],
@@ -350,9 +373,9 @@ test("Course lists keep declaration order in every compilation path", async () =
 test("Course failures name the invalid field and reject invalid UTF-8 pages", async () => {
   let dir = await fixture({
     ...sourceFiles(),
-    "course.yaml": `${configuration}${persons}modlues: []\n`,
+    "course.yaml": `${configuration}modlues: []\n`,
   });
-  await expect(compileCourse({ dir })).rejects.toMatchObject({
+  await expect(compileCourse({ dir, persons: [alice] })).rejects.toMatchObject({
     id: "config-field-unknown",
     location: "course.yaml",
     field: "modlues",
@@ -363,7 +386,7 @@ test("Course failures name the invalid field and reject invalid UTF-8 pages", as
     ...sourceFiles(),
     "pages/welcome.md": welcome.replace("slug: introduction\n", "slug: introduction\norder: 12\n"),
   });
-  await expect(compileCourse({ dir })).rejects.toMatchObject({
+  await expect(compileCourse({ dir, persons: [alice] })).rejects.toMatchObject({
     id: "course-order-removed",
     location: "pages/welcome.md",
     field: "order",
@@ -375,7 +398,7 @@ test("Course failures name the invalid field and reject invalid UTF-8 pages", as
       "    slug: getting-started\n    order: 7\n",
     ),
   });
-  await expect(compileCourse({ dir })).rejects.toMatchObject({
+  await expect(compileCourse({ dir, persons: [alice] })).rejects.toMatchObject({
     id: "course-order-removed",
     location: "course.yaml",
     field: "modules[0].order",
@@ -383,7 +406,7 @@ test("Course failures name the invalid field and reject invalid UTF-8 pages", as
   });
 
   dir = await fixture({ ...sourceFiles(), "pages/welcome.md": Buffer.from([0x23, 0x20, 0xff]) });
-  await expect(compileCourse({ dir })).rejects.toMatchObject({
+  await expect(compileCourse({ dir, persons: [alice] })).rejects.toMatchObject({
     id: "document-encoding-invalid",
     location: "pages/welcome.md",
   });
@@ -439,7 +462,7 @@ test("a Course page description compiles as written, including an explicit null,
     "cleared.md": page("cleared", "description: null\n"),
     "plain.md": page("plain", ""),
   });
-  const result = await compileCourse({ dir });
+  const result = await compileCourse({ dir, persons: [alice] });
   expect(validateResources(result.resources).valid).toBe(true);
   const spec = (name: string) => {
     const resource = result.resources.find(

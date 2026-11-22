@@ -18,19 +18,20 @@ async function file(path: string, value: string) {
   await mkdir(join(dir, path, ".."), { recursive: true });
   await writeFile(join(dir, path), value);
 }
-async function manifest(kind: "wiki" | "collection", config: string) {
+async function manifest(kind: "wiki" | "collection", config: string, persons = "") {
   await file(
     ".topik.yaml",
-    `version: 1\nnamespace: examples/writeback\nsources:\n  - kind: ${kind}\n    config: ${config}\n`,
+    `version: 1\nnamespace: examples/writeback\nsources:\n  - kind: ${kind}\n    config: ${config}\n${persons}`,
   );
 }
 
 test("Guide metadata preserves identity, explicit empty tags/authors, null description and full Person facts", async () => {
-  await manifest("collection", "blog/posts.yml");
-  await file(
+  await manifest(
+    "collection",
     "blog/posts.yml",
-    "id: blog\ntitle: Blog\ntags: [inherited]\npersons:\n  - id: ada\n    labels: { role: author }\n    spec: { name: Ada, email: null, bio: '' }\n",
+    "persons:\n  - id: ada\n    labels: { role: author }\n    spec: { name: Ada, email: null, bio: '' }\n",
   );
+  await file("blog/posts.yml", "id: blog\ntitle: Blog\ntags: [inherited]\n");
   await file(
     "blog/original.md",
     "---\r\nid: portable-guide\r\nslug: public-route\r\ntitle: Original\r\ndescription: null\r\nauthors: []\r\ntags: []\r\ninheritTags: false\r\nlabels: {}\r\n---\r\n# Original\r\n",
@@ -153,4 +154,53 @@ test("Wiki labels require the public shape", async () => {
   await manifest("wiki", "wiki.yaml");
   await file("wiki.yaml", "id: docs\ntitle: Docs\nlabels: [opaque]\n");
   await expect(compileManifest({ dir })).rejects.toMatchObject({ id: "config-invalid" });
+});
+
+test("the manifest's Persons are shared by every source and compiled once", async () => {
+  await file(
+    ".topik.yaml",
+    [
+      "version: 1",
+      "namespace: examples/persons",
+      "sources:",
+      "  - { kind: collection, config: blog/collection.yaml }",
+      "  - { kind: course, config: course/course.yaml }",
+      "persons:",
+      "  - { id: ada, spec: { name: Ada } }",
+      "",
+    ].join("\n"),
+  );
+  await file("blog/collection.yaml", "id: blog\ntitle: Blog\n");
+  await file("blog/post.md", "---\nid: post\nauthors: [ada]\n---\n# Post\n");
+  await file(
+    "course/course.yaml",
+    "id: learning\ntitle: Learning\nslug: learning\nauthors: [ada]\nmodules:\n  - { id: m, title: M, slug: m, pages: [intro] }\n",
+  );
+  await file(
+    "course/intro.md",
+    "---\nid: intro\ntitle: Intro\nslug: intro\nauthors: [ada]\n---\n# Intro\n",
+  );
+  const result = await compileManifest({ dir });
+  expect(result.resources.filter((resource) => resource.type === "Person")).toEqual([
+    { apiVersion: "v1", type: "Person", name: "ada", spec: { name: "Ada" } },
+  ]);
+  // No source declares a Person, so none carries one in its provenance.
+  for (const source of result.provenance)
+    expect(Object.keys(source.sourcePathsByResource).some((key) => key.startsWith("Person/"))).toBe(
+      false,
+    );
+});
+
+test("invalid manifest Persons make the manifest invalid, not one of its sources", async () => {
+  for (const persons of [
+    "persons:\n  - { id: ada, spec: { name: Ada } }\n  - { id: ada, spec: { name: Ada } }\n",
+    "persons:\n  - { id: ada, spec: {} }\n",
+    "persons: ada\n",
+  ]) {
+    await manifest("collection", "collection.yaml", persons);
+    await file("collection.yaml", "id: blog\ntitle: Blog\n");
+    const failure = await compileManifest({ dir }).catch((error: unknown) => error);
+    expect(failure).toMatchObject({ id: "manifest-invalid", location: ".topik.yaml" });
+    expect(failure).not.toHaveProperty("sourceIndex");
+  }
 });

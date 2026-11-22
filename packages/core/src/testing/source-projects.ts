@@ -402,7 +402,7 @@ export interface GuideModel {
   /** A link to another guide of the collection, by index. */
   link: number | null;
   document: TopikDocument | null;
-  /** Authors, as indexes into the collection's persons. */
+  /** Authors, as indexes into the collection's persons, which the manifest declares. */
   authors: number[];
 }
 
@@ -705,27 +705,31 @@ function collectionConfiguration(model: CollectionModel): string {
     `id: ${model.id}`,
     ...(model.comments ? ["# Guides for new readers"] : []),
     `title: ${scalar(model.title, "plain")}`,
-    ...(model.persons.length
-      ? [
-          "persons:",
-          ...(model.comments ? ["  # authors"] : []),
-          ...model.persons.flatMap((person) =>
-            person.flow
-              ? [
-                  `  - id: ${person.id}`,
-                  `    spec: {name: ${person.name}${person.email ? `, email: ${person.email}` : ""}}`,
-                ]
-              : [
-                  `  - id: ${person.id}`,
-                  "    spec:",
-                  `      name: ${person.name}`,
-                  ...(person.email ? [`      email: ${person.email}`] : []),
-                ],
-          ),
-        ]
-      : []),
   ];
   return `${lines.join(model.eol)}${model.eol}`;
+}
+
+/** The manifest's `persons`: the collection's authors, shared by every source. */
+function manifestPersons(model: CollectionModel | null): string {
+  if (!model?.persons.length) return "";
+  const lines = [
+    "persons:",
+    ...(model.comments ? ["  # authors"] : []),
+    ...model.persons.flatMap((person) =>
+      person.flow
+        ? [
+            `  - id: ${person.id}`,
+            `    spec: {name: ${person.name}${person.email ? `, email: ${person.email}` : ""}}`,
+          ]
+        : [
+            `  - id: ${person.id}`,
+            "    spec:",
+            `      name: ${person.name}`,
+            ...(person.email ? [`      email: ${person.email}`] : []),
+          ],
+    ),
+  ];
+  return `${lines.join("\n")}\n`;
 }
 
 /** Render a project with all its sources to the tree `readSourceProject` reads. */
@@ -739,7 +743,10 @@ export function renderSourceProject(model: SourceProjectModel): SourceTreeFile[]
     ...(model.course ? [`  - {kind: course, config: ${courseConfigPath(model.course)}}`] : []),
   ];
   return [
-    file(".topik.yaml", `version: 1\nnamespace: demo/fuzz\nsources:\n${sources.join("\n")}\n`),
+    file(
+      ".topik.yaml",
+      `version: 1\nnamespace: demo/fuzz\nsources:\n${sources.join("\n")}\n${manifestPersons(model.collection)}`,
+    ),
     ...wiki,
     ...(model.collection
       ? [

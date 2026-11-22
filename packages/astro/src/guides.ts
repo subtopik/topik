@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { compileGuides, type AssetCompilationOptions } from "@topik/core";
 import type { Guide } from "@topik/schema/guide/v1";
+import type { Person } from "@topik/schema/person/v1";
 import type { LoaderContext } from "astro/loaders";
 import { loadTopikSource } from "./source-watch";
 import {
@@ -17,6 +18,8 @@ export interface TopikGuidesOptions {
   name: string;
   /** Name generator for local Assets. No manifest is required. */
   assets?: AssetCompilationOptions;
+  /** Persons the guides' authors refer to; a project declares them in its `.topik.yaml`. */
+  persons?: readonly Person[];
 }
 
 const GUIDE_TYPES = `
@@ -38,6 +41,7 @@ export function topikGuidesLoader(options: TopikGuidesOptions): TopikAssetLoader
     compileGuides({
       dir: resolvedDir,
       assets,
+      persons: options.persons,
     });
   const enhanced = withTopikAssetSnapshot(
     {

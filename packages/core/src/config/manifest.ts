@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { validateProjectNamespace } from "../assets/asset";
 import { validateTopikPath } from "../assets/path";
+import { parseSourcePersons } from "./source-metadata";
 
 export const TOPIK_MANIFEST_FILENAME = ".topik.yaml";
 export const TOPIK_MANIFEST_LIMITS = {
@@ -27,6 +28,19 @@ export const topikManifestSchema = z
       return z.NEVER;
     }),
     sources: z.array(topikManifestSourceSchema).max(TOPIK_MANIFEST_LIMITS.maxSources),
+    /** The project's Persons; every source's authors refer to them. */
+    persons: z
+      .unknown()
+      .optional()
+      .transform((value, context) => {
+        if (value === undefined) return undefined;
+        try {
+          return parseSourcePersons(value);
+        } catch {
+          context.addIssue({ code: "custom", message: "Expected unique, valid Person records" });
+          return z.NEVER;
+        }
+      }),
   })
   .superRefine((manifest, context) => {
     const paths = manifest.sources.map((source) => source.config);

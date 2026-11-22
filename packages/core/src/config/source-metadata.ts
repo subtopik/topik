@@ -50,6 +50,11 @@ export function parseGuideMetadata(value: unknown) {
   return guideMetadataSchema.parse(value);
 }
 
+/** Persons are shared by every source, so the project manifest declares them. */
+export const movedPersonsSchema = z
+  .never({ error: "Persons are declared in the project's .topik.yaml; move `persons` there" })
+  .optional();
+
 /** The public resource validator owns Person fields, including future schema additions. */
 export function parseSourcePersons(value: unknown): Person[] {
   if (!Array.isArray(value)) throw new TypeError("persons must be a list");

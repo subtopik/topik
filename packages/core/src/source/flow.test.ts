@@ -1,4 +1,4 @@
-import { expect, test } from "vite-plus/test";
+import { describe, expect, test } from "vite-plus/test";
 import type { Guide } from "@topik/schema/guide/v1";
 import { addSourceToProject } from "./initialize";
 import { readSourceProject, type SourceProject } from "./project";
@@ -301,16 +301,16 @@ function authority(project: SourceProject): SourceWriteAuthority {
     exclusive: project.documents
       .filter((document) => document.path.endsWith(".md"))
       .map(({ path, sha256, mode }) => ({ path, sha256, mode })),
-    shared: project.configurations.filter((config) => config.path !== ".topik.yaml"),
+    shared: project.configurations,
     create: [],
   };
 }
-const projectFor = (metadata: string, config = "") =>
+const projectFor = (metadata: string, config = "", manifest = "") =>
   readSourceProject({
     tree: [
       file(
         ".topik.yaml",
-        "version: 1\nnamespace: flow\nsources: [{kind: collection, config: docs/collection.yaml}, # tail ,\n]\n",
+        `version: 1\nnamespace: flow\nsources: [{kind: collection, config: docs/collection.yaml}, # tail ,\n]\n${manifest}`,
       ),
       file("docs/collection.yaml", `id: docs\ntitle: Docs\n${config}`),
       file("docs/home.md", `---\n${metadata}\n---\n# Home\n\nExact body.\n`),
@@ -389,7 +389,8 @@ test.each(["add", "delete", "replace"])(
   async (change) => {
     const project = await projectFor(
       "id: home",
-      "persons: [{id: alice, spec: {name: Alice}}, # keep ,\n]\ncustom: exact\n",
+      "",
+      "persons: [{id: alice, spec: {name: Alice}}, # keep ,\n]\n",
     );
     const desired = structuredClone(project.compilation.resources).filter(
       (resource) => change === "add" || resource.type !== "Person",
@@ -411,7 +412,7 @@ test.each(["add", "delete", "replace"])(
         ...(change === "add" ? [] : [{ kind: "delete" as const, resource: "Person/alice" }]),
         ...(change === "delete"
           ? []
-          : [{ kind: "create" as const, resource: "Person/bob", config: "docs/collection.yaml" }]),
+          : [{ kind: "create" as const, resource: "Person/bob", config: ".topik.yaml" }]),
       ],
       authority: {
         ...admitted,
@@ -429,7 +430,7 @@ test.each(["add", "delete", "replace"])(
     const result = await planSourceUpdates(request);
     expect(result.ok, JSON.stringify(result)).toBe(true);
     if (!result.ok) return;
-    const changed = result.plan.changes.find((entry) => entry.path === "docs/collection.yaml")!;
+    const changed = result.plan.changes.find((entry) => entry.path === ".topik.yaml")!;
     expect(
       replaySourceByteEdits(
         project.tree.find((entry) => entry.path === changed.path)!.bytes,
@@ -448,7 +449,9 @@ test.each(["add", "delete", "replace"])(
     expect(denied).toMatchObject({ ok: false, diagnostics: [{ code: "shared-scope-denied" }] });
     if (change !== "add") {
       const stale = structuredClone(request.authority);
-      stale.shared[0].fields.find((field) => field.selector === "persons/alice")!.entry!.end--;
+      stale.shared
+        .find((config) => config.path === ".topik.yaml")!
+        .fields.find((field) => field.selector === "persons/alice")!.entry!.end--;
       expect(await planSourceUpdates({ ...request, authority: stale })).toMatchObject({
         ok: false,
         diagnostics: [{ code: "shared-authority-stale" }],
@@ -598,4 +601,44 @@ test.each([
     Object.fromEntries(selected.map((selector) => [selector, undefined])),
   );
   expect(decodeSource(checkEdits(raw, edits, selected))).toBe(expected);
+});
+
+describe("an absent field's anchor admits adding only that key", () => {
+  const raw = "version: 1\nnamespace: example\nsources: []\n";
+  const syntax = inspectSourceSyntax(raw);
+  const base = file(".topik.yaml", raw);
+  // Inspection of a project adds this anchor for a manifest without `persons`.
+  const anchor = { selector: "persons", insertion: syntax.insertion };
+  const provenance = {
+    ...base,
+    sha256: sourceHash(base.bytes),
+    fields: [...syntax.fields.values(), anchor],
+    insertion: syntax.insertion,
+  };
+  const authority = { ...provenance, fields: [anchor] };
+  const insert = (text: string): SourceByteEdit => ({
+    selector: "persons",
+    start: syntax.insertion,
+    end: syntax.insertion,
+    oldSha256: sourceHash(new Uint8Array()),
+    replacement: encodeSource(text),
+  });
+  test("adding the key passes", () => {
+    const { edits } = patchSourceFields(raw, { persons: [{ id: "ada", spec: { name: "Ada" } }] });
+    expect(() => verifySharedEdits(base, provenance, authority, edits)).not.toThrow();
+  });
+  test.each([
+    ["another key at the anchor", "other: 1\n"],
+    ["the key with a sibling", "persons: []\nother: 1\n"],
+  ])("%s is refused", (_, text) => {
+    // The bytes land at the admitted anchor; only the meaning check tells these apart.
+    expect(() => verifySharedEdits(base, provenance, authority, [insert(text)])).toThrow(
+      expect.objectContaining({
+        diagnostic: expect.objectContaining({
+          code: "shared-scope-denied",
+          message: "A configuration edit changes values outside its admitted fields.",
+        }),
+      }),
+    );
+  });
 });

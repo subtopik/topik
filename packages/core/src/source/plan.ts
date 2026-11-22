@@ -473,8 +473,12 @@ function sharedChangesStayAdmitted(
         if (!covered(selector)) return false;
       } else if (!compare(selector, left[key], right[key])) return false;
     }
+    // A new key needs the map's insertion anchor, or the admitted anchor of that absent field.
     return (
-      Object.keys(right).every((key) => Object.hasOwn(left, key)) || admitted.has(`${prefix}+`)
+      admitted.has(`${prefix}+`) ||
+      Object.keys(right).every(
+        (key) => Object.hasOwn(left, key) || admitted.has(`${prefix}${encodeURIComponent(key)}`),
+      )
     );
   };
   // Items are matched in order: an admitted item may be replaced or removed, any other item
@@ -1255,7 +1259,7 @@ function planOperation(state: PlanState, scope: ReferenceScope, op: SourceResour
   planDocumentOperation(state, scope, op, previous, next);
 }
 
-/** Persons are records in their collection or Course configuration. */
+/** Persons are records in the project manifest, which every source shares. */
 function planPersonOperation(
   state: PlanState,
   op: SourceResourceOperation,
@@ -1282,18 +1286,12 @@ function planPersonOperation(
     state.derivedKeys.add(key);
   }
   if (op.kind === "move")
-    block(
-      "resource-unrepresentable",
-      "Persons stay inside their declared collection configuration.",
-      op.resource,
-    );
-  const document = documentOf(project, op.resource);
-  const config = op.kind === "create" ? op.config : document?.config;
-  const source = provenanceOf(project, config);
-  if (!config || (source?.kind !== "collection" && source?.kind !== "course"))
+    block("resource-unrepresentable", "Persons stay inside the project manifest.", op.resource);
+  const config = op.kind === "create" ? op.config : documentOf(project, op.resource)?.config;
+  if (config !== ".topik.yaml")
     block(
       "source-mapping-missing",
-      "A Person needs its exact declared collection or Course source.",
+      "A Person is declared in the project manifest, .topik.yaml.",
       op.resource,
     );
   const updates = state.configUpdates.get(config) ?? {};
@@ -1593,6 +1591,17 @@ function planSharedConfigurationEdits(
       ),
     ].sort(compareSharedEdits);
     if (!edits.length) continue;
+    // In the manifest, a plan only ever edits Persons: its version, namespace and sources stay
+    // as written, whatever authority admits.
+    if (
+      path === ".topik.yaml" &&
+      edits.some((edit) =>
+        edit.selector
+          .split(",")
+          .some((selector) => selector !== "persons" && !selector.startsWith("persons/")),
+      )
+    )
+      throw new TypeError("A manifest edit reaches beyond its Persons");
     verifySharedEdits(
       file,
       state.project.configurations.find((config) => config.path === path)!,
@@ -1834,18 +1843,16 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
   }
 }
 
-/** Parsed values of every declared source configuration, excluding the manifest. */
+/** Parsed values of the manifest, which declares the Persons, and every source configuration. */
 function inspectConfigurations(project: SourceProject): Map<string, Record<string, unknown>> {
   const files = new Map(project.tree.map((file) => [file.path, file]));
   return new Map(
-    project.configurations
-      .filter((config) => config.path !== ".topik.yaml")
-      .map((config) => [
-        config.path,
-        inspectSourceSyntax(
-          decodeSource(files.get(config.path)!.bytes),
-          config.path.endsWith(".json"),
-        ).value,
-      ]),
+    project.configurations.map((config) => [
+      config.path,
+      inspectSourceSyntax(
+        decodeSource(files.get(config.path)!.bytes),
+        config.path.endsWith(".json"),
+      ).value,
+    ]),
   );
 }

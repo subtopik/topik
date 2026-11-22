@@ -20,14 +20,14 @@ const file = (path: string, text: string): SourceTreeFile => ({
   mode: "100644",
   bytes: encodeSource(text),
 });
-const rawConfig = `# Course configuration\nid: fundamentals\ntitle: Fundamentals # retain\nslug: fundamentals\ndescription: null\nlabels: { audience: beginner }\nauthors: [alice]\npersons:\n  - id: alice\n    labels: { role: author }\n    spec: { name: Alice, email: alice@example.test, bio: "A teacher" }\nmodules:\n  - id: basics\n    title: Basics # retain module comment\n    slug: basics\n    description: null\n    labels: { level: introductory }\n    pages:\n      - pages/intro # retain membership comment\n      - pages/target\n    customModule: retain\n  - id: advanced\n    title: Advanced\n    slug: advanced\n    pages: []\n    customModule: exact\ncustom: { exact: unchanged }\n`;
+const rawConfig = `# Course configuration\nid: fundamentals\ntitle: Fundamentals # retain\nslug: fundamentals\ndescription: null\nlabels: { audience: beginner }\nauthors: [alice]\nmodules:\n  - id: basics\n    title: Basics # retain module comment\n    slug: basics\n    description: null\n    labels: { level: introductory }\n    pages:\n      - pages/intro # retain membership comment\n      - pages/target\n    customModule: retain\n  - id: advanced\n    title: Advanced\n    slug: advanced\n    pages: []\n    customModule: exact\ncustom: { exact: unchanged }\n`;
 
 async function courseProject(): Promise<SourceProject> {
   return readSourceProject({
     tree: [
       file(
         ".topik.yaml",
-        "version: 1\nnamespace: example/course\nsources: [{kind: course, config: lessons/course.yaml}]\n",
+        'version: 1\nnamespace: example/course\nsources: [{kind: course, config: lessons/course.yaml}]\npersons:\n  - id: alice\n    labels: { role: author }\n    spec: { name: Alice, email: alice@example.test, bio: "A teacher" }\n',
       ),
       file("lessons/course.yaml", rawConfig),
       file(
@@ -589,7 +589,7 @@ test("shared Person edits require every Course and CoursePage author reference i
   const project = await courseProject();
   const desired = structuredClone(project.compilation.resources);
   resource(desired, "Person", "alice").spec.bio = "Updated biography";
-  const config = project.configurations.find((config) => config.path === "lessons/course.yaml")!;
+  const config = project.configurations.find((config) => config.path === ".topik.yaml")!;
   const scope = {
     ...authority(project),
     shared: [
@@ -728,14 +728,20 @@ test("adding a Course preserves existing namespace, source order and all unrelat
     },
     resources: initializedGraph(),
     createPaths: ["training/course.yaml", "training/first/welcome.md"],
+    // The new Course's Person is added to the manifest, which has no persons yet.
     manifestAuthority: {
       ...root,
-      fields: root.fields.filter((field) => field.selector === "sources/+"),
+      fields: root.fields.filter(
+        (field) => field.selector === "sources/+" || field.selector === "persons",
+      ),
     },
   });
   expect(result.ok, JSON.stringify(result)).toBe(true);
   if (!result.ok) return;
   expect(result.plan.candidate.manifest.namespace).toBe(existing.manifest.namespace);
+  expect(result.plan.candidate.manifest.persons).toEqual([
+    { apiVersion: "v1", type: "Person", name: "teacher", spec: { name: "Teacher" } },
+  ]);
   expect(result.plan.candidate.manifest.sources.map((source) => source.kind)).toEqual([
     "collection",
     "course",

@@ -321,7 +321,8 @@ const everything = (project: SourceProject, create: string[] = []): SourceWriteA
   exclusive: project.documents
     .filter((document) => /\.mdx?$/u.test(document.path))
     .map(({ path, sha256, mode }) => ({ path, sha256, mode })),
-  shared: project.configurations.filter((configuration) => configuration.path !== ".topik.yaml"),
+  // The manifest too: a plan may edit only its Persons, whatever authority admits.
+  shared: project.configurations,
   create,
 });
 
@@ -638,7 +639,7 @@ function request(
   }
 }
 
-/** Requests for the Person edits: records in the collection, and guide authors. */
+/** Requests for the Person edits: records in the manifest, and guide authors. */
 function personRequest(
   project: SourceProject,
   model: SourceProjectModel,
@@ -646,7 +647,7 @@ function personRequest(
   change: Edit,
 ): Request | undefined {
   if (!model.collection) return undefined;
-  const config = collectionConfigPath(model.collection);
+  const config = ".topik.yaml";
   const persons = desired
     .filter((resource): resource is Person => resource.type === "Person")
     .sort((a, b) => a.name.localeCompare(b.name));

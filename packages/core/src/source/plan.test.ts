@@ -857,7 +857,8 @@ test("a saved media revision creates a new local path while an untouched sibling
 });
 test("deleting the last block-list Person keeps a valid empty list within its admitted entry", async () => {
   const project = await guideProject(
-    "id: blog\ntitle: Blog\npersons:\n  - id: alice\n    spec: {name: Alice}\ncustom: exact\n",
+    undefined,
+    "persons:\n  - id: alice\n    spec: {name: Alice}\n# after the persons\n",
   );
   const admitted = authority(project);
   const result = await planSourceUpdates({
@@ -870,7 +871,7 @@ test("deleting the last block-list Person keeps a valid empty list within its ad
     operations: [{ kind: "delete", resource: "Person/alice" }],
     authority: {
       ...admitted,
-      shared: admitted.shared.map((config) => ({
+      shared: project.configurations.map((config) => ({
         ...config,
         fields: config.fields.filter((field) => field.selector === "persons/alice"),
       })),
@@ -878,8 +879,9 @@ test("deleting the last block-list Person keeps a valid empty list within its ad
   });
   expect(result.ok, JSON.stringify(result)).toBe(true);
   if (!result.ok) return;
+  expect(result.plan.changes.map((change) => change.path)).toEqual([".topik.yaml"]);
   expect(decodeSource(result.plan.changes[0].candidate!.bytes)).toBe(
-    "id: blog\ntitle: Blog\npersons:\n  []\ncustom: exact\n",
+    `${MANIFEST}persons:\n  []\n# after the persons\n`,
   );
 });
 test("edited links require saved context when routes are reassigned", async () => {
@@ -930,7 +932,8 @@ test("edited links require saved context when routes are reassigned", async () =
 
 test("shared Person edits require permission for every referencing Guide", async () => {
   const source = await guideProject(
-    "id: blog\ntitle: Blog\npersons: [{id: alice, spec: {name: Alice, bio: old}}]\n",
+    undefined,
+    "persons: [{id: alice, spec: {name: Alice, bio: old}}]\n",
   );
   const project = await readSourceProject({
     tree: [
@@ -943,7 +946,7 @@ test("shared Person edits require permission for every referencing Guide", async
   const person = desired.find((resource) => resource.type === "Person")!;
   if (person.type !== "Person") return;
   person.spec.bio = "Edited";
-  const admitted = authority(project);
+  const admitted = { ...authority(project), shared: project.configurations };
   const request = {
     project,
     expectedTreeDigest: project.treeDigest,
@@ -1097,7 +1100,8 @@ test("a Wiki page move preserves identity, incoming targets and untouched naviga
 });
 test("Person edits preserve unselected records and configuration syntax", async () => {
   const project = await guideProject(
-    "id: blog\ntitle: Blog\npersons:\n  - id: alice\n    spec:\n      name: Alice # keep name\n      bio: old\n  - id: bob\n    spec: {name: Bob}\n  - id: carol\n    spec: {name: Carol} # untouched\ncustom: exact\n",
+    undefined,
+    "persons:\n  - id: alice\n    spec:\n      name: Alice # keep name\n      bio: old\n  - id: bob\n    spec: {name: Bob}\n  - id: carol\n    spec: {name: Carol} # untouched\n# after the persons\n",
   );
   const desired = structuredClone(project.compilation.resources).filter(
     (resource) => resource.type !== "Person" || resource.name !== "bob",
@@ -1122,33 +1126,35 @@ test("Person edits preserve unselected records and configuration syntax", async 
     operations: [
       { kind: "update", resource: "Person/alice" },
       { kind: "delete", resource: "Person/bob" },
-      { kind: "create", resource: "Person/dave", config: "blog/custom.yaml" },
+      { kind: "create", resource: "Person/dave", config: ".topik.yaml" },
     ],
     authority: {
       ...authority(project),
       resources: [...authority(project).resources, "Person/dave"],
+      shared: project.configurations,
     },
   });
   expect(result.ok, JSON.stringify(result)).toBe(true);
   if (!result.ok) return;
   const config = decodeSource(result.plan.changes[0].candidate!.bytes);
+  expect(config.startsWith(MANIFEST)).toBe(true);
   expect(config).toContain("name: Alice # keep name\n");
   expect(config).toContain("spec: {name: Carol} # untouched\n");
-  expect(config).toContain("custom: exact\n");
-  expect(result.plan.changes.map((change) => change.path)).toEqual(["blog/custom.yaml"]);
+  expect(config).toContain("# after the persons\n");
+  expect(result.plan.changes.map((change) => change.path)).toEqual([".topik.yaml"]);
 });
 const file = (
   path: string,
   text: string,
   mode: SourceTreeFile["mode"] = "100644",
 ): SourceTreeFile => ({ path, bytes: encodeSource(text), mode });
-async function guideProject(config = "id: blog\ntitle: Blog\n") {
+const MANIFEST =
+  "version: 1\nnamespace: example/writeback\nsources: [{kind: collection, config: blog/custom.yaml}]\n";
+/** A collection project; `persons` is appended to its manifest, which declares the Persons. */
+async function guideProject(config = "id: blog\ntitle: Blog\n", persons = "") {
   return readSourceProject({
     tree: [
-      file(
-        ".topik.yaml",
-        "version: 1\nnamespace: example/writeback\nsources: [{kind: collection, config: blog/custom.yaml}]\n",
-      ),
+      file(".topik.yaml", MANIFEST + persons),
       file("blog/custom.yaml", config),
       file(
         "blog/post.md",

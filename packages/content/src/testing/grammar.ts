@@ -492,7 +492,8 @@ function renderBlock(block: Block): Line[] {
         `| ${Array.from({ length: width }, (_, index) =>
           renderInlines(cells[index] ?? [{ kind: "text", value: "a" }])
             .replace(/\n/gu, " ")
-            .replace(/\|/gu, "\\|"),
+            // Escape backslashes too, so a cell's trailing backslash cannot escape the pipe.
+            .replace(/[\\|]/gu, "\\$&"),
         ).join(" | ")} |`;
       return [row(block.header), `|${" - |".repeat(width)}`, ...block.rows.map(row)].map(
         (text) => ({ text, lazy: false }),

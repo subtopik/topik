@@ -132,7 +132,14 @@ export async function verifySourceWritebackConsumer(packageCohort = "c".repeat(6
   assert.equal(denied.ok, false);
   assert.equal(Object.hasOwn(denied, "plan"), false);
 
+  // The manifest declares the Persons, and a project compiles them before its sources.
   const resources = [
+    {
+      apiVersion: "v1",
+      type: "Person",
+      name: "ada",
+      spec: { name: "Ada", email: null, bio: "Author" },
+    },
     {
       apiVersion: "v1",
       type: "Guide",
@@ -143,12 +150,6 @@ export async function verifySourceWritebackConsumer(packageCohort = "c".repeat(6
         authors: ["ada"],
         content: { format: "topik", value: "# Created\n" },
       },
-    },
-    {
-      apiVersion: "v1",
-      type: "Person",
-      name: "ada",
-      spec: { name: "Ada", email: null, bio: "Author" },
     },
   ];
   const occupied = [file("README.md", "Unowned\n", "100755")];
@@ -202,11 +203,11 @@ export async function verifyCourseSourceConsumer(packageCohort = "c".repeat(64))
     tree: [
       file(
         ".topik.yaml",
-        "version: 1\nnamespace: packed/course\nsources: [{kind: course, config: course/course.yaml}]\n",
+        "version: 1\nnamespace: packed/course\nsources: [{kind: course, config: course/course.yaml}]\npersons: [{id: ada, spec: {name: Ada, email: null, bio: Teacher}}]\n",
       ),
       file(
         "course/course.yaml",
-        "# Keep course configuration\nid: training\ntitle: Training\nslug: training\nauthors: [ada]\npersons: [{id: ada, spec: {name: Ada, email: null, bio: Teacher}}]\ncustom: exact\nmodules:\n  - id: foundations\n    title: Foundations\n    slug: foundations\n    pages: [lessons/intro, lessons/next]\n",
+        "# Keep course configuration\nid: training\ntitle: Training\nslug: training\nauthors: [ada]\ncustom: exact\nmodules:\n  - id: foundations\n    title: Foundations\n    slug: foundations\n    pages: [lessons/intro, lessons/next]\n",
       ),
       file(
         "course/lessons/intro.md",

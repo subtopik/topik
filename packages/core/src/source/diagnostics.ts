@@ -23,6 +23,7 @@ export type SourcePlanDiagnosticCode =
   | "operation-inconsistent"
   | "operation-required"
   | "package-cohort-required"
+  | "person-conflict"
   | "reference-context-invalid"
   | "reference-context-required"
   | "reference-target-removed"
@@ -115,6 +116,7 @@ const SOURCE_PLAN_DIAGNOSTIC_CATEGORIES: Readonly<
   "reference-unrepresentable": "unrepresentable",
   "resource-invalid": "request",
   "route-collision": "request",
+  "person-conflict": "request",
   "resource-scope-denied": "scope",
   "resource-unrepresentable": "unrepresentable",
   "round-trip-mismatch": "validation",

@@ -56,9 +56,10 @@ Each source kind finds its Markdown differently:
 Configuration files can use `.yaml`, `.yml` or `.json`. Markdown inputs can use
 `.md` or `.mdx`; the `.mdx` extension does not enable executable MDX.
 
-Collections and Courses can declare Person records and author references in
-their configuration. See [Source writing](./source-writing.md)
-for Course source layout, source metadata and reviewed project edits.
+The project manifest declares the Person records that Guide, Course and Course
+page authors refer to; see [Persons](./manifest.md#persons). See
+[Source writing](./source-writing.md) for Course source layout, source metadata
+and reviewed project edits.
 
 ## Compile a wiki
 

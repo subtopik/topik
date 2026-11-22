@@ -301,16 +301,16 @@ function authority(project: SourceProject): SourceWriteAuthority {
     exclusive: project.documents
       .filter((document) => document.path.endsWith(".md"))
       .map(({ path, sha256, mode }) => ({ path, sha256, mode })),
-    shared: project.configurations.filter((config) => config.path !== ".topik.yaml"),
+    shared: project.configurations,
     create: [],
   };
 }
-const projectFor = (metadata: string, config = "") =>
+const projectFor = (metadata: string, config = "", manifest = "") =>
   readSourceProject({
     tree: [
       file(
         ".topik.yaml",
-        "version: 1\nnamespace: flow\nsources: [{kind: collection, config: docs/collection.yaml}, # tail ,\n]\n",
+        `version: 1\nnamespace: flow\nsources: [{kind: collection, config: docs/collection.yaml}, # tail ,\n]\n${manifest}`,
       ),
       file("docs/collection.yaml", `id: docs\ntitle: Docs\n${config}`),
       file("docs/home.md", `---\n${metadata}\n---\n# Home\n\nExact body.\n`),
@@ -389,7 +389,8 @@ test.each(["add", "delete", "replace"])(
   async (change) => {
     const project = await projectFor(
       "id: home",
-      "persons: [{id: alice, spec: {name: Alice}}, # keep ,\n]\ncustom: exact\n",
+      "",
+      "persons: [{id: alice, spec: {name: Alice}}, # keep ,\n]\n",
     );
     const desired = structuredClone(project.compilation.resources).filter(
       (resource) => change === "add" || resource.type !== "Person",
@@ -411,7 +412,7 @@ test.each(["add", "delete", "replace"])(
         ...(change === "add" ? [] : [{ kind: "delete" as const, resource: "Person/alice" }]),
         ...(change === "delete"
           ? []
-          : [{ kind: "create" as const, resource: "Person/bob", config: "docs/collection.yaml" }]),
+          : [{ kind: "create" as const, resource: "Person/bob", config: ".topik.yaml" }]),
       ],
       authority: {
         ...admitted,
@@ -429,7 +430,7 @@ test.each(["add", "delete", "replace"])(
     const result = await planSourceUpdates(request);
     expect(result.ok, JSON.stringify(result)).toBe(true);
     if (!result.ok) return;
-    const changed = result.plan.changes.find((entry) => entry.path === "docs/collection.yaml")!;
+    const changed = result.plan.changes.find((entry) => entry.path === ".topik.yaml")!;
     expect(
       replaySourceByteEdits(
         project.tree.find((entry) => entry.path === changed.path)!.bytes,
@@ -448,7 +449,9 @@ test.each(["add", "delete", "replace"])(
     expect(denied).toMatchObject({ ok: false, diagnostics: [{ code: "shared-scope-denied" }] });
     if (change !== "add") {
       const stale = structuredClone(request.authority);
-      stale.shared[0].fields.find((field) => field.selector === "persons/alice")!.entry!.end--;
+      stale.shared
+        .find((config) => config.path === ".topik.yaml")!
+        .fields.find((field) => field.selector === "persons/alice")!.entry!.end--;
       expect(await planSourceUpdates({ ...request, authority: stale })).toMatchObject({
         ok: false,
         diagnostics: [{ code: "shared-authority-stale" }],

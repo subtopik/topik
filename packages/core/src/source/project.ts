@@ -63,7 +63,7 @@ export const SOURCE_WRITER_DESCRIPTOR = {
   contentSchema: TOPIK_CONTENT_SCHEMA_VERSION,
   resourceSchema: "v1",
   references: "source-links-v5",
-  provenance: 7,
+  provenance: 8,
   graph: "authored-resource-bytes-v1",
   packageVersion: corePackage.version,
 } as const;
@@ -80,7 +80,8 @@ export interface SourceDocumentProvenance {
   name: string;
   path: string;
   config: string;
-  kind: ManifestSourceProvenance["kind"];
+  /** The declaring source's kind, or `manifest` for a Person the project manifest declares. */
+  kind: ManifestSourceProvenance["kind"] | "manifest";
   directory: string;
   sha256: string;
   mode: SourceTreeFile["mode"];
@@ -264,6 +265,9 @@ export async function readSourceProject(input: {
     const syntax = inspectSourceSyntax(decodeSource(file.bytes), path.endsWith(".json"));
     configValues.set(path, syntax.value);
     const fields = [...syntax.fields.values()];
+    // A Person addition to a manifest without `persons` inserts the key at the end.
+    if (path === ".topik.yaml" && !syntax.fields.has("persons"))
+      fields.push({ selector: "persons", insertion: syntax.insertion });
     if (path !== ".topik.yaml")
       for (const selector of [
         "title",
@@ -271,7 +275,6 @@ export async function readSourceProject(input: {
         "labels",
         "navigation",
         "theme",
-        "persons",
         "slug",
         "authors",
         "modules",
@@ -459,6 +462,28 @@ export async function readSourceProject(input: {
       });
     }
   }
+  // Persons are records in the project manifest, outside every source.
+  const manifestFile = byPath.get(".topik.yaml")!;
+  const manifestConfiguration = configurations.find((config) => config.path === ".topik.yaml")!;
+  for (const person of compilation.resources)
+    if (person.type === "Person")
+      documents.push({
+        resource: `Person/${person.name}`,
+        apiVersion: person.apiVersion,
+        type: person.type,
+        name: person.name,
+        path: ".topik.yaml",
+        config: ".topik.yaml",
+        kind: "manifest",
+        directory: "",
+        sha256: sourceHash(manifestFile.bytes),
+        mode: manifestFile.mode,
+        sourceContext: { path: ".topik.yaml", extension: ".yaml" },
+        assetReferences: [],
+        fields: [],
+        fieldOrigins: configurationOrigins(person, manifestConfiguration),
+        references: [],
+      });
   return {
     tree,
     treeDigest: digestSourceTree(tree),

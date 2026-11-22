@@ -26,6 +26,8 @@ export const wikiLoader = topikWikiLoader({ dir: "./handbook", name: "handbook",
 export const guidesLoader = topikGuidesLoader({ dir: "./tutorials", name: "tutorials", assets });
 ```
 
+A guide loader does not read `.topik.yaml`. When the guides name authors, pass the Persons the manifest declares as `persons`, for example `persons: [{ apiVersion: "v1", type: "Person", name: "ada", spec: { name: "Ada" } }]`.
+
 ```js
 // astro.config.mjs
 import { defineConfig } from "astro/config";

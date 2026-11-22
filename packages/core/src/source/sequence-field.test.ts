@@ -101,28 +101,34 @@ test.each(["person", "module"] as const)(
         for (const siblingComment of [false, true]) {
           const key = kind === "person" ? "Person/ada" : "CourseModule/basics";
           const selector = kind === "person" ? "persons/ada/labels" : "modules/basics/description";
+          // Persons are records in the manifest; modules are records in the Course configuration.
+          const path = kind === "person" ? ".topik.yaml" : "config.yaml";
           const head =
             kind === "person"
-              ? "\uFEFFid: docs\ntitle: Docs\npersons:\n  - "
+              ? "\uFEFFversion: 1\nnamespace: audit\nsources: [{kind: collection, config: config.yaml}]\npersons:\n  - "
               : "\uFEFFid: docs\ntitle: Docs\nslug: docs\nmodules:\n  - ";
           const entry = `${firstField(prefix, kind === "person" ? "labels" : "description", kind === "person" ? "{role: author} # selected" : "Remove # selected")}\n`;
           const tail =
             (siblingComment ? "    # keep Café\n" : "") +
             (kind === "person"
-              ? "    id: ada\n    spec: {name: Ada}\n  - id: bob\n    spec: {name: Bob}\ncustom: exact\n"
+              ? "    id: ada\n    spec: {name: Ada}\n  - id: bob\n    spec: {name: Bob}\n"
               : "    id: basics\n    title: Basics\n    slug: basics\n    pages: []\n  - id: next\n    title: Next\n    slug: next\n    pages: []\ncustom: exact\n");
           const raw = (head + entry + tail).replaceAll("\n", eol);
           const project = await readSourceProject({
-            tree: [
-              file(
-                ".topik.yaml",
-                `version: 1\nnamespace: audit\nsources: [{kind: ${kind === "person" ? "collection" : "course"}, config: config.yaml}]\n`,
-              ),
-              file("config.yaml", raw),
-              ...(kind === "person"
-                ? [file("home.md", "---\nid: home\ntitle: Home\nauthors: [ada]\n---\n# Home\n")]
-                : []),
-            ],
+            tree:
+              kind === "person"
+                ? [
+                    file(".topik.yaml", raw),
+                    file("config.yaml", "id: docs\ntitle: Docs\n"),
+                    file("home.md", "---\nid: home\ntitle: Home\nauthors: [ada]\n---\n# Home\n"),
+                  ]
+                : [
+                    file(
+                      ".topik.yaml",
+                      "version: 1\nnamespace: audit\nsources: [{kind: course, config: config.yaml}]\n",
+                    ),
+                    file("config.yaml", raw),
+                  ],
           });
           const original = structuredClone(project.tree);
           const desired = structuredClone(project.compilation.resources);
@@ -130,7 +136,7 @@ test.each(["person", "module"] as const)(
           if (resource.type === "Person") delete resource.labels;
           else if (resource.type === "CourseModule") delete resource.spec.description;
           else throw new Error("Expected fixture resource");
-          const config = project.configurations.find((config) => config.path === "config.yaml")!;
+          const config = project.configurations.find((config) => config.path === path)!;
           const shared = {
             ...config,
             fields: config.fields.filter((field) => field.selector === selector),
@@ -154,7 +160,7 @@ test.each(["person", "module"] as const)(
           expect(project.tree).toEqual(original);
           expect(result.plan.changes).toHaveLength(1);
           const change = result.plan.changes[0];
-          expect(change.path).toBe("config.yaml");
+          expect(change.path).toBe(path);
           expect(decodeSource(change.candidate!.bytes)).toBe(
             (head + "\n" + tail).replaceAll("\n", eol),
           );
@@ -163,7 +169,7 @@ test.each(["person", "module"] as const)(
             change.candidate!.bytes,
           );
           expect(result.plan.candidate.compilation.resources).toEqual(desired);
-          for (const originalFile of original.filter((file) => file.path !== "config.yaml"))
+          for (const originalFile of original.filter((file) => file.path !== path))
             expect(
               result.plan.candidate.tree.find((file) => file.path === originalFile.path),
             ).toEqual(originalFile);

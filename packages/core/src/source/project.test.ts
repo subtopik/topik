@@ -175,12 +175,9 @@ test("field origins distinguish explicit and inherited tags, overrides, derived 
     tree: [
       file(
         ".topik.yaml",
-        "version: 1\nnamespace: example/provenance\nsources: [{kind: collection, config: blog/source.yml}]\n",
+        "version: 1\nnamespace: example/provenance\nsources: [{kind: collection, config: blog/source.yml}]\npersons: [{id: ada, spec: {name: Ada, email: null}}]\n",
       ),
-      file(
-        "blog/source.yml",
-        "id: blog\ntitle: Blog\ntags: [shared]\npersons: [{id: ada, spec: {name: Ada, email: null}}]\n",
-      ),
+      file("blog/source.yml", "id: blog\ntitle: Blog\ntags: [shared]\n"),
       file(
         "blog/first.md",
         "---\nid: first\ntags: [local]\nauthors: [ada]\n---\n# Inferred title\n",
@@ -209,7 +206,11 @@ test("field origins distinguish explicit and inherited tags, overrides, derived 
   ]);
   const person = project.documents.find((document) => document.resource === "Person/ada")!;
   const email = person.fieldOrigins.find((field) => field.field === "spec/email")!;
-  expect(email).toMatchObject({ origin: "explicit", selector: "persons/ada/spec/email" });
+  expect(email).toMatchObject({
+    origin: "explicit",
+    path: ".topik.yaml",
+    selector: "persons/ada/spec/email",
+  });
   expect(
     new TextDecoder().decode(
       project.tree

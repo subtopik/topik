@@ -133,6 +133,19 @@ test("a repeated Wiki page is an invalid request when a link needs the desired n
   expect(diagnostic).toMatchObject({ code: "resource-invalid", resource: "Wiki/docs" });
 });
 
+test("Wiki pages sharing a source path are an invalid request when a link needs the desired navigation", async () => {
+  const diagnostic = await refusal(wiki, (desired) => {
+    const navigation = named(desired, "Wiki", "docs").spec.navigation! as WikiNavNode[];
+    navigation[1] = { ...navigation[1], sourcePath: "home" } as WikiNavNode;
+    named(desired, "WikiPage", "home").spec.content.value += "\n[Gone](/gone)\n";
+    return [
+      { kind: "update", resource: "Wiki/docs" },
+      { kind: "update", resource: "WikiPage/home" },
+    ];
+  });
+  expect(diagnostic).toMatchObject({ code: "resource-invalid", resource: "Wiki/docs" });
+});
+
 test("new media named without a generated Asset name is refused", async () => {
   const project = await readSourceProject({ tree: wiki });
   const desired = structuredClone(project.compilation.resources);

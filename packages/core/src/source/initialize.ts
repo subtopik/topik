@@ -74,6 +74,7 @@ import {
   authoredBody,
   initialSourceDocumentPath,
   isWritableDocument,
+  resourceKey,
   sourceDocumentPathCandidates,
   sourceMediaPath,
   sourcePersonRecord,
@@ -460,9 +461,14 @@ function planWikiSource(draft: InitializationDraft): Record<string, unknown> {
   if (
     wikis.length !== 1 ||
     wikis[0].name !== source.id ||
-    input.resources.some((resource) => !["Wiki", "WikiPage", "Asset"].includes(resource.type))
+    input.resources.some(
+      (resource) => !["Wiki", "WikiPage", "Person", "Asset"].includes(resource.type),
+    )
   )
-    failure("resource-unrepresentable", "A Wiki initializes exactly one Wiki and its pages/media.");
+    failure(
+      "resource-unrepresentable",
+      "A Wiki initializes exactly one Wiki, its pages/media and the project's Persons.",
+    );
   const wiki = wikis[0];
   if (wiki.spec.title !== source.title)
     failure(
@@ -867,9 +873,12 @@ function initializationPlan(
       candidate: { mode: file.mode, sha256: sourceHash(file.bytes), bytes: file.bytes },
       ...(existing && file.path === ".topik.yaml" ? { sharedEdits: rootEdits } : {}),
     }));
+  // A supplied Person the manifest already declares is one resource of the desired graph.
+  const existingResources = existing?.project.compilation.resources ?? [];
+  const existingKeys = new Set(existingResources.map((resource) => resourceKey(resource)));
   const desiredGraphDigest = digestSourceResourceGraph([
-    ...(existing?.project.compilation.resources ?? []),
-    ...input.resources,
+    ...existingResources,
+    ...input.resources.filter((resource) => !existingKeys.has(resourceKey(resource))),
   ]);
   const evidence = {
     descriptor: SOURCE_WRITER_DESCRIPTOR,

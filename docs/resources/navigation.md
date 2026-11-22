@@ -366,7 +366,11 @@ CoursePage link destinations as source file paths; current compilation emits
    compiled content. The Wiki and Course resolvers also accept relative-link
    resources, so previously compiled content keeps working while applications
    recompile it.
-2. Regenerate saved source projects and update plans from authored source.
+2. Move any `persons` a collection or Course configuration declares into the
+   project manifest, `.topik.yaml`, and remove them from the source
+   configurations; a configuration that still declares them fails with
+   `config-invalid`. See [Persons](./manifest.md#persons).
+3. Regenerate saved source projects and update plans from authored source.
    `SOURCE_WRITER_DESCRIPTOR.references` is `source-links-v5` and its
    `provenance` version is `8`; do not reuse occurrence or provenance snapshots
    from earlier versions against the current compiled representation.

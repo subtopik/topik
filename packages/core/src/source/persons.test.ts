@@ -4,7 +4,12 @@ import type { Person } from "@topik/schema/person/v1";
 import type { Resource } from "../resource";
 import { addSourceToProject, initializeSourceProject } from "./initialize";
 import { planSourceUpdates, type SourceResourceOperation } from "./plan";
-import { digestSourceTree, readSourceProject, type SourceProject } from "./project";
+import {
+  digestSourceResourceGraph,
+  digestSourceTree,
+  readSourceProject,
+  type SourceProject,
+} from "./project";
 import { decodeSource, encodeSource } from "./syntax";
 
 const cohort = "a".repeat(64);
@@ -91,6 +96,10 @@ test("a new source reuses a Person the manifest already declares", async () => {
       "persons:",
       '  - {"kind":"collection","config":"notes/collection.yaml"}\npersons:',
     ),
+  );
+  // The desired graph holds the shared Person once.
+  expect(result.plan.desiredGraphDigest).toBe(
+    digestSourceResourceGraph([...project.compilation.resources, guide("note", ["ada"])]),
   );
   // Without restating it, the new source's authors resolve to the shared Person too.
   expect((await addNotes(project, [guide("note", ["ada"])])).ok).toBe(true);
@@ -284,4 +293,34 @@ test("a Person is created in the empty list deleting the last one leaves", async
   });
   expect(created.ok, JSON.stringify(created)).toBe(true);
   if (created.ok) expect(created.plan.candidate.manifest.persons).toEqual([person("bob", "Bob")]);
+});
+
+test("a Wiki initialization declares supplied Persons in the manifest", async () => {
+  const result = await initializeSourceProject({
+    tree: [],
+    expectedTreeDigest: digestSourceTree([]),
+    packageCohort: cohort,
+    intent: {
+      namespace: "examples/persons",
+      source: { kind: "wiki", config: "wiki.yaml", id: "docs", title: "Docs" },
+    },
+    resources: [
+      {
+        apiVersion: "v1",
+        type: "Wiki",
+        name: "docs",
+        spec: { title: "Docs", navigation: [{ type: "page", page: "home", slug: "" }] },
+      },
+      {
+        apiVersion: "v1",
+        type: "WikiPage",
+        name: "home",
+        spec: { title: "Home", wiki: "docs", content: { format: "topik", value: "# Home\n" } },
+      },
+      person("ada", "Ada"),
+    ],
+    createPaths: [".topik.yaml", "wiki.yaml", "index.md"],
+  });
+  expect(result.ok, JSON.stringify(result)).toBe(true);
+  if (result.ok) expect(result.plan.candidate.manifest.persons).toEqual([person("ada", "Ada")]);
 });

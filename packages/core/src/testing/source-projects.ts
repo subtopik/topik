@@ -387,10 +387,41 @@ export interface CollectionModel {
   eol: "\n" | "\r\n";
 }
 
+export interface CoursePageModel {
+  index: number;
+  /** Source path relative to the Course configuration, without extension. */
+  file: string;
+  slug: string;
+  title: string;
+  description: string | null;
+  extra: boolean;
+  comment: boolean;
+  bom: boolean;
+  ext: ".md" | ".mdx";
+  /** A link to another page by index: by relative source path or by public route. */
+  link: { page: number; route: boolean } | null;
+  document: TopikDocument | null;
+}
+
+export interface CourseModel {
+  id: "learning" | "course";
+  title: string;
+  modules: { id: string; title: string; flow: boolean; pages: CoursePageModel[] }[];
+  comments: boolean;
+  eol: "\n" | "\r\n";
+}
+
 export interface SourceProjectModel {
   wiki: WikiProjectModel;
   collection: CollectionModel | null;
+  course: CourseModel | null;
 }
+
+/** A generated document on one page in three: each can break a rule its project enforces. */
+const sometimes = fc.oneof(
+  { weight: 2, arbitrary: fc.constant(null) },
+  { weight: 1, arbitrary: topikDocument },
+);
 
 const GUIDE_SLUGS = ["intro", "setup", "basics", "tips"] as const;
 
@@ -420,7 +451,7 @@ const collection: fc.Arbitrary<CollectionModel> = fc.record({
         bom: fc.boolean(),
         ext: fc.constantFrom<".md" | ".mdx">(".md", ".md", ".mdx"),
         link: fc.option(fc.nat(3)),
-        document: fc.option(topikDocument, { freq: 2 }),
+        document: sometimes,
       }),
       { minLength: 1, maxLength: 3, selector: (guide) => guide.slug },
     )
@@ -430,10 +461,143 @@ const collection: fc.Arbitrary<CollectionModel> = fc.record({
   eol: fc.constantFrom<"\n" | "\r\n">("\n", "\n", "\r\n"),
 });
 
+const MODULES = ["foundations", "advanced", "extras"] as const;
+const COURSE_SLUGS = ["introduction", "practice", "review"] as const;
+
+const coursePage = fc.record({
+  slug: pick(COURSE_SLUGS),
+  title: pick(TITLES),
+  description: fc.option(pick(["A short summary."])),
+  extra: fc.boolean(),
+  comment: fc.constantFrom(true, true, false),
+  bom: fc.boolean(),
+  ext: fc.constantFrom<".md" | ".mdx">(".md", ".md", ".mdx"),
+  link: fc.option(fc.record({ page: fc.nat(8), route: fc.boolean() })),
+  document: sometimes,
+});
+
+const course: fc.Arbitrary<CourseModel> = fc
+  .record({
+    id: fc.constantFrom<CourseModel["id"]>("learning", "course"),
+    title: pick(["Learning", "Course: basics"]),
+    modules: fc.uniqueArray(
+      fc.record({
+        id: pick(MODULES),
+        title: pick(["Foundations", "Going further", "Extras"]),
+        flow: fc.boolean(),
+        pages: fc.uniqueArray(coursePage, {
+          minLength: 1,
+          maxLength: 3,
+          selector: (page) => page.slug,
+        }),
+      }),
+      { minLength: 1, maxLength: 3, selector: (module) => module.id },
+    ),
+    comments: fc.boolean(),
+    eol: fc.constantFrom<"\n" | "\r\n">("\n", "\n", "\r\n"),
+  })
+  .map((model) => {
+    // Number the pages and give each a file of its own.
+    let index = 0;
+    return {
+      ...model,
+      modules: model.modules.map((module) => ({
+        ...module,
+        pages: module.pages.map((page) => ({
+          ...page,
+          index: index++,
+          file: `lessons/${module.id}-${page.slug}`,
+        })),
+      })),
+    };
+  });
+
 export const sourceProject: fc.Arbitrary<SourceProjectModel> = fc.record({
   wiki: wikiProject,
   collection: fc.option(collection, { freq: 3 }),
+  course: fc.option(course, { freq: 3 }),
 });
+
+/** The Course configuration's path relative to the project root. */
+export const courseConfigPath = (model: CourseModel) => posix.join("course", `${model.id}.yaml`);
+
+/** Every Course page with its module, id and source path relative to the project root. */
+export function coursePages(
+  model: CourseModel,
+): { page: CoursePageModel; module: string; id: string; path: string }[] {
+  return model.modules.flatMap((module) =>
+    module.pages.map((page) => ({
+      page,
+      module: module.id,
+      id: `${module.id}-${page.slug}`,
+      path: posix.join("course", `${page.file}${page.ext}`),
+    })),
+  );
+}
+
+function coursePageMarkdown(
+  model: CourseModel,
+  entry: ReturnType<typeof coursePages>[number],
+): string {
+  const { page } = entry;
+  const all = coursePages(model);
+  const relative = (index: number) => {
+    const target = all[index % all.length];
+    return `./${posix.relative(posix.dirname(entry.path), target.path)}`;
+  };
+  const route = (index: number) => {
+    const target = all[index % all.length];
+    return `/${target.module}/${target.page.slug}`;
+  };
+  const fields = [
+    `id: ${entry.id}`,
+    ...(page.comment ? ["# lesson notes"] : []),
+    `title: ${scalar(page.title, "plain")}`,
+    `slug: ${page.slug}`,
+    ...(page.description ? [`description: ${page.description}`] : []),
+    ...(page.extra ? ["level: beginner"] : []),
+  ];
+  const generated = page.document
+    ? renderTopik(page.document, {
+        href: (href) => (href.startsWith("https://") ? href : relative(page.index + 1)),
+        media: (src) =>
+          src.startsWith("https://") ? src : `https://e.test/${posix.basename(src)}`,
+      })
+    : undefined;
+  const lines = [
+    "---",
+    ...fields,
+    "---",
+    `# ${page.title}`,
+    ...(page.link === null
+      ? []
+      : [
+          "",
+          `Continue with [the next lesson](${page.link.route ? route(page.link.page) : relative(page.link.page)}).`,
+        ]),
+    ...(generated ? ["", ...generated.split("\n")] : []),
+  ];
+  return `${page.bom ? "\uFEFF" : ""}${lines.join(model.eol)}${model.eol}`;
+}
+
+function courseConfiguration(model: CourseModel): string {
+  const lines = [
+    `id: ${model.id}`,
+    `title: ${scalar(model.title, "plain")}`,
+    `slug: ${model.id}`,
+    ...(model.comments ? ["# Modules in reading order"] : []),
+    "modules:",
+    ...model.modules.flatMap((module) => [
+      `  - id: ${module.id}`,
+      `    title: ${module.title}`,
+      `    slug: ${module.id}`,
+      ...(module.flow
+        ? [`    pages: [${module.pages.map((page) => page.file).join(", ")}]`]
+        : ["    pages:", ...module.pages.map((page) => `      - ${page.file}`)]),
+    ]),
+  ];
+  return `${lines.join(model.eol)}${model.eol}`;
+}
 
 /** The collection configuration's path relative to the project root. */
 export const collectionConfigPath = (model: CollectionModel) =>
@@ -499,6 +663,7 @@ export function renderSourceProject(model: SourceProjectModel): SourceTreeFile[]
     ...(model.collection
       ? [`  - {kind: collection, config: ${collectionConfigPath(model.collection)}}`]
       : []),
+    ...(model.course ? [`  - {kind: course, config: ${courseConfigPath(model.course)}}`] : []),
   ];
   return [
     file(".topik.yaml", `version: 1\nnamespace: demo/fuzz\nsources:\n${sources.join("\n")}\n`),
@@ -517,6 +682,14 @@ export function renderSourceProject(model: SourceProjectModel): SourceTreeFile[]
                 ),
               ]
             : []),
+        ]
+      : []),
+    ...(model.course
+      ? [
+          file(courseConfigPath(model.course), courseConfiguration(model.course)),
+          ...coursePages(model.course).map((entry) =>
+            file(entry.path, coursePageMarkdown(model.course!, entry)),
+          ),
         ]
       : []),
   ];

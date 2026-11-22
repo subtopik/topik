@@ -16,16 +16,22 @@ import { describe, expect, test } from "vite-plus/test";
 import type { Wiki, WikiNavNode } from "@topik/schema/wiki/v1";
 import type { WikiPage } from "@topik/schema/wiki-page/v1";
 import type { Guide } from "@topik/schema/guide/v1";
+import type { Course } from "@topik/schema/course/v1";
+import type { CourseModule } from "@topik/schema/course-module/v1";
+import type { CoursePage } from "@topik/schema/course-page/v1";
 import type { Resource } from "../resource.js";
 import {
   collectionConfigPath,
   configPath,
+  courseConfigPath,
   renderSourceProject,
   renderWikiProject,
   sourceProject,
   wikiProject,
   type SourceProjectModel,
 } from "../testing/source-projects.js";
+import type { CourseReferenceContext } from "../course-navigation.js";
+import { sourceCourseContext } from "./course.js";
 import { initializeSourceProject } from "./initialize.js";
 import {
   planSourceUpdates,
@@ -65,7 +71,13 @@ type Edit =
   | { kind: "delete"; page: number }
   | { kind: "move"; page: number }
   | { kind: "guide-add"; slug: string; title: string }
-  | { kind: "tags"; page: number; tags: string[] | null };
+  | { kind: "tags"; page: number; tags: string[] | null }
+  | { kind: "course-meta"; target: number; title: string }
+  | { kind: "course-reorder"; list: number }
+  | { kind: "course-page-add"; module: number; title: string }
+  | { kind: "module-add"; title: string }
+  | { kind: "page-module"; page: number; module: number }
+  | { kind: "page-slug"; page: number };
 
 const TITLES = ["Renamed", "Overview: part 2", "Notes #3"] as const;
 // Weighted toward the edits whose preservation rules have the most to check.
@@ -121,6 +133,42 @@ const edit: fc.Arbitrary<Edit> = fc.oneof(
       tags: fc.option(fc.constantFrom<string[]>(["setup"], ["news", "basics"])),
     }),
   },
+  {
+    weight: 2,
+    arbitrary: fc.record({
+      kind: fc.constant("course-meta" as const),
+      target: fc.nat(),
+      title: fc.constantFrom(...TITLES),
+    }),
+  },
+  {
+    weight: 2,
+    arbitrary: fc.record({ kind: fc.constant("course-reorder" as const), list: fc.nat() }),
+  },
+  {
+    weight: 2,
+    arbitrary: fc.record({
+      kind: fc.constant("course-page-add" as const),
+      module: fc.nat(),
+      title: fc.constantFrom(...TITLES),
+    }),
+  },
+  {
+    weight: 1,
+    arbitrary: fc.record({
+      kind: fc.constant("module-add" as const),
+      title: fc.constantFrom(...TITLES),
+    }),
+  },
+  {
+    weight: 2,
+    arbitrary: fc.record({
+      kind: fc.constant("page-module" as const),
+      page: fc.nat(),
+      module: fc.nat(),
+    }),
+  },
+  { weight: 2, arbitrary: fc.record({ kind: fc.constant("page-slug" as const), page: fc.nat() }) },
 );
 
 /** A planned edit: the desired graph, its operations and the authority the docs name for it. */
@@ -129,8 +177,15 @@ interface Request {
   operations: SourceResourceOperation[];
   authority: SourceWriteAuthority;
   referenceContexts?: Record<string, Wiki>;
+  /** Saved Course contexts beyond the project's own, such as a new page's. */
+  courseReferenceContexts?: Record<string, CourseReferenceContext>;
   /** What the edit concerns, for the preservation checks. */
-  concerns: { document?: string; part?: "metadata" | "body"; config?: "title" | "navigation" };
+  concerns: {
+    document?: string;
+    part?: "metadata" | "body";
+    /** A single value's line, or a list key whose preceding lines stay. */
+    config?: "title" | "navigation" | "modules";
+  };
 }
 
 const key = (resource: Resource) => `${resource.type}/${resource.name}`;
@@ -144,13 +199,29 @@ const guidesOf = (resources: readonly Resource[]) =>
   resources
     .filter((resource): resource is Guide => resource.type === "Guide")
     .sort((a, b) => a.name.localeCompare(b.name));
-/** The Markdown documents of a project: Wiki pages, then guides. */
-const documentsOf = (resources: readonly Resource[]): (WikiPage | Guide)[] => [
+const coursePagesOf = (resources: readonly Resource[]) =>
+  resources
+    .filter((resource): resource is CoursePage => resource.type === "CoursePage")
+    .sort((a, b) => a.name.localeCompare(b.name));
+const modulesOf = (resources: readonly Resource[]) =>
+  resources
+    .filter((resource): resource is CourseModule => resource.type === "CourseModule")
+    .sort((a, b) => a.name.localeCompare(b.name));
+type Document = WikiPage | Guide | CoursePage;
+/** The Markdown documents of a project: Wiki pages, guides, then Course pages. */
+const documentsOf = (resources: readonly Resource[]): Document[] => [
   ...pagesOf(resources),
   ...guidesOf(resources),
+  ...coursePagesOf(resources),
 ];
-const reference = (document: WikiPage | Guide) =>
-  `ref://${document.type === "Guide" ? "guide" : "wiki-page"}/${document.name}`;
+const REFERENCE_KINDS = { WikiPage: "wiki-page", Guide: "guide", CoursePage: "course-page" };
+const reference = (document: Document) =>
+  `ref://${REFERENCE_KINDS[document.type]}/${document.name}`;
+/** Whether another document links to this one. */
+const linkedFrom = (documents: readonly Document[], target: Document) =>
+  documents.some(
+    (other) => other !== target && other.spec.content.value.includes(reference(target)),
+  );
 
 const documentOf = (project: SourceProject, resource: string) =>
   project.documents.find((document) => document.resource === resource)!;
@@ -192,6 +263,7 @@ function request(
   change: Edit,
 ): Request | undefined {
   const config = configPath(model.wiki);
+  const courseConfig = model.course ? courseConfigPath(model.course) : undefined;
   const desired = structuredClone(project.compilation.resources) as Resource[];
   const wiki = wikiOf(desired);
   const pages = pagesOf(desired);
@@ -286,16 +358,31 @@ function request(
     }
     case "delete": {
       // Deleting a document another one links to is refused; such documents are not deleted.
-      const linked = (target: WikiPage | Guide) =>
-        documents.some(
-          (other) => other !== target && other.spec.content.value.includes(reference(target)),
-        );
       const deletable = documents.filter(
-        (candidate) => !linked(candidate) && (candidate.type === "Guide" || pages.length > 1),
+        (candidate) =>
+          !linkedFrom(documents, candidate) && (candidate.type !== "WikiPage" || pages.length > 1),
       );
       if (!deletable.length) return undefined;
       const target = deletable[change.page % deletable.length];
       desired.splice(desired.indexOf(target), 1);
+      if (target.type === "CoursePage") {
+        const module = modulesOf(desired).find((entry) => entry.name === target.spec.module)!;
+        module.spec.pages = module.spec.pages.filter((name) => name !== target.name);
+        return {
+          desired,
+          operations: [
+            { kind: "delete", resource: key(target) },
+            { kind: "update", resource: key(module) },
+          ],
+          authority: {
+            ...none,
+            resources: [key(target), key(module)],
+            exclusive: exclusive(project, key(target)),
+            shared: [shared(project, courseConfig!, `modules/${module.name}/pages`)],
+          },
+          concerns: { config: "modules" },
+        };
+      }
       if (target.type === "Guide")
         return {
           desired,
@@ -333,11 +420,11 @@ function request(
     }
     case "move": {
       const document = documentOf(project, key(page!));
-      // A Wiki page moves to a new folder; a guide is renamed beside its collection.
+      // A Wiki or Course page moves to a new folder; a guide is renamed beside its collection.
       const target =
         page!.type === "Guide"
           ? document.path.replace(/(\.mdx?)$/u, "-moved$1")
-          : posix.join(posix.dirname(config), "moved", posix.basename(document.path));
+          : posix.join(posix.dirname(document.path), "moved", posix.basename(document.path));
       if (project.tree.some((file) => file.path === target)) return undefined;
       return {
         desired,
@@ -388,6 +475,177 @@ function request(
         concerns: {},
       };
     }
+    default:
+      return courseRequest(project, courseConfig, desired, change);
+  }
+}
+
+/** Requests for the Course edits. */
+function courseRequest(
+  project: SourceProject,
+  config: string | undefined,
+  desired: Resource[],
+  change: Edit,
+): Request | undefined {
+  const course = desired.find((resource): resource is Course => resource.type === "Course");
+  if (!config || !course) return undefined;
+  const modules = modulesOf(desired);
+  const pages = coursePagesOf(desired);
+  const documents = documentsOf(desired);
+  const none = { resources: [], exclusive: [], shared: [], create: [] };
+  const moduleOf = (name: string) => modules.find((module) => module.name === name)!;
+  switch (change.kind) {
+    case "course-meta": {
+      const target = change.target % (modules.length + 1);
+      const resource = target === 0 ? course : modules[target - 1];
+      resource.spec.title = change.title;
+      return {
+        desired,
+        operations: [{ kind: "update", resource: key(resource) }],
+        authority: {
+          ...none,
+          resources: [key(resource)],
+          shared: [
+            shared(project, config, target === 0 ? "title" : `modules/${resource.name}/title`),
+          ],
+        },
+        concerns: { config: "title" },
+      };
+    }
+    case "course-reorder": {
+      const lists = [
+        { resource: course as Course | CourseModule, list: course.spec.modules, field: "modules" },
+        ...modules.map((module) => ({
+          resource: module as Course | CourseModule,
+          list: module.spec.pages,
+          field: `modules/${module.name}/pages`,
+        })),
+      ].filter(({ list }) => list.length > 1);
+      if (!lists.length) return undefined;
+      const { resource, list, field } = lists[change.list % lists.length];
+      list.push(list.shift()!);
+      return {
+        desired,
+        operations: [{ kind: "update", resource: key(resource) }],
+        authority: {
+          ...none,
+          resources: [key(resource)],
+          shared: [shared(project, config, field)],
+        },
+        concerns: { config: "modules" },
+      };
+    }
+    case "course-page-add": {
+      if (!pages.length) return undefined;
+      const module = modules[change.module % modules.length];
+      let n = 1;
+      const name = () => `${module.name}-added${n}`;
+      const path = () => posix.join(posix.dirname(config), "lessons", `${name()}.md`);
+      while (
+        desired.some((resource) => resource.name === name()) ||
+        project.tree.some((file) => file.path === path())
+      )
+        n++;
+      const added = {
+        ...structuredClone(pages[0]),
+        name: name(),
+        spec: {
+          module: module.name,
+          title: change.title,
+          slug: `added${n}`,
+          content: { format: "topik", value: `# ${change.title}\n\nNew lesson.\n` },
+        },
+      } as CoursePage;
+      desired.push(added);
+      module.spec.pages.push(added.name);
+      // A new page is saved against a context that already lists it.
+      const paths = new Map(
+        project.documents.map((document) => [document.resource, document.path]),
+      );
+      paths.set(key(added), path());
+      const context = sourceCourseContext(desired, course, paths, posix.dirname(config));
+      return {
+        desired,
+        operations: [
+          { kind: "create", resource: key(added), config, path: path() },
+          { kind: "update", resource: key(module) },
+        ],
+        authority: {
+          ...none,
+          resources: [key(added), key(module)],
+          shared: [shared(project, config, `modules/${module.name}/pages`)],
+          create: [path()],
+        },
+        courseReferenceContexts: { [key(added)]: context },
+        concerns: { config: "modules" },
+      };
+    }
+    case "module-add": {
+      let n = 1;
+      while (desired.some((resource) => resource.name === `bonus${n}`)) n++;
+      const added = {
+        ...structuredClone(modules[0]),
+        name: `bonus${n}`,
+        spec: { course: course.name, title: change.title, slug: `bonus${n}`, pages: [] },
+      } as CourseModule;
+      desired.push(added);
+      course.spec.modules.push(added.name);
+      return {
+        desired,
+        operations: [
+          { kind: "create", resource: key(added), config },
+          { kind: "update", resource: key(course) },
+        ],
+        authority: {
+          ...none,
+          resources: [key(added), key(course)],
+          shared: [shared(project, config, "modules")],
+        },
+        concerns: { config: "modules" },
+      };
+    }
+    case "page-module":
+    case "page-slug": {
+      if (!pages.length) return undefined;
+      const page = pages[change.page % pages.length];
+      const operations: SourceResourceOperation[] = [{ kind: "update", resource: key(page) }];
+      const fields: string[] = [];
+      if (change.kind === "page-slug") page.spec.slug = `${page.spec.slug}-v2`;
+      else {
+        const from = moduleOf(page.spec.module);
+        const to = modules[change.module % modules.length];
+        if (to === from) return undefined;
+        from.spec.pages = from.spec.pages.filter((name) => name !== page.name);
+        to.spec.pages.push(page.name);
+        page.spec.module = to.name;
+        operations.push(
+          { kind: "update", resource: key(from) },
+          { kind: "update", resource: key(to) },
+        );
+        fields.push(`modules/${from.name}/pages`, `modules/${to.name}/pages`);
+      }
+      // A new route repairs the links to the page, so then the authority reaches every file.
+      return {
+        desired,
+        operations,
+        authority: linkedFrom(documents, page)
+          ? everything(project)
+          : {
+              ...none,
+              resources: operations.map((operation) => operation.resource),
+              exclusive: exclusive(project, key(page)),
+              shared: fields.length ? [shared(project, config, ...fields)] : [],
+            },
+        // A page's links to its own old route are repaired in its body.
+        concerns: fields.length
+          ? { config: "modules" }
+          : page.spec.content.value.includes(reference(page))
+            ? {}
+            : { document: key(page), part: "metadata" },
+      };
+    }
+    default:
+      return undefined;
   }
 }
 
@@ -411,8 +669,8 @@ const lines = (value: string) => value.split(/\r?\n/u);
 const crlf = (value: string) => value.includes("\r\n");
 const bareLf = (value: string) => /(?<!\r)\n/u.test(value);
 
-/** Keys a metadata edit may change; `inheritTags` is written with tags. */
-const EDITED_KEYS = /^(title|description|tags|inheritTags):/u;
+/** Keys a metadata edit may change; `inheritTags` is written with tags, `slug` by a route edit. */
+const EDITED_KEYS = /^(title|description|tags|inheritTags|slug):/u;
 
 /**
  * The frontmatter lines outside the keys a metadata edit may change: comments and other keys.
@@ -484,8 +742,9 @@ function checkPreservation(
         changed: changed.length && 1,
       });
     } else {
-      // Navigation edits keep everything before the navigation key.
-      const head = (value: string) => value.slice(0, value.search(/^\s*"?navigation"?:/mu));
+      // List edits keep everything before the list's key.
+      const head = (value: string) =>
+        value.slice(0, value.search(new RegExp(`^\\s*"?${config}"?:`, "mu")));
       expect(head(now)).toBe(head(old));
     }
   }
@@ -512,7 +771,26 @@ async function plan(project: SourceProject, request: Request) {
     operations: request.operations,
     authority: request.authority,
     ...(request.referenceContexts ? { referenceContexts: request.referenceContexts } : {}),
+    courseReferenceContexts: {
+      ...courseContexts(project, request.desired),
+      ...request.courseReferenceContexts,
+    },
   });
+}
+
+/** The saved Course context of every Course page, as an editor keeps it with saved content. */
+function courseContexts(project: SourceProject, desired: readonly Resource[]) {
+  const modules = new Map(
+    desired
+      .filter((resource): resource is CourseModule => resource.type === "CourseModule")
+      .map((module) => [module.name, module.spec.course]),
+  );
+  return Object.fromEntries(
+    coursePagesOf(desired).flatMap((page) => {
+      const context = project.courseContexts[`Course/${modules.get(page.spec.module)}`];
+      return context ? [[key(page), context]] : [];
+    }),
+  );
 }
 
 /** Planning a project's own resources again must change nothing. */
@@ -574,10 +852,16 @@ describe("source write-back", () => {
       expect([...kinds].sort()).toEqual([
         "add",
         "body",
+        "course-meta",
+        "course-page-add",
+        "course-reorder",
         "delete",
         "describe",
         "guide-add",
+        "module-add",
         "move",
+        "page-module",
+        "page-slug",
         "reorder",
         "retitle",
         "tags",

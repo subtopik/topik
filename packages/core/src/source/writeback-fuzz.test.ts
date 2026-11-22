@@ -54,7 +54,7 @@ import {
 
 const EXPLORE = process.env.TOPIK_FUZZ === "1";
 const integer = (value: string | undefined) =>
-  value !== undefined && /^-?\d+$/u.test(value.trim()) ? Number(value) : undefined;
+  value !== undefined && /^[-+]?\d+$/u.test(value.trim()) ? Number(value) : undefined;
 const SEED = EXPLORE
   ? (integer(process.env.TOPIK_FUZZ_SEED) ?? Math.floor(Math.random() * 2 ** 31))
   : 20_261_122;
@@ -64,7 +64,8 @@ const parameters = (ci: number): fc.Parameters<unknown> => ({ seed: SEED, numRun
 const timeout = (ci: number) => (EXPLORE ? 0 : ci);
 
 const COHORT = "a".repeat(64);
-const decoder = new TextDecoder();
+// Keep a leading byte order mark: the checks compare exact text.
+const decoder = new TextDecoder("utf-8", { ignoreBOM: true });
 const text = (bytes: Uint8Array) => decoder.decode(bytes);
 
 type Edit =
@@ -256,8 +257,12 @@ interface Request {
   concerns: {
     document?: string;
     part?: "metadata" | "body";
+    /** Frontmatter keys a metadata edit may change; every other line stays. */
+    keys?: string[];
     /** A single value's line, or a list key whose preceding lines stay. */
     config?: "title" | "navigation" | "modules" | "persons";
+    /** The selector of the single value a title edit changes. */
+    field?: string;
   };
 }
 
@@ -356,7 +361,11 @@ function request(
         desired,
         operations: [{ kind: "update", resource: key(page!) }],
         authority: { ...none, resources: [key(page!)], exclusive: exclusive(project, key(page!)) },
-        concerns: { document: key(page!), part: "metadata" },
+        concerns: {
+          document: key(page!),
+          part: "metadata",
+          keys: [change.kind === "retitle" ? "title" : "description"],
+        },
       };
     }
     case "body": {
@@ -375,7 +384,7 @@ function request(
         desired,
         operations: [{ kind: "update", resource: key(wiki) }],
         authority: { ...none, resources: [key(wiki)], shared: [shared(project, config, "title")] },
-        concerns: { config: "title" },
+        concerns: { config: "title", field: "title" },
       };
     case "reorder": {
       const candidates = lists(wiki.spec.navigation ?? []).filter(({ list }) => list.length > 1);
@@ -525,7 +534,7 @@ function request(
         desired,
         operations: [{ kind: "update", resource: key(guide) }],
         authority: { ...none, resources: [key(guide)], exclusive: exclusive(project, key(guide)) },
-        concerns: { document: key(guide), part: "metadata" },
+        concerns: { document: key(guide), part: "metadata", keys: ["tags", "inheritTags"] },
       };
     }
     case "guide-add": {
@@ -709,7 +718,7 @@ function personRequest(
         desired,
         operations: [{ kind: "update", resource: key(guide) }],
         authority: { ...none, resources: [key(guide)], exclusive: exclusive(project, key(guide)) },
-        concerns: { document: key(guide), part: "metadata" },
+        concerns: { document: key(guide), part: "metadata", keys: ["authors"] },
       };
     }
     default:
@@ -746,7 +755,10 @@ function courseRequest(
             shared(project, config, target === 0 ? "title" : `modules/${resource.name}/title`),
           ],
         },
-        concerns: { config: "title" },
+        concerns: {
+          config: "title",
+          field: target === 0 ? "title" : `modules/${resource.name}/title`,
+        },
       };
     }
     case "course-reorder": {
@@ -847,8 +859,15 @@ function courseRequest(
       const page = pages[change.page % pages.length];
       const operations: SourceResourceOperation[] = [{ kind: "update", resource: key(page) }];
       const fields: string[] = [];
-      if (change.kind === "page-slug") page.spec.slug = `${page.spec.slug}-v2`;
-      else {
+      if (change.kind === "page-slug") {
+        // Routes must stay unique: a slug another page of the module has is not taken.
+        const slug = `${page.spec.slug}-v2`;
+        if (
+          pages.some((other) => other.spec.module === page.spec.module && other.spec.slug === slug)
+        )
+          return undefined;
+        page.spec.slug = slug;
+      } else {
         const from = moduleOf(page.spec.module);
         const to = modules[change.module % modules.length];
         // Routes must stay unique: a page does not join a module with a page of its slug.
@@ -883,7 +902,7 @@ function courseRequest(
           ? { config: "modules" }
           : page.spec.content.value.includes(reference(page))
             ? {}
-            : { document: key(page), part: "metadata" },
+            : { document: key(page), part: "metadata", keys: ["slug"] },
       };
     }
     default:
@@ -911,22 +930,24 @@ const lines = (value: string) => value.split(/\r?\n/u);
 const crlf = (value: string) => value.includes("\r\n");
 const bareLf = (value: string) => /(?<!\r)\n/u.test(value);
 
-/** Keys a metadata edit may change; `inheritTags` is written with tags, `slug` by a route edit. */
-const EDITED_KEYS = /^(title|description|tags|inheritTags|slug|authors):/u;
-
 /**
  * The frontmatter lines outside the keys a metadata edit may change: comments and other keys.
  * An indented line belongs to the key above it, such as a block list item or a value written
  * on its own line.
  */
-function unchangedLines(frontmatter: string): string[] {
+function unchangedLines(frontmatter: string, keys: readonly string[]): string[] {
   let edited = false;
   return lines(frontmatter).filter((line) => {
     if (!line.trim()) return false;
-    if (!/^\s/u.test(line)) edited = EDITED_KEYS.test(line);
+    if (!/^\s/u.test(line)) edited = keys.some((key) => line.startsWith(`${key}:`));
     return !edited;
   });
 }
+
+const BOM = [0xef, 0xbb, 0xbf];
+const startsWithBom = (bytes: Uint8Array) => BOM.every((byte, index) => bytes[index] === byte);
+const sameBytes = (left: Uint8Array, right: Uint8Array) =>
+  left.length === right.length && left.every((byte, index) => byte === right[index]);
 
 /** The bytes an edit does not concern must stay as written. */
 function checkPreservation(
@@ -944,9 +965,9 @@ function checkPreservation(
       path: change.path,
       mode: base.mode,
     });
-    expect({ path: change.path, bom: now.startsWith("﻿") }).toEqual({
+    expect({ path: change.path, bom: startsWithBom(change.candidate!.bytes) }).toEqual({
       path: change.path,
-      bom: old.startsWith("﻿"),
+      bom: startsWithBom(base.bytes),
     });
     if (crlf(old) && !bareLf(old))
       expect({ path: change.path, bareLf: bareLf(now) }).toEqual({
@@ -954,7 +975,7 @@ function checkPreservation(
         bareLf: false,
       });
   }
-  const { document, part, config } = request.concerns;
+  const { document, part, config, keys = [], field } = request.concerns;
   if (document) {
     const was = documentOf(before, document);
     const is = documentOf(after, document);
@@ -963,7 +984,7 @@ function checkPreservation(
     if (part === "metadata") {
       expect(slice(now, is.body)).toBe(slice(old, was.body));
       // Comments and keys the edit does not change keep their lines, in order.
-      const kept = unchangedLines(slice(old, was.frontmatter));
+      const kept = unchangedLines(slice(old, was.frontmatter), keys);
       const written = lines(slice(now, is.frontmatter));
       expect(written.filter((line) => kept.includes(line))).toEqual(kept);
     } else if (part === "body") {
@@ -975,14 +996,20 @@ function checkPreservation(
     const old = text(before.tree.find((file) => file.path === path)!.bytes);
     const now = text(after.tree.find((file) => file.path === path)!.bytes);
     if (config === "title") {
-      // Only the title's value changes; every other line, comments included, stays.
-      const changed = lines(old)
-        .map((line, index) => [line, lines(now)[index]] as const)
-        .filter(([was, is]) => was !== is);
-      expect({ lines: lines(now).length, changed: changed.length }).toEqual({
-        lines: lines(old).length,
-        changed: changed.length && 1,
-      });
+      // Only the title's value changes: the bytes before and after its inspected range stay.
+      const base = before.tree.find((file) => file.path === path)!.bytes;
+      const written = after.tree.find((file) => file.path === path)!.bytes;
+      const range = before.configurations
+        .find((configuration) => configuration.path === path)!
+        .fields.find((evidence) => evidence.selector === field)!.value!;
+      const tail = base.length - range.end;
+      expect({
+        field,
+        before: sameBytes(written.subarray(0, range.start), base.subarray(0, range.start)),
+        after:
+          written.length >= range.start + tail &&
+          sameBytes(written.subarray(written.length - tail), base.subarray(range.end)),
+      }).toEqual({ field, before: true, after: true });
     } else {
       // List edits keep everything before the list's key.
       const head = (value: string) =>
@@ -1052,7 +1079,8 @@ async function expectIdempotent(project: SourceProject) {
 /**
  * Plan one edit and check it: it plans under its documented authority, applying its changes
  * reproduces the candidate, the bytes it does not concern stay, and planning again changes
- * nothing. Returns the candidate, or undefined when the edit does not apply to the project.
+ * nothing. Returns the candidate and its number of file changes, or undefined when the edit
+ * does not apply to the project.
  */
 async function planAndCheck(project: SourceProject, model: SourceProjectModel, change: Edit) {
   const next = request(project, model, change);
@@ -1067,7 +1095,7 @@ async function planAndCheck(project: SourceProject, model: SourceProjectModel, c
   expect(digestSourceTree(applied)).toBe(result.plan.candidateTreeDigest);
   checkPreservation(project, result.plan.candidate, next, result.plan);
   await expectIdempotent(result.plan.candidate);
-  return result.plan.candidate;
+  return { candidate: result.plan.candidate, changes: result.plan.changes.length };
 }
 
 /** A project with every kind of source, enough Wiki pages and more than one Course module. */
@@ -1099,8 +1127,9 @@ describe("source write-back", () => {
     "a $kind edit plans and keeps unrelated bytes on a generated project",
     async (change) => {
       for (const { model, project } of await completeProjects())
-        if (await planAndCheck(project, model, change)) return;
-      throw new Error(`No generated project admits the edit ${JSON.stringify(change)}`);
+        // A plan that writes nothing, such as clearing an absent description, does not count.
+        if ((await planAndCheck(project, model, change))?.changes) return;
+      throw new Error(`No generated project writes the edit ${JSON.stringify(change)}`);
     },
     timeout(60_000),
   );
@@ -1120,18 +1149,21 @@ describe("source write-back", () => {
             let project = inspected;
             await expectIdempotent(project);
             for (const change of edits) {
-              const candidate = await planAndCheck(project, model, change);
-              if (!candidate) continue;
+              const result = await planAndCheck(project, model, change);
+              if (!result) continue;
               planned++;
-              project = candidate;
+              project = result.candidate;
             }
           },
         ),
         parameters(30),
       );
       // Keep the generator honest: half the projects must compile and most edits must plan.
-      expect(projects).toBeGreaterThanOrEqual(runs(30) * 0.5);
-      expect(planned).toBeGreaterThan(projects);
+      // Zero runs is an explicit opt-out.
+      if (runs(30) > 0) {
+        expect(projects).toBeGreaterThanOrEqual(runs(30) * 0.5);
+        expect(planned).toBeGreaterThan(projects);
+      }
     },
     timeout(120_000),
   );
@@ -1139,6 +1171,7 @@ describe("source write-back", () => {
   test(
     "initializing a project from its compiled resources succeeds and replans to nothing",
     async () => {
+      let initialized = 0;
       await fc.assert(
         fc.asyncProperty(wikiProject, async (model) => {
           const inspected = await compiled(renderWikiProject(model));
@@ -1192,10 +1225,14 @@ describe("source write-back", () => {
             ],
           });
           expect(result.ok ? [] : result.diagnostics).toEqual([]);
-          if (result.ok) await expectIdempotent(result.plan.candidate);
+          if (!result.ok) return;
+          await expectIdempotent(result.plan.candidate);
+          initialized++;
         }),
         parameters(15),
       );
+      // Keep the generator honest: half the generated projects must initialize.
+      if (runs(15) > 0) expect(initialized).toBeGreaterThanOrEqual(runs(15) * 0.5);
     },
     timeout(120_000),
   );

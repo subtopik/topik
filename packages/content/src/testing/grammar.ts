@@ -404,8 +404,13 @@ function renderInline(node: Inline): string {
         case "image":
           return `![${node.label}][img]`;
       }
-    case "autolink":
-      return `<${node.href}>`;
+    case "autolink": {
+      // An autolink needs an absolute target; a respelled relative one becomes a plain link.
+      const target = linkTarget(node.href);
+      return target === node.href || /^(?:https?:\/\/|[^/:@]+@)/u.test(target)
+        ? `<${target}>`
+        : `[${node.href}](${target})`;
+    }
     case "image":
       return `![${node.alt}](${mediaSource(node.src)})`;
     case "footnote":
@@ -573,8 +578,13 @@ function renderDocument(document: Document): string {
         ]
       : [],
   );
+  // The `[img]` definition supplies image references, so it takes the media spelling.
   const prelude = PRELUDE.map((line) =>
-    line.replace(/\]: (\S+)$/u, (_, href: string) => `]: ${linkTarget(href)}`),
+    line.replace(
+      /^\[([^\]]+)\]: (\S+)$/u,
+      (_, label: string, href: string) =>
+        `[${label}]: ${label === "img" ? mediaSource(href) : linkTarget(href)}`,
+    ),
   );
   return [...prelude, ...body, ...notes].join("\n");
 }

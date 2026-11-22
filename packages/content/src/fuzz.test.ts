@@ -22,7 +22,7 @@ import { budgetUnit, source, VARIABLES } from "./testing/grammar.js";
 const EXPLORE = process.env.TOPIK_FUZZ === "1";
 /** An integer environment variable, or undefined when it is absent or not an integer. */
 const integer = (value: string | undefined) =>
-  value !== undefined && /^-?\d+$/u.test(value.trim()) ? Number(value) : undefined;
+  value !== undefined && /^[-+]?\d+$/u.test(value.trim()) ? Number(value) : undefined;
 const SEED = EXPLORE
   ? (integer(process.env.TOPIK_FUZZ_SEED) ?? Math.floor(Math.random() * 2 ** 31))
   : 20_261_121;

@@ -374,6 +374,16 @@ export interface GuideModel {
   /** A link to another guide of the collection, by index. */
   link: number | null;
   document: TopikDocument | null;
+  /** Authors, as indexes into the collection's persons. */
+  authors: number[];
+}
+
+export interface PersonModel {
+  id: string;
+  name: string;
+  email: string | null;
+  /** The record's `spec` as a flow mapping rather than a block. */
+  flow: boolean;
 }
 
 export interface CollectionModel {
@@ -383,6 +393,7 @@ export interface CollectionModel {
   guides: GuideModel[];
   /** A repository readme beside the configuration: never a guide, and never written. */
   readme: boolean;
+  persons: PersonModel[];
   comments: boolean;
   eol: "\n" | "\r\n";
 }
@@ -452,11 +463,21 @@ const collection: fc.Arbitrary<CollectionModel> = fc.record({
         ext: fc.constantFrom<".md" | ".mdx">(".md", ".md", ".mdx"),
         link: fc.option(fc.nat(3)),
         document: sometimes,
+        authors: fc.uniqueArray(fc.nat(2), { maxLength: 2 }),
       }),
       { minLength: 1, maxLength: 3, selector: (guide) => guide.slug },
     )
     .map((guides) => guides.map((guide, index) => ({ ...guide, index }))),
   readme: fc.boolean(),
+  persons: fc.uniqueArray(
+    fc.record({
+      id: pick(["ada", "alan", "grace"]),
+      name: pick(["Ada Lovelace", "Alan Turing", "Grace Hopper"]),
+      email: fc.option(pick(["team@e.test"])),
+      flow: fc.boolean(),
+    }),
+    { maxLength: 3, selector: (person) => person.id },
+  ),
   comments: fc.boolean(),
   eol: fc.constantFrom<"\n" | "\r\n">("\n", "\n", "\r\n"),
 });
@@ -614,6 +635,10 @@ export function guides(model: CollectionModel): { guide: GuideModel; path: strin
 function guideMarkdown(model: CollectionModel, entry: { guide: GuideModel; path: string }): string {
   const { guide } = entry;
   const all = guides(model);
+  // Authors refer to declared persons; indexes past the list name nobody.
+  const authorIds = guide.authors.flatMap((index) =>
+    model.persons[index] ? [model.persons[index].id] : [],
+  );
   const fields = [
     ...(guide.explicitId ? [`id: guide-${guide.index}`] : []),
     ...(guide.comment ? ["# guide notes"] : []),
@@ -625,6 +650,7 @@ function guideMarkdown(model: CollectionModel, entry: { guide: GuideModel; path:
         : ["tags:", ...guide.tags.values.map((tag) => `  - ${tag}`)]
       : []),
     ...(guide.extra ? ["reviewed: true"] : []),
+    ...(authorIds.length ? [`authors: [${authorIds.join(", ")}]`] : []),
   ];
   const target = (index: number) => {
     const other = all[index % all.length];
@@ -651,6 +677,25 @@ function collectionConfiguration(model: CollectionModel): string {
     `id: ${model.id}`,
     ...(model.comments ? ["# Guides for new readers"] : []),
     `title: ${scalar(model.title, "plain")}`,
+    ...(model.persons.length
+      ? [
+          "persons:",
+          ...(model.comments ? ["  # authors"] : []),
+          ...model.persons.flatMap((person) =>
+            person.flow
+              ? [
+                  `  - id: ${person.id}`,
+                  `    spec: {name: ${person.name}${person.email ? `, email: ${person.email}` : ""}}`,
+                ]
+              : [
+                  `  - id: ${person.id}`,
+                  "    spec:",
+                  `      name: ${person.name}`,
+                  ...(person.email ? [`      email: ${person.email}`] : []),
+                ],
+          ),
+        ]
+      : []),
   ];
   return `${lines.join(model.eol)}${model.eol}`;
 }

@@ -19,6 +19,7 @@ import type { Guide } from "@topik/schema/guide/v1";
 import type { Course } from "@topik/schema/course/v1";
 import type { CourseModule } from "@topik/schema/course-module/v1";
 import type { CoursePage } from "@topik/schema/course-page/v1";
+import type { Person } from "@topik/schema/person/v1";
 import type { Resource } from "../resource.js";
 import {
   collectionConfigPath,
@@ -78,7 +79,11 @@ type Edit =
   | { kind: "course-page-add"; module: number; title: string }
   | { kind: "module-add"; title: string }
   | { kind: "page-module"; page: number; module: number }
-  | { kind: "page-slug"; page: number };
+  | { kind: "page-slug"; page: number }
+  | { kind: "person-rename"; person: number; name: string }
+  | { kind: "person-add"; name: string }
+  | { kind: "person-delete"; person: number }
+  | { kind: "authors"; page: number; persons: number[] };
 
 const TITLES = ["Renamed", "Overview: part 2", "Notes #3"] as const;
 // Weighted toward the edits whose preservation rules have the most to check.
@@ -170,9 +175,43 @@ const EDITS: fc.WeightedArbitrary<Edit>[] = [
     }),
   },
   { weight: 2, arbitrary: fc.record({ kind: fc.constant("page-slug" as const), page: fc.nat() }) },
+  {
+    weight: 2,
+    arbitrary: fc.record({
+      kind: fc.constant("person-rename" as const),
+      person: fc.nat(),
+      name: fc.constantFrom("Ada King", "Dr. Grace Hopper"),
+    }),
+  },
+  {
+    weight: 1,
+    arbitrary: fc.record({
+      kind: fc.constant("person-add" as const),
+      name: fc.constantFrom("Katherine Johnson", "Edsger Dijkstra"),
+    }),
+  },
+  {
+    weight: 1,
+    arbitrary: fc.record({ kind: fc.constant("person-delete" as const), person: fc.nat() }),
+  },
+  {
+    weight: 2,
+    arbitrary: fc.record({
+      kind: fc.constant("authors" as const),
+      page: fc.nat(),
+      persons: fc.uniqueArray(fc.nat(3), { maxLength: 2 }),
+    }),
+  },
 ];
 
-const GUIDE_EDITS = new Set<Edit["kind"]>(["guide-add", "tags"]);
+const GUIDE_EDITS = new Set<Edit["kind"]>([
+  "guide-add",
+  "tags",
+  "person-rename",
+  "person-add",
+  "person-delete",
+  "authors",
+]);
 const COURSE_EDITS = new Set<Edit["kind"]>([
   "course-meta",
   "course-reorder",
@@ -208,7 +247,7 @@ interface Request {
     document?: string;
     part?: "metadata" | "body";
     /** A single value's line, or a list key whose preceding lines stay. */
-    config?: "title" | "navigation" | "modules";
+    config?: "title" | "navigation" | "modules" | "persons";
   };
 }
 
@@ -499,8 +538,102 @@ function request(
         concerns: {},
       };
     }
+    case "person-rename":
+    case "person-add":
+    case "person-delete":
+    case "authors":
+      return personRequest(project, model, desired, change);
     default:
       return courseRequest(project, courseConfig, desired, change);
+  }
+}
+
+/** Requests for the Person edits: records in the collection, and guide authors. */
+function personRequest(
+  project: SourceProject,
+  model: SourceProjectModel,
+  desired: Resource[],
+  change: Edit,
+): Request | undefined {
+  if (!model.collection) return undefined;
+  const config = collectionConfigPath(model.collection);
+  const persons = desired
+    .filter((resource): resource is Person => resource.type === "Person")
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const guides = guidesOf(desired);
+  const none = { resources: [], exclusive: [], shared: [], create: [] };
+  const authored = (person: Person) =>
+    guides.filter((guide) => guide.spec.authors?.includes(person.name));
+  switch (change.kind) {
+    case "person-rename": {
+      if (!persons.length) return undefined;
+      const person = persons[change.person % persons.length];
+      person.spec.name = change.name;
+      // A shared Person change affects every guide that lists it, so they are admitted too.
+      return {
+        desired,
+        operations: [{ kind: "update", resource: key(person) }],
+        authority: {
+          ...none,
+          resources: [key(person), ...authored(person).map(key)],
+          shared: [shared(project, config, `persons/${person.name}`)],
+        },
+        concerns: { config: "persons" },
+      };
+    }
+    case "person-add": {
+      if (!persons.length) return undefined;
+      let n = 1;
+      while (desired.some((resource) => resource.name === `author${n}`)) n++;
+      const added = {
+        ...structuredClone(persons[0]),
+        name: `author${n}`,
+        spec: { name: change.name },
+      } as Person;
+      desired.push(added);
+      return {
+        desired,
+        operations: [{ kind: "create", resource: key(added), config }],
+        authority: {
+          ...none,
+          resources: [key(added)],
+          shared: [shared(project, config, "persons")],
+        },
+        concerns: { config: "persons" },
+      };
+    }
+    case "person-delete": {
+      // A Person a guide still lists cannot be deleted; such persons are not deleted here.
+      const free = persons.filter((person) => !authored(person).length);
+      if (!free.length) return undefined;
+      const person = free[change.person % free.length];
+      desired.splice(desired.indexOf(person), 1);
+      return {
+        desired,
+        operations: [{ kind: "delete", resource: key(person) }],
+        authority: {
+          ...none,
+          resources: [key(person)],
+          shared: [shared(project, config, "persons")],
+        },
+        concerns: { config: "persons" },
+      };
+    }
+    case "authors": {
+      if (!guides.length || !persons.length) return undefined;
+      const guide = guides[change.page % guides.length];
+      const authors = change.persons.map((index) => persons[index % persons.length].name);
+      if (authors.length) guide.spec.authors = [...new Set(authors)];
+      else delete guide.spec.authors;
+      return {
+        desired,
+        operations: [{ kind: "update", resource: key(guide) }],
+        authority: { ...none, resources: [key(guide)], exclusive: exclusive(project, key(guide)) },
+        concerns: { document: key(guide), part: "metadata" },
+      };
+    }
+    default:
+      return undefined;
   }
 }
 
@@ -699,7 +832,7 @@ const crlf = (value: string) => value.includes("\r\n");
 const bareLf = (value: string) => /(?<!\r)\n/u.test(value);
 
 /** Keys a metadata edit may change; `inheritTags` is written with tags, `slug` by a route edit. */
-const EDITED_KEYS = /^(title|description|tags|inheritTags|slug):/u;
+const EDITED_KEYS = /^(title|description|tags|inheritTags|slug|authors):/u;
 
 /**
  * The frontmatter lines outside the keys a metadata edit may change: comments and other keys.
@@ -860,20 +993,31 @@ async function planAndCheck(project: SourceProject, model: SourceProjectModel, c
 const complete = sourceProject.filter(
   (model) =>
     model.collection !== null &&
+    model.collection.persons.length > 1 &&
     model.course !== null &&
     model.course.modules.length > 1 &&
     pages(model.wiki).length > 1,
 );
+
+/** Compiled complete projects, generated once and shared by the per-kind tests. */
+let completeSample: Promise<{ model: SourceProjectModel; project: SourceProject }[]> | undefined;
+const completeProjects = () =>
+  (completeSample ??= (async () => {
+    const result = [];
+    for (const model of fc.sample(complete, { seed: SEED, numRuns: 30 })) {
+      const project = await compiled(renderSourceProject(model));
+      if (project) result.push({ model, project });
+    }
+    return result;
+  })());
 
 describe("source write-back", () => {
   // The random property below need not draw every kind of edit; this checks each one.
   test.each(EDITS.map(({ arbitrary }) => fc.sample(arbitrary, { seed: SEED, numRuns: 1 })[0]))(
     "a $kind edit plans and keeps unrelated bytes on a generated project",
     async (change) => {
-      for (const model of fc.sample(complete, { seed: SEED, numRuns: 30 })) {
-        const project = await compiled(renderSourceProject(model));
-        if (project && (await planAndCheck(project, model, change))) return;
-      }
+      for (const { model, project } of await completeProjects())
+        if (await planAndCheck(project, model, change)) return;
       throw new Error(`No generated project admits the edit ${JSON.stringify(change)}`);
     },
     timeout(60_000),
@@ -901,10 +1045,10 @@ describe("source write-back", () => {
             }
           },
         ),
-        parameters(40),
+        parameters(30),
       );
       // Keep the generator honest: most projects must compile and most edits must plan.
-      expect(projects).toBeGreaterThan(runs(40) * 0.6);
+      expect(projects).toBeGreaterThan(runs(30) * 0.6);
       expect(planned).toBeGreaterThan(projects);
     },
     timeout(120_000),

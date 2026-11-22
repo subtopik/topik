@@ -1,6 +1,7 @@
 /**
- * Generators of Wiki source projects for write-back property tests. Test-only: nothing here is
- * exported by the package entry, so none of it is published.
+ * Generators of source projects for write-back property tests: a Wiki and, optionally, a Guide
+ * collection. Test-only: nothing here is exported by the package entry, so none of it is
+ * published.
  *
  * A project is generated as a model (navigation, pages, configuration) and rendered to source
  * files in the spellings the writer must preserve: block or flow navigation, shorthand or
@@ -354,5 +355,169 @@ export function renderWikiProject(model: WikiProjectModel): SourceTreeFile[] {
     ),
     file(configPath(model), `${model.configBom ? "﻿" : ""}${configuration(model)}`),
     ...all.map((entry) => file(entry.path, markdown(model, entry, all))),
+  ];
+}
+
+export interface GuideModel {
+  index: number;
+  slug: string;
+  explicitId: boolean;
+  title: string | null;
+  heading: string;
+  description: string | null;
+  /** Frontmatter tags, in flow or block spelling. */
+  tags: { values: string[]; flow: boolean } | null;
+  extra: boolean;
+  comment: boolean;
+  bom: boolean;
+  ext: ".md" | ".mdx";
+  /** A link to another guide of the collection, by index. */
+  link: number | null;
+  document: TopikDocument | null;
+}
+
+export interface CollectionModel {
+  dir: "guides" | "blog";
+  id: "tutorials" | "blog";
+  title: string;
+  guides: GuideModel[];
+  /** A repository readme beside the configuration: never a guide, and never written. */
+  readme: boolean;
+  comments: boolean;
+  eol: "\n" | "\r\n";
+}
+
+export interface SourceProjectModel {
+  wiki: WikiProjectModel;
+  collection: CollectionModel | null;
+}
+
+const GUIDE_SLUGS = ["intro", "setup", "basics", "tips"] as const;
+
+const collection: fc.Arbitrary<CollectionModel> = fc.record({
+  dir: fc.constantFrom<"guides" | "blog">("guides", "blog"),
+  id: fc.constantFrom<"tutorials" | "blog">("tutorials", "blog"),
+  title: pick(["Tutorials", "Blog: notes"]),
+  guides: fc
+    .uniqueArray(
+      fc.record({
+        slug: pick(GUIDE_SLUGS),
+        explicitId: fc.boolean(),
+        title: fc.option(pick(TITLES)),
+        heading: pick(TITLES),
+        description: fc.option(pick(["A short summary."])),
+        tags: fc.option(
+          fc.record({
+            values: fc.uniqueArray(pick(["setup", "basics", "news"]), {
+              minLength: 1,
+              maxLength: 2,
+            }),
+            flow: fc.boolean(),
+          }),
+        ),
+        extra: fc.boolean(),
+        comment: fc.constantFrom(true, true, false),
+        bom: fc.boolean(),
+        ext: fc.constantFrom<".md" | ".mdx">(".md", ".md", ".mdx"),
+        link: fc.option(fc.nat(3)),
+        document: fc.option(topikDocument, { freq: 2 }),
+      }),
+      { minLength: 1, maxLength: 3, selector: (guide) => guide.slug },
+    )
+    .map((guides) => guides.map((guide, index) => ({ ...guide, index }))),
+  readme: fc.boolean(),
+  comments: fc.boolean(),
+  eol: fc.constantFrom<"\n" | "\r\n">("\n", "\n", "\r\n"),
+});
+
+export const sourceProject: fc.Arbitrary<SourceProjectModel> = fc.record({
+  wiki: wikiProject,
+  collection: fc.option(collection, { freq: 3 }),
+});
+
+/** The collection configuration's path relative to the project root. */
+export const collectionConfigPath = (model: CollectionModel) =>
+  posix.join(model.dir, "collection.yaml");
+
+/** Every guide of a collection with its source path relative to the project root. */
+export function guides(model: CollectionModel): { guide: GuideModel; path: string }[] {
+  return model.guides.map((guide) => ({
+    guide,
+    path: posix.join(model.dir, `${guide.slug}${guide.ext}`),
+  }));
+}
+
+function guideMarkdown(model: CollectionModel, entry: { guide: GuideModel; path: string }): string {
+  const { guide } = entry;
+  const all = guides(model);
+  const fields = [
+    ...(guide.explicitId ? [`id: guide-${guide.index}`] : []),
+    ...(guide.comment ? ["# guide notes"] : []),
+    ...(guide.title ? [`title: ${scalar(guide.title, "plain")}`] : []),
+    ...(guide.description ? [`description: ${guide.description}`] : []),
+    ...(guide.tags
+      ? guide.tags.flow
+        ? [`tags: [${guide.tags.values.join(", ")}]`]
+        : ["tags:", ...guide.tags.values.map((tag) => `  - ${tag}`)]
+      : []),
+    ...(guide.extra ? ["reviewed: true"] : []),
+  ];
+  const target = (index: number) => {
+    const other = all[index % all.length];
+    return `./${posix.basename(other.path)}`;
+  };
+  const generated = guide.document
+    ? renderTopik(guide.document, {
+        href: (href) => (href.startsWith("https://") ? href : target(guide.index + 1)),
+        media: (src) =>
+          src.startsWith("https://") ? src : `https://e.test/${posix.basename(src)}`,
+      })
+    : undefined;
+  const lines = [
+    ...(fields.length ? ["---", ...fields, "---"] : []),
+    `# ${guide.heading}`,
+    ...(guide.link === null ? [] : ["", `Continue with [the next guide](${target(guide.link)}).`]),
+    ...(generated ? ["", ...generated.split("\n")] : []),
+  ];
+  return `${guide.bom ? "\uFEFF" : ""}${lines.join(model.eol)}${model.eol}`;
+}
+
+function collectionConfiguration(model: CollectionModel): string {
+  const lines = [
+    `id: ${model.id}`,
+    ...(model.comments ? ["# Guides for new readers"] : []),
+    `title: ${scalar(model.title, "plain")}`,
+  ];
+  return `${lines.join(model.eol)}${model.eol}`;
+}
+
+/** Render a project with all its sources to the tree `readSourceProject` reads. */
+export function renderSourceProject(model: SourceProjectModel): SourceTreeFile[] {
+  const wiki = renderWikiProject(model.wiki).slice(1);
+  const sources = [
+    `  - {kind: wiki, config: ${configPath(model.wiki)}}`,
+    ...(model.collection
+      ? [`  - {kind: collection, config: ${collectionConfigPath(model.collection)}}`]
+      : []),
+  ];
+  return [
+    file(".topik.yaml", `version: 1\nnamespace: demo/fuzz\nsources:\n${sources.join("\n")}\n`),
+    ...wiki,
+    ...(model.collection
+      ? [
+          file(collectionConfigPath(model.collection), collectionConfiguration(model.collection)),
+          ...guides(model.collection).map((entry) =>
+            file(entry.path, guideMarkdown(model.collection!, entry)),
+          ),
+          ...(model.collection.readme
+            ? [
+                file(
+                  posix.join(model.collection.dir, "README.md"),
+                  "Repository notes, not a guide.\n",
+                ),
+              ]
+            : []),
+        ]
+      : []),
   ];
 }

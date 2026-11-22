@@ -15,8 +15,17 @@ import fc from "fast-check";
 import { describe, expect, test } from "vite-plus/test";
 import type { Wiki, WikiNavNode } from "@topik/schema/wiki/v1";
 import type { WikiPage } from "@topik/schema/wiki-page/v1";
+import type { Guide } from "@topik/schema/guide/v1";
 import type { Resource } from "../resource.js";
-import { configPath, renderWikiProject, wikiProject } from "../testing/wiki-projects.js";
+import {
+  collectionConfigPath,
+  configPath,
+  renderSourceProject,
+  renderWikiProject,
+  sourceProject,
+  wikiProject,
+  type SourceProjectModel,
+} from "../testing/source-projects.js";
 import { initializeSourceProject } from "./initialize.js";
 import {
   planSourceUpdates,
@@ -54,7 +63,9 @@ type Edit =
   | { kind: "reorder"; list: number }
   | { kind: "add"; list: number; title: string }
   | { kind: "delete"; page: number }
-  | { kind: "move"; page: number };
+  | { kind: "move"; page: number }
+  | { kind: "guide-add"; slug: string; title: string }
+  | { kind: "tags"; page: number; tags: string[] | null };
 
 const TITLES = ["Renamed", "Overview: part 2", "Notes #3"] as const;
 // Weighted toward the edits whose preservation rules have the most to check.
@@ -94,6 +105,22 @@ const edit: fc.Arbitrary<Edit> = fc.oneof(
   },
   { weight: 1, arbitrary: fc.record({ kind: fc.constant("delete" as const), page: fc.nat() }) },
   { weight: 1, arbitrary: fc.record({ kind: fc.constant("move" as const), page: fc.nat() }) },
+  {
+    weight: 2,
+    arbitrary: fc.record({
+      kind: fc.constant("guide-add" as const),
+      slug: fc.constantFrom("extra", "news"),
+      title: fc.constantFrom(...TITLES),
+    }),
+  },
+  {
+    weight: 2,
+    arbitrary: fc.record({
+      kind: fc.constant("tags" as const),
+      page: fc.nat(),
+      tags: fc.option(fc.constantFrom<string[]>(["setup"], ["news", "basics"])),
+    }),
+  },
 );
 
 /** A planned edit: the desired graph, its operations and the authority the docs name for it. */
@@ -113,6 +140,17 @@ const pagesOf = (resources: readonly Resource[]) =>
   resources
     .filter((resource): resource is WikiPage => resource.type === "WikiPage")
     .sort((a, b) => a.name.localeCompare(b.name));
+const guidesOf = (resources: readonly Resource[]) =>
+  resources
+    .filter((resource): resource is Guide => resource.type === "Guide")
+    .sort((a, b) => a.name.localeCompare(b.name));
+/** The Markdown documents of a project: Wiki pages, then guides. */
+const documentsOf = (resources: readonly Resource[]): (WikiPage | Guide)[] => [
+  ...pagesOf(resources),
+  ...guidesOf(resources),
+];
+const reference = (document: WikiPage | Guide) =>
+  `ref://${document.type === "Guide" ? "guide" : "wiki-page"}/${document.name}`;
 
 const documentOf = (project: SourceProject, resource: string) =>
   project.documents.find((document) => document.resource === resource)!;
@@ -148,11 +186,20 @@ function lists(navigation: WikiNavNode[], dir = ""): { list: WikiNavNode[]; dir:
 }
 
 /** The request for one edit, or undefined when the edit does not apply to this project. */
-function request(project: SourceProject, config: string, change: Edit): Request | undefined {
+function request(
+  project: SourceProject,
+  model: SourceProjectModel,
+  change: Edit,
+): Request | undefined {
+  const config = configPath(model.wiki);
   const desired = structuredClone(project.compilation.resources) as Resource[];
   const wiki = wikiOf(desired);
   const pages = pagesOf(desired);
-  const page = "page" in change ? pages[change.page % pages.length] : undefined;
+  const documents = documentsOf(desired);
+  const page =
+    "page" in change && change.kind !== "tags"
+      ? documents[change.page % documents.length]
+      : undefined;
   const none = { resources: [], exclusive: [], shared: [], create: [] };
   switch (change.kind) {
     case "retitle":
@@ -238,15 +285,28 @@ function request(project: SourceProject, config: string, change: Edit): Request 
       };
     }
     case "delete": {
-      // Deleting a page that another page links to is refused; such pages are not deleted here.
-      const linked = (target: WikiPage) =>
-        pages.some(
-          (other) =>
-            other !== target && other.spec.content.value.includes(`ref://wiki-page/${target.name}`),
+      // Deleting a document another one links to is refused; such documents are not deleted.
+      const linked = (target: WikiPage | Guide) =>
+        documents.some(
+          (other) => other !== target && other.spec.content.value.includes(reference(target)),
         );
-      const deletable = pages.filter((candidate) => !linked(candidate));
-      if (pages.length < 2 || !deletable.length) return undefined;
+      const deletable = documents.filter(
+        (candidate) => !linked(candidate) && (candidate.type === "Guide" || pages.length > 1),
+      );
+      if (!deletable.length) return undefined;
       const target = deletable[change.page % deletable.length];
+      desired.splice(desired.indexOf(target), 1);
+      if (target.type === "Guide")
+        return {
+          desired,
+          operations: [{ kind: "delete", resource: key(target) }],
+          authority: {
+            ...none,
+            resources: [key(target)],
+            exclusive: exclusive(project, key(target)),
+          },
+          concerns: {},
+        };
       const holder = lists(wiki.spec.navigation ?? []).find(({ list }) =>
         list.some((node) => node.type === "page" && node.page === target.name),
       )!.list;
@@ -256,7 +316,6 @@ function request(project: SourceProject, config: string, change: Edit): Request 
         holder.findIndex((node) => node.type === "page" && node.page === target.name),
         1,
       );
-      desired.splice(desired.indexOf(target), 1);
       return {
         desired,
         operations: [
@@ -274,13 +333,58 @@ function request(project: SourceProject, config: string, change: Edit): Request 
     }
     case "move": {
       const document = documentOf(project, key(page!));
-      const target = posix.join(posix.dirname(config), "moved", posix.basename(document.path));
+      // A Wiki page moves to a new folder; a guide is renamed beside its collection.
+      const target =
+        page!.type === "Guide"
+          ? document.path.replace(/(\.mdx?)$/u, "-moved$1")
+          : posix.join(posix.dirname(config), "moved", posix.basename(document.path));
       if (project.tree.some((file) => file.path === target)) return undefined;
       return {
         desired,
         operations: [{ kind: "move", resource: key(page!), path: target }],
         // A move repairs navigation and incoming links, so its authority reaches every file.
         authority: everything(project, [target]),
+        concerns: {},
+      };
+    }
+    case "tags": {
+      const guides = guidesOf(desired);
+      if (!guides.length) return undefined;
+      const guide = guides[change.page % guides.length];
+      if (change.tags === null) delete guide.spec.tags;
+      else guide.spec.tags = change.tags;
+      return {
+        desired,
+        operations: [{ kind: "update", resource: key(guide) }],
+        authority: { ...none, resources: [key(guide)], exclusive: exclusive(project, key(guide)) },
+        concerns: { document: key(guide), part: "metadata" },
+      };
+    }
+    case "guide-add": {
+      const guides = guidesOf(desired);
+      if (!model.collection || !guides.length) return undefined;
+      const collection = collectionConfigPath(model.collection);
+      const path = posix.join(model.collection.dir, `${change.slug}.md`);
+      const name = `${model.collection.id}-${change.slug}`;
+      if (
+        project.tree.some((file) => file.path === path) ||
+        desired.some((other) => other.name === name)
+      )
+        return undefined;
+      const added = {
+        ...structuredClone(guides[0]),
+        name,
+        spec: {
+          title: change.title,
+          slug: change.slug,
+          content: { format: "topik", value: `# ${change.title}\n\nNew guide.\n` },
+        },
+      } as Guide;
+      desired.push(added);
+      return {
+        desired,
+        operations: [{ kind: "create", resource: key(added), config: collection, path }],
+        authority: { ...none, resources: [key(added)], create: [path] },
         concerns: {},
       };
     }
@@ -343,7 +447,7 @@ function checkPreservation(
       expect(slice(now, is.body)).toBe(slice(old, was.body));
       // Comments and keys the edit does not change keep their lines, in order.
       const kept = lines(slice(old, was.frontmatter)).filter(
-        (line) => line.trim() && !/^(title|description):/u.test(line),
+        (line) => line.trim() && !/^(title|description|tags):|^\s+- /u.test(line),
       );
       const written = lines(slice(now, is.frontmatter));
       expect(written.filter((line) => kept.includes(line))).toEqual(kept);
@@ -376,9 +480,9 @@ function checkPreservation(
  * The project a generated model renders, or undefined when it does not compile. Generated page
  * documents can break rules a project enforces, such as unique heading ids.
  */
-async function compiled(model: Parameters<typeof renderWikiProject>[0]) {
+async function compiled(tree: SourceTreeFile[]) {
   try {
-    return await readSourceProject({ tree: renderWikiProject(model) });
+    return await readSourceProject({ tree });
   } catch {
     return undefined;
   }
@@ -409,25 +513,25 @@ async function expectIdempotent(project: SourceProject) {
   );
 }
 
-describe("Wiki write-back", () => {
+describe("source write-back", () => {
   test(
     "edits plan under their documented authority, keep unrelated bytes and replan to nothing",
     async () => {
       let planned = 0;
       let projects = 0;
+      const kinds = new Set<Edit["kind"]>();
       await fc.assert(
         fc.asyncProperty(
-          wikiProject,
+          sourceProject,
           fc.array(edit, { minLength: 1, maxLength: 3 }),
           async (model, edits) => {
-            const config = configPath(model);
-            const inspected = await compiled(model);
+            const inspected = await compiled(renderSourceProject(model));
             if (!inspected) return;
             projects++;
             let project = inspected;
             await expectIdempotent(project);
             for (const change of edits) {
-              const next = request(project, config, change);
+              const next = request(project, model, change);
               if (!next) continue;
               const result = await plan(project, next);
               expect({ edit: change, diagnostics: result.ok ? [] : result.diagnostics }).toEqual({
@@ -436,6 +540,7 @@ describe("Wiki write-back", () => {
               });
               if (!result.ok) return;
               planned++;
+              kinds.add(change.kind);
               const applied = apply(project.tree, result.plan);
               expect(digestSourceTree(applied)).toBe(result.plan.candidateTreeDigest);
               checkPreservation(project, result.plan.candidate, next, result.plan);
@@ -450,6 +555,19 @@ describe("Wiki write-back", () => {
       // Keep the generator honest: most projects must compile and most edits must plan.
       expect(projects).toBeGreaterThan(runs(40) * 0.6);
       expect(planned).toBeGreaterThan(projects);
+      // Every kind of edit, Guide edits included, must have planned in the run.
+      expect([...kinds].sort()).toEqual([
+        "add",
+        "body",
+        "delete",
+        "describe",
+        "guide-add",
+        "move",
+        "reorder",
+        "retitle",
+        "tags",
+        "wiki-title",
+      ]);
     },
     timeout(120_000),
   );
@@ -459,7 +577,7 @@ describe("Wiki write-back", () => {
     async () => {
       await fc.assert(
         fc.asyncProperty(wikiProject, async (model) => {
-          const inspected = await compiled(model);
+          const inspected = await compiled(renderWikiProject(model));
           if (!inspected) return;
           const resources = inspected.compilation.resources;
           const wiki = wikiOf(resources);

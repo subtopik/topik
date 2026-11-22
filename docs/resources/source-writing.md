@@ -269,6 +269,15 @@ List edits keep the entries they do not change. Person, module and Course page
 records are added or removed individually, and a Course page whose file moves
 keeps its entry in its module's `pages` list.
 
+Removing an entry from a flow list or map, such as `[home, other]`, also removes
+its comma and the whitespace after it, so `[a, b, c]` becomes `[a, c]` and an
+entry alone on its line takes its line with it. A comment after the comma keeps
+the space before it.
+
+A Guide tags edit writes `inheritTags: false` only when the Guide's collection
+declares tags. Without collection tags, a Guide's `tags` are its complete tags,
+so the frontmatter needs no `inheritTags`. Initialization never writes it.
+
 A Course's `modules` and each module's `pages` change the way Wiki navigation
 does, below. A new page or module is listed in its parent resource, so adding
 one is an update of that parent too, as adding a Wiki page is an update of the

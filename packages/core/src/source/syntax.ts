@@ -202,6 +202,14 @@ export function inspectSourceSyntax(raw: string, json = false) {
   const maps = new Map<string, YAMLMap>();
   const sequences = new Map<string, import("yaml").YAMLSeq>();
   const flows = new Map<string, FlowSyntax>();
+  // A flow separator owns the whitespace after it, so removing an entry with its comma leaves
+  // no gap or blank line. A comment keeps the space before it: `a# x` would read as text.
+  const separatorEnd = (comma: number) => {
+    let end = comma + 1;
+    while (/[ \t\r\n]/u.test(raw[end] ?? "")) end++;
+    return raw[end] === "#" ? comma + 1 : end;
+  };
+  const separator = (comma: number) => range(comma, separatorEnd(comma));
 
   const inspectMap = (map: YAMLMap, prefix = "") => {
     if (!map.range) throw new TypeError("Missing syntax ranges");
@@ -213,7 +221,7 @@ export function inspectSourceSyntax(raw: string, json = false) {
     const flow: FlowSyntax | undefined = delimiters
       ? {
           padding: flowInsertionPadding(raw, insertionChar, delimiters.indent),
-          separators: delimiters.commas.map((offset) => range(offset, offset + 1)),
+          separators: delimiters.commas.map(separator),
           trailing: delimiters.trailing,
           entries: [],
         }
@@ -246,7 +254,7 @@ export function inspectSourceSyntax(raw: string, json = false) {
         if (comma !== undefined) {
           const limit = next && isScalar(next) && next.range ? next.range[0] : insertionChar;
           if (comma < entryEnd || comma >= limit) throw new TypeError("Missing separator");
-          entryEnd = comma + 1;
+          entryEnd = separatorEnd(comma);
         }
         if (index > 0) {
           const previous = map.items[index - 1].value as Node;
@@ -285,7 +293,7 @@ export function inspectSourceSyntax(raw: string, json = false) {
     const flow: FlowSyntax | undefined = delimiters
       ? {
           padding: flowInsertionPadding(raw, insertionChar, delimiters.indent),
-          separators: delimiters.commas.map((offset) => range(offset, offset + 1)),
+          separators: delimiters.commas.map(separator),
           trailing: delimiters.trailing,
           entries: [],
         }
@@ -311,7 +319,7 @@ export function inspectSourceSyntax(raw: string, json = false) {
           const next = sequence.items[index + 1] as Node | undefined;
           if (comma < end || comma >= (next?.range?.[0] ?? insertionChar))
             throw new TypeError("Missing separator");
-          end = comma + 1;
+          end = separatorEnd(comma);
         }
         if (index > 0) {
           const comma = delimiters.commas[index - 1];

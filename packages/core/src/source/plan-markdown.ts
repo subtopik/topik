@@ -199,6 +199,7 @@ export function writeMarkdown(
   assets: ReadonlyMap<string, string>,
   sourceContent?: string,
   referenceRepair = false,
+  collectionHasTags = false,
 ): Uint8Array {
   const sections = base ? sourceMarkdownSections(base.bytes) : undefined;
   const oldContent = prior
@@ -254,7 +255,8 @@ export function writeMarkdown(
       serializeTopikJson(old.spec.tags ?? null) !== serializeTopikJson(desired.spec.tags ?? null)
     ) {
       updates.tags = desired.spec.tags;
-      updates.inheritTags = false;
+      // Guide tags merge with their collection's. Without collection tags they are the Guide's own.
+      if (collectionHasTags) updates.inheritTags = false;
     }
   }
   if (desired.type === "CoursePage") {

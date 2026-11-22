@@ -1425,6 +1425,11 @@ function planCourseModuleOperation(
     );
 }
 
+/** Whether a collection declares tags its Guides inherit; the planner never edits them. */
+function hasCollectionTags(values: Readonly<Record<string, unknown>> | undefined): boolean {
+  return Array.isArray(values?.tags) && values.tags.length > 0;
+}
+
 /** Whether compilation would read `path` as a guide of the collection declared by `config`. */
 function isCollectionGuidePath(
   state: PlanState,
@@ -1525,6 +1530,7 @@ function planDocumentOperation(
         scope.currentInventory,
       ).content,
       scope.referenceRepairKeys.has(op.resource),
+      next.type === "Guide" && hasCollectionTags(state.configs.get(config!)),
     ),
   );
   if (op.kind === "move") state.deleted.add(document!.path);

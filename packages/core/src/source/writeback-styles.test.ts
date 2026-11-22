@@ -393,13 +393,35 @@ test("frontmatter edits of the final key leave no blank line before the closing 
       return [{ kind: "update", resource: "Guide/p" }];
     });
     expect(appended.written("post.md")).toBe(
-      '---\nid: p\ntags: ["t"]\ninheritTags: false\n---\n# Post\n'.replaceAll("\n", eol),
+      '---\nid: p\ntags: ["t"]\n---\n# Post\n'.replaceAll("\n", eol),
     );
     const removed = await plan(tree("---\nid: p\ndescription: D\n---\n# Post\n"), (desired) => {
       delete guide(desired).spec.description;
       return [{ kind: "update", resource: "Guide/p" }];
     });
     expect(removed.written("post.md")).toBe("---\nid: p\n---\n# Post\n".replaceAll("\n", eol));
+  }
+});
+
+test("a Guide tags edit writes inheritTags only when its collection has tags", async () => {
+  for (const [tags, written] of [
+    ["", '---\nid: p\ntags: ["t"]\n---\n# Post\n'],
+    ["tags: []\n", '---\nid: p\ntags: ["t"]\n---\n# Post\n'],
+    ["tags: [c]\n", '---\nid: p\ntags: ["t"]\ninheritTags: false\n---\n# Post\n'],
+  ]) {
+    const edited = await plan(
+      [
+        manifest("collection", "collection.yaml"),
+        file("collection.yaml", collection + tags),
+        file("post.md", "---\nid: p\n---\n# Post\n"),
+      ],
+      (desired) => {
+        guide(desired).spec.tags = ["t"];
+        return [{ kind: "update", resource: "Guide/p" }];
+      },
+    );
+    expect(edited.result.ok, JSON.stringify(edited.result)).toBe(true);
+    expect(edited.written("post.md")).toBe(written);
   }
 });
 
@@ -413,9 +435,7 @@ test("a guide in an included folder is updated in place; a path outside include 
     guide(desired).spec.tags = ["t"];
     return [{ kind: "update", resource: "Guide/p" }];
   });
-  expect(updated.written("basics/post.md")).toBe(
-    '---\nid: p\ntags: ["t"]\ninheritTags: false\n---\n# Post\n',
-  );
+  expect(updated.written("basics/post.md")).toBe('---\nid: p\ntags: ["t"]\n---\n# Post\n');
 
   for (const [path, ok] of [
     ["basics/moved.md", true],

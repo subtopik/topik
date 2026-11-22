@@ -765,9 +765,18 @@ function rejectRouteCollisions(resources: readonly Resource[]): void {
   }
   for (const wiki of resources.filter((resource): resource is Wiki => resource.type === "Wiki")) {
     const routes = new Set<string>();
+    const pages = new Set<string>();
     const visit = (nodes: readonly WikiNavNode[], prefix: string) => {
       for (const node of nodes) {
         if (node.type === "page") {
+          // Reference preparation resolves this navigation before the Wiki is planned.
+          if (pages.has(node.page))
+            block(
+              "resource-invalid",
+              "Wiki navigation lists a page more than once.",
+              resourceKey(wiki),
+            );
+          pages.add(node.page);
           const route = joinWikiPath(prefix, node.slug);
           if (routes.has(route)) collision(wiki);
           routes.add(route);

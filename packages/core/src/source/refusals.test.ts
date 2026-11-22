@@ -120,6 +120,19 @@ test("navigation that cannot resolve otherwise is an invalid request, not an int
   expect(sourcePlanDiagnosticCategory(diagnostic!)).not.toBe("internal");
 });
 
+test("a repeated Wiki page is an invalid request when a link needs the desired navigation", async () => {
+  const diagnostic = await refusal(wiki, (desired) => {
+    const navigation = named(desired, "Wiki", "docs").spec.navigation!;
+    (navigation as WikiNavNode[]).push({ ...navigation[0], slug: "again" } as WikiNavNode);
+    named(desired, "WikiPage", "home").spec.content.value += "\n[Again](/again)\n";
+    return [
+      { kind: "update", resource: "Wiki/docs" },
+      { kind: "update", resource: "WikiPage/home" },
+    ];
+  });
+  expect(diagnostic).toMatchObject({ code: "resource-invalid", resource: "Wiki/docs" });
+});
+
 test("new media named without a generated Asset name is refused", async () => {
   const project = await readSourceProject({ tree: wiki });
   const desired = structuredClone(project.compilation.resources);

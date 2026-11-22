@@ -24,6 +24,7 @@ import {
   collectionConfigPath,
   configPath,
   courseConfigPath,
+  pages,
   renderSourceProject,
   renderWikiProject,
   sourceProject,
@@ -81,7 +82,7 @@ type Edit =
 
 const TITLES = ["Renamed", "Overview: part 2", "Notes #3"] as const;
 // Weighted toward the edits whose preservation rules have the most to check.
-const edit: fc.Arbitrary<Edit> = fc.oneof(
+const EDITS: fc.WeightedArbitrary<Edit>[] = [
   {
     weight: 3,
     arbitrary: fc.record({
@@ -95,7 +96,7 @@ const edit: fc.Arbitrary<Edit> = fc.oneof(
     arbitrary: fc.record({
       kind: fc.constant("describe" as const),
       page: fc.nat(),
-      description: fc.option(fc.constantFrom("Updated summary.", "Notes: new")),
+      description: fc.option<string>(fc.constantFrom<string>("Updated summary.", "Notes: new")),
     }),
   },
   { weight: 2, arbitrary: fc.record({ kind: fc.constant("body" as const), page: fc.nat() }) },
@@ -130,7 +131,7 @@ const edit: fc.Arbitrary<Edit> = fc.oneof(
     arbitrary: fc.record({
       kind: fc.constant("tags" as const),
       page: fc.nat(),
-      tags: fc.option(fc.constantFrom<string[]>(["setup"], ["news", "basics"])),
+      tags: fc.option<string[]>(fc.constantFrom<string[]>(["setup"], ["news", "basics"])),
     }),
   },
   {
@@ -169,7 +170,30 @@ const edit: fc.Arbitrary<Edit> = fc.oneof(
     }),
   },
   { weight: 2, arbitrary: fc.record({ kind: fc.constant("page-slug" as const), page: fc.nat() }) },
-);
+];
+
+const GUIDE_EDITS = new Set<Edit["kind"]>(["guide-add", "tags"]);
+const COURSE_EDITS = new Set<Edit["kind"]>([
+  "course-meta",
+  "course-reorder",
+  "course-page-add",
+  "module-add",
+  "page-module",
+  "page-slug",
+]);
+/** Edits of the kinds that apply to a project's sources. */
+const editsFor = (model: SourceProjectModel) =>
+  fc.array(
+    fc.oneof(
+      ...EDITS.filter(({ arbitrary }) => {
+        const [kind] = fc.sample(arbitrary, 1).map((edit) => edit.kind);
+        return (
+          (model.collection || !GUIDE_EDITS.has(kind)) && (model.course || !COURSE_EDITS.has(kind))
+        );
+      }),
+    ),
+    { minLength: 1, maxLength: 3 },
+  );
 
 /** A planned edit: the desired graph, its operations and the authority the docs name for it. */
 interface Request {
@@ -614,7 +638,12 @@ function courseRequest(
       else {
         const from = moduleOf(page.spec.module);
         const to = modules[change.module % modules.length];
-        if (to === from) return undefined;
+        // Routes must stay unique: a page does not join a module with a page of its slug.
+        if (
+          to === from ||
+          pages.some((other) => other.spec.module === to.name && other.spec.slug === page.spec.slug)
+        )
+          return undefined;
         from.spec.pages = from.spec.pages.filter((name) => name !== page.name);
         to.spec.pages.push(page.name);
         page.spec.module = to.name;
@@ -806,67 +835,77 @@ async function expectIdempotent(project: SourceProject) {
   );
 }
 
+/**
+ * Plan one edit and check it: it plans under its documented authority, applying its changes
+ * reproduces the candidate, the bytes it does not concern stay, and planning again changes
+ * nothing. Returns the candidate, or undefined when the edit does not apply to the project.
+ */
+async function planAndCheck(project: SourceProject, model: SourceProjectModel, change: Edit) {
+  const next = request(project, model, change);
+  if (!next) return undefined;
+  const result = await plan(project, next);
+  expect({ edit: change, diagnostics: result.ok ? [] : result.diagnostics }).toEqual({
+    edit: change,
+    diagnostics: [],
+  });
+  if (!result.ok) return undefined;
+  const applied = apply(project.tree, result.plan);
+  expect(digestSourceTree(applied)).toBe(result.plan.candidateTreeDigest);
+  checkPreservation(project, result.plan.candidate, next, result.plan);
+  await expectIdempotent(result.plan.candidate);
+  return result.plan.candidate;
+}
+
+/** A project with every kind of source, enough Wiki pages and more than one Course module. */
+const complete = sourceProject.filter(
+  (model) =>
+    model.collection !== null &&
+    model.course !== null &&
+    model.course.modules.length > 1 &&
+    pages(model.wiki).length > 1,
+);
+
 describe("source write-back", () => {
+  // The random property below need not draw every kind of edit; this checks each one.
+  test.each(EDITS.map(({ arbitrary }) => fc.sample(arbitrary, { seed: SEED, numRuns: 1 })[0]))(
+    "a $kind edit plans and keeps unrelated bytes on a generated project",
+    async (change) => {
+      for (const model of fc.sample(complete, { seed: SEED, numRuns: 30 })) {
+        const project = await compiled(renderSourceProject(model));
+        if (project && (await planAndCheck(project, model, change))) return;
+      }
+      throw new Error(`No generated project admits the edit ${JSON.stringify(change)}`);
+    },
+    timeout(60_000),
+  );
+
   test(
     "edits plan under their documented authority, keep unrelated bytes and replan to nothing",
     async () => {
       let planned = 0;
       let projects = 0;
-      const kinds = new Set<Edit["kind"]>();
       await fc.assert(
         fc.asyncProperty(
-          sourceProject,
-          fc.array(edit, { minLength: 1, maxLength: 3 }),
-          async (model, edits) => {
+          sourceProject.chain((model) => fc.tuple(fc.constant(model), editsFor(model))),
+          async ([model, edits]) => {
             const inspected = await compiled(renderSourceProject(model));
             if (!inspected) return;
             projects++;
             let project = inspected;
             await expectIdempotent(project);
             for (const change of edits) {
-              const next = request(project, model, change);
-              if (!next) continue;
-              const result = await plan(project, next);
-              expect({ edit: change, diagnostics: result.ok ? [] : result.diagnostics }).toEqual({
-                edit: change,
-                diagnostics: [],
-              });
-              if (!result.ok) return;
+              const candidate = await planAndCheck(project, model, change);
+              if (!candidate) continue;
               planned++;
-              kinds.add(change.kind);
-              const applied = apply(project.tree, result.plan);
-              expect(digestSourceTree(applied)).toBe(result.plan.candidateTreeDigest);
-              checkPreservation(project, result.plan.candidate, next, result.plan);
-              project = result.plan.candidate;
-              await expectIdempotent(project);
+              project = candidate;
             }
           },
         ),
         parameters(40),
       );
-      // Keep the generator honest: most generated edits must apply and plan.
       // Keep the generator honest: most projects must compile and most edits must plan.
       expect(projects).toBeGreaterThan(runs(40) * 0.6);
       expect(planned).toBeGreaterThan(projects);
-      // Every kind of edit, Guide edits included, must have planned in the run.
-      expect([...kinds].sort()).toEqual([
-        "add",
-        "body",
-        "course-meta",
-        "course-page-add",
-        "course-reorder",
-        "delete",
-        "describe",
-        "guide-add",
-        "module-add",
-        "move",
-        "page-module",
-        "page-slug",
-        "reorder",
-        "retitle",
-        "tags",
-        "wiki-title",
-      ]);
     },
     timeout(120_000),
   );

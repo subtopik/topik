@@ -462,7 +462,7 @@ const collection: fc.Arbitrary<CollectionModel> = fc.record({
 });
 
 const MODULES = ["foundations", "advanced", "extras"] as const;
-const COURSE_SLUGS = ["introduction", "practice", "review"] as const;
+const COURSE_SLUGS = ["introduction", "practice", "review", "summary", "quiz"] as const;
 
 const coursePage = fc.record({
   slug: pick(COURSE_SLUGS),

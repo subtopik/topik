@@ -1,5 +1,5 @@
 import { posix } from "node:path";
-import { rewriteTopikAssetOccurrences } from "@topik/content";
+import { isTopikGeneratedAssetName, rewriteTopikAssetOccurrences } from "@topik/content";
 import type { Resource } from "../resource";
 import type { Wiki } from "@topik/schema/wiki/v1";
 import type { Guide } from "@topik/schema/guide/v1";
@@ -360,6 +360,9 @@ function planInitialMedia(draft: InitializationDraft): void {
       "Every initialized Asset requires one exact supplied byte selection.",
     );
   for (const selection of input.media ?? []) {
+    // Content refers to an Asset as `asset:<name>`, which admits only generated names.
+    if (!isTopikGeneratedAssetName(selection.name))
+      failure("asset-name-invalid", "New media must use a generated Asset name.");
     const resource = assetResources.find((asset) => asset.name === selection.name);
     if (
       !resource ||

@@ -353,8 +353,8 @@ paths are never overwritten, and unused files are not garbage-collected.
 The selection and its desired Asset use a generated Asset name, such as the one
 a [`createProjectAssetNameGenerator`](./assets.md#standalone-asset-naming)
 generator returns for the intended path; content refers to it as
-`asset:<name>`. Other names are refused. The plan reports the name the compiled
-candidate uses in `assetMappings`.
+`asset:<name>`. Other names are refused with `asset-name-invalid`. The plan
+reports the name the compiled candidate uses in `assetMappings`.
 
 The destination is `<assets.directory>/<stem>-<hash><extension>`, where the hash
 is the first eight hexadecimal digits of the SHA-256 of the selection's Asset
@@ -372,6 +372,12 @@ the saved graph stays sealed in its original name space. Reusing media requires
 exact prior identity and byte provenance; changed bytes require a new path.
 
 ### Plan validation
+
+Desired resources that give two pages or modules one public route are refused
+before planning with `route-collision`, naming the second resource: two modules
+of a Course with one slug, two pages of a module with one slug, or two Wiki pages
+with one route. Desired navigation that cannot be resolved for another reason is
+refused with `resource-invalid`.
 
 The whole candidate tree is recompiled and compared with the complete desired
 graph, including unchanged siblings and shared assets. A successful plan binds

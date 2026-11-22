@@ -403,12 +403,14 @@ test("frontmatter edits of the final key leave no blank line before the closing 
   }
 });
 
-test("a Guide tags edit writes inheritTags only when its collection has tags", async () => {
-  for (const [tags, written] of [
-    ["", '---\nid: p\ntags: ["t"]\n---\n# Post\n'],
-    ["tags: []\n", '---\nid: p\ntags: ["t"]\n---\n# Post\n'],
-    ["tags: [c]\n", '---\nid: p\ntags: ["t"]\ninheritTags: false\n---\n# Post\n'],
-  ]) {
+test("a Guide tags edit writes inheritTags only when its tags would otherwise merge", async () => {
+  for (const [tags, desiredTags, written] of [
+    ["", ["t"], '---\nid: p\ntags: ["t"]\n---\n# Post\n'],
+    ["tags: []\n", ["t"], '---\nid: p\ntags: ["t"]\n---\n# Post\n'],
+    ["tags: [c]\n", ["t"], '---\nid: p\ntags: ["t"]\ninheritTags: false\n---\n# Post\n'],
+    // Merging also removes repeated tags, so a repeated tag keeps the Guide's list as written.
+    ["", ["t", "t"], '---\nid: p\ntags: ["t","t"]\ninheritTags: false\n---\n# Post\n'],
+  ] as const) {
     const edited = await plan(
       [
         manifest("collection", "collection.yaml"),
@@ -416,7 +418,7 @@ test("a Guide tags edit writes inheritTags only when its collection has tags", a
         file("post.md", "---\nid: p\n---\n# Post\n"),
       ],
       (desired) => {
-        guide(desired).spec.tags = ["t"];
+        guide(desired).spec.tags = [...desiredTags];
         return [{ kind: "update", resource: "Guide/p" }];
       },
     );

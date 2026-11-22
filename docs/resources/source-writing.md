@@ -274,9 +274,10 @@ its comma and the whitespace after it, so `[a, b, c]` becomes `[a, c]` and an
 entry alone on its line takes its line with it. A comment after the comma keeps
 the space before it.
 
-A Guide tags edit writes `inheritTags: false` only when the Guide's collection
-declares tags. Without collection tags, a Guide's `tags` are its complete tags,
-so the frontmatter needs no `inheritTags`. Initialization never writes it.
+A Guide tags edit writes `inheritTags: false` only when the Guide's tags would
+otherwise change: when its collection declares tags, which merge in, or when
+the Guide's tags repeat one, which merging removes. Otherwise a Guide's `tags`
+are its complete tags, so the frontmatter needs no `inheritTags`.
 
 A Course's `modules` and each module's `pages` change the way Wiki navigation
 does, below. A new page or module is listed in its parent resource, so adding

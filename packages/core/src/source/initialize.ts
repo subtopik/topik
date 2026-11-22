@@ -673,6 +673,10 @@ function writeInitialDocuments(draft: InitializationDraft): void {
             slug: resource.spec.slug,
             ...(resource.spec.authors !== undefined ? { authors: resource.spec.authors } : {}),
             ...(resource.spec.tags !== undefined ? { tags: resource.spec.tags } : {}),
+            // A new collection has no tags; only merging's removal of repeats needs the key.
+            ...(resource.spec.tags && new Set(resource.spec.tags).size !== resource.spec.tags.length
+              ? { inheritTags: false }
+              : {}),
           }
         : {}),
     };

@@ -255,8 +255,10 @@ export function writeMarkdown(
       serializeTopikJson(old.spec.tags ?? null) !== serializeTopikJson(desired.spec.tags ?? null)
     ) {
       updates.tags = desired.spec.tags;
-      // Guide tags merge with their collection's. Without collection tags they are the Guide's own.
-      if (collectionHasTags) updates.inheritTags = false;
+      // Guide tags merge with their collection's and drop repeats. Without collection tags or
+      // repeats, merging keeps them as written.
+      const tags = desired.spec.tags ?? [];
+      if (collectionHasTags || new Set(tags).size !== tags.length) updates.inheritTags = false;
     }
   }
   if (desired.type === "CoursePage") {

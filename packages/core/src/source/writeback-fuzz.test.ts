@@ -411,6 +411,23 @@ const lines = (value: string) => value.split(/\r?\n/u);
 const crlf = (value: string) => value.includes("\r\n");
 const bareLf = (value: string) => /(?<!\r)\n/u.test(value);
 
+/** Keys a metadata edit may change; `inheritTags` is written with tags. */
+const EDITED_KEYS = /^(title|description|tags|inheritTags):/u;
+
+/**
+ * The frontmatter lines outside the keys a metadata edit may change: comments and other keys.
+ * An indented line belongs to the key above it, such as a block list item or a value written
+ * on its own line.
+ */
+function unchangedLines(frontmatter: string): string[] {
+  let edited = false;
+  return lines(frontmatter).filter((line) => {
+    if (!line.trim()) return false;
+    if (!/^\s/u.test(line)) edited = EDITED_KEYS.test(line);
+    return !edited;
+  });
+}
+
 /** The bytes an edit does not concern must stay as written. */
 function checkPreservation(
   before: SourceProject,
@@ -446,9 +463,7 @@ function checkPreservation(
     if (part === "metadata") {
       expect(slice(now, is.body)).toBe(slice(old, was.body));
       // Comments and keys the edit does not change keep their lines, in order.
-      const kept = lines(slice(old, was.frontmatter)).filter(
-        (line) => line.trim() && !/^(title|description|tags):|^\s+- /u.test(line),
-      );
+      const kept = unchangedLines(slice(old, was.frontmatter));
       const written = lines(slice(now, is.frontmatter));
       expect(written.filter((line) => kept.includes(line))).toEqual(kept);
     } else if (part === "body") {

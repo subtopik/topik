@@ -132,14 +132,7 @@ export async function verifySourceWritebackConsumer(packageCohort = "c".repeat(6
   assert.equal(denied.ok, false);
   assert.equal(Object.hasOwn(denied, "plan"), false);
 
-  // The manifest declares the Persons, and a project compiles them before its sources.
   const resources = [
-    {
-      apiVersion: "v1",
-      type: "Person",
-      name: "ada",
-      spec: { name: "Ada", email: null, bio: "Author" },
-    },
     {
       apiVersion: "v1",
       type: "Guide",
@@ -150,6 +143,12 @@ export async function verifySourceWritebackConsumer(packageCohort = "c".repeat(6
         authors: ["ada"],
         content: { format: "topik", value: "# Created\n" },
       },
+    },
+    {
+      apiVersion: "v1",
+      type: "Person",
+      name: "ada",
+      spec: { name: "Ada", email: null, bio: "Author" },
     },
   ];
   const occupied = [file("README.md", "Unowned\n", "100755")];
@@ -181,13 +180,17 @@ export async function verifySourceWritebackConsumer(packageCohort = "c".repeat(6
     source,
     resources,
     createPaths: [source.config, "blog/created.md"],
+    // The new source's Person is added to the manifest, which has no persons yet.
     manifestAuthority: {
       ...root,
-      fields: root.fields.filter((field) => field.selector === "sources/+"),
+      fields: root.fields.filter(
+        (field) => field.selector === "sources/+" || field.selector === "persons",
+      ),
     },
   });
   assert.equal(added.ok, true, JSON.stringify(added));
   assert.equal(added.plan.candidate.manifest.namespace, "packed/empty");
+  assert.deepEqual(added.plan.candidate.manifest.persons, [resources[1]]);
   assert.equal(
     decode(added.plan.candidate.tree.find((file) => file.path === ".topik.yaml").bytes).startsWith(
       "# preserve\nversion: 1\nnamespace: packed/empty\n",
@@ -344,9 +347,12 @@ export async function verifyCourseSourceConsumer(packageCohort = "c".repeat(64))
     documentPaths,
     courseReferenceContexts,
     createPaths: [source.config, ...Object.values(documentPaths)],
+    // The Course's Person is added to the manifest, which has no persons yet.
     manifestAuthority: {
       ...root,
-      fields: root.fields.filter((entry) => entry.selector === "sources/+"),
+      fields: root.fields.filter(
+        (entry) => entry.selector === "sources/+" || entry.selector === "persons",
+      ),
     },
   });
   assert.equal(added.ok, true, JSON.stringify(added));

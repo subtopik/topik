@@ -372,6 +372,18 @@ function checkPreservation(
   }
 }
 
+/**
+ * The project a generated model renders, or undefined when it does not compile. Generated page
+ * documents can break rules a project enforces, such as unique heading ids.
+ */
+async function compiled(model: Parameters<typeof renderWikiProject>[0]) {
+  try {
+    return await readSourceProject({ tree: renderWikiProject(model) });
+  } catch {
+    return undefined;
+  }
+}
+
 async function plan(project: SourceProject, request: Request) {
   return planSourceUpdates({
     project,
@@ -402,13 +414,17 @@ describe("Wiki write-back", () => {
     "edits plan under their documented authority, keep unrelated bytes and replan to nothing",
     async () => {
       let planned = 0;
+      let projects = 0;
       await fc.assert(
         fc.asyncProperty(
           wikiProject,
           fc.array(edit, { minLength: 1, maxLength: 3 }),
           async (model, edits) => {
             const config = configPath(model);
-            let project = await readSourceProject({ tree: renderWikiProject(model) });
+            const inspected = await compiled(model);
+            if (!inspected) return;
+            projects++;
+            let project = inspected;
             await expectIdempotent(project);
             for (const change of edits) {
               const next = request(project, config, change);
@@ -431,7 +447,9 @@ describe("Wiki write-back", () => {
         parameters(40),
       );
       // Keep the generator honest: most generated edits must apply and plan.
-      expect(planned).toBeGreaterThan(runs(40));
+      // Keep the generator honest: most projects must compile and most edits must plan.
+      expect(projects).toBeGreaterThan(runs(40) * 0.6);
+      expect(planned).toBeGreaterThan(projects);
     },
     timeout(120_000),
   );
@@ -441,8 +459,9 @@ describe("Wiki write-back", () => {
     async () => {
       await fc.assert(
         fc.asyncProperty(wikiProject, async (model) => {
-          const resources = (await readSourceProject({ tree: renderWikiProject(model) }))
-            .compilation.resources;
+          const inspected = await compiled(model);
+          if (!inspected) return;
+          const resources = inspected.compilation.resources;
           const wiki = wikiOf(resources);
           const config = configPath(model);
           const documents = (nodes: WikiNavNode[]): string[] =>

@@ -10,6 +10,11 @@
  */
 import { posix } from "node:path";
 import fc from "fast-check";
+import {
+  document as topikDocument,
+  render as renderTopik,
+  type Document as TopikDocument,
+} from "../../../content/src/testing/grammar.js";
 import type { SourceTreeFile } from "../source/project.js";
 
 export interface PageModel {
@@ -27,6 +32,11 @@ export interface PageModel {
   ext: ".md" | ".mdx";
   /** Paragraphs of words and links; a link names another page by index. */
   paragraphs: ({ word: string } | { link: number })[][];
+  /**
+   * A document from the content grammar, written after the heading and paragraphs. Its
+   * internal links are respelled to point at the next page.
+   */
+  document: TopikDocument | null;
 }
 
 export type NavModel =
@@ -63,6 +73,7 @@ const page: fc.Arbitrary<Omit<PageModel, "index">> = fc.record({
   comment: fc.constantFrom(true, true, false),
   bom: fc.boolean(),
   ext: fc.constantFrom<".md" | ".mdx">(".md", ".md", ".md", ".mdx"),
+  document: fc.option(topikDocument, { freq: 2 }),
   paragraphs: fc.array(
     fc.array(
       fc.oneof(
@@ -144,6 +155,7 @@ function normalize(raw: readonly RawNav[]): NavModel[] {
             bom: false,
             ext: ".md",
             paragraphs: [],
+            document: null,
           },
         },
       ];
@@ -297,10 +309,26 @@ function markdown(
   const paragraphs = page.paragraphs.map((words) =>
     words.map((token) => ("word" in token ? token.word : link(token.link))).join(" "),
   );
+  const next = all[(page.index + 1) % all.length];
+  const relative = posix.relative(posix.dirname(entry.path), next.path);
+  const generated = page.document
+    ? renderTopik(page.document, {
+        href: (href) =>
+          href.startsWith("https://")
+            ? href
+            : relative.startsWith(".")
+              ? relative
+              : `./${relative}`,
+        // Local media needs Asset files; these pages use remote media instead.
+        media: (src) =>
+          src.startsWith("https://") ? src : `https://e.test/${posix.basename(src)}`,
+      })
+    : undefined;
   const lines = [
     ...(fields.length ? ["---", ...fields, "---"] : []),
     `# ${page.heading}`,
     ...paragraphs.flatMap((paragraph) => ["", paragraph]),
+    ...(generated ? ["", ...generated.split("\n")] : []),
   ];
   return `${page.bom ? "﻿" : ""}${lines.join(model.eol)}${model.eol}`;
 }

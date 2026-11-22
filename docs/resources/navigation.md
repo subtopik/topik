@@ -368,7 +368,7 @@ CoursePage link destinations as source file paths; current compilation emits
    recompile it.
 2. Regenerate saved source projects and update plans from authored source.
    `SOURCE_WRITER_DESCRIPTOR.references` is `source-links-v5` and its
-   `provenance` version is `7`; do not reuse occurrence or provenance snapshots
+   `provenance` version is `8`; do not reuse occurrence or provenance snapshots
    from earlier versions against the current compiled representation.
 
 Authored source does not change. Source inspection keeps the original authored

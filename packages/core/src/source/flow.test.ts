@@ -1,4 +1,4 @@
-import { expect, test } from "vite-plus/test";
+import { describe, expect, test } from "vite-plus/test";
 import type { Guide } from "@topik/schema/guide/v1";
 import { addSourceToProject } from "./initialize";
 import { readSourceProject, type SourceProject } from "./project";
@@ -601,4 +601,44 @@ test.each([
     Object.fromEntries(selected.map((selector) => [selector, undefined])),
   );
   expect(decodeSource(checkEdits(raw, edits, selected))).toBe(expected);
+});
+
+describe("an absent field's anchor admits adding only that key", () => {
+  const raw = "version: 1\nnamespace: example\nsources: []\n";
+  const syntax = inspectSourceSyntax(raw);
+  const base = file(".topik.yaml", raw);
+  // Inspection of a project adds this anchor for a manifest without `persons`.
+  const anchor = { selector: "persons", insertion: syntax.insertion };
+  const provenance = {
+    ...base,
+    sha256: sourceHash(base.bytes),
+    fields: [...syntax.fields.values(), anchor],
+    insertion: syntax.insertion,
+  };
+  const authority = { ...provenance, fields: [anchor] };
+  const insert = (text: string): SourceByteEdit => ({
+    selector: "persons",
+    start: syntax.insertion,
+    end: syntax.insertion,
+    oldSha256: sourceHash(new Uint8Array()),
+    replacement: encodeSource(text),
+  });
+  test("adding the key passes", () => {
+    const { edits } = patchSourceFields(raw, { persons: [{ id: "ada", spec: { name: "Ada" } }] });
+    expect(() => verifySharedEdits(base, provenance, authority, edits)).not.toThrow();
+  });
+  test.each([
+    ["another key at the anchor", "other: 1\n"],
+    ["the key with a sibling", "persons: []\nother: 1\n"],
+  ])("%s is refused", (_, text) => {
+    // The bytes land at the admitted anchor; only the meaning check tells these apart.
+    expect(() => verifySharedEdits(base, provenance, authority, [insert(text)])).toThrow(
+      expect.objectContaining({
+        diagnostic: expect.objectContaining({
+          code: "shared-scope-denied",
+          message: "A configuration edit changes values outside its admitted fields.",
+        }),
+      }),
+    );
+  });
 });

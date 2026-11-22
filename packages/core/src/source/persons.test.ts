@@ -260,3 +260,28 @@ test("adding a source's new Person needs authority over the manifest's persons",
   expect((await add(["sources/+"])).ok).toBe(false);
   expect((await add(["sources/+", "persons/+"])).ok).toBe(true);
 });
+
+test("a Person is created in the empty list deleting the last one leaves", async () => {
+  const project = await projectWith(withAda);
+  const removed = await planPersons(project, (desired) => {
+    desired.splice(
+      desired.findIndex((resource) => resource.type === "Person"),
+      1,
+    );
+    (desired.find((resource) => resource.type === "Guide") as Guide).spec.authors = [];
+    return [
+      { kind: "delete", resource: "Person/ada" },
+      { kind: "update", resource: "Guide/post" },
+    ];
+  });
+  expect(removed.ok, JSON.stringify(removed)).toBe(true);
+  if (!removed.ok) return;
+  const emptied = removed.plan.candidate;
+  expect(writtenIn(emptied.tree, ".topik.yaml")).toContain("persons:\n  []\n");
+  const created = await planPersons(emptied, (desired) => {
+    desired.push(person("bob", "Bob"));
+    return [{ kind: "create", resource: "Person/bob", config: ".topik.yaml" }];
+  });
+  expect(created.ok, JSON.stringify(created)).toBe(true);
+  if (created.ok) expect(created.plan.candidate.manifest.persons).toEqual([person("bob", "Bob")]);
+});

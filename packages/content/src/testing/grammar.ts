@@ -368,6 +368,17 @@ interface Line {
   lazy: boolean;
 }
 
+/** How a render spells link targets and media sources; `render` sets them for one call. */
+let linkTarget = (href: string) => href;
+let mediaSource = (src: string) => src;
+const attribute = (value: string) => {
+  const [, name, quoted] = /^([A-Za-z]+)="(.*)"$/u.exec(value) ?? [];
+  if (name === "href") return `href="${linkTarget(quoted)}"`;
+  if (name === "src" || name === "darkSrc" || name === "poster")
+    return `${name}="${mediaSource(quoted)}"`;
+  return value;
+};
+
 function renderInlines(children: readonly Inline[]): string {
   return children.map(renderInline).join("");
 }
@@ -381,7 +392,7 @@ function renderInline(node: Inline): string {
     case "code":
       return node.value.includes("`") ? `\`\` ${node.value} \`\`` : `\`${node.value}\``;
     case "link":
-      return `[${renderInlines(node.children)}](${node.href})`;
+      return `[${renderInlines(node.children)}](${linkTarget(node.href)})`;
     case "reference":
       switch (node.form) {
         case "shortcut":
@@ -393,16 +404,21 @@ function renderInline(node: Inline): string {
         case "image":
           return `![${node.label}][img]`;
       }
-    case "autolink":
-      return `<${node.href}>`;
+    case "autolink": {
+      // An autolink needs an absolute target; a respelled relative one becomes a plain link.
+      const target = linkTarget(node.href);
+      return target === node.href || /^(?:https?:\/\/|[^/:@]+@)/u.test(target)
+        ? `<${target}>`
+        : `[${node.href}](${target})`;
+    }
     case "image":
-      return `![${node.alt}](${node.src})`;
+      return `![${node.alt}](${mediaSource(node.src)})`;
     case "footnote":
       return `[^${node.label}]`;
     case "variable":
       return `{% $${node.path} %}`;
     case "tag": {
-      const open = [node.name, ...node.attributes].join(" ");
+      const open = [node.name, ...node.attributes.map(attribute)].join(" ");
       return node.children === null
         ? `{% ${open} /%}`
         : `{% ${open} %}${renderInlines(node.children)}{% /${node.name} %}`;
@@ -500,7 +516,7 @@ function renderBlock(block: Block): Line[] {
       );
     }
     case "tag": {
-      const open = [block.name, ...block.attributes].join(" ");
+      const open = [block.name, ...block.attributes.map(attribute)].join(" ");
       if (block.children === null) return [{ text: `{% ${open} /%}`, lazy: false }];
       const gap: Line[] = block.tight ? [] : [{ text: "", lazy: false }];
       return [
@@ -530,8 +546,26 @@ function renderBlock(block: Block): Line[] {
   }
 }
 
-/** Render a generated document, with the definitions its references and footnotes need. */
-export function render(document: Document): string {
+/**
+ * Render a generated document, with the definitions its references and footnotes need.
+ * `href` and `media` respell each link target and media source, for documents whose links
+ * must resolve elsewhere, such as pages of a generated project.
+ */
+export function render(
+  document: Document,
+  options: { href?: (href: string) => string; media?: (src: string) => string } = {},
+): string {
+  const previous = [linkTarget, mediaSource] as const;
+  linkTarget = options.href ?? ((href) => href);
+  mediaSource = options.media ?? ((src) => src);
+  try {
+    return renderDocument(document);
+  } finally {
+    [linkTarget, mediaSource] = previous;
+  }
+}
+
+function renderDocument(document: Document): string {
   const body = joinBlocks(document.blocks, document.gaps).map((line) => line.text);
   const text = body.join("\n");
   const notes = FOOTNOTES.flatMap((label, index) =>
@@ -544,11 +578,19 @@ export function render(document: Document): string {
         ]
       : [],
   );
-  return [...PRELUDE, ...body, ...notes].join("\n");
+  // The `[img]` definition supplies image references, so it takes the media spelling.
+  const prelude = PRELUDE.map((line) =>
+    line.replace(
+      /^\[([^\]]+)\]: (\S+)$/u,
+      (_, label: string, href: string) =>
+        `[${label}]: ${label === "img" ? mediaSource(href) : linkTarget(href)}`,
+    ),
+  );
+  return [...prelude, ...body, ...notes].join("\n");
 }
 
 /** Rendered documents, the input of the round-trip properties. */
-export const source: fc.Arbitrary<string> = document.map(render);
+export const source: fc.Arbitrary<string> = document.map((value) => render(value));
 
 /**
  * Lines that need not form a valid document, for the parser budget: container prefixes,

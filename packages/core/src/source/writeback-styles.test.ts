@@ -334,6 +334,53 @@ test("creating a Wiki page appends one navigation item and keeps existing entrie
   );
 });
 
+test.each([
+  "navigation:\n  - home\n  - other\n  - third\n",
+  "navigation:\n- home\n- other\n- third\n",
+])("an admitted navigation list covers its first entry's indentation in %j", async (navigation) => {
+  // Only the list is admitted. Removing its first entry deletes that entry's indentation,
+  // which precedes the list's own value range when the list is indented.
+  const navigationOnly = (project: SourceProject) => {
+    const config = project.configurations.find((candidate) => candidate.path === "wiki.yaml")!;
+    return [
+      { ...config, fields: config.fields.filter((field) => field.selector === "navigation") },
+    ];
+  };
+  const reordered = await plan(
+    wiki(navigation),
+    (desired) => {
+      const list = wikiOf(desired).spec.navigation as WikiNavNode[];
+      list.push(list.shift()!);
+      return [{ kind: "update", resource: "Wiki/docs" }];
+    },
+    { shared: navigationOnly },
+  );
+  expect(reordered.result.ok, JSON.stringify(reordered.result)).toBe(true);
+  const indent = navigation.includes("\n  -") ? "  " : "";
+  expect(reordered.written("wiki.yaml")).toBe(
+    `id: docs\ntitle: Docs\nnavigation:\n${indent}- other\n${indent}- third\n${indent}- {"type":"page","slug":"home"}\n`,
+  );
+  const deleted = await plan(
+    wiki(navigation),
+    (desired) => {
+      desired.splice(
+        desired.findIndex((resource) => resource.name === "home"),
+        1,
+      );
+      (wikiOf(desired).spec.navigation as WikiNavNode[]).shift();
+      return [
+        { kind: "delete", resource: "WikiPage/home" },
+        { kind: "update", resource: "Wiki/docs" },
+      ];
+    },
+    { shared: navigationOnly },
+  );
+  expect(deleted.result.ok, JSON.stringify(deleted.result)).toBe(true);
+  expect(deleted.written("wiki.yaml")).toBe(
+    `id: docs\ntitle: Docs\nnavigation:\n${indent}- other\n${indent}- third\n`,
+  );
+});
+
 test("frontmatter edits of the final key leave no blank line before the closing fence", async () => {
   for (const eol of ["\n", "\r\n"]) {
     const tree = (post: string) => [

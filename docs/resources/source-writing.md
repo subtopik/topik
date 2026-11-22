@@ -42,9 +42,13 @@ schema. Other frontmatter keys are kept in the file and not interpreted.
 
 ### Persons and Wiki configuration
 
-A collection's `persons` contains records with `id`, optional `labels` and the
-complete Person `spec` (`name`, optional `email` and `bio`). Guide authors must
-resolve to declared Persons. A Wiki configuration supports `labels`.
+A collection's or Course's `persons` contains records with `id`, optional
+`labels` and the complete Person `spec` (`name`, optional `email` and `bio`).
+Guide, Course and Course page authors must resolve to declared Persons. In a
+project, they resolve against the `persons` of every declared source, so each
+Person `id` must be declared once in the whole project. `compileGuides` and
+`compileCourse` see only their own source's list. A Wiki configuration supports
+`labels`.
 
 ### Wiki page sources and links
 
@@ -95,8 +99,8 @@ membership. Markdown supplies the page metadata and body.
   `description` (at most 1024 characters), `authors` and string-valued `labels`.
 - Course, module and page descriptions distinguish absence from null; labels are
   string maps.
-- Course and page authors refer to Persons declared in the configuration's
-  `persons` list.
+- Course and page authors refer to declared Persons, as Guide authors do; see
+  [Persons and Wiki configuration](#persons-and-wiki-configuration).
 - Order is list position, as in Wiki navigation: modules appear in the order of
   `modules`, and pages in the order of their module's `pages`. Compiled resources
   carry the same order as `Course.spec.modules` and `CourseModule.spec.pages`. An
@@ -345,6 +349,12 @@ candidate produce no further changes.
 New media requires exact bytes, digest, desired Asset and declared configuration
 in `media`. It is written into that configuration's `assets.directory`. Existing
 paths are never overwritten, and unused files are not garbage-collected.
+
+The selection and its desired Asset use a generated Asset name, such as the one
+a [`createProjectAssetNameGenerator`](./assets.md#standalone-asset-naming)
+generator returns for the intended path; content refers to it as
+`asset:<name>`. Other names are refused. The plan reports the name the compiled
+candidate uses in `assetMappings`.
 
 The destination is `<assets.directory>/<stem>-<hash><extension>`, where the hash
 is the first eight hexadecimal digits of the SHA-256 of the selection's Asset

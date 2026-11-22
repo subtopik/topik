@@ -360,9 +360,9 @@ export function verifySharedEdits(
       const direct =
         admitted.get(selector) ??
         admitted.get(`${selector.slice(0, selector.lastIndexOf("/") + 1)}+`);
-      if (direct) return { field: direct, inherited: false };
+      if (direct) return { field: direct, inherited: false, selector };
       const field = ancestor(selector);
-      return field ? { field, inherited: true } : undefined;
+      return field ? { field, inherited: true, selector } : undefined;
     });
     if (fields.some((field) => !field))
       block(
@@ -387,11 +387,17 @@ export function verifySharedEdits(
           file.path,
         );
     } else {
+      // An inherited item also covers its own entry: the first item of an indented block
+      // sequence starts its line before the sequence's value range.
       const ranges = resolved
-        .flatMap(({ field, inherited }) =>
-          (inherited ? [field.value] : [field.value, field.entry]).filter(
-            (range) => range !== undefined,
-          ),
+        .flatMap(({ field, inherited, selector }) =>
+          (inherited
+            ? [
+                field.value,
+                provenance.fields.find((candidate) => candidate.selector === selector)?.entry,
+              ]
+            : [field.value, field.entry]
+          ).filter((range) => range !== undefined),
         )
         .sort((a, b) => a.start - b.start);
       let covered = edit.start;

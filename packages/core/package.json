@@ -54,6 +54,7 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "fast-check": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",
     "vite-plus": "catalog:"

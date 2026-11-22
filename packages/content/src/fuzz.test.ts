@@ -20,11 +20,14 @@ import { walkContent } from "./traversal.js";
 import { budgetUnit, source, VARIABLES } from "./testing/grammar.js";
 
 const EXPLORE = process.env.TOPIK_FUZZ === "1";
+/** An integer environment variable, or undefined when it is absent or not an integer. */
+const integer = (value: string | undefined) =>
+  value !== undefined && /^[-+]?\d+$/u.test(value.trim()) ? Number(value) : undefined;
 const SEED = EXPLORE
-  ? Number(process.env.TOPIK_FUZZ_SEED) || Math.floor(Math.random() * 2 ** 31)
+  ? (integer(process.env.TOPIK_FUZZ_SEED) ?? Math.floor(Math.random() * 2 ** 31))
   : 20_261_121;
 if (EXPLORE) console.info(`fuzz seed ${SEED}`);
-const runs = (ci: number) => (EXPLORE ? Number(process.env.TOPIK_FUZZ_RUNS) || ci * 20 : ci);
+const runs = (ci: number) => (EXPLORE ? (integer(process.env.TOPIK_FUZZ_RUNS) ?? ci * 20) : ci);
 const parameters = (ci: number): fc.Parameters<unknown> => ({ seed: SEED, numRuns: runs(ci) });
 const timeout = (ci: number) => (EXPLORE ? 0 : ci);
 

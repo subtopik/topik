@@ -637,3 +637,39 @@ test("a saved link to a page the new Wiki removes is a reference diagnostic", as
     diagnostics: [{ code: "reference-target-removed", resource: "WikiPage/home" }],
   });
 });
+
+test.each([
+  [["a", "b"], false],
+  [["a", "a"], true],
+])(
+  "initialized Guides tagged %j carry inheritTags only for repeated tags",
+  async (tags, inherit) => {
+    const guide: Guide = {
+      apiVersion: "v1",
+      type: "Guide",
+      name: "tagged",
+      spec: {
+        title: "Tagged",
+        slug: "tagged",
+        tags,
+        content: { format: "topik", value: "# Tagged\n" },
+      },
+    };
+    const result = await initializeSourceProject({
+      tree: [],
+      expectedTreeDigest: digestSourceTree([]),
+      packageCohort: cohort,
+      intent: {
+        namespace: "examples/tags",
+        source: { kind: "collection", config: "collection.yaml", id: "blog", title: "Blog" },
+      },
+      resources: [guide],
+      createPaths: [".topik.yaml", "collection.yaml", "tagged.md"],
+    });
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.candidate.compilation.resources).toContainEqual(guide);
+    const written = result.plan.changes.find((change) => change.path === "tagged.md")!;
+    expect(decodeSource(written.candidate!.bytes).includes("inheritTags: false")).toBe(inherit);
+  },
+);

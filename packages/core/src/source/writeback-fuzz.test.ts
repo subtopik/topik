@@ -534,7 +534,8 @@ function request(
         desired,
         operations: [{ kind: "update", resource: key(guide) }],
         authority: { ...none, resources: [key(guide)], exclusive: exclusive(project, key(guide)) },
-        concerns: { document: key(guide), part: "metadata", keys: ["tags", "inheritTags"] },
+        // Generated collections declare no tags, so the edit needs no `inheritTags`.
+        concerns: { document: key(guide), part: "metadata", keys: ["tags"] },
       };
     }
     case "guide-add": {
@@ -944,6 +945,10 @@ function unchangedLines(frontmatter: string, keys: readonly string[]): string[] 
   });
 }
 
+/** The top-level keys of block frontmatter. */
+const topLevelKeys = (frontmatter: string) =>
+  lines(frontmatter).flatMap((line) => /^([^\s#][^:]*):/u.exec(line)?.[1] ?? []);
+
 const BOM = [0xef, 0xbb, 0xbf];
 const startsWithBom = (bytes: Uint8Array) => BOM.every((byte, index) => bytes[index] === byte);
 const sameBytes = (left: Uint8Array, right: Uint8Array) =>
@@ -987,6 +992,13 @@ function checkPreservation(
       const kept = unchangedLines(slice(old, was.frontmatter), keys);
       const written = lines(slice(now, is.frontmatter));
       expect(written.filter((line) => kept.includes(line))).toEqual(kept);
+      // Nor does it add keys beyond its own, such as an `inheritTags` the meaning does not need.
+      const before = topLevelKeys(slice(old, was.frontmatter));
+      expect(
+        topLevelKeys(slice(now, is.frontmatter)).filter(
+          (key) => !before.includes(key) && !keys.includes(key),
+        ),
+      ).toEqual([]);
     } else if (part === "body") {
       expect(slice(now, is.frontmatter)).toBe(slice(old, was.frontmatter));
     }

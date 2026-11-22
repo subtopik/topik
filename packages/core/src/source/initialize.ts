@@ -671,9 +671,12 @@ function writeInitialDocuments(draft: InitializationDraft): void {
       ...(resource.type === "Guide"
         ? {
             slug: resource.spec.slug,
-            inheritTags: false,
             ...(resource.spec.authors !== undefined ? { authors: resource.spec.authors } : {}),
             ...(resource.spec.tags !== undefined ? { tags: resource.spec.tags } : {}),
+            // A new collection has no tags; only merging's removal of repeats needs the key.
+            ...(resource.spec.tags && new Set(resource.spec.tags).size !== resource.spec.tags.length
+              ? { inheritTags: false }
+              : {}),
           }
         : {}),
     };

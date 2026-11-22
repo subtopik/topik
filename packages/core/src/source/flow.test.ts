@@ -333,7 +333,7 @@ test("deleting explicitly keyed Guide metadata cannot change an unknown field", 
   expect(result.ok, JSON.stringify(result)).toBe(true);
   if (!result.ok) return;
   const written = decodeSource(result.plan.changes[0].candidate!.bytes);
-  expect(written).toContain("{custom: keep ");
+  expect(written).toContain("{custom: keep}\n");
   expect(written).not.toContain("?");
   expect(inspectSourceSyntax(written.split("\n")[1]).value).toEqual({ custom: "keep" });
 });
@@ -567,4 +567,35 @@ test("an admitted item may be removed although later items move up", () => {
   expect(() =>
     verifySharedEdits(base, provenance, authority, [replace("navigation/2", "", "entry")]),
   ).toThrow();
+});
+
+test.each([
+  ["nav: [a, b, c]\n", ["2"], "nav: [a, b]\n"],
+  ["nav: [a, b, c]\n", ["1"], "nav: [a, c]\n"],
+  ["nav: [a, b, c]\n", ["0"], "nav: [b, c]\n"],
+  ["nav: [a, b]\n", ["0", "1"], "nav: []\n"],
+  ["nav: [ a, b ]\n", ["1"], "nav: [ a ]\n"],
+  ["nav: [a,\tb]\n", ["0"], "nav: [b]\n"],
+  ["nav: [\n  a,\n  b,\n  c\n]\n", ["1"], "nav: [\n  a,\n  c\n]\n"],
+  ["nav: [\n  a,\n  b\n]\n", ["1"], "nav: [\n  a\n]\n"],
+  ["nav: [a,\r\n  b]\r\n", ["1"], "nav: [a]\r\n"],
+  // A comment keeps the space before it: `a# x` would read as text.
+  ["nav: [a, # x\n  b]\n", ["1"], "nav: [a # x\n  ]\n"],
+])("removing %j entries %j leaves no gap, within their own authority", (raw, removed, expected) => {
+  const selected = removed.map((index) => `nav/${index}`);
+  const edits = patchSourceSequence(raw, "nav", [], selected);
+  expect(decodeSource(checkEdits(raw, edits, selected))).toBe(expected);
+});
+
+test.each([
+  ["m: {a: 1, b: 2, c: 3}\n", ["b"], "m: {a: 1, c: 3}\n"],
+  ["m: {a: 1, b: 2}\n", ["b"], "m: {a: 1}\n"],
+  ["m: {a: 1, b: 2}\n", ["a"], "m: {b: 2}\n"],
+])("removing %j keys %j leaves no gap, within their own authority", (raw, removed, expected) => {
+  const selected = removed.map((key) => `m/${key}`);
+  const { edits } = patchSourceFields(
+    raw,
+    Object.fromEntries(selected.map((selector) => [selector, undefined])),
+  );
+  expect(decodeSource(checkEdits(raw, edits, selected))).toBe(expected);
 });

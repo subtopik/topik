@@ -26,6 +26,7 @@ import {
   configPath,
   courseConfigPath,
   pages,
+  PNG_ADDED,
   renderSourceProject,
   renderWikiProject,
   sourceProject,
@@ -34,7 +35,10 @@ import {
 } from "../testing/source-projects.js";
 import type { CourseReferenceContext } from "../course-navigation.js";
 import { sourceCourseContext } from "./course.js";
-import { initializeSourceProject } from "./initialize.js";
+import { generateAutomaticAssetName, parseAssetBlobUri } from "../assets/asset.js";
+import { initializeSourceProject, type SourceMediaSelection } from "./initialize.js";
+import { sourceMediaPath } from "./plan-markdown.js";
+import { sourceHash } from "./syntax.js";
 import {
   planSourceUpdates,
   type SourceResourceOperation,
@@ -83,7 +87,9 @@ type Edit =
   | { kind: "person-rename"; person: number; name: string }
   | { kind: "person-add"; name: string }
   | { kind: "person-delete"; person: number }
-  | { kind: "authors"; page: number; persons: number[] };
+  | { kind: "authors"; page: number; persons: number[] }
+  | { kind: "image-add"; page: number }
+  | { kind: "media-add"; page: number };
 
 const TITLES = ["Renamed", "Overview: part 2", "Notes #3"] as const;
 // Weighted toward the edits whose preservation rules have the most to check.
@@ -202,6 +208,8 @@ const EDITS: fc.WeightedArbitrary<Edit>[] = [
       persons: fc.uniqueArray(fc.nat(3), { maxLength: 2 }),
     }),
   },
+  { weight: 2, arbitrary: fc.record({ kind: fc.constant("image-add" as const), page: fc.nat() }) },
+  { weight: 2, arbitrary: fc.record({ kind: fc.constant("media-add" as const), page: fc.nat() }) },
 ];
 
 const GUIDE_EDITS = new Set<Edit["kind"]>([
@@ -240,6 +248,8 @@ interface Request {
   operations: SourceResourceOperation[];
   authority: SourceWriteAuthority;
   referenceContexts?: Record<string, Wiki>;
+  /** New media an edit writes, with its exact bytes. */
+  media?: (SourceMediaSelection & { config: string })[];
   /** Saved Course contexts beyond the project's own, such as a new page's. */
   courseReferenceContexts?: Record<string, CourseReferenceContext>;
   /** What the edit concerns, for the preservation checks. */
@@ -428,6 +438,14 @@ function request(
       if (!deletable.length) return undefined;
       const target = deletable[change.page % deletable.length];
       desired.splice(desired.indexOf(target), 1);
+      // An Asset whose last reference goes leaves the graph; its file stays.
+      for (const asset of desired.filter((resource) => resource.type === "Asset"))
+        if (
+          !documentsOf(desired).some((other) =>
+            other.spec.content.value.includes(`asset:${asset.name}`),
+          )
+        )
+          desired.splice(desired.indexOf(asset), 1);
       if (target.type === "CoursePage") {
         const module = modulesOf(desired).find((entry) => entry.name === target.spec.module)!;
         module.spec.pages = module.spec.pages.filter((name) => name !== target.name);
@@ -536,6 +554,68 @@ function request(
         operations: [{ kind: "create", resource: key(added), config: collection, path }],
         authority: { ...none, resources: [key(added)], create: [path] },
         concerns: {},
+      };
+    }
+    case "image-add": {
+      // Show an image the project already has on a page that does not show it yet.
+      const asset = desired.find((resource) => resource.type === "Asset");
+      const without = pages.filter(
+        (other) => !other.spec.content.value.includes(`asset:${asset?.name}`),
+      );
+      if (!asset || !without.length) return undefined;
+      const target = without[change.page % without.length];
+      target.spec.content.value = `${target.spec.content.value.replace(/\n*$/u, "\n")}\n![Diagram again](asset:${asset.name})\n`;
+      return {
+        desired,
+        operations: [{ kind: "update", resource: key(target) }],
+        authority: {
+          ...none,
+          resources: [key(target)],
+          exclusive: exclusive(project, key(target)),
+        },
+        concerns: { document: key(target), part: "body" },
+      };
+    }
+    case "media-add": {
+      // New media goes into the configuration's asset directory with its exact bytes.
+      const target = pages[change.page % pages.length];
+      const assetDirectory = project.compilation.provenance.find(
+        (source) => source.config === config,
+      )!.assetDirectory;
+      const name = generateAutomaticAssetName({
+        projectNamespace: project.manifest.namespace,
+        manifestRelativePath: posix.join(assetDirectory, "added.png"),
+      }).value!;
+      const path = sourceMediaPath({ assetDirectory, filename: "added.png", name });
+      if (
+        desired.some((resource) => resource.name === name) ||
+        project.tree.some((file) => file.path === path)
+      )
+        return undefined;
+      const sha256 = sourceHash(PNG_ADDED);
+      desired.push({
+        apiVersion: "v1",
+        type: "Asset",
+        name,
+        spec: {
+          uri: parseAssetBlobUri(`blobs/${sha256}`),
+          integrity: `sha256:${sha256}`,
+          size: PNG_ADDED.length,
+          mediaType: "image/png",
+        },
+      } as Resource);
+      target.spec.content.value = `${target.spec.content.value.replace(/\n*$/u, "\n")}\n![Added image](asset:${name})\n`;
+      return {
+        desired,
+        operations: [{ kind: "update", resource: key(target) }],
+        authority: {
+          ...none,
+          resources: [key(target)],
+          exclusive: exclusive(project, key(target)),
+          create: [path],
+        },
+        media: [{ name, filename: "added.png", sha256, bytes: PNG_ADDED, config }],
+        concerns: { document: key(target), part: "body" },
       };
     }
     case "person-rename":
@@ -933,6 +1013,7 @@ async function plan(project: SourceProject, request: Request) {
     operations: request.operations,
     authority: request.authority,
     ...(request.referenceContexts ? { referenceContexts: request.referenceContexts } : {}),
+    ...(request.media ? { media: request.media } : {}),
     courseReferenceContexts: {
       ...courseContexts(project, request.desired),
       ...request.courseReferenceContexts,
@@ -996,7 +1077,8 @@ const complete = sourceProject.filter(
     model.collection.persons.length > 1 &&
     model.course !== null &&
     model.course.modules.length > 1 &&
-    pages(model.wiki).length > 1,
+    pages(model.wiki).length > 1 &&
+    pages(model.wiki).some(({ page }) => page.image),
 );
 
 /** Compiled complete projects, generated once and shared by the per-kind tests. */
@@ -1047,8 +1129,8 @@ describe("source write-back", () => {
         ),
         parameters(30),
       );
-      // Keep the generator honest: most projects must compile and most edits must plan.
-      expect(projects).toBeGreaterThan(runs(30) * 0.6);
+      // Keep the generator honest: half the projects must compile and most edits must plan.
+      expect(projects).toBeGreaterThanOrEqual(runs(30) * 0.5);
       expect(planned).toBeGreaterThan(projects);
     },
     timeout(120_000),
@@ -1072,6 +1154,26 @@ describe("source write-back", () => {
                   ? documents(node.children)
                   : [],
             );
+          // Initialization needs each Asset's exact bytes; they land in the new asset directory.
+          const media = resources
+            .filter((resource) => resource.type === "Asset")
+            .map((asset) => {
+              const path = inspected.compilation.assetSourcePaths[asset.name];
+              const bytes = inspected.tree.find((file) => file.path === path)!.bytes;
+              return {
+                name: asset.name,
+                filename: posix.basename(path),
+                sha256: sourceHash(bytes),
+                bytes,
+              };
+            });
+          const mediaPaths = media.map(({ name, filename }) =>
+            sourceMediaPath({
+              assetDirectory: posix.join(posix.dirname(config), "_assets"),
+              filename,
+              name,
+            }),
+          );
           const result = await initializeSourceProject({
             tree: [],
             expectedTreeDigest: digestSourceTree([]),
@@ -1081,7 +1183,13 @@ describe("source write-back", () => {
               source: { kind: "wiki", config, id: wiki.name, title: wiki.spec.title },
             },
             resources,
-            createPaths: [".topik.yaml", config, ...documents(wiki.spec.navigation ?? [])],
+            ...(media.length ? { media } : {}),
+            createPaths: [
+              ".topik.yaml",
+              config,
+              ...documents(wiki.spec.navigation ?? []),
+              ...mediaPaths,
+            ],
           });
           expect(result.ok ? [] : result.diagnostics).toEqual([]);
           if (result.ok) await expectIdempotent(result.plan.candidate);

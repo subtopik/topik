@@ -38,6 +38,8 @@ export interface PageModel {
    * internal links are respelled to point at the next page.
    */
   document: TopikDocument | null;
+  /** Whether the page shows the project's local image. */
+  image: boolean;
 }
 
 export type NavModel =
@@ -75,6 +77,7 @@ const page: fc.Arbitrary<Omit<PageModel, "index">> = fc.record({
   bom: fc.boolean(),
   ext: fc.constantFrom<".md" | ".mdx">(".md", ".md", ".md", ".mdx"),
   document: fc.option(topikDocument, { freq: 2 }),
+  image: fc.constantFrom(true, false, false),
   paragraphs: fc.array(
     fc.array(
       fc.oneof(
@@ -157,6 +160,7 @@ function normalize(raw: readonly RawNav[]): NavModel[] {
             ext: ".md",
             paragraphs: [],
             document: null,
+            image: false,
           },
         },
       ];
@@ -329,6 +333,9 @@ function markdown(
     ...(fields.length ? ["---", ...fields, "---"] : []),
     `# ${page.heading}`,
     ...paragraphs.flatMap((paragraph) => ["", paragraph]),
+    ...(page.image
+      ? ["", `![Diagram](${posix.relative(posix.dirname(entry.path), imagePath(model))})`]
+      : []),
     ...(generated ? ["", ...generated.split("\n")] : []),
   ];
   return `${page.bom ? "﻿" : ""}${lines.join(model.eol)}${model.eol}`;
@@ -340,6 +347,24 @@ const file = (path: string, text: string): SourceTreeFile => ({
   mode: "100644",
   bytes: encoder.encode(text),
 });
+
+/** A 1x1 PNG: the bytes of the project's local image. */
+export const PNG = Uint8Array.from(
+  atob(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+  ),
+  (character) => character.charCodeAt(0),
+);
+/** Another 1x1 PNG, for media an edit adds. */
+export const PNG_ADDED = Uint8Array.from(
+  atob(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+  ),
+  (character) => character.charCodeAt(0),
+);
+/** Where a project's local image lives, inside the Wiki configuration's directory. */
+export const imagePath = (model: WikiProjectModel) =>
+  posix.join(model.configDir, "images", "diagram.png");
 
 /** The configuration file's path relative to the project root. */
 export const configPath = (model: WikiProjectModel) =>
@@ -355,6 +380,9 @@ export function renderWikiProject(model: WikiProjectModel): SourceTreeFile[] {
     ),
     file(configPath(model), `${model.configBom ? "﻿" : ""}${configuration(model)}`),
     ...all.map((entry) => file(entry.path, markdown(model, entry, all))),
+    ...(all.some((entry) => entry.page.image)
+      ? [{ path: imagePath(model), mode: "100644" as const, bytes: PNG }]
+      : []),
   ];
 }
 

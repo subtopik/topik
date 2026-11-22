@@ -7,6 +7,7 @@ import { PublicCompileError } from "../compile/public-errors";
 export type SourcePlanDiagnosticCode =
   | "asset-bytes-mismatch"
   | "asset-bytes-required"
+  | "asset-name-invalid"
   | "asset-path-invalid"
   | "asset-reference-unrepresentable"
   | "asset-source-missing"
@@ -28,6 +29,7 @@ export type SourcePlanDiagnosticCode =
   | "reference-target-unresolved"
   | "reference-unrepresentable"
   | "resource-invalid"
+  | "route-collision"
   | "resource-scope-denied"
   | "resource-unrepresentable"
   | "round-trip-mismatch"
@@ -90,6 +92,7 @@ const SOURCE_PLAN_DIAGNOSTIC_CATEGORIES: Readonly<
 > = {
   "asset-bytes-mismatch": "asset",
   "asset-bytes-required": "asset",
+  "asset-name-invalid": "asset",
   "asset-path-invalid": "asset",
   "asset-reference-unrepresentable": "unrepresentable",
   "asset-source-missing": "asset",
@@ -111,6 +114,7 @@ const SOURCE_PLAN_DIAGNOSTIC_CATEGORIES: Readonly<
   "reference-target-unresolved": "reference",
   "reference-unrepresentable": "unrepresentable",
   "resource-invalid": "request",
+  "route-collision": "request",
   "resource-scope-denied": "scope",
   "resource-unrepresentable": "unrepresentable",
   "round-trip-mismatch": "validation",

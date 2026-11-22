@@ -2,6 +2,7 @@ import { posix } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import {
   formatTopikContent,
+  isTopikGeneratedAssetName,
   rewriteTopikAssetOccurrences,
   rewriteTopikNavigationReferences,
   parseTopikResourceReference,
@@ -66,7 +67,12 @@ import { isSourceNonPageReference, sourcePathInventory } from "../reference-path
 import { serializeTopikJson } from "../assets/json";
 import { generateAutomaticAssetName } from "../assets/asset";
 import { computeTopikPathCollisionKey, validateTopikPathSet } from "../assets/path";
-import { resolveWikiNavigation, resolveWikiContentHref } from "../wiki-navigation";
+import {
+  hasWikiNavChildren,
+  joinWikiPath,
+  resolveWikiNavigation,
+  resolveWikiContentHref,
+} from "../wiki-navigation";
 import {
   compareSourcePaths,
   readSourceProject,
@@ -724,6 +730,64 @@ function allocateOperationPaths(state: PlanState): void {
 }
 
 /**
+ * Refuse desired resources that give two pages or modules one public route: two modules of a
+ * Course with one slug, two pages of a module with one slug, or two Wiki pages with one route.
+ * The request is invalid, whatever the source says.
+ */
+function rejectRouteCollisions(resources: readonly Resource[]): void {
+  const collision = (resource: Resource) =>
+    block(
+      "route-collision",
+      "Two desired pages or modules would share one public route.",
+      resourceKey(resource),
+    );
+  const unique = <T extends Resource>(items: readonly T[], slug: (item: T) => string) => {
+    const seen = new Set<string>();
+    for (const item of items) {
+      if (seen.has(slug(item))) collision(item);
+      seen.add(slug(item));
+    }
+  };
+  for (const course of resources.filter((resource) => resource.type === "Course")) {
+    const modules = resources.filter(
+      (resource): resource is CourseModule =>
+        resource.type === "CourseModule" && resource.spec.course === course.name,
+    );
+    unique(modules, (module) => module.spec.slug);
+    for (const module of modules)
+      unique(
+        resources.filter(
+          (resource): resource is Extract<Resource, { type: "CoursePage" }> =>
+            resource.type === "CoursePage" && resource.spec.module === module.name,
+        ),
+        (page) => page.spec.slug,
+      );
+  }
+  for (const wiki of resources.filter((resource): resource is Wiki => resource.type === "Wiki")) {
+    const routes = new Set<string>();
+    const visit = (nodes: readonly WikiNavNode[], prefix: string) => {
+      for (const node of nodes) {
+        if (node.type === "page") {
+          const route = joinWikiPath(prefix, node.slug);
+          if (routes.has(route)) collision(wiki);
+          routes.add(route);
+        } else if (hasWikiNavChildren(node)) visit(node.children, joinWikiPath(prefix, node.slug));
+      }
+    };
+    visit(wiki.spec.navigation ?? [], "");
+  }
+}
+
+/** Resolve desired navigation; navigation that cannot resolve is an invalid request. */
+function resolvedNavigation<T>(resource: string, resolve: () => T): T {
+  try {
+    return resolve();
+  } catch {
+    block("resource-invalid", "The desired navigation cannot be resolved.", resource);
+  }
+}
+
+/**
  * Plan every media destination before reference repair so its parent directories
  * participate in the same candidate inventory as document creates and moves.
  */
@@ -731,6 +795,13 @@ function planMediaDestinations(state: PlanState): PlannedMedium[] {
   const { project, desired, reserved } = state;
   const mediaNames = new Set<string>();
   return (state.input.media ?? []).map((selection) => {
+    // Content refers to an Asset as `asset:<name>`, which admits only generated names.
+    if (!isTopikGeneratedAssetName(selection.name))
+      block(
+        "asset-name-invalid",
+        "New media must use a generated Asset name.",
+        `Asset/${selection.name}`,
+      );
     const asset = desired.get(`Asset/${selection.name}`);
     const source = provenanceOf(project, selection.config);
     if (
@@ -877,7 +948,9 @@ function planCourseRepairs(state: PlanState, scope: ReferenceScope): void {
       paths,
       source.directory,
     );
-    const currentNavigation = resolveCourseNavigation(currentContext);
+    const currentNavigation = resolvedNavigation(resourceKey(course), () =>
+      resolveCourseNavigation(currentContext),
+    );
     const previousContext = project.courseContexts[resourceKey(course)];
     for (const page of desired.values()) {
       if (page.type !== "CoursePage" || !currentNavigation.pageByName.has(page.name)) continue;
@@ -967,7 +1040,9 @@ function planWikiRepairs(state: PlanState, scope: ReferenceScope): void {
       if (!state.operationKeys.has(resourceKey(resource)))
         state.derivedRepairs.push({ resource: resourceKey(resource), kind: "navigation" });
     }
-    const currentNavigation = resolveWikiNavigation(resource.spec.navigation ?? []);
+    const currentNavigation = resolvedNavigation(resourceKey(resource), () =>
+      resolveWikiNavigation(resource.spec.navigation ?? []),
+    );
     for (const page of desired.values()) {
       if (page.type !== "WikiPage" || page.spec.wiki !== resource.name) continue;
       const key = resourceKey(page);
@@ -1664,6 +1739,7 @@ export async function planSourceUpdates(input: PlanSourceUpdatesInput): Promise<
         "Each Course module and page must be listed, once, by the parent it names.",
         membership.resource,
       );
+    rejectRouteCollisions([...desired.values()]);
     const savedGraphDigest = digestSourceResourceGraph([...desired.values()]);
     applySourceAssetReferenceContexts(
       [...desired.values()],

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { DEFAULT_ASSET_DIRECTORY, sourceAssetsConfigSchema } from "./assets";
 import { rejectMisspelledKeys } from "./misspelled-keys";
-import { parseSourcePersons, resourceNameSchema } from "./source-metadata";
+import { movedPersonsSchema, resourceNameSchema } from "./source-metadata";
 
 /** The Markdown files directly beside the configuration. */
 export const DEFAULT_COLLECTION_INCLUDE: readonly string[] = ["*.md", "*.mdx"];
@@ -33,24 +33,19 @@ function isCollectionPattern(pattern: string): boolean {
 const collectionConfigSchema = z.object({
   id: resourceNameSchema,
   title: z.string().min(1).max(256),
-  persons: z.unknown().optional(),
+  persons: movedPersonsSchema,
   assets: sourceAssetsConfigSchema.default({ directory: DEFAULT_ASSET_DIRECTORY }),
   tags: z.array(z.string().min(1).max(63)).optional(),
   include: z.array(patternSchema).min(1).max(64).optional(),
   exclude: z.array(patternSchema).max(64).optional(),
 });
 
-export type CollectionConfig = Omit<z.infer<typeof collectionConfigSchema>, "persons"> & {
-  persons?: ReturnType<typeof parseSourcePersons>;
-};
+export type CollectionConfig = Omit<z.infer<typeof collectionConfigSchema>, "persons">;
 
 export function parseCollectionConfig(raw: unknown): CollectionConfig {
   rejectMisspelledKeys(raw, Object.keys(collectionConfigSchema.shape));
-  const { persons, ...config } = collectionConfigSchema.parse(raw);
-  return {
-    ...config,
-    ...(persons !== undefined ? { persons: parseSourcePersons(persons) } : {}),
-  };
+  const { persons: _, ...config } = collectionConfigSchema.parse(raw);
+  return config;
 }
 
 /** Whether `name` matches one pattern segment, where `*` is any run and `?` one character. */

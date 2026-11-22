@@ -1,3 +1,4 @@
+import type { Person } from "@topik/schema/person/v1";
 import type { Course } from "@topik/schema/course/v1";
 import type { CourseModule } from "@topik/schema/course-module/v1";
 import type { CoursePage } from "@topik/schema/course-page/v1";
@@ -23,6 +24,8 @@ import {
   type CompileResult,
   type CompileReadOptions,
   type CompileValidationOptions,
+  standalonePersons,
+  validateAuthors,
 } from "./shared";
 import { compileResourceLinksInSession, type CompileResourceReferenceTarget } from "./links";
 
@@ -33,6 +36,11 @@ export interface CompileCourseOptions extends CompileReadOptions {
   validation?: CompileValidationOptions;
   assets?: AssetCompilationOptions;
   referenceTargets?: readonly CompileResourceReferenceTarget[];
+  /**
+   * Persons the authors refer to. A project declares them in `.topik.yaml`, which a standalone
+   * compile does not read, so pass them here; they are part of the result.
+   */
+  persons?: readonly Person[];
 }
 
 export async function compileCourse(options: CompileCourseOptions): Promise<CompileResult> {
@@ -46,12 +54,13 @@ export async function inspectCourse(options: CompileCourseOptions): Promise<Comp
   // One session shares Git repository evidence across every read of this call.
   const session = createPortableReadSession(options.fileSafety, options.gitExecutable);
   const discovered = await discoverCourse(options, undefined, memo, session);
-  validateCourseAuthors(discovered.resources, discovered.sourcePathsByResource);
+  const resources = [...standalonePersons(options.persons), ...discovered.resources];
+  validateAuthors(resources, discovered.sourcePathsByResource);
   const linked = await compileResourceLinksInSession(
     session,
     {
       rootDir: configurationDirectory(options.dir, options.configFile),
-      resources: discovered.resources,
+      resources,
       sourcePathsByResource: discovered.sourcePathsByResource,
       bodyLinesByResource: discovered.bodyLinesByResource,
       validation: options.validation,
@@ -111,7 +120,7 @@ export async function discoverCourse(
       modules: config.modules.map((module) => module.id),
     },
   };
-  const resources: SourceResource[] = [course, ...(config.persons ?? [])];
+  const resources: SourceResource[] = [course];
   const diagnostics: CompileResult["diagnostics"] = [];
   const sourcePathsByResource: Record<string, string> = {};
   const bodyLinesByResource: Record<string, number> = {};
@@ -257,19 +266,4 @@ export async function listCourseDocuments(dir: string, loaded: LoadedConfig): Pr
       module.pages.flatMap((page) => [`${page}.md`, `${page}.mdx`]),
     ),
   );
-}
-
-export function validateCourseAuthors(
-  resources: readonly SourceResource[],
-  paths: Readonly<Record<string, string>>,
-): void {
-  const persons = new Set(
-    resources.filter((resource) => resource.type === "Person").map((resource) => resource.name),
-  );
-  for (const resource of resources)
-    if (
-      (resource.type === "Course" || resource.type === "CoursePage") &&
-      resource.spec.authors?.some((author) => !persons.has(author))
-    )
-      throw new PublicCompileError("author-not-found", paths[`${resource.type}/${resource.name}`]);
 }

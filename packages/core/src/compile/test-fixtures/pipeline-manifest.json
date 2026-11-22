@@ -193,7 +193,6 @@
       "namespace": "example/pipeline",
       "assetDirectory": "guides/_assets",
       "sourcePathsByResource": {
-        "Person/alice": "guides/collection.yaml",
         "Guide/guides-first": "guides/first.md",
         "Guide/guides-second": "guides/second.md"
       }

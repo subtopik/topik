@@ -3,7 +3,7 @@ import { sourceAssetsConfigSchema, DEFAULT_ASSET_DIRECTORY } from "./assets";
 import { rejectMisspelledKeys } from "./misspelled-keys";
 import {
   pageSourcePathSchema,
-  parseSourcePersons,
+  movedPersonsSchema,
   resourceNameSchema,
   slugSchema,
   sourceLabelsSchema,
@@ -36,7 +36,7 @@ const courseConfigSchema = z
     description: z.string().max(1024).nullable().optional(),
     labels: sourceLabelsSchema.optional(),
     authors: authors.optional(),
-    persons: z.unknown().optional(),
+    persons: movedPersonsSchema,
     assets: sourceAssetsConfigSchema.default({ directory: DEFAULT_ASSET_DIRECTORY }),
     modules: z.array(moduleSchema).max(1_000),
   })
@@ -66,9 +66,7 @@ const coursePageMetadataSchema = z.object({
   labels: sourceLabelsSchema.optional(),
 });
 
-export type CourseConfig = Omit<z.infer<typeof courseConfigSchema>, "persons"> & {
-  persons?: ReturnType<typeof parseSourcePersons>;
-};
+export type CourseConfig = Omit<z.infer<typeof courseConfigSchema>, "persons">;
 export type CourseModuleConfig = z.infer<typeof moduleSchema>;
 
 export function parseCourseConfig(raw: unknown): CourseConfig {
@@ -78,9 +76,8 @@ export function parseCourseConfig(raw: unknown): CourseConfig {
     modules.forEach((module, index) =>
       rejectMisspelledKeys(module, Object.keys(moduleSchema.shape), ["modules", index]),
     );
-  const config = courseConfigSchema.parse(raw);
-  const { persons, ...rest } = config;
-  return { ...rest, ...(persons !== undefined ? { persons: parseSourcePersons(persons) } : {}) };
+  const { persons: _, ...config } = courseConfigSchema.parse(raw);
+  return config;
 }
 
 export function parseCoursePageMetadata(raw: unknown) {

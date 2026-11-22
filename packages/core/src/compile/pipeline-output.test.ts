@@ -99,9 +99,6 @@ const guideFiles = {
   "guides/collection.yaml": `id: guides
 title: Guides
 tags: [shared]
-persons:
-  - id: alice
-    spec: { name: Alice }
 `,
   "guides/first.md": `---
 title: First
@@ -161,6 +158,7 @@ test("manifest compilation output is unchanged", async () => {
         { kind: "collection", config: "guides/collection.yaml" },
         { kind: "course", config: "course/course.yaml" },
       ],
+      persons: [{ id: "alice", spec: { name: "Alice" } }],
     }),
     ...wikiFiles,
     ...guideFiles,

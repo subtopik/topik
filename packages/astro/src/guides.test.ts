@@ -12,6 +12,9 @@ const fixturesDir = join(import.meta.dirname, "__fixtures__/guides");
 const fixtureOptions = {
   dir: fixturesDir,
   name: "astro-guide-fixtures",
+  persons: [
+    { apiVersion: "v1", type: "Person", name: "lukasnehrke", spec: { name: "Lukas Nehrke" } },
+  ],
   assets: {
     generateName: createProjectAssetNameGenerator({
       projectRoot: fixturesDir,
@@ -55,7 +58,11 @@ describe("topikGuidesLoader", () => {
   });
 
   test("loads content without a manifest or naming callback when there are no local assets", async () => {
-    const loader = topikGuidesLoader({ dir: fixturesDir, name: "without-assets" });
+    const loader = topikGuidesLoader({
+      ...fixtureOptions,
+      assets: undefined,
+      name: "without-assets",
+    });
     const context = createMockContext();
     await loader.load(context);
     expect(context.entries.size).toBe(2);

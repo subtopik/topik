@@ -21,20 +21,15 @@ import {
 } from "./assets";
 import { createProjectAssetNameGenerator } from "./asset-names";
 import { readConfigurationText, parseSafeConfigurationYaml, readExactConfigFile } from "./config";
-import {
-  discoverGuides,
-  listCollectionDocuments,
-  validateGuideAuthors,
-  type CompileResourceDiscovery,
-} from "./guide";
+import { discoverGuides, listCollectionDocuments, type CompileResourceDiscovery } from "./guide";
 import { discoverWiki, listWikiDocuments } from "./wiki";
-import { discoverCourse, listCourseDocuments, validateCourseAuthors } from "./course";
+import { discoverCourse, listCourseDocuments } from "./course";
 import {
   PublicCompileError,
   type PublicCompileErrorId,
   type PublicCompileErrorOptions,
 } from "./public-errors";
-import { throwOnCompileErrors, type CompileResult } from "./shared";
+import { throwOnCompileErrors, validateAuthors, type CompileResult } from "./shared";
 import type { SourceResource } from "../resource";
 import type { CompileOptions } from "./index";
 import { compileResourceLinksInSession } from "./links";
@@ -143,7 +138,9 @@ async function loadTopikManifestInSession(
   }
   const parsed = topikManifestSchema.safeParse(value);
   if (!parsed.success) {
-    const index = parsed.error.issues.find((issue) => typeof issue.path[1] === "number")?.path[1];
+    const index = parsed.error.issues.find(
+      (issue) => issue.path[0] === "sources" && typeof issue.path[1] === "number",
+    )?.path[1];
     if (typeof index === "number") {
       const source = (value as { sources?: unknown[] })?.sources?.[index];
       const entry =
@@ -276,7 +273,11 @@ async function runManifest(
   const bodyLinesByResource: Record<string, number> = {};
   const sourceDirectoriesByResource: Record<string, string> = {};
   const protectedSourcePaths = [TOPIK_MANIFEST_FILENAME, ...sources.map((source) => source.config)];
-  const authoredKeys = new Set<string>();
+  // Persons are shared by every source, so the manifest declares them once.
+  resources.push(...structuredClone(manifest.persons ?? []));
+  const authoredKeys = new Set<string>(
+    resources.map((resource) => `${resource.type}/${resource.name}`),
+  );
   const unvalidatedDocuments: NonNullable<CompileResourceDiscovery["unvalidatedDocuments"]> = [];
 
   for (const source of sources) {
@@ -359,12 +360,7 @@ async function runManifest(
   }
   if (failures === undefined) throwOnCompileErrors(diagnostics);
   try {
-    validateGuideAuthors(resources, sourcePathsByResource);
-  } catch (error) {
-    collect(error);
-  }
-  try {
-    validateCourseAuthors(
+    validateAuthors(
       resources,
       Object.assign({}, ...provenance.map((source) => source.sourcePathsByResource)),
     );

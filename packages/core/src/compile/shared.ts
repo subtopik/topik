@@ -7,6 +7,9 @@ import {
 import type { FileSafety } from "../assets/files";
 import type { TopikAssetSemanticRecordV1, TopikMaterializationRecordV1 } from "../assets/identity";
 import type { AssetPayload, CompiledResource } from "./assets";
+import type { Person } from "@topik/schema/person/v1";
+import type { SourceResource } from "../resource";
+import { validateResources } from "../validate";
 import { PublicCompileError } from "./public-errors";
 import { parseSafeConfigurationYaml } from "./config";
 import { markdownFrontmatter } from "./frontmatter";
@@ -157,4 +160,31 @@ export function formatContentDiagnostics(diagnostics: TopikContentDiagnostic[]):
       return `${file}${location} ${sanitized.level} ${sanitized.id}: ${sanitized.message}`;
     })
     .join("\n");
+}
+
+/** Every Guide, Course and Course page author must name one of the compiled Persons. */
+export function validateAuthors(
+  resources: readonly SourceResource[],
+  paths: Readonly<Record<string, string>>,
+): void {
+  const persons = new Set(
+    resources.filter((resource) => resource.type === "Person").map((resource) => resource.name),
+  );
+  for (const resource of resources)
+    if (
+      (resource.type === "Guide" || resource.type === "Course" || resource.type === "CoursePage") &&
+      resource.spec.authors?.some((author) => !persons.has(author))
+    )
+      throw new PublicCompileError("author-not-found", paths[`${resource.type}/${resource.name}`]);
+}
+
+/** The Persons a standalone compile is given in place of a project manifest's. */
+export function standalonePersons(persons: readonly Person[] = []): Person[] {
+  if (
+    persons.some((person) => person?.type !== "Person") ||
+    new Set(persons.map((person) => person.name)).size !== persons.length ||
+    !validateResources(persons).valid
+  )
+    throw new TypeError("Expected unique, valid Person resources");
+  return structuredClone([...persons]);
 }

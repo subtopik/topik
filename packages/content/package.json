@@ -1,6 +1,6 @@
 {
   "name": "@topik/content",
-  "version": "0.1.0-alpha.7",
+  "version": "0.1.0-alpha.8",
   "description": "Declarative Topik content model, Markdown format, validation and rendering",
   "keywords": [
     "content",

@@ -28,11 +28,26 @@ Chromium.
 `packages/content/src/fuzz.test.ts` generates documents from the component
 registry and the Markdown grammar (`src/testing/grammar.ts`). It checks that
 formatting round trips and that no document costs more parser work than the
-`parserSteps` budget. `vp test` runs it with a fixed seed. To explore new inputs,
-run `vp run fuzz`. It picks a random seed and prints it, and runs twenty times
-as many cases. Set `TOPIK_FUZZ_SEED` to replay a seed and `TOPIK_FUZZ_RUNS` to
-choose the count. fast-check shrinks any failure to a small input: add that input
+`parserSteps` budget.
+
+`packages/core/src/source/writeback-fuzz.test.ts` generates source projects
+(`src/testing/source-projects.ts`) and edits to them. It checks that each edit
+plans under its documented authority, keeps the bytes it does not concern, and
+plans to no change when repeated.
+
+`vp test` runs both with a fixed seed. To explore new inputs, run `vp run fuzz`.
+Each package picks a random seed and runs twenty times as many cases. A run that
+fails prints its seed. Set `TOPIK_FUZZ_SEED` to replay a seed and
+`TOPIK_FUZZ_RUNS` to choose the count. To explore one package, run `vp run fuzz`
+in its directory. fast-check shrinks any failure to a small input: add that input
 to a regular test along with the fix.
+
+The write-back properties also require that at least half of the generated
+projects compile and initialize, and that most edits plan. A count below a few
+hundred can fail those checks by chance.
+
+The Fuzz workflow explores both every week. To replay a run there, start the
+workflow with the seed that its log shows.
 
 When you add syntax that the registry does not describe, add it to the grammar.
 A new component is generated from its schema without changes.

@@ -1,6 +1,6 @@
 /**
- * Property tests of source write-back over generated Wiki projects (see
- * `testing/wiki-projects.ts`).
+ * Property tests of source write-back over generated source projects (see
+ * `testing/source-projects.ts`).
  *
  * The planners compile their candidate tree and refuse one that does not reproduce the desired
  * resources (`round-trip-mismatch`), so a writer that changes meaning shows as a refusal here.

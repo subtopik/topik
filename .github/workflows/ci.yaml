@@ -40,7 +40,7 @@ jobs:
 
       # Before the build, which regenerates the types in place and would hide a stale commit.
       - name: Check that the generated schema types are current
-        run: vp run --filter @topik/schema check:generated
+        run: vp run --filter @topik/schema --fail-if-no-match check:generated
 
       - run: vp run -r build
 

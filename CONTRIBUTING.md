@@ -43,11 +43,11 @@ in its directory. fast-check shrinks any failure to a small input: add that inpu
 to a regular test along with the fix.
 
 The write-back properties also require that at least half of the generated
-projects compile. About six in ten do, so a count below a few hundred can fail
-that check by chance.
+projects compile and initialize, and that most edits plan. A count below a few
+hundred can fail those checks by chance.
 
-The Fuzz workflow explores both every week. To replay a failure there, run the
-workflow with the seed that the failed run printed.
+The Fuzz workflow explores both every week. To replay a run there, start the
+workflow with the seed that its log shows.
 
 When you add syntax that the registry does not describe, add it to the grammar.
 A new component is generated from its schema without changes.

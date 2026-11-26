@@ -19,9 +19,14 @@ permissions:
 
 jobs:
   fuzz:
-    name: Property tests with a random seed
+    name: ${{ matrix.package }} with a random seed
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      # One package's failure must not stop the other's exploration.
+      fail-fast: false
+      matrix:
+        package: ["@topik/content", "@topik/core"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -34,12 +39,30 @@ jobs:
 
       - run: vp install --frozen-lockfile
 
-      - name: Build the packages under test and their workspace dependencies
-        run: vp run --filter '@topik/core...' --fail-if-no-match build
-
-      # A package that fails prints its seed. To replay it, run this workflow with that seed.
-      - name: Explore new inputs
+      - name: Build the package under test and its workspace dependencies
+        run: vp run --filter "$PACKAGE..." --fail-if-no-match build
         env:
-          TOPIK_FUZZ_SEED: ${{ inputs.seed }}
-          TOPIK_FUZZ_RUNS: ${{ inputs.runs }}
-        run: vp run fuzz
+          PACKAGE: ${{ matrix.package }}
+
+      # Chosen here, so that a run that passes or is cancelled also logs its seed.
+      - name: Choose the seed
+        env:
+          SEED: ${{ inputs.seed }}
+          RUNS: ${{ inputs.runs }}
+        run: |
+          for value in "$SEED" "$RUNS"; do
+            if [ -n "$value" ] && ! printf '%s' "$value" | grep -Eq '^[0-9]+$'; then
+              echo "::error::seed and runs must be whole numbers, got '$value'"
+              exit 1
+            fi
+          done
+          seed="${SEED:-$(shuf -i 0-2147483647 -n 1)}"
+          echo "fuzz seed $seed"
+          echo "TOPIK_FUZZ_SEED=$seed" >> "$GITHUB_ENV"
+          if [ -n "$RUNS" ]; then echo "TOPIK_FUZZ_RUNS=$RUNS" >> "$GITHUB_ENV"; fi
+
+      # To replay a run, start this workflow with the seed that it logged.
+      - name: Explore new inputs
+        run: vp run --filter "$PACKAGE" --fail-if-no-match fuzz
+        env:
+          PACKAGE: ${{ matrix.package }}

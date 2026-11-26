@@ -5,8 +5,18 @@ export default defineConfig({
     "*": "vp check --fix",
   },
   test: {
-    // Loaded CI runners are several times slower than a local run.
-    testTimeout: 20_000,
+    // Each package runs with its own test settings, the same as `vp test` inside it.
+    projects: [
+      "packages/*",
+      {
+        test: {
+          name: "tools",
+          include: ["tools/**/*.test.mjs"],
+          // Loaded CI runners are several times slower than a local run.
+          testTimeout: 20_000,
+        },
+      },
+    ],
   },
   lint: {
     options: {

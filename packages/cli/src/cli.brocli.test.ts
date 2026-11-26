@@ -57,7 +57,10 @@ describe("cli entrypoint with real brocli", () => {
   });
 });
 
-describe.skipIf(!existsSync(builtCli))("built topik binary", () => {
+// A checkout that has not been built skips these. CI always builds, so there a missing
+// binary fails them. CI=false or CI=0 does not count as CI.
+const inCI = ["true", "1"].includes(process.env.CI ?? "");
+describe.skipIf(!existsSync(builtCli) && !inCI)("built topik binary", () => {
   let dir: string | undefined;
 
   afterEach(async () => {

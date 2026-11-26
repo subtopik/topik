@@ -10,7 +10,7 @@ on:
         required: false
         type: string
       runs:
-        description: Cases for each property. Leave empty for the default count.
+        description: Cases for each property. Leave empty for the default count; a few hundred at least.
         required: false
         type: string
 
@@ -37,7 +37,7 @@ jobs:
       - name: Build the packages under test and their workspace dependencies
         run: vp run --filter '@topik/core...' --fail-if-no-match build
 
-      # Each package prints its seed. To replay a failure, run this workflow with that seed.
+      # A package that fails prints its seed. To replay it, run this workflow with that seed.
       - name: Explore new inputs
         env:
           TOPIK_FUZZ_SEED: ${{ inputs.seed }}

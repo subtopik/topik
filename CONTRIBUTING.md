@@ -36,14 +36,18 @@ plans under its documented authority, keeps the bytes it does not concern, and
 plans to no change when repeated.
 
 `vp test` runs both with a fixed seed. To explore new inputs, run `vp run fuzz`.
-Each package picks a random seed and prints it, and runs twenty times as many
-cases. Set `TOPIK_FUZZ_SEED` to replay a seed and `TOPIK_FUZZ_RUNS` to choose the
-count. To explore one package, run `vp run fuzz` in its directory. fast-check
-shrinks any failure to a small input: add that input to a regular test along with
-the fix.
+Each package picks a random seed and runs twenty times as many cases. A run that
+fails prints its seed. Set `TOPIK_FUZZ_SEED` to replay a seed and
+`TOPIK_FUZZ_RUNS` to choose the count. To explore one package, run `vp run fuzz`
+in its directory. fast-check shrinks any failure to a small input: add that input
+to a regular test along with the fix.
+
+The write-back properties also require that at least half of the generated
+projects compile. About six in ten do, so a count below a few hundred can fail
+that check by chance.
 
 The Fuzz workflow explores both every week. To replay a failure there, run the
-workflow with the seed that its log prints.
+workflow with the seed that the failed run printed.
 
 When you add syntax that the registry does not describe, add it to the grammar.
 A new component is generated from its schema without changes.

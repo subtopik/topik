@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "changeset": "changeset",
-    "ready": "vp check --fix && vp run -r build && vp run -r test",
+    "ready": "vp run -r build && vp check --fix && vp run -r build && vp test --run",
     "dev": "vp run --parallel -F \"./packages/*\" dev",
     "fuzz": "vp run -F @topik/content -F @topik/core fuzz",
     "prepare": "vp config",

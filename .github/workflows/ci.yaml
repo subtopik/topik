@@ -38,7 +38,13 @@ jobs:
 
       - run: vp install --frozen-lockfile
 
+      # Before the build, which regenerates the types in place and would hide a stale commit.
+      - name: Check that the generated schema types are current
+        run: vp run --filter @topik/schema --fail-if-no-match check:generated
+
       - run: vp run -r build
+
+      - run: vp check
 
       - name: Install browser for packed preview integration
         working-directory: packages/content-react
@@ -57,7 +63,5 @@ jobs:
 
       - name: Verify schema and Asset package boundaries
         run: vp run verify:asset-packages
-
-      - run: vp check
 
       - run: vp test

@@ -274,8 +274,9 @@ describe("codemod CLI file results", () => {
 });
 
 // A checkout that has not been built skips these. CI always builds, so there a missing
-// binary fails them.
-describe.skipIf(!existsSync(builtCli) && !process.env.CI)("built topik-codemod binary", () => {
+// binary fails them. CI=false or CI=0 does not count as CI.
+const inCI = ["true", "1"].includes(process.env.CI ?? "");
+describe.skipIf(!existsSync(builtCli) && !inCI)("built topik-codemod binary", () => {
   test.each([["--version"], ["-v"]])("prints the package version for %s", async (flag) => {
     const { stdout } = await execFileAsync(process.execPath, [builtCli, flag]);
     expect(stdout).toBe(`${packageJson.version}\n`);

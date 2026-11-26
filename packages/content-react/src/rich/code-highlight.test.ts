@@ -20,15 +20,27 @@ const themes = ["github-light", "github-dark"] as const;
 /**
  * Shiki stops tokenizing a line after 500 ms and emits the rest of it as one token. The first
  * use of a grammar compiles its patterns within that limit, which a loaded machine can exceed.
- * Tokenize every sample once, so that the comparisons below run on compiled grammars.
+ * Tokenize every sample until two passes agree, so that the comparisons below run on compiled
+ * grammars: a pass that was cut short differs from the next one.
  */
 beforeAll(async () => {
   const shiki = await import("shiki");
+  type Options = { lang: string; theme: (typeof themes)[number] };
+  const highlighters: ((code: string, options: Options) => Promise<{ tokens: unknown }>)[] = [
+    (code, options) => shiki.codeToTokens(code, options),
+    (code, options) => highlightCode(code, { ...options, engine: "oniguruma" }),
+    (code, options) => highlightCode(code, { ...options, engine: "javascript" }),
+  ];
   for (const [lang, code] of samples) {
     for (const theme of themes) {
-      await shiki.codeToTokens(code, { lang, theme });
-      await highlightCode(code, { lang, theme, engine: "oniguruma" });
-      await highlightCode(code, { lang, theme, engine: "javascript" });
+      for (const tokenize of highlighters) {
+        let previous: string | undefined;
+        for (let pass = 0; pass < 10; pass++) {
+          const tokens = JSON.stringify((await tokenize(code, { lang, theme })).tokens);
+          if (tokens === previous) break;
+          previous = tokens;
+        }
+      }
     }
   }
 }, 60_000);

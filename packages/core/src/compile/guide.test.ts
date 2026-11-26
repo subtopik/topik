@@ -265,11 +265,15 @@ describe("compileGuides", () => {
     await writeCollectionConfig('id: blog\ntitle: Blog\ninclude: ["**/*.md"]\n');
     await writeGuide("top", "# Top\n");
     const outside = await mkdtemp(join(tmpdir(), "topik-outside-"));
-    await writeFile(join(outside, "leak.md"), "# Leak\n");
-    await symlink(outside, join(dir, "linked"), "dir");
+    try {
+      await writeFile(join(outside, "leak.md"), "# Leak\n");
+      await symlink(outside, join(dir, "linked"), "dir");
 
-    const result = await compileGuides({ dir });
-    expect(result.resources.map((resource) => resource.name)).toEqual(["blog-top"]);
+      const result = await compileGuides({ dir });
+      expect(result.resources.map((resource) => resource.name)).toEqual(["blog-top"]);
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
   });
 
   test("reports only compilation-relative Guide diagnostic paths", async () => {

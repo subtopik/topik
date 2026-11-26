@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, expect, it } from "vite-plus/test";
+import { beforeAll, describe, expect, it } from "vite-plus/test";
 import type { TokensResult } from "shiki/core";
 import { highlightCode } from "./code-highlight";
 
@@ -16,6 +16,22 @@ const samples: [lang: string, code: string][] = [
   ["json", '{ "key": [1, true, null] }'],
 ];
 const themes = ["github-light", "github-dark"] as const;
+
+/**
+ * Shiki stops tokenizing a line after 500 ms and emits the rest of it as one token. The first
+ * use of a grammar compiles its patterns within that limit, which a loaded machine can exceed.
+ * Tokenize every sample once, so that the comparisons below run on compiled grammars.
+ */
+beforeAll(async () => {
+  const shiki = await import("shiki");
+  for (const [lang, code] of samples) {
+    for (const theme of themes) {
+      await shiki.codeToTokens(code, { lang, theme });
+      await highlightCode(code, { lang, theme, engine: "oniguruma" });
+      await highlightCode(code, { lang, theme, engine: "javascript" });
+    }
+  }
+}, 60_000);
 
 describe("rich code highlighting", () => {
   it.each(samples)("matches Shiki's full bundle for %s in both themes", async (lang, code) => {

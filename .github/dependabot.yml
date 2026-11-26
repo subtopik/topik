@@ -43,7 +43,7 @@ updates:
       - dependency-name: "@types/node"
         update-types:
           - "version-update:semver-major"
-      # jsdom 29+ requires a newer Node 22 minor than Topik's previous 22.12 floor; re-evaluate against the 22.22 floor.
+      # jsdom 30+ requires Node ^24.15 on the 24 line; the workspace supports ^24.11. Re-evaluate when that floor moves.
       - dependency-name: "jsdom"
         update-types:
           - "version-update:semver-major"

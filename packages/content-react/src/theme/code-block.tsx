@@ -167,6 +167,8 @@ export function CodeBlockView({
   const hasDiff = Boolean(presentation?.added?.length || presentation?.removed?.length);
 
   useEffect(() => {
+    // Hydration is only known after mount, so server and first client renders agree.
+    // eslint-disable-next-line react/set-state-in-effect
     setHydrated(true);
     // The Clipboard API is missing outside secure contexts, such as plain http previews.
     setCanCopy(typeof navigator.clipboard?.writeText === "function");
@@ -349,6 +351,8 @@ export function CodeBlockView({
         className={highlight ? "shiki" : undefined}
         id={rowsId}
         style={highlight ? { color: highlight.fg, backgroundColor: highlight.bg } : undefined}
+        // A scrollable region must be reachable by keyboard.
+        // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
         tabIndex={0}
       >
         <code>

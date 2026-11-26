@@ -177,6 +177,8 @@ export function TopikContent(props: TopikContentProps) {
 
   // Report after commit with the latest callbacks, once per distinct result.
   const reported = useRef<RenderedTopikContent | undefined>(undefined);
+  // The ref guard above makes this run once per result; it must see the latest callbacks.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useLayoutEffect(() => {
     if (!throwsInvalid || reported.current === rendered) return;
     reported.current = rendered;

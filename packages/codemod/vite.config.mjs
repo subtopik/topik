@@ -16,11 +16,5 @@ export default defineConfig({
     // Loaded CI runners are several times slower than a local run.
     testTimeout: 20_000,
   },
-  lint: {
-    options: {
-      typeAware: true,
-      typeCheck: true,
-    },
-  },
   fmt: {},
 });

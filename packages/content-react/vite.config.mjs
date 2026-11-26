@@ -75,12 +75,6 @@ const config = defineConfig({
       ],
     },
   },
-  lint: {
-    options: {
-      typeAware: true,
-      typeCheck: true,
-    },
-  },
   test: {
     // Loaded CI runners are several times slower than a local run.
     testTimeout: 20_000,

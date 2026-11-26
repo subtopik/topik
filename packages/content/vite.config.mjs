@@ -13,12 +13,6 @@ export default defineConfig({
       neverBundle: ["@types/mdast", "@types/unist", "mdast", "unist"],
     },
   },
-  lint: {
-    options: {
-      typeAware: true,
-      typeCheck: true,
-    },
-  },
   fmt: {},
   test: {
     // Loaded CI runners are several times slower than a local run.

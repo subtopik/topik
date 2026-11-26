@@ -7,7 +7,7 @@
     "changeset": "changeset",
     "ready": "vp check --fix && vp run -r build && vp run -r test",
     "dev": "vp run --parallel -F \"./packages/*\" dev",
-    "fuzz": "vp run -F @topik/content fuzz",
+    "fuzz": "vp run -F @topik/content -F @topik/core fuzz",
     "prepare": "vp config",
     "verify:asset-packages": "node tools/verify-asset-packages.mjs",
     "verify:public-packages": "node tools/verify-public-packages.mjs"

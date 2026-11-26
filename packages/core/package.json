@@ -40,6 +40,7 @@
     "build": "vp pack && node scripts/copy-licenses.mjs",
     "dev": "vp pack --watch",
     "test": "vp test",
+    "fuzz": "TOPIK_FUZZ=1 vp test --run src/source/writeback-fuzz.test.ts",
     "check": "vp check",
     "prepublishOnly": "vp run build"
   },

@@ -70,6 +70,8 @@ function VideoPlayer({
 }) {
   const video = useRef<HTMLVideoElement>(null);
   const failure = useRef(onFailure);
+  // The effect and the event handlers below call the latest callback.
+  // eslint-disable-next-line react/refs
   failure.current = onFailure;
   // Server-rendered and unhydrated clips keep native controls, so they stay playable without script.
   const [hydrated, setHydrated] = useState(false);
@@ -95,6 +97,8 @@ function VideoPlayer({
   const clip = loop && hydrated;
   return (
     <div className="topik-video__frame">
+      {/* Authored video has no caption track; its title and caption name it. */}
+      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
       <video
         ref={video}
         aria-label={title || undefined}

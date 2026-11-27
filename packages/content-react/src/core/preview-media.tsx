@@ -106,6 +106,8 @@ export function PreviewMedia({
     return () => {
       active = false;
     };
+    // isCurrent is a new function on every render and reads only refs and `media`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [media, download]);
   if (failed === media)
     return <span role="alert">{download ? children : null} Preview media unavailable.</span>;

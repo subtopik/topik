@@ -58,6 +58,7 @@ interface TopikContentDiagnosticHandlers {
 
 // Without a DOM no commit follows, so server rendering reports while rendering.
 const canUseDOM = typeof document !== "undefined";
+const useIsomorphicLayoutEffect = canUseDOM ? useLayoutEffect : useEffect;
 
 const subscribeNever = () => () => {};
 const clientSnapshot = () => false;
@@ -178,8 +179,7 @@ export function TopikContent(props: TopikContentProps) {
   // Report after commit with the latest callbacks, once per distinct result.
   const reported = useRef<RenderedTopikContent | undefined>(undefined);
   // The ref guard above makes this run once per result; it must see the latest callbacks.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useLayoutEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     if (!throwsInvalid || reported.current === rendered) return;
     reported.current = rendered;
     reportCompileDiagnostics(rendered.compiled, handlers);

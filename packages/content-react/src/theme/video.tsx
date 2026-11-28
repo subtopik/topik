@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { TopikComponentProps } from "../core/components";
 
 function stringAttribute(value: unknown): string | undefined {
@@ -69,10 +69,6 @@ function VideoPlayer({
   title: string;
 }) {
   const video = useRef<HTMLVideoElement>(null);
-  const failure = useRef(onFailure);
-  // The effect and the event handlers below call the latest callback.
-  // eslint-disable-next-line react/refs
-  failure.current = onFailure;
   // Server-rendered and unhydrated clips keep native controls, so they stay playable without script.
   const [hydrated, setHydrated] = useState(false);
   const [playing, setPlaying] = useState(false);
@@ -82,7 +78,7 @@ function VideoPlayer({
     if (!element) return;
     // An error before hydration dispatches no React event; read the element's state instead.
     if (element.error) {
-      failure.current();
+      onFailure();
       return;
     }
     setHydrated(true);
@@ -92,7 +88,7 @@ function VideoPlayer({
     // set here; before hydration the clip has controls and plays only when the reader starts it.
     element.muted = true;
     if (!prefersReducedMotion()) startPlayback(element);
-  }, [loop]);
+  }, [loop, onFailure]);
 
   const clip = loop && hydrated;
   return (
@@ -111,7 +107,7 @@ function VideoPlayer({
         // Nothing loads until the reader starts the video, or a clip starts itself.
         preload={clip ? "metadata" : "none"}
         src={source}
-        onError={() => failure.current()}
+        onError={onFailure}
         onPause={() => setPlaying(false)}
         onPlay={() => setPlaying(true)}
       >
@@ -152,6 +148,7 @@ function VideoFigure({ caption, crossOrigin, loop, poster, src, title }: TopikCo
   const posterSource = stringAttribute(poster);
   const corsOnly = crossOrigin === "anonymous";
   const [failed, setFailed] = useState(false);
+  const handleFailure = useCallback(() => setFailed(true), []);
   const link = (
     <VideoLink poster={posterSource} source={corsOnly ? undefined : source} title={titleText} />
   );
@@ -174,7 +171,7 @@ function VideoFigure({ caption, crossOrigin, loop, poster, src, title }: TopikCo
         key={loop === true ? "clip" : "player"}
         crossOrigin={corsOnly ? "anonymous" : undefined}
         loop={loop === true}
-        onFailure={() => setFailed(true)}
+        onFailure={handleFailure}
         poster={posterSource}
         source={source}
         title={titleText}

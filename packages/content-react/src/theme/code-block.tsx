@@ -1,5 +1,22 @@
-import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import type { CodePresentationEffectiveOptions } from "@topik/content";
+
+const subscribeNever = () => () => {};
+const getHydratedClientSnapshot = () => true;
+const getHydratedServerSnapshot = () => false;
+// The Clipboard API is missing outside secure contexts, such as plain http previews.
+const getCanCopyClientSnapshot = () =>
+  typeof navigator !== "undefined" && typeof navigator.clipboard?.writeText === "function";
+// Unknown until hydration, so server and first client renders agree.
+const getCanCopyServerSnapshot = () => true;
 
 export interface CodeToken {
   content: string;
@@ -153,9 +170,16 @@ export function CodeBlockView({
     wrap: presentation?.wrap ?? false,
     copied: false,
   });
-  const [hydrated, setHydrated] = useState(false);
-  // Unknown until hydration, so server and first client renders agree.
-  const [canCopy, setCanCopy] = useState(true);
+  const hydrated = useSyncExternalStore(
+    subscribeNever,
+    getHydratedClientSnapshot,
+    getHydratedServerSnapshot,
+  );
+  const canCopy = useSyncExternalStore(
+    subscribeNever,
+    getCanCopyClientSnapshot,
+    getCanCopyServerSnapshot,
+  );
   const [view, setView] = useState(initialView);
   // Reset before committing new content/options, rather than briefly using old row ranges.
   const currentView = sameView(view, viewKey) ? view : initialView();
@@ -166,14 +190,7 @@ export function CodeBlockView({
   const collapse = presentation?.collapse ?? [];
   const hasDiff = Boolean(presentation?.added?.length || presentation?.removed?.length);
 
-  useEffect(() => {
-    // Hydration is only known after mount, so server and first client renders agree.
-    // eslint-disable-next-line react/set-state-in-effect
-    setHydrated(true);
-    // The Clipboard API is missing outside secure contexts, such as plain http previews.
-    setCanCopy(typeof navigator.clipboard?.writeText === "function");
-    return () => clearTimeout(copyTimeout.current);
-  }, []);
+  useEffect(() => () => clearTimeout(copyTimeout.current), []);
 
   useEffect(() => {
     copySequence.current++;

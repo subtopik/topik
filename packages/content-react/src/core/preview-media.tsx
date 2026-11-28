@@ -26,6 +26,18 @@ function equivalentMedia(left: TopikComponentProps, right: TopikComponentProps):
   });
 }
 
+const canUseDOM = typeof document !== "undefined";
+const useIsomorphicLayoutEffect = canUseDOM ? useLayoutEffect : useEffect;
+
+// Suspense hides layout effects while keeping image-loading effects connected.
+// Let those effects retain their result; their own cleanup handles unmount.
+function isMediaCurrent(media: TopikComponentProps, current: TopikComponentProps): boolean {
+  return (
+    current === media &&
+    Object.values(media).every((value) => getPreviewAssetToken(value)?.state.active() !== false)
+  );
+}
+
 /** @internal The only renderer boundary that accepts host-created media capabilities. */
 export function PreviewMedia({
   component,
@@ -57,30 +69,21 @@ export function PreviewMedia({
   // Downloads act for the exact committed content, including changed link text. Every committed
   // change bumps the revision, so content that changes and then changes back still cancels.
   const committedSource = useRef({ source, revision: 0 });
-  useLayoutEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     currentAttributes.current = media;
     const committed = committedSource.current;
     if (committed.source !== source)
       committedSource.current = { source, revision: committed.revision + 1 };
   }, [media, source]);
-  useLayoutEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
     };
   }, []);
   const download = getPreviewAssetToken(media.href);
-  // Suspense hides layout effects while keeping image-loading effects connected.
-  // Let those effects retain their result; their own cleanup handles unmount.
-  function isCurrent() {
-    return (
-      currentAttributes.current === media &&
-      Object.values(media).every((value) => getPreviewAssetToken(value)?.state.active() !== false)
-    );
-  }
   useEffect(() => {
     let active = true;
-    setFailed(undefined);
     if (!download) {
       void Promise.all(
         Object.entries(media).map(async ([key, value]) => {
@@ -95,19 +98,17 @@ export function PreviewMedia({
         }),
       ).then(
         (entries) => {
-          if (active && isCurrent())
+          if (active && isMediaCurrent(media, currentAttributes.current))
             setLoaded({ attributes: media, values: Object.fromEntries(entries) });
         },
         () => {
-          if (active && isCurrent()) setFailed(media);
+          if (active && isMediaCurrent(media, currentAttributes.current)) setFailed(media);
         },
       );
     }
     return () => {
       active = false;
     };
-    // isCurrent is a new function on every render and reads only refs and `media`.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [media, download]);
   if (failed === media)
     return <span role="alert">{download ? children : null} Preview media unavailable.</span>;
@@ -151,12 +152,12 @@ export function PreviewMedia({
   // The producer serves streamed video only to CORS requests from the allowed origin.
   if (streamed) values.crossOrigin = "anonymous";
   if (brokenPoster === media) values.poster = undefined;
-  return createElement(
-    block ? "div" : "span",
-    {
-      style: { display: "contents" },
-      onErrorCapture: (event: import("react").SyntheticEvent<HTMLElement>) => {
-        if (!isCurrent()) return;
+  const Wrapper = block ? "div" : "span";
+  return (
+    <Wrapper
+      style={{ display: "contents" }}
+      onErrorCapture={(event) => {
+        if (!isMediaCurrent(media, currentAttributes.current)) return;
         if (event.target instanceof HTMLImageElement) {
           // In a video the only images are its optional poster.
           if (video) setBrokenPoster(media);
@@ -165,8 +166,9 @@ export function PreviewMedia({
           // An external source that fails is the theme's to replace with a link.
           setFailed(media);
         }
-      },
-    },
-    createElement(component, values, children),
+      }}
+    >
+      {createElement(component, values, children)}
+    </Wrapper>
   );
 }

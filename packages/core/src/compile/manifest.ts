@@ -303,8 +303,10 @@ async function runManifest(
       continue;
     }
     const paths: Record<string, string> = {};
-    const conflict = discovered.resources.some((resource) =>
-      authoredKeys.has(`${resource.type}/${resource.name}`),
+    // A document whose content is invalid still claims its identity, as within one source.
+    const unvalidated = discovered.unvalidatedDocuments ?? [];
+    const conflict = [...discovered.resources, ...unvalidated.map(({ resource }) => resource)].some(
+      (resource) => authoredKeys.has(`${resource.type}/${resource.name}`),
     );
     if (conflict) {
       collect(
@@ -341,9 +343,10 @@ async function runManifest(
     );
     resources.push(...discovered.resources);
     Object.assign(bodyLinesByResource, discovered.bodyLinesByResource);
-    for (const document of discovered.unvalidatedDocuments ?? []) {
+    for (const document of unvalidated) {
       const key = `${document.resource.type}/${document.resource.name}`;
-      if (authoredKeys.has(key)) continue;
+      // Discovery already refused a repeat inside this source.
+      authoredKeys.add(key);
       unvalidatedDocuments.push({
         resource: document.resource,
         sourcePath: posix.join(source.directory, document.sourcePath),

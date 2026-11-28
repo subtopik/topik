@@ -25,8 +25,19 @@ describe("Topik links", () => {
     expect(validateTopikHref("ftp://example.com")[0]?.id).toBe("link-scheme-unsupported");
     expect(validateTopikHref("custom:opaque")[0]?.id).toBe("link-scheme-unsupported");
     expect(validateTopikHref("//example.com")[0]?.id).toBe("link-url-protocol-relative");
-    expect(validateTopikHref("https://")[0]?.id).toBe("link-url-invalid");
-    expect(validateTopikHref("#%zz")[0]?.id).toBe("link-url-invalid");
+    for (const href of [
+      "https://",
+      "https:///",
+      "https:",
+      "http:",
+      "https:foo",
+      "https:/foo",
+      "https:\\\\evil.com",
+      "https:/\\evil.com",
+      "#%zz",
+    ]) {
+      expect(validateTopikHref(href)[0]?.id, href).toBe("link-url-invalid");
+    }
   });
 
   test("rejects browser-normalized unsafe schemes and protocol-relative links", () => {
@@ -107,6 +118,8 @@ describe("Topik links", () => {
       );
     }
     for (const href of [
+      `ASSET:auto-v1-${"a".repeat(52)}`,
+      `Asset:auto-v1-${"a".repeat(52)}`,
       `asset:auto-v1-${"a".repeat(51)}`,
       `asset:auto-v1-${"a".repeat(53)}`,
       `asset:auto-v1-${"a".repeat(51)}0`,
@@ -114,7 +127,7 @@ describe("Topik links", () => {
       `asset:auto-v1-${"a".repeat(52)}=`,
       `asset:AUTO-v1-${"a".repeat(52)}`,
     ]) {
-      expect(validateTopikHref(href).length, href).toBeGreaterThan(0);
+      expect(validateTopikHref(href)[0]?.id, href).toBe("link-asset-invalid");
     }
   });
 

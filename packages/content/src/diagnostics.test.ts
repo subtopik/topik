@@ -246,6 +246,21 @@ test("attribute diagnostics name the component, the attribute and what the schem
   expect(diagnostics("{% unknown %}\nx\n{% /unknown %}")).toContainEqual(
     expect.objectContaining({ id: "tag-undefined", tag: "unknown" }),
   );
+  expect(
+    diagnostics('{% accordion title="Intro" id="bad id" %}\nx\n{% /accordion %}'),
+  ).toContainEqual(expect.objectContaining({ id: "topik-accordion-id", attribute: "id" }));
+  expect(
+    diagnostics('{% video src="https://youtu.be/dQw4w9WgXcQ" title="Demo" /%}'),
+  ).toContainEqual(expect.objectContaining({ id: "topik-video-youtube", attribute: "src" }));
+  expect(diagnostics('{% video src="clip.mp4" title="   " /%}')).toContainEqual(
+    expect.objectContaining({ id: "topik-video-title", attribute: "title" }),
+  );
+  expect(diagnostics('{% youtube src="https://vimeo.com/1" title="Demo" /%}')).toContainEqual(
+    expect.objectContaining({ id: "topik-youtube-src", attribute: "src" }),
+  );
+  expect(
+    diagnostics('{% youtube src="https://youtu.be/dQw4w9WgXcQ" title="   " /%}'),
+  ).toContainEqual(expect.objectContaining({ id: "topik-youtube-title", attribute: "title" }));
   for (const source of [
     '{% callout variant="PRIVATE_VALUE" %}\nx\n{% /callout %}',
     '{% callout colour="PRIVATE_VALUE" %}\nx\n{% /callout %}',

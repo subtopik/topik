@@ -1,3 +1,5 @@
+import { hasControlCharacters } from "./text-controls.js";
+
 /** A YouTube video named by a share URL: its ID and an optional start time in seconds. */
 export interface TopikYouTubeVideo {
   id: string;
@@ -25,7 +27,8 @@ function parseStart(value: string | null): number | undefined {
  * time comes from the `t` or `start` parameter.
  */
 export function parseTopikYouTubeUrl(source: string): TopikYouTubeVideo | undefined {
-  if (source.trim() !== source) return undefined;
+  if (source.trim() !== source || hasControlCharacters(source) || !/^https:\/\//i.test(source))
+    return undefined;
   let url: URL;
   try {
     url = new URL(source);

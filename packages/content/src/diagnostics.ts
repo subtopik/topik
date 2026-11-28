@@ -239,6 +239,11 @@ const ATTRIBUTE_DIAGNOSTIC_IDS = new Set([
   "attribute-type-invalid",
   "attribute-undefined",
   "attribute-value-invalid",
+  "topik-accordion-id",
+  "topik-video-youtube",
+  "topik-video-title",
+  "topik-youtube-src",
+  "topik-youtube-title",
 ]);
 const TAG_DIAGNOSTIC_IDS = new Set([
   ...ATTRIBUTE_DIAGNOSTIC_IDS,

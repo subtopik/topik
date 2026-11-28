@@ -95,8 +95,18 @@ function failure(message: string, id: string): TagParseFailure {
 }
 
 export function parseTag(raw: string, options: TagSyntaxOptions): ParsedTag | TagParseFailure {
-  if (!raw.startsWith("{%") || !raw.trimEnd().endsWith("%}"))
-    return failure("Unterminated tag", "tag-unterminated");
+  if (!raw.startsWith("{%") || !raw.trimEnd().endsWith("%}")) {
+    const base = failure("Unterminated tag", "tag-unterminated");
+    if (!raw.startsWith("{%")) return base;
+    const inner = raw.slice(2).trim();
+    if (inner.startsWith("/") || inner.endsWith("/")) return base;
+    const nameMatch = /^[a-z][A-Za-z0-9-]*/.exec(inner);
+    if (!nameMatch) return base;
+    const name = nameMatch[0];
+    if (options.expressions && (name === "if" || name === "else" || name === "template"))
+      return base;
+    return { ...base, opening: name };
+  }
   const inner = raw.trim().slice(2, -2).trim();
   if (options.expressions) {
     if (/^\/?template[ \t]+code$/.test(inner))

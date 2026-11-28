@@ -624,3 +624,35 @@ test("revisiting a reused failed attributes object recovers without unmounting",
   expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(container.querySelector("button")?.textContent).toBe("First");
 });
+
+test("failed preview download recovers when hidden and re-shown via Activity", async () => {
+  setup();
+  const fetcher = vi
+    .fn<(url: URL) => Promise<Response>>()
+    .mockRejectedValueOnce(new Error("Temporary failure"))
+    .mockImplementation(async (url) => mediaResponse(url));
+  vi.stubGlobal("fetch", fetcher);
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  const content = `[Download](asset:${name})`;
+  const render = (mode: "visible" | "hidden") => (
+    <Activity mode={mode}>
+      <TopikContent content={content} previewAssets={adapter} />
+    </Activity>
+  );
+
+  await act(async () => root.render(render("visible")));
+  await act(async () => container.querySelector("button")!.click());
+  expect(container.querySelector('[role="alert"]')).not.toBeNull();
+  expect(container.querySelector("button")).toBeNull();
+
+  await act(async () => root.render(render("hidden")));
+  await act(async () => root.render(render("visible")));
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(container.querySelector("button")?.textContent).toBe("Download");
+
+  await act(async () => {
+    container.querySelector("button")!.click();
+    await vi.waitFor(() => expect(click).toHaveBeenCalledTimes(1));
+  });
+  expect(fetcher).toHaveBeenCalledTimes(2);
+});

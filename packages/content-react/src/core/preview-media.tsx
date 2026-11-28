@@ -116,6 +116,8 @@ export function PreviewMedia({
     }
     return () => {
       active = false;
+      setFailed(undefined);
+      setBrokenPoster(undefined);
     };
   }, [media, download]);
   if (failed === media)

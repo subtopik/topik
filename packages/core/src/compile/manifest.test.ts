@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { afterEach, describe, expect, test } from "vite-plus/test";
 import { compile, compileWiki, compileGuides } from "./index";
-import { compileManifest, loadTopikManifest } from "./manifest";
+import { compileManifest, lintManifest, loadTopikManifest } from "./manifest";
 import { generateAutomaticAssetName } from "../assets/asset";
 import { validateTopikMaterializationRecord } from "../assets/identity";
 import { parseTopikManifest } from "../config/manifest";
@@ -325,6 +325,35 @@ describe("root manifest compilation", () => {
       location: "b.yaml",
     });
   });
+
+  test.each([
+    ["the earlier source's page", "{% unknown /%}\n", "# B\n"],
+    ["the later source's page", "# A\n", "{% unknown /%}\n"],
+    ["both pages", "{% unknown /%}\n", "{% unknown /%}\n"],
+  ])(
+    "rejects a page identity two sources share when invalid content is in %s",
+    async (_which, a, b) => {
+      const dir = await fixture({
+        ".topik.yaml": sources([
+          { kind: "wiki", config: "a/wiki.yaml" },
+          { kind: "wiki", config: "b/wiki.yaml" },
+        ]),
+        "a/wiki.yaml": wiki("a"),
+        "a/index.md": `---\nid: same\n---\n${a}`,
+        "b/wiki.yaml": wiki("b"),
+        "b/index.md": `---\nid: same\n---\n${b}`,
+      });
+      await expect(compile({ dir })).rejects.toMatchObject({
+        id: "manifest-resource-conflict",
+        sourceIndex: 1,
+        location: "b/wiki.yaml",
+      });
+      const { failures } = await lintManifest({ dir });
+      expect(failures).toMatchObject([
+        { error: { id: "manifest-resource-conflict", sourceIndex: 1, location: "b/wiki.yaml" } },
+      ]);
+    },
+  );
 
   test.each([
     ["symlink", "symbolic-link"],

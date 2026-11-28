@@ -3,8 +3,6 @@ import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const contentSource = fileURLToPath(new URL("../content/src/index.ts", import.meta.url));
-
 const sourceRoot = fileURLToPath(new URL("src/", import.meta.url));
 const clientModules = new Map();
 const entry = ["src/index.ts", "src/preview-assets.ts", "src/theme.ts", "src/rich.tsx"];
@@ -78,9 +76,6 @@ const config = defineConfig({
   test: {
     // Loaded CI runners are several times slower than a local run.
     testTimeout: 20_000,
-    alias: {
-      "@topik/content": contentSource,
-    },
     environment: "jsdom",
     restoreMocks: true,
   },

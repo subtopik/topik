@@ -109,7 +109,8 @@ export function topikWikiLoader(options: TopikWikiOptions): TopikAssetLoader & {
         };
       },
 
-      // The navigation of the entries in the store; compiled only before the first load.
+      // The last published navigation; compiled on demand before the first load or after a failed
+      // reload clears it.
       getNavigation: async () =>
         publishedNavigation.get(navigationKey) ??
         (await loadCompiledWiki(resolvedDir, assets)).navigation,

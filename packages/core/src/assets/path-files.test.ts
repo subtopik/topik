@@ -321,52 +321,56 @@ describe("descriptor-anchored filesystem reads", () => {
     }
   });
 
-  test("rejects a real Gitlink index ancestor without relying on nested descriptor type", async () => {
-    if (process.platform !== "linux") return;
-    const parent = await mkdtemp(join(tmpdir(), "topik-real-submodule-"));
-    roots.push(parent);
-    const origin = join(parent, "origin");
-    const root = join(parent, "root");
-    await createGitRepository(origin);
-    await writeFile(join(origin, "hero.png"), PNG_BYTES);
-    await git(origin, "add", "hero.png");
-    await git(origin, "commit", "-qm", "fixture");
-    await createGitRepository(root);
-    await git(
-      root,
-      "-c",
-      "protocol.file.allow=always",
-      "submodule",
-      "add",
-      "-q",
-      origin,
-      "vendor/module",
-    );
-    const index = await gitOutput(root, "ls-files", "--stage", "--", "vendor/module");
-    expect(index).toMatch(/^160000 /u);
-    await rm(join(root, "vendor", "module", ".git"), { recursive: true, force: true });
+  test.skipIf(process.platform !== "linux")(
+    "rejects a real Gitlink index ancestor without relying on nested descriptor type",
+    async () => {
+      const parent = await mkdtemp(join(tmpdir(), "topik-real-submodule-"));
+      roots.push(parent);
+      const origin = join(parent, "origin");
+      const root = join(parent, "root");
+      await createGitRepository(origin);
+      await writeFile(join(origin, "hero.png"), PNG_BYTES);
+      await git(origin, "add", "hero.png");
+      await git(origin, "commit", "-qm", "fixture");
+      await createGitRepository(root);
+      await git(
+        root,
+        "-c",
+        "protocol.file.allow=always",
+        "submodule",
+        "add",
+        "-q",
+        origin,
+        "vendor/module",
+      );
+      const index = await gitOutput(root, "ls-files", "--stage", "--", "vendor/module");
+      expect(index).toMatch(/^160000 /u);
+      await rm(join(root, "vendor", "module", ".git"), { recursive: true, force: true });
 
-    expect(await readPortableAssetFile({ root, path: "vendor/module/hero.png" })).toMatchObject({
-      ok: false,
-      diagnostics: [{ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" }],
-    });
-  });
+      expect(await readPortableAssetFile({ root, path: "vendor/module/hero.png" })).toMatchObject({
+        ok: false,
+        diagnostics: [{ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" }],
+      });
+    },
+  );
 
-  test("rejects an unindexed nested Git worktree boundary", async () => {
-    if (process.platform !== "linux") return;
-    const parent = await mkdtemp(join(tmpdir(), "topik-nested-worktree-"));
-    roots.push(parent);
-    const root = join(parent, "root");
-    const nested = join(root, "vendor", "module");
-    await createGitRepository(root);
-    await createGitRepository(nested);
-    await writeFile(join(nested, "hero.png"), PNG_BYTES);
+  test.skipIf(process.platform !== "linux")(
+    "rejects an unindexed nested Git worktree boundary",
+    async () => {
+      const parent = await mkdtemp(join(tmpdir(), "topik-nested-worktree-"));
+      roots.push(parent);
+      const root = join(parent, "root");
+      const nested = join(root, "vendor", "module");
+      await createGitRepository(root);
+      await createGitRepository(nested);
+      await writeFile(join(nested, "hero.png"), PNG_BYTES);
 
-    expect(await readPortableAssetFile({ root, path: "vendor/module/hero.png" })).toMatchObject({
-      ok: false,
-      diagnostics: [{ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" }],
-    });
-  });
+      expect(await readPortableAssetFile({ root, path: "vendor/module/hero.png" })).toMatchObject({
+        ok: false,
+        diagnostics: [{ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" }],
+      });
+    },
+  );
 
   test.each([
     ["LFS", "*.png filter=lfs\n"],
@@ -510,122 +514,132 @@ describe("descriptor-anchored filesystem reads", () => {
     }
   });
 
-  test("stays anchored when an opened directory is replaced by a symlink", async () => {
-    if (process.platform !== "linux") return;
-    const root = await mkdtemp(join(tmpdir(), "topik-race-root-"));
-    const outside = await mkdtemp(join(tmpdir(), "topik-race-outside-"));
-    roots.push(root, outside);
-    await mkdir(join(root, "assets"));
-    await writeFile(join(root, "assets", "hero.png"), PNG_BYTES);
-    await writeFile(join(outside, "hero.png"), "outside");
-    let swapped = false;
+  test.skipIf(process.platform !== "linux")(
+    "stays anchored when an opened directory is replaced by a symlink",
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), "topik-race-root-"));
+      const outside = await mkdtemp(join(tmpdir(), "topik-race-outside-"));
+      roots.push(root, outside);
+      await mkdir(join(root, "assets"));
+      await writeFile(join(root, "assets", "hero.png"), PNG_BYTES);
+      await writeFile(join(outside, "hero.png"), "outside");
+      let swapped = false;
 
-    const result = await readPortableAssetFileWithTraversalHookForTest(
-      { root, path: "assets/hero.png" },
-      async (components) => {
-        if (swapped || components.join("/") !== "assets") return;
-        swapped = true;
-        await rename(join(root, "assets"), join(root, "assets-original"));
-        await symlink(outside, join(root, "assets"));
-      },
-    );
+      const result = await readPortableAssetFileWithTraversalHookForTest(
+        { root, path: "assets/hero.png" },
+        async (components) => {
+          if (swapped || components.join("/") !== "assets") return;
+          swapped = true;
+          await rename(join(root, "assets"), join(root, "assets-original"));
+          await symlink(outside, join(root, "assets"));
+        },
+      );
 
-    expect(swapped).toBe(true);
-    expect(result).toMatchObject({ ok: true });
-    if (result.ok) expect(result.value.bytes).toEqual(PNG_BYTES);
-  });
+      expect(swapped).toBe(true);
+      expect(result).toMatchObject({ ok: true });
+      if (result.ok) expect(result.value.bytes).toEqual(PNG_BYTES);
+    },
+  );
 
-  test("rejects a hardlink created and removed after the file bytes are read", async () => {
-    if (process.platform !== "linux") return;
-    const root = await mkdtemp(join(tmpdir(), "topik-hardlink-race-"));
-    roots.push(root);
-    const source = join(root, "hero.png");
-    const hardlink = join(root, "transient-hardlink.png");
-    await writeFile(source, PNG_BYTES);
+  test.skipIf(process.platform !== "linux")(
+    "rejects a hardlink created and removed after the file bytes are read",
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), "topik-hardlink-race-"));
+      roots.push(root);
+      const source = join(root, "hero.png");
+      const hardlink = join(root, "transient-hardlink.png");
+      await writeFile(source, PNG_BYTES);
 
-    const result = await readPortableAssetFileWithReadHookForTest(
-      { root, path: "hero.png" },
-      async () => {
-        await link(source, hardlink);
-        await rm(hardlink);
-      },
-    );
+      const result = await readPortableAssetFileWithReadHookForTest(
+        { root, path: "hero.png" },
+        async () => {
+          await link(source, hardlink);
+          await rm(hardlink);
+        },
+      );
 
-    expect(result).toMatchObject({
-      ok: false,
-      diagnostics: [{ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" }],
-    });
-    await expect(lstat(hardlink)).rejects.toMatchObject({ code: "ENOENT" });
-  });
+      expect(result).toMatchObject({
+        ok: false,
+        diagnostics: [{ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" }],
+      });
+      await expect(lstat(hardlink)).rejects.toMatchObject({ code: "ENOENT" });
+    },
+  );
 
-  test("rejects byte mutation even when the original mtime is restored", async () => {
-    if (process.platform !== "linux") return;
-    const root = await mkdtemp(join(tmpdir(), "topik-byte-race-"));
-    roots.push(root);
-    const source = join(root, "hero.png");
-    await writeFile(source, PNG_BYTES);
-    const original = await lstat(source);
-    const changed = Buffer.from(PNG_BYTES);
-    changed[changed.byteLength - 1] ^= 0xff;
+  test.skipIf(process.platform !== "linux")(
+    "rejects byte mutation even when the original mtime is restored",
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), "topik-byte-race-"));
+      roots.push(root);
+      const source = join(root, "hero.png");
+      await writeFile(source, PNG_BYTES);
+      const original = await lstat(source);
+      const changed = Buffer.from(PNG_BYTES);
+      changed[changed.byteLength - 1] ^= 0xff;
 
-    const result = await readPortableAssetFileWithReadHookForTest(
-      { root, path: "hero.png" },
-      async () => {
-        await writeFile(source, changed);
-        await utimes(source, original.atime, original.mtime);
-      },
-    );
+      const result = await readPortableAssetFileWithReadHookForTest(
+        { root, path: "hero.png" },
+        async () => {
+          await writeFile(source, changed);
+          await utimes(source, original.atime, original.mtime);
+        },
+      );
 
-    expect(result).toMatchObject({
-      ok: false,
-      diagnostics: [{ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" }],
-    });
-  });
+      expect(result).toMatchObject({
+        ok: false,
+        diagnostics: [{ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" }],
+      });
+    },
+  );
 
-  test("rejects a nested Git boundary introduced after the bytes are read", async () => {
-    if (process.platform !== "linux") return;
-    const root = await mkdtemp(join(tmpdir(), "topik-git-boundary-race-"));
-    roots.push(root);
-    await mkdir(join(root, "assets"));
-    await writeFile(join(root, "assets", "hero.png"), PNG_BYTES);
+  test.skipIf(process.platform !== "linux")(
+    "rejects a nested Git boundary introduced after the bytes are read",
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), "topik-git-boundary-race-"));
+      roots.push(root);
+      await mkdir(join(root, "assets"));
+      await writeFile(join(root, "assets", "hero.png"), PNG_BYTES);
 
-    const result = await readPortableAssetFileWithReadHookForTest(
-      { root, path: "assets/hero.png" },
-      async () => {
-        await mkdir(join(root, "assets", ".git"));
-      },
-    );
+      const result = await readPortableAssetFileWithReadHookForTest(
+        { root, path: "assets/hero.png" },
+        async () => {
+          await mkdir(join(root, "assets", ".git"));
+        },
+      );
 
-    expect(result).toMatchObject({
-      ok: false,
-      diagnostics: [{ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" }],
-    });
-  });
+      expect(result).toMatchObject({
+        ok: false,
+        diagnostics: [{ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" }],
+      });
+    },
+  );
 
-  test("rejects a Gitlink index mode introduced after the bytes are read", async () => {
-    if (process.platform !== "linux") return;
-    const root = await mkdtemp(join(tmpdir(), "topik-gitlink-race-"));
-    roots.push(root);
-    await createGitRepository(root);
-    await mkdir(join(root, "assets"));
-    await writeFile(join(root, "assets", "hero.png"), PNG_BYTES);
-    await git(root, "add", "assets/hero.png");
-    await git(root, "commit", "-qm", "fixture");
-    const commit = (await gitOutput(root, "rev-parse", "HEAD")).trim();
+  test.skipIf(process.platform !== "linux")(
+    "rejects a Gitlink index mode introduced after the bytes are read",
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), "topik-gitlink-race-"));
+      roots.push(root);
+      await createGitRepository(root);
+      await mkdir(join(root, "assets"));
+      await writeFile(join(root, "assets", "hero.png"), PNG_BYTES);
+      await git(root, "add", "assets/hero.png");
+      await git(root, "commit", "-qm", "fixture");
+      const commit = (await gitOutput(root, "rev-parse", "HEAD")).trim();
 
-    const result = await readPortableAssetFileWithReadHookForTest(
-      { root, path: "assets/hero.png" },
-      async () => {
-        await git(root, "rm", "--cached", "-qr", "assets");
-        await git(root, "update-index", "--add", "--cacheinfo", `160000,${commit},assets`);
-      },
-    );
+      const result = await readPortableAssetFileWithReadHookForTest(
+        { root, path: "assets/hero.png" },
+        async () => {
+          await git(root, "rm", "--cached", "-qr", "assets");
+          await git(root, "update-index", "--add", "--cacheinfo", `160000,${commit},assets`);
+        },
+      );
 
-    expect(result).toMatchObject({
-      ok: false,
-      diagnostics: [{ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" }],
-    });
-  });
+      expect(result).toMatchObject({
+        ok: false,
+        diagnostics: [{ id: "TOPIK_ASSET_FILE_TYPE_UNSUPPORTED" }],
+      });
+    },
+  );
 });
 
 async function createMinimalWorktree(root: string): Promise<void> {

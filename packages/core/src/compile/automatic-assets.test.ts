@@ -1264,11 +1264,10 @@ describe("compilation-wide automatic Assets", () => {
     });
   });
 
-  test.each([
+  test.skipIf(process.platform !== "linux").each([
     ["image", "![Nested](vendor/module/hero.png)"],
     ["proven download", "[Nested](vendor/module/hero.png)"],
   ])("rejects a real checked-out Git submodule %s target", async (_kind, content) => {
-    if (process.platform !== "linux") return;
     const origin = join(dir, "origin");
     const root = join(dir, "root");
     await createGitRepository(origin);

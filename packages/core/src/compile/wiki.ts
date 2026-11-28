@@ -133,6 +133,7 @@ export async function discoverWiki(
   const bodyLinesByResource: Record<string, number> = {};
   const unvalidatedDocuments: NonNullable<CompileResourceDiscovery["unvalidatedDocuments"]> = [];
   const pageNamesBySource = new Map<string, string>();
+  const claimedNames = new Map<string, string>();
 
   for (let i = 0; i < pagePaths.length; i++) {
     const pagePath = pagePaths[i];
@@ -145,35 +146,34 @@ export async function discoverWiki(
     } catch (error) {
       throw publicSchemaError("frontmatter-invalid", sourcePath, error);
     }
-    const validation = memo.validate(content, sourcePath);
-    diagnostics.push(...withFileLines(validation.diagnostics, parsed.bodyLineOffset));
     const name = frontmatter.id ?? pagePathToName(config.id, pagePath);
-    if (!validation.ok) {
-      if (!Object.hasOwn(sourcePathsByResource, `WikiPage/${name}`)) {
-        pageNamesBySource.set(pagePath, name);
-        unvalidatedDocuments.push({
-          sourcePath,
-          resource: {
-            apiVersion: "v1",
-            type: "WikiPage",
-            name,
-            spec: {
-              wiki: config.id,
-              title: pagePathToTitleFallback(pagePath),
-              content: { format: "topik", value: content },
-            },
-          },
-        });
-      }
-      continue;
-    }
     // Page paths are already unique, so a repeated name comes from two frontmatter IDs.
-    if (Object.hasOwn(sourcePathsByResource, `WikiPage/${name}`))
+    const duplicate = claimedNames.get(name);
+    if (duplicate !== undefined)
       throw new PublicCompileError("frontmatter-invalid", sourcePath, {
         field: "id",
-        relatedLocation: sourcePathsByResource[`WikiPage/${name}`],
+        relatedLocation: duplicate,
       });
+    claimedNames.set(name, sourcePath);
     pageNamesBySource.set(pagePath, name);
+    const validation = memo.validate(content, sourcePath);
+    diagnostics.push(...withFileLines(validation.diagnostics, parsed.bodyLineOffset));
+    if (!validation.ok) {
+      unvalidatedDocuments.push({
+        sourcePath,
+        resource: {
+          apiVersion: "v1",
+          type: "WikiPage",
+          name,
+          spec: {
+            wiki: config.id,
+            title: pagePathToTitleFallback(pagePath),
+            content: { format: "topik", value: content },
+          },
+        },
+      });
+      continue;
+    }
     const analysis = memo.analyze(content, sourcePath);
     diagnostics.push(...withFileLines(analysis.diagnostics, parsed.bodyLineOffset));
     const title =

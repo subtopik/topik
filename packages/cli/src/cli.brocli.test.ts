@@ -1,4 +1,5 @@
 import { execFile, spawn } from "node:child_process";
+import { once } from "node:events";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -237,7 +238,10 @@ describe.skipIf(!existsSync(builtCli) && !inCI)("built topik binary", () => {
           child.on("exit", (code) => reject(new Error(`dev exited with ${code}: ${stderr}`)));
         });
       } finally {
-        child.kill("SIGTERM");
+        if (child.exitCode === null && child.signalCode === null) {
+          child.kill("SIGTERM");
+          await once(child, "exit");
+        }
       }
       expect(stdout).toContain("Compiled 3 resources\n");
       expect(stderr).toBe(PORTABLE_NOTICE);

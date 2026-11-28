@@ -553,6 +553,33 @@ describe("compile command", () => {
     }
   });
 
+  test("rejects an output directory containing a source directory whose name starts with ..", async () => {
+    const dottedSource = join(dir, "..docs");
+    await mkdir(dottedSource);
+    await writeFile(
+      join(dottedSource, ".topik.yaml"),
+      JSON.stringify({
+        version: 1,
+        namespace: "cli-test-source",
+        sources: [{ kind: "collection", config: "collection.yaml" }],
+      }),
+    );
+    await writeFile(join(dottedSource, "collection.yaml"), "id: docs\ntitle: Docs\n");
+    await writeFile(join(dottedSource, "intro.md"), "# Dotted\n");
+
+    await expect(
+      (compile as CompileCommand).handler?.({
+        dir: dottedSource,
+        outDir: dir,
+        format: "json",
+        dryRun: false,
+        validate: true,
+        links: "error",
+      }),
+    ).rejects.toMatchObject({ id: "compilation-output-contains-source" });
+    expect(await readFile(join(dottedSource, "intro.md"), "utf8")).toBe("# Dotted\n");
+  });
+
   test("rejects a source ancestor reached through an alternate symlink spelling", async () => {
     const realSource = join(dir, "source");
     const aliasRoot = await mkdtemp(join(tmpdir(), "topik-cli-source-alias-"));

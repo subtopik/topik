@@ -1,4 +1,12 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 
 function useRovingTabs(tabCount: number) {
   const [selectedIndex, setSelected] = useState(0);
@@ -8,10 +16,10 @@ function useRovingTabs(tabCount: number) {
   // Persist the clamp so removed selections do not return when tabs are added.
   if (selected !== selectedIndex) setSelected(selected);
 
-  function selectTab(index: number, focus = false) {
+  const selectTab = useCallback((index: number, focus = false) => {
     setSelected(index);
     if (focus) tabRefs.current[index]?.focus();
-  }
+  }, []);
 
   function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
     let nextIndex: number;
@@ -82,13 +90,15 @@ export function TopikTablist({
 }: TopikTablistProps) {
   const id = useId();
   const { handleKeyDown, selectTab, selected, tabRefs } = useRovingTabs(items.length);
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const panelRefs = useRef<Array<HTMLDivElement | null>>([]);
 
   // A link to an element inside a hidden panel selects that panel's tab, on load and when
   // the fragment changes, so the target can be seen.
   useEffect(() => {
-    const view = panelRefs.current.find(Boolean)?.ownerDocument.defaultView;
+    const view = rootRef.current?.ownerDocument.defaultView;
     if (!view) return;
+    let frameId: number | undefined;
     const reveal = () => {
       const hash = view.location.hash.slice(1);
       if (!hash) return;
@@ -103,17 +113,22 @@ export function TopikTablist({
       const index = panelRefs.current.findIndex((panel) => panel?.contains(target));
       if (index === -1) return;
       selectTab(index);
-      view.requestAnimationFrame?.(() => target.scrollIntoView?.());
+      if (frameId !== undefined) view.cancelAnimationFrame?.(frameId);
+      frameId = view.requestAnimationFrame?.(() => {
+        frameId = undefined;
+        target.scrollIntoView?.();
+      });
     };
     reveal();
     view.addEventListener("hashchange", reveal);
-    return () => view.removeEventListener("hashchange", reveal);
-    // selectTab only sets state; the listener reads panels through refs.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return () => {
+      if (frameId !== undefined) view.cancelAnimationFrame?.(frameId);
+      view.removeEventListener("hashchange", reveal);
+    };
+  }, [selectTab]);
 
   return (
-    <div className={className}>
+    <div className={className} ref={rootRef}>
       <div aria-label={label} className={listClassName} role="tablist">
         {items.map((item, index) => {
           const active = index === selected;

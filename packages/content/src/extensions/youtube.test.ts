@@ -47,6 +47,12 @@ test.each([
   "https://example.com/watch?v=dQw4w9WgXcQ",
   " https://youtu.be/dQw4w9WgXcQ",
   "youtu.be/dQw4w9WgXcQ",
+  "https:youtu.be/dQw4w9WgXcQ",
+  "https:/youtu.be/dQw4w9WgXcQ",
+  "https:\\\\youtu.be/dQw4w9WgXcQ",
+  "https://youtu.be/dQw4w9Wg\tXcQ",
+  "https://youtu.be/dQw4w9Wg\nXcQ",
+  "https://youtu.be/dQw4w9WgXcQ\u0000",
 ])("refuses %s", (url) => {
   expect(parseTopikYouTubeUrl(url)).toBeUndefined();
 });

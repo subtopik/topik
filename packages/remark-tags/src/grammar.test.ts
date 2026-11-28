@@ -8,6 +8,7 @@ import {
   tagToMarkdown,
   type TagDeclarations,
 } from "./index.js";
+import { parseTag } from "./grammar.js";
 import { meaning, parse, write } from "./test-support.js";
 
 describe("tag grammar boundaries", () => {
@@ -63,6 +64,8 @@ describe("tag grammar boundaries", () => {
     ["{% panel title='x' %}\n\nText", ["attribute-syntax-invalid"]],
     ["{% panel %}\n\n{% media x= %}\n\nText\n\n{% /panel %}", ["attribute-syntax-invalid"]],
     ["{% badge label='x' /%} {% /badge %}", ["attribute-syntax-invalid", "missing-opening"]],
+    ['{% panel title="x"\n\nText\n\n{% /panel %}', ["tag-unterminated"]],
+    ['{% panel title="x" /\n\nText\n\n{% /panel %}', ["tag-unterminated", "missing-opening"]],
     ["{%", ["tag-unterminated"]],
     ["{% panel /%} trailing", ["tag-placement-invalid"]],
   ])("identifies %s with stable diagnostic IDs", (source, ids) => {
@@ -74,6 +77,24 @@ describe("tag grammar boundaries", () => {
     }
     expect(thrown).toBeInstanceOf(TagSyntaxError);
     expect((thrown as TagSyntaxError).diagnostics.map(({ id }) => id)).toEqual(ids);
+  });
+
+  test("records opening scope on unterminated component openers only", () => {
+    expect(parseTag('{% panel title="x"', {})).toMatchObject({
+      kind: "error",
+      id: "tag-unterminated",
+      opening: "panel",
+    });
+    expect(parseTag("{% /panel", {})).not.toHaveProperty("opening");
+    expect(parseTag('{% panel title="x" /', {})).not.toHaveProperty("opening");
+    expect(parseTag("{% if $x", { expressions: true })).not.toHaveProperty("opening");
+    expect(parseTag("{% else", { expressions: true })).not.toHaveProperty("opening");
+    expect(parseTag("{% template code", { expressions: true })).not.toHaveProperty("opening");
+    expect(parseTag("{% if", { expressions: false })).toMatchObject({
+      kind: "error",
+      id: "tag-unterminated",
+      opening: "if",
+    });
   });
 
   test("preserves camelCase names and distinct literal scalar types", () => {

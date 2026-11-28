@@ -169,13 +169,18 @@ export function validateTopikHref(value: unknown): ValidationError[] {
   }
 
   if (explicitScheme === "asset") {
-    return isTopikGeneratedAssetName(value.slice("asset:".length))
+    return value.startsWith("asset:") && isTopikGeneratedAssetName(value.slice("asset:".length))
       ? []
       : [linkError("link-asset-invalid")];
   }
 
+  const isHttpScheme = explicitScheme === "http" || explicitScheme === "https";
+  if (isHttpScheme && !/^https?:\/\//i.test(value)) {
+    return [linkError("link-url-invalid")];
+  }
+
   try {
-    const parsed = new URL(value, TOPIK_BASE_URL);
+    const parsed = isHttpScheme ? new URL(value) : new URL(value, TOPIK_BASE_URL);
     const scheme = parsed.protocol.slice(0, -1).toLowerCase();
     if (!ALLOWED_SCHEMES.has(scheme)) {
       return [

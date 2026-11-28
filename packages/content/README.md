@@ -412,11 +412,11 @@ Source diagnostics have stable IDs with fixed messages.
 Component and attribute diagnostics also say where the problem is and what the
 component schema accepts:
 
-| Field       | Set on                                                                                                                              | Value                                                                              |
-| ----------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `tag`       | `tag-undefined`, `tag-placement-invalid`, `topik-tag-children`, `topik-tag-placement`, and the attribute IDs                        | The component name                                                                 |
-| `attribute` | `attribute-undefined`, `attribute-type-invalid`, `attribute-value-invalid`, `attribute-missing-required`, `topik-<attribute>-range` | The attribute name                                                                 |
-| `expected`  | `attribute-undefined`, `attribute-type-invalid`, `attribute-value-invalid`                                                          | The supported attribute names, the required type, or the allowed values of an enum |
+| Field       | Set on                                                                                                                                                                                                                                            | Value                                                                              |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `tag`       | `tag-undefined`, `tag-placement-invalid`, `topik-tag-children`, `topik-tag-placement`, and the attribute IDs                                                                                                                                      | The component name                                                                 |
+| `attribute` | `attribute-undefined`, `attribute-type-invalid`, `attribute-value-invalid`, `attribute-missing-required`, `topik-<attribute>-range`, `topik-accordion-id`, `topik-video-youtube`, `topik-video-title`, `topik-youtube-src`, `topik-youtube-title` | The attribute name                                                                 |
+| `expected`  | `attribute-undefined`, `attribute-type-invalid`, `attribute-value-invalid`                                                                                                                                                                        | The supported attribute names, the required type, or the allowed values of an enum |
 
 Names are kept only when they follow the tag grammar and are at most 64
 characters long. `expected` comes from the component schema and holds at most 32

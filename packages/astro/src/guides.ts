@@ -61,17 +61,19 @@ export function topikGuidesLoader(options: TopikGuidesOptions): TopikAssetLoader
 
             context.store.clear();
             for (const guide of guides) {
+              const data = {
+                title: guide.spec.title,
+                slug: guide.spec.slug,
+                description: guide.spec.description ?? undefined,
+                authors: guide.spec.authors ?? [],
+                tags: guide.spec.tags ?? [],
+              };
+              const body = guide.spec.content.value;
               context.store.set({
                 id: guide.name,
-                data: {
-                  title: guide.spec.title,
-                  slug: guide.spec.slug,
-                  description: guide.spec.description ?? undefined,
-                  authors: guide.spec.authors ?? [],
-                  tags: guide.spec.tags ?? [],
-                },
-                body: guide.spec.content.value,
-                digest: context.generateDigest(guide.spec.content.value),
+                data,
+                body,
+                digest: context.generateDigest(JSON.stringify({ data, body })),
               });
             }
 

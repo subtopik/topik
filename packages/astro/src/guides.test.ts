@@ -28,7 +28,10 @@ const PNG_BYTES = Buffer.from(
 );
 
 function createMockContext() {
-  const entries = new Map<string, { id: string; data: Record<string, unknown>; body?: string }>();
+  const entries = new Map<
+    string,
+    { id: string; data: Record<string, unknown>; body?: string; digest?: string }
+  >();
   return {
     store: {
       clear: () => entries.clear(),
@@ -42,7 +45,7 @@ function createMockContext() {
       },
     },
     logger: { info: () => {} },
-    generateDigest: (data: string) => String(data.length),
+    generateDigest: (data: string) => data,
     entries,
   } as unknown as LoaderContext & { entries: typeof entries };
 }
@@ -216,6 +219,33 @@ describe("topikGuidesLoader", () => {
       for (const asset of assets) {
         expect(loader.resolveAsset(asset.name)).toBe(`/${asset.spec.uri}`);
       }
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("includes metadata in entry digests so frontmatter changes invalidate the cache", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "topik-astro-guide-digest-"));
+    try {
+      await writeFile(join(dir, "collection.yaml"), "id: guides\ntitle: Guides\n");
+      await writeFile(
+        join(dir, "intro.md"),
+        "---\ntitle: Before\ndescription: Initial\ntags: [one]\n---\n# Intro\n",
+      );
+      const loader = topikGuidesLoader({ dir, name: "astro-guide-digest" });
+      const context = createMockContext();
+      await loader.load(context);
+      const before = context.entries.get("guides-intro");
+      expect(before?.body).toBe("# Intro\n");
+
+      await writeFile(
+        join(dir, "intro.md"),
+        "---\ntitle: After\ndescription: Updated\ntags: [one, two]\n---\n# Intro\n",
+      );
+      await loader.load(context);
+      const after = context.entries.get("guides-intro");
+      expect(after?.body).toBe(before?.body);
+      expect(after?.digest).not.toBe(before?.digest);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

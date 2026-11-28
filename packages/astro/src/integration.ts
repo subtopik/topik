@@ -51,7 +51,8 @@ export function topik(options: TopikOptions): AstroIntegration {
         logger,
         updateConfig,
       }) => {
-        base = `${(config.base ?? "/").replace(/\/+$/u, "")}/`;
+        const trimmedBase = (config.base ?? "/").replace(/^\/+|\/+$/gu, "");
+        base = trimmedBase ? `/${trimmedBase}/` : "/";
         setTopikAssetBase(loaders, base);
         if (command === "build") {
           if (usesPortableFileReads()) logger.warn(PORTABLE_PUBLICATION_NOTICE);

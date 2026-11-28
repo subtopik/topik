@@ -11,6 +11,7 @@ export async function loadTopikSource(
   snapshot: TopikAssetSnapshotControl,
   compile: () => Promise<AssetCompilationResult>,
   publishEntries: (compiled: AssetCompilationResult) => void,
+  onClear?: () => void,
 ): Promise<void> {
   let active = true;
   let revision = 0;
@@ -65,6 +66,7 @@ export async function loadTopikSource(
         if (started !== revision) continue;
         context.store.clear();
         sourceSnapshot.clear();
+        onClear?.();
         throw error;
       }
     }

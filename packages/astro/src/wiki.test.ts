@@ -26,7 +26,10 @@ const PNG_BYTES = Buffer.from(
 );
 
 function createMockContext() {
-  const entries = new Map<string, { id: string; data: Record<string, unknown>; body?: string }>();
+  const entries = new Map<
+    string,
+    { id: string; data: Record<string, unknown>; body?: string; digest?: string }
+  >();
   return {
     store: {
       clear: () => entries.clear(),
@@ -34,7 +37,7 @@ function createMockContext() {
         entries.set(entry.id, entry),
     },
     logger: { info: () => {} },
-    generateDigest: (data: string) => String(data.length),
+    generateDigest: (data: string) => data,
     entries,
   } as unknown as LoaderContext & { entries: typeof entries };
 }
@@ -264,6 +267,71 @@ describe("topikWikiLoader", () => {
       }
     } finally {
       await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("includes page metadata in entry digests so metadata edits invalidate the cache", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "topik-astro-wiki-digest-"));
+    try {
+      await writeFile(join(dir, "wiki.yaml"), "id: docs\ntitle: Docs\nnavigation:\n  - intro\n");
+      await writeFile(
+        join(dir, "intro.md"),
+        "---\ntitle: Before\ndescription: Initial\n---\nBody text.\n",
+      );
+      const loader = topikWikiLoader({ dir, name: "astro-wiki-digest" });
+      const context = createMockContext();
+      await loader.load(context);
+      const before = [...context.entries.values()][0];
+      expect(before?.body).toBe("Body text.\n");
+
+      await writeFile(
+        join(dir, "intro.md"),
+        "---\ntitle: After\ndescription: Updated\n---\nBody text.\n",
+      );
+      await loader.load(context);
+      const after = [...context.entries.values()][0];
+      expect(after?.body).toBe(before?.body);
+      expect(after?.digest).not.toBe(before?.digest);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("scopes published navigation by source directory and clears it on failed reloads", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topik-astro-wiki-scope-"));
+    const dirA = join(root, "wiki-a");
+    const dirB = join(root, "wiki-b");
+    try {
+      await mkdir(dirA);
+      await mkdir(dirB);
+      await writeFile(join(dirA, "wiki.yaml"), "id: a\ntitle: Wiki A\nnavigation:\n  - alpha\n");
+      await writeFile(join(dirA, "alpha.md"), "# Alpha\n");
+      await writeFile(join(dirB, "wiki.yaml"), "id: b\ntitle: Wiki B\nnavigation:\n  - beta\n");
+      await writeFile(join(dirB, "beta.md"), "# Beta\n");
+
+      const loaderA = topikWikiLoader({ dir: dirA, name: "shared-wiki-name" });
+      const loaderB = topikWikiLoader({ dir: dirB, name: "shared-wiki-name" });
+      const ctxA = createMockContext();
+      const ctxB = createMockContext();
+
+      await loaderA.load(ctxA);
+      await loaderB.load(ctxB);
+
+      expect(await loaderA.getNavigation()).toEqual([
+        expect.objectContaining({ type: "page", slug: "alpha", sourcePath: "alpha" }),
+      ]);
+      expect(await loaderB.getNavigation()).toEqual([
+        expect.objectContaining({ type: "page", slug: "beta", sourcePath: "beta" }),
+      ]);
+
+      await writeFile(join(dirA, "alpha.md"), "{% unknown /%}\n");
+      await expect(loaderA.load(ctxA)).rejects.toBeDefined();
+      await expect(loaderA.getNavigation()).rejects.toBeDefined();
+      expect(await loaderB.getNavigation()).toEqual([
+        expect.objectContaining({ type: "page", slug: "beta", sourcePath: "beta" }),
+      ]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
     }
   });
 });

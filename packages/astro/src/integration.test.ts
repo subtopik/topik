@@ -624,4 +624,60 @@ describe("topik integration", () => {
 
     expect(await readFile(join(outsider, "author.txt"), "utf8")).toBe("preserve me");
   });
+
+  test.each([
+    ["docs", "/docs/"],
+    ["/docs", "/docs/"],
+    ["/docs/", "/docs/"],
+    ["//docs//", "/docs/"],
+    ["docs/nested/", "/docs/nested/"],
+    ["/", "/"],
+    ["", "/"],
+    ["///", "/"],
+  ])(
+    "normalizes config.base %j to %j for asset URLs and dev middleware",
+    async (rawBase, normalizedBase) => {
+      await writeFile(join(dir, "collection.yaml"), "id: guides\ntitle: Guides\n");
+      await writeFile(join(dir, "hero.png"), PNG_BYTES);
+      await writeFile(join(dir, "intro.md"), "# Intro\n\n![Hero](hero.png)\n");
+      const loader = topikGuidesLoader({
+        dir,
+        name: `astro-base-${rawBase || "empty"}`,
+        assets: {
+          generateName: createProjectAssetNameGenerator({
+            projectRoot: dir,
+            projectNamespace: "astro-base-test",
+          }),
+        },
+      });
+      await loader.load(createMockContext());
+      const integration = topik({ loaders: [loader] });
+      await integration.hooks["astro:config:setup"]?.({
+        addMiddleware: () => undefined,
+        command: "dev",
+        config: { base: rawBase },
+        createCodegenDir: () => pathToFileURL(`${tempDir}/`),
+        logger: { warn: () => undefined },
+        updateConfig: () => undefined,
+      } as never);
+      let middleware: ReturnType<typeof createMiddleware> | undefined;
+      void integration.hooks["astro:server:setup"]?.({
+        server: {
+          middlewares: {
+            use(fn: ReturnType<typeof createMiddleware>) {
+              middleware = fn;
+            },
+          },
+        },
+      } as never);
+      if (!middleware) throw new Error("Expected middleware");
+
+      const asset = loader.getAssets()[0];
+      const expectedUrl = `${normalizedBase}${asset.spec.uri}`;
+      expect(loader.resolveAsset(asset.name)).toBe(expectedUrl);
+      const delivered = await dispatch(middleware, expectedUrl);
+      expect(delivered.next).not.toHaveBeenCalled();
+      expect(delivered.response.end).toHaveBeenCalledWith(PNG_BYTES);
+    },
+  );
 });

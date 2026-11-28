@@ -84,7 +84,7 @@ const DROPPABLE_ATTRIBUTES = new Map([
   ["Accordion", new Set(["icon"])],
 ]);
 
-const TAG_NAME_RE = /[A-Z][A-Za-z0-9]*/;
+const TAG_NAME_RE = /[A-Z][A-Za-z0-9]*/y;
 // Quoted values, braced expressions, or a bare boolean shorthand name.
 const ATTR_RE = /([A-Za-z_][A-Za-z0-9_-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|(\{[^}]*\}))|(?=\s|$))/g;
 const NUMBER_LITERAL_RE = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/u;
@@ -700,18 +700,23 @@ function findNextTag(
     }
     const isClose = source[i + 1] === "/";
     const nameStart = isClose ? i + 2 : i + 1;
-    const nameMatch = TAG_NAME_RE.exec(source.slice(nameStart));
-    if (!nameMatch || nameMatch.index !== 0) {
+    TAG_NAME_RE.lastIndex = nameStart;
+    const nameMatch = TAG_NAME_RE.exec(source);
+    if (!nameMatch) {
       i++;
       continue;
     }
     const name = nameMatch[0];
+    const afterName = nameStart + name.length;
+    if (!(afterName === source.length || /[\s>/]/u.test(source[afterName]))) {
+      i++;
+      continue;
+    }
     if (!CALLOUT_VARIANTS.has(name) && !BLOCK_TAGS.has(name) && !UNSUPPORTED_TAGS.has(name)) {
       i++;
       continue;
     }
 
-    const afterName = nameStart + name.length;
     const tagEnd = findTagEnd(source, afterName);
     if (tagEnd < 0) return null;
 

@@ -1072,6 +1072,36 @@ describe("tag nesting", () => {
       ]);
     }
   });
+
+  test.each([
+    ["member-expression tags", "<Note.Sub>\nbody\n</Note.Sub>\n"],
+    ["underscored component tags", "<Info_2>\nbody\n</Info_2>\n"],
+  ])("does not misparse %s as Mintlify components", (_name, source) => {
+    expect(transformMintlify(source)).toEqual({ content: source, warnings: [], changed: false });
+  });
+
+  test("does not misparse hyphenated component tags as Mintlify components", () => {
+    const source = '<Card-custom title="A" />\n';
+    const result = transformMintlify(source);
+    expect(result.changed).toBe(false);
+    expect(result.content).toBe(source);
+    expect(result.warnings).toEqual([
+      expect.objectContaining({
+        message: expect.stringContaining("Source is not valid Topik content"),
+      }),
+    ]);
+    expect(result.warnings[0]?.message).not.toContain("Unsupported attributes");
+  });
+
+  test("ignores non-Mintlify tags with shared prefixes when converting valid tags", () => {
+    const source = "<Note>\nbody\n</Note>\n\n<Note.Sub>\nextra\n</Note.Sub>\n";
+    expect(transformMintlify(source)).toEqual({
+      content:
+        '{% callout variant="info" %}\nbody\n{% /callout %}\n\n<Note.Sub>\nextra\n</Note.Sub>\n',
+      warnings: [],
+      changed: true,
+    });
+  });
 });
 
 describe("CR-only line endings", () => {

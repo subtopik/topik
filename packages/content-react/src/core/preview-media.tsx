@@ -53,10 +53,6 @@ export function PreviewMedia({
 }) {
   // Media state keys on the tokens' stable targets rather than on attribute object identity.
   const [attributes, setAttributes] = useState(renderedAttributes);
-  const equivalent =
-    attributes === renderedAttributes || equivalentMedia(attributes, renderedAttributes);
-  if (!equivalent) setAttributes(renderedAttributes);
-  const media = equivalent ? attributes : renderedAttributes;
   const [loaded, setLoaded] = useState<{
     attributes: TopikComponentProps;
     values: TopikComponentProps;
@@ -64,6 +60,15 @@ export function PreviewMedia({
   const [failed, setFailed] = useState<TopikComponentProps>();
   // An optional video poster that fails to load or decode is dropped; the video stays.
   const [brokenPoster, setBrokenPoster] = useState<TopikComponentProps>();
+  const equivalent =
+    attributes === renderedAttributes || equivalentMedia(attributes, renderedAttributes);
+  if (!equivalent) {
+    setAttributes(renderedAttributes);
+    setLoaded(undefined);
+    setFailed(undefined);
+    setBrokenPoster(undefined);
+  }
+  const media = equivalent ? attributes : renderedAttributes;
   const mounted = useRef(true);
   const currentAttributes = useRef(media);
   // Downloads act for the exact committed content, including changed link text. Every committed
@@ -98,8 +103,11 @@ export function PreviewMedia({
         }),
       ).then(
         (entries) => {
-          if (active && isMediaCurrent(media, currentAttributes.current))
+          if (active && isMediaCurrent(media, currentAttributes.current)) {
+            setFailed(undefined);
+            setBrokenPoster(undefined);
             setLoaded({ attributes: media, values: Object.fromEntries(entries) });
+          }
         },
         () => {
           if (active && isMediaCurrent(media, currentAttributes.current)) setFailed(media);
@@ -108,6 +116,8 @@ export function PreviewMedia({
     }
     return () => {
       active = false;
+      setFailed(undefined);
+      setBrokenPoster(undefined);
     };
   }, [media, download]);
   if (failed === media)

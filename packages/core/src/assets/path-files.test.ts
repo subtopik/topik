@@ -495,8 +495,10 @@ describe("descriptor-anchored filesystem reads", () => {
       ),
     ).toMatchObject({ ok: true });
     // A sibling of the isolated root is outside it, whatever its name starts with.
+    const sibling = join(scratch, "..docs-other");
+    await mkdir(sibling);
     expect(
-      await withIsolatedSourceRoot(join(scratch, "..docs-other"), () =>
+      await withIsolatedSourceRoot(sibling, () =>
         readPortableAssetFile({ root, path: "file.bin" }),
       ),
     ).toMatchObject({ ok: false });

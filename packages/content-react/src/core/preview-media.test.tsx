@@ -1,13 +1,26 @@
 // @vitest-environment jsdom
 import { createHash, webcrypto } from "node:crypto";
-import { act, startTransition, Suspense, useEffect, useLayoutEffect, StrictMode } from "react";
+import {
+  Activity,
+  act,
+  startTransition,
+  Suspense,
+  useEffect,
+  useLayoutEffect,
+  StrictMode,
+} from "react";
 import { createRoot, hydrateRoot, type Root } from "react-dom/client";
 import { renderToString } from "react-dom/server";
 import { afterEach, expect, test, vi } from "vite-plus/test";
 import { TopikContent } from "../theme/TopikContent";
 import { defaultTopikComponents } from "../theme/components";
 import { compileTopikContent, renderTrustedTopikTree } from "./render";
-import { createPreviewAssetAdapter, type PreviewAssetAdapter } from "./preview-assets";
+import {
+  createPreviewAssetAdapter,
+  previewAssetToken,
+  type PreviewAssetAdapter,
+} from "./preview-assets";
+import { PreviewMedia } from "./preview-media";
 const name = `auto-v1-${"a".repeat(52)}`;
 const otherName = `auto-v1-${"b".repeat(51)}a`;
 const bytes = new Uint8Array([1, 2, 3]);
@@ -438,4 +451,176 @@ test("preview downloads hydrate and activate under StrictMode", async () => {
     await vi.waitFor(() => expect(click).toHaveBeenCalledTimes(1));
   });
   expect(errors).not.toHaveBeenCalled();
+});
+
+test("failed preview image recovers when the same mounted boundary retries via Activity", async () => {
+  setup();
+  const fetcher = vi
+    .fn<(url: URL) => Promise<Response>>()
+    .mockRejectedValueOnce(new Error("Temporary failure"))
+    .mockImplementation(async (url) => mediaResponse(url));
+  vi.stubGlobal("fetch", fetcher);
+  const content = `![Hero](asset:${name})`;
+  const render = (mode: "visible" | "hidden") => (
+    <Activity mode={mode}>
+      <TopikContent content={content} previewAssets={adapter} />
+    </Activity>
+  );
+  await act(async () => root.render(render("visible")));
+  expect(container.querySelector('[role="alert"]')).not.toBeNull();
+  expect(container.querySelector("img")).toBeNull();
+
+  await act(async () => root.render(render("hidden")));
+  await act(async () => root.render(render("visible")));
+  await vi.waitFor(async () => {
+    await act(async () => {});
+    expect(container.querySelector("img")?.getAttribute("src")).toBe("blob:managed");
+  });
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(fetcher).toHaveBeenCalledTimes(2);
+});
+
+test("failed preview video and poster recover when the same mounted boundary retries via Activity", async () => {
+  setup();
+  vi.stubGlobal("fetch", async (url: URL) => mediaResponse(url));
+  const videoName = `auto-v1-${"c".repeat(51)}a`;
+  const videoBytes = new Uint8Array([4, 5, 6]);
+  const videoDigest = createHash("sha256").update(videoBytes).digest("hex");
+  const videoAdapter = createPreviewAssetAdapter({
+    origin: "http://localhost:50001",
+    snapshot: {
+      sessionId: "video-session",
+      generation: 1,
+      resources: [
+        {
+          type: "Asset",
+          name,
+          spec: {
+            uri: `blobs/${digest}`,
+            integrity: `sha256:${digest}`,
+            size: bytes.byteLength,
+            mediaType: "image/png",
+          },
+        },
+        {
+          type: "Asset",
+          name: videoName,
+          spec: {
+            uri: `blobs/${videoDigest}`,
+            integrity: `sha256:${videoDigest}`,
+            size: videoBytes.byteLength,
+            mediaType: "video/mp4",
+          },
+        },
+      ],
+      payloads: [
+        {
+          path: `blobs/${digest}`,
+          integrity: `sha256:${digest}`,
+          size: bytes.byteLength,
+          mediaType: "image/png",
+          assetNames: [name],
+        },
+        {
+          path: `blobs/${videoDigest}`,
+          integrity: `sha256:${videoDigest}`,
+          size: videoBytes.byteLength,
+          mediaType: "video/mp4",
+          assetNames: [videoName],
+        },
+      ],
+    },
+  });
+  try {
+    const content = `{% video src="asset:${videoName}" poster="asset:${name}" title="Demo" /%}`;
+    const render = (mode: "visible" | "hidden") => (
+      <Activity mode={mode}>
+        <TopikContent content={content} previewAssets={videoAdapter} />
+      </Activity>
+    );
+    await act(async () => root.render(render("visible")));
+    await vi.waitFor(async () => {
+      await act(async () => {});
+      expect(container.querySelector("video")?.getAttribute("poster")).toBe("blob:managed");
+    });
+
+    // Simulate both poster decode error and streamed video error on the mounted instance.
+    await act(async () => container.querySelector("img")!.dispatchEvent(new Event("error")));
+    expect(container.querySelector("video")?.getAttribute("poster")).toBeNull();
+    await act(async () => container.querySelector("video")!.dispatchEvent(new Event("error")));
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    expect(container.querySelector("video")).toBeNull();
+
+    await act(async () => root.render(render("hidden")));
+    await act(async () => root.render(render("visible")));
+    await vi.waitFor(async () => {
+      await act(async () => {});
+      expect(container.querySelector("video")?.getAttribute("poster")).toBe("blob:managed");
+    });
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  } finally {
+    videoAdapter.dispose();
+  }
+});
+
+test("revisiting a reused failed attributes object recovers without unmounting", async () => {
+  setup();
+  const fetcher = vi
+    .fn<(url: URL) => Promise<Response>>()
+    .mockRejectedValueOnce(new Error("Temporary failure"))
+    .mockImplementation(async (url) => mediaResponse(url));
+  vi.stubGlobal("fetch", fetcher);
+
+  const firstImage = { src: previewAssetToken(adapter, name, "image.src"), alt: "First" };
+  const secondImage = { src: previewAssetToken(adapter, otherName, "image.src"), alt: "Second" };
+  const renderImage = (attributes: typeof firstImage, source: string) => (
+    <PreviewMedia
+      component={defaultTopikComponents.TopikImage}
+      attributes={attributes}
+      source={source}
+    >
+      {null}
+    </PreviewMedia>
+  );
+
+  await act(async () => root.render(renderImage(firstImage, "first")));
+  expect(container.querySelector('[role="alert"]')).not.toBeNull();
+
+  await act(async () => root.render(renderImage(secondImage, "second")));
+  await vi.waitFor(async () => {
+    await act(async () => {});
+    expect(container.querySelector("img")?.getAttribute("alt")).toBe("Second");
+  });
+
+  await act(async () => root.render(renderImage(firstImage, "first")));
+  await vi.waitFor(async () => {
+    await act(async () => {});
+    expect(container.querySelector("img")?.getAttribute("alt")).toBe("First");
+  });
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+
+  // Also verify reused download link attributes recover after a click failure.
+  fetcher.mockRejectedValueOnce(new Error("Download failure"));
+  const firstDownload = { href: previewAssetToken(adapter, name, "link.href") };
+  const secondDownload = { href: previewAssetToken(adapter, otherName, "link.href") };
+  const renderDownload = (attributes: typeof firstDownload, label: string) => (
+    <PreviewMedia
+      component={defaultTopikComponents.TopikLink}
+      attributes={attributes}
+      source={label}
+    >
+      {label}
+    </PreviewMedia>
+  );
+
+  await act(async () => root.render(renderDownload(firstDownload, "First")));
+  await act(async () => container.querySelector("button")!.click());
+  expect(container.querySelector('[role="alert"]')).not.toBeNull();
+
+  await act(async () => root.render(renderDownload(secondDownload, "Second")));
+  expect(container.querySelector("button")?.textContent).toBe("Second");
+
+  await act(async () => root.render(renderDownload(firstDownload, "First")));
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(container.querySelector("button")?.textContent).toBe("First");
 });

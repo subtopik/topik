@@ -125,6 +125,7 @@ export async function discoverCourse(
   const sourcePathsByResource: Record<string, string> = {};
   const bodyLinesByResource: Record<string, number> = {};
   const unvalidatedDocuments: NonNullable<CompileResourceDiscovery["unvalidatedDocuments"]> = [];
+  const claimedNames = new Map<string, string>();
   const pagePathsByRoute = new Map<string, string>();
   const pages: CourseReferenceContext["pages"][number][] = [];
   for (const module of config.modules) {
@@ -157,11 +158,13 @@ export async function discoverCourse(
         throw publicSchemaError("frontmatter-invalid", file.path, error);
       }
       const key = `CoursePage/${metadata.id}`;
-      if (Object.hasOwn(sourcePathsByResource, key))
+      const duplicate = claimedNames.get(metadata.id);
+      if (duplicate !== undefined)
         throw new PublicCompileError("frontmatter-invalid", file.path, {
           field: "id",
-          relatedLocation: sourcePathsByResource[key],
+          relatedLocation: duplicate,
         });
+      claimedNames.set(metadata.id, file.path);
       const route = `${module.id}/${metadata.slug}`;
       const sameRoute = pagePathsByRoute.get(route);
       if (sameRoute !== undefined)
@@ -169,6 +172,7 @@ export async function discoverCourse(
           field: "slug",
           relatedLocation: sameRoute,
         });
+      pagePathsByRoute.set(route, file.path);
       const validation = memo.validate(parsed.content, file.path);
       diagnostics.push(...withFileLines(validation.diagnostics, parsed.bodyLineOffset));
       const page: CoursePage = {
@@ -193,7 +197,6 @@ export async function discoverCourse(
       resource.spec.pages.push(page.name);
       sourcePathsByResource[key] = file.path;
       if (parsed.bodyLineOffset) bodyLinesByResource[key] = parsed.bodyLineOffset;
-      pagePathsByRoute.set(route, file.path);
       pages.push({ name: page.name, module: module.id, slug: metadata.slug, sourcePath });
       const analysis = memo.analyze(parsed.content, file.path);
       diagnostics.push(...withFileLines(analysis.diagnostics, parsed.bodyLineOffset));

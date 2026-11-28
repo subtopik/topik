@@ -1009,7 +1009,8 @@ function isIsolatedRoot(canonicalRoot: string): boolean {
   for (const root of ISOLATED_ROOTS) {
     // Canonical roots use the platform separator; Windows paths use `\`.
     const below = relative(root, canonicalRoot);
-    if (below === "" || (!below.startsWith("..") && !isAbsolute(below))) return true;
+    if (below === "" || (below !== ".." && !below.startsWith(`..${sep}`) && !isAbsolute(below)))
+      return true;
   }
   return false;
 }

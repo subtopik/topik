@@ -1,4 +1,5 @@
 import { execFile, spawn } from "node:child_process";
+import { once } from "node:events";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -227,6 +228,7 @@ describe.skipIf(!existsSync(builtCli) && !inCI)("built topik binary", () => {
       );
       let stdout = "";
       let stderr = "";
+      let forced = false;
       child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
       try {
         await new Promise<void>((resolveListening, reject) => {
@@ -237,8 +239,23 @@ describe.skipIf(!existsSync(builtCli) && !inCI)("built topik binary", () => {
           child.on("exit", (code) => reject(new Error(`dev exited with ${code}: ${stderr}`)));
         });
       } finally {
-        child.kill("SIGTERM");
+        if (child.exitCode === null && child.signalCode === null) {
+          // `close` follows `exit` once both pipes are drained, so the output below is complete.
+          const closed = once(child, "close");
+          child.kill("SIGTERM");
+          // A shutdown that stalls is ended here and reported below, not left to the test timeout.
+          const escalation = setTimeout(() => {
+            forced = true;
+            child.kill("SIGKILL");
+          }, 10_000);
+          try {
+            await closed;
+          } finally {
+            clearTimeout(escalation);
+          }
+        }
       }
+      expect(forced, "dev did not exit within 10 seconds of SIGTERM").toBe(false);
       expect(stdout).toContain("Compiled 3 resources\n");
       expect(stderr).toBe(PORTABLE_NOTICE);
     });

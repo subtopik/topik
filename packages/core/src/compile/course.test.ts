@@ -280,6 +280,38 @@ test("rejects duplicate Course page identities and routes independently of their
   });
 });
 
+test.each([
+  ["an earlier", "pages/welcome.md"],
+  ["a later", "separate/next.md"],
+])(
+  "rejects duplicate Course page identities and routes when %s page has invalid content",
+  async (_order, invalidPath) => {
+    const page = (path: string, source: string) =>
+      path === invalidPath ? `${source}\n{% unknown /%}\n` : source;
+    const dir = await fixture({
+      ...sourceFiles(),
+      "pages/welcome.md": page("pages/welcome.md", welcome),
+      "separate/next.md": page("separate/next.md", next.replace("id: next", "id: welcome")),
+    });
+    await expect(compileCourse({ dir, persons: [alice] })).rejects.toMatchObject({
+      id: "frontmatter-invalid",
+      location: "separate/next.md",
+      field: "id",
+      relatedLocation: "pages/welcome.md",
+    });
+    await writeFile(
+      join(dir, "separate/next.md"),
+      page("separate/next.md", next.replace("slug: destination", "slug: introduction")),
+    );
+    await expect(compileCourse({ dir, persons: [alice] })).rejects.toMatchObject({
+      id: "frontmatter-invalid",
+      location: "separate/next.md",
+      field: "slug",
+      relatedLocation: "pages/welcome.md",
+    });
+  },
+);
+
 test("explicit Course page sources refuse ambiguous extensions and symlink traversal", async () => {
   const dir = await fixture({ ...sourceFiles(), "separate/next.mdx": next });
   await expect(compileCourse({ dir, persons: [alice] })).rejects.toMatchObject({

@@ -1,5 +1,5 @@
 import { readdir, realpath } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { boolean, command, positional, string } from "@drizzle-team/brocli";
 import {
   CompileError,
@@ -203,7 +203,10 @@ async function assertCompilationOutputScope(sourceDir: string, outDir: string): 
     throw new PublicCliError("compilation-source-access-failed");
   }
   const relation = relative(canonicalOutput, canonicalSource);
-  if (relation === "" || (!relation.startsWith("..") && !isAbsolute(relation))) {
+  if (
+    relation === "" ||
+    (relation !== ".." && !relation.startsWith(`..${sep}`) && !isAbsolute(relation))
+  ) {
     throw new PublicCliError("compilation-output-contains-source");
   }
 }

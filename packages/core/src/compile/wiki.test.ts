@@ -901,18 +901,24 @@ navigation:
     });
   });
 
-  test("rejects duplicate frontmatter ids even when an earlier page has invalid content", async () => {
-    await writeWikiConfig("id: tw\ntitle: Wiki\nnavigation:\n  - a\n  - b\n");
-    await writePage("a", "---\nid: same\n---\n{% unknown /%}\n");
-    await writePage("b", "---\nid: same\n---\n# B\n");
+  test.each([
+    ["an earlier", "{% unknown /%}\n", "# B\n"],
+    ["a later", "# A\n", "{% unknown /%}\n"],
+  ])(
+    "rejects duplicate frontmatter ids even when %s page has invalid content",
+    async (_order, a, b) => {
+      await writeWikiConfig("id: tw\ntitle: Wiki\nnavigation:\n  - a\n  - b\n");
+      await writePage("a", `---\nid: same\n---\n${a}`);
+      await writePage("b", `---\nid: same\n---\n${b}`);
 
-    await expect(compileWiki({ dir })).rejects.toMatchObject({
-      id: "frontmatter-invalid",
-      location: "b.md",
-      field: "id",
-      relatedLocation: "a.md",
-    });
-  });
+      await expect(compileWiki({ dir })).rejects.toMatchObject({
+        id: "frontmatter-invalid",
+        location: "b.md",
+        field: "id",
+        relatedLocation: "a.md",
+      });
+    },
+  );
 
   test.each([
     [

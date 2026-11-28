@@ -28,6 +28,7 @@ import {
 import {
   readPortableAssetFileWithReadHookForTest,
   readPortableAssetFileWithTraversalHookForTest,
+  withIsolatedSourceRoot,
 } from "./files";
 
 const PNG_BYTES = Buffer.from(
@@ -474,6 +475,31 @@ describe("descriptor-anchored filesystem reads", () => {
     expect(await readPortableAssetFile({ root, path: "assets/hero.png" })).toMatchObject({
       ok: true,
     });
+  });
+
+  test("keeps a directory whose name starts with .. inside its isolated root", async () => {
+    const repository = await mkdtemp(join(tmpdir(), "topik-isolated-root-"));
+    roots.push(repository);
+    await createMinimalWorktree(repository);
+    await writeFile(join(repository, ".gitattributes"), "*.bin filter=lfs\n");
+    const scratch = join(repository, "scratch");
+    const root = join(scratch, "..docs");
+    await mkdir(root, { recursive: true });
+    await writeFile(join(root, "file.bin"), "bytes");
+
+    // The repository above applies until the scratch tree is isolated from it.
+    expect(await readPortableAssetFile({ root, path: "file.bin" })).toMatchObject({ ok: false });
+    expect(
+      await withIsolatedSourceRoot(scratch, () =>
+        readPortableAssetFile({ root, path: "file.bin" }),
+      ),
+    ).toMatchObject({ ok: true });
+    // A sibling of the isolated root is outside it, whatever its name starts with.
+    expect(
+      await withIsolatedSourceRoot(join(scratch, "..docs-other"), () =>
+        readPortableAssetFile({ root, path: "file.bin" }),
+      ),
+    ).toMatchObject({ ok: false });
   });
 
   test("evaluates effective ancestor, info, and configured global Git attributes", async () => {

@@ -35,6 +35,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@cab1ab9eaff52d4857875f4f2c016e36af8f2c76 # v1.22.0
         with:
           node-version: "24"
+          run-install: false
           # A job that can mint npm credentials never restores a shared cache.
           cache: false
 
